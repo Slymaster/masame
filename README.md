@@ -51,9 +51,13 @@
 
 Masame is young, and honest about it.
 
-- **macOS, Apple Silicon** works today, built from source. The engine is a self-contained KataGo 1.18.2 (Metal) with static dependencies; it needs macOS 13 or later and no Homebrew libraries at run time.
-- **Windows** support is written — the code, the NSIS installer and a KataGo OpenCL build with automatic CPU fallback — and built by GitHub Actions, but not yet tested on real hardware.
-- **Signed builds and downloads** are coming. Until then, build from source.
+- **macOS, Apple Silicon** works today. The engine is a self-contained KataGo 1.18.2 (Metal) with static dependencies; it needs macOS 13 or later and no Homebrew libraries at run time.
+- **Windows** support is written — the code, the NSIS installer and a KataGo OpenCL build with automatic CPU fallback — and built by GitHub Actions. The installer is available as a preview, not yet tested on real hardware.
+
+**Download** the latest version from the [releases page](https://github.com/Slymaster/masame/releases/latest): a DMG for macOS (Apple Silicon) and an installer for Windows (x64). The builds are not signed yet, so the system warns on first launch:
+
+- **macOS:** if Masame is blocked, open System Settings → Privacy & Security and click **Open Anyway**.
+- **Windows:** when SmartScreen appears, click **More info**, then **Run anyway**.
 
 ## Build from source
 

@@ -6,7 +6,8 @@
     ],
     "resources": [
       "resources/katago/analysis.cfg",
-      "resources/katago-win/"
+      "resources/katago-win/",
+      "resources/licenses/"
     ]
   }
 }
