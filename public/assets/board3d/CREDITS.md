@@ -17,7 +17,14 @@ but we keep the trail.
 
 ## Lighting
 - **Poly Haven — Studio Country Hall** (1K HDR) — https://polyhaven.com/a/studio_country_hall — CC0.
-  `studio_country_hall_1k.hdr`, copied from the approved prototype (`design/atelier3d/assets/`).
+  `studio_country_hall_1k.hdr`, copied from the approved prototype (`design/atelier3d/assets/`). Décors Atelier and Lanterne.
+- **Poly Haven — Empty Play Room** by Greg Zaal (photography) and Jarod Guest (processing) (1K HDR) — https://polyhaven.com/a/empty_play_room — CC0.
+  `empty_play_room_1k.hdr`, copied unchanged from `design/atelier3d/assets/`. Décor Washitsu (window light).
+- Décor Clair uses three.js's procedural `RoomEnvironment` (MIT, part of three); no file.
+
+## Décor grounds
+Tatami (igusa rushes, warp threads, heri borders) and washi paper are generated at runtime in a canvas
+(`src/board3d/Board3D.ts`, `tatamiMaps` / `paperMap`): no files.
 
 ## Stone sounds (Freesound, all "Creative Commons 0" on the sound page; HQ previews used)
 - **billhails2 — GoStoneSounds.ogg** — https://freesound.org/people/billhails2/sounds/588317/ — CC0. Downloaded 2026-10-11.

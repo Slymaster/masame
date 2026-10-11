@@ -27,6 +27,7 @@ kbd { font-family: var(--f-ui); font-size: 10.5px; line-height: 1; border: 1px s
 .board-wrap { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; line-height: 0 }
 canvas { display: block; -webkit-tap-highlight-color: transparent }
 
+.panel[hidden] { display: none } /* hidden panel: the board takes the whole stage (ResizeObserver refits it) */
 .panel { width: 312px; flex: none; display: flex; flex-direction: column; gap: 26px; overflow-y: auto; padding: 8px 2px 8px 16px; margin-left: -16px }
 .panel > :first-child { margin-top: auto } /* centred when it fits, scrollable from the top when it doesn't */
 .panel > :last-child { margin-bottom: auto }
@@ -61,6 +62,8 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .btn:hover:not(:disabled) { background: var(--hover); border-color: var(--accent) }
 .btn:disabled { opacity: .4; cursor: default }
 .btn.accent { border-color: var(--accent); color: var(--accent) }
+.seg button:disabled { opacity: .45; cursor: default }
+.seg button:disabled:hover { color: var(--muted) }
 :is(.btn, .nav button, .seg button, .switch):focus-visible { outline: 1px solid var(--accent); outline-offset: 2px }
 
 .opts { display: flex; flex-direction: column; gap: 8px }
@@ -86,6 +89,17 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .acts > :last-child:nth-child(odd) { grid-column: span 2 }
 .pl.thinking::before { animation: breathe 1.8s ease-in-out infinite }
 @keyframes breathe { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
+
+/* panel toggle, top right: above the macOS drag strip (a button there is not a drag handle) */
+.panel-toggle { position: fixed; top: 8px; right: 12px; z-index: 11; width: 28px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; opacity: .55; transition: opacity .25s, color .25s, background .25s }
+.panel-toggle:hover, .panel-toggle:focus-visible { opacity: 1; color: var(--accent); background: var(--hover) }
+.panel-toggle:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px }
+.panel-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.2 }
+.panel-toggle[aria-expanded=false] path { stroke-dasharray: 1.5 1.5 }
+.turn { position: fixed; top: 14px; right: 48px; z-index: 11; width: 12px; height: 12px; border-radius: 50%; box-shadow: 1px 1.5px 2px rgba(0, 0, 0, .22); pointer-events: none; animation: fade .25s ease-out }
+.turn.b { background: var(--stone-b) }
+.turn.w { background: var(--stone-w) }
+.turn.thinking { animation: breathe 1.8s ease-in-out infinite }
 
 /* networks sheet */
 .sheet-back { position: fixed; inset: 0; z-index: 20; background: rgba(42, 33, 24, .18); animation: fade .25s ease-out }

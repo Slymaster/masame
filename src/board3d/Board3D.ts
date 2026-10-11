@@ -6,6 +6,7 @@
 
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
@@ -13,7 +14,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import type { Sign, Vertex } from '@sabaki/go-board'
 import type { BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
-import { bowlHeap, BT, dims, dropStones, Governor, gx, gz, hoshiStep, jitter, lens, mixTod, qualityLadder, RB, relax, RW, SH, SX, SZ, TOD, todAt, type Placed, type Quality, type Rest, type TimeName, type Tod } from './logic'
+import type { Decor } from './decors'
+import { bowlHeap, BT, dims, dropStones, fit, Governor, gx, gz, hoshiStep, jitter, lens, LOOKS, qualityLadder, RB, RW, SH, SX, SZ, TOD, todAt, type Ground, type Placed, type Quality, type Rest, type TimeName, type Tod } from './logic'
 import { StoneSound } from './sound3d'
 
 export interface Board3DState extends BoardState {
@@ -22,7 +24,7 @@ export interface Board3DState extends BoardState {
 }
 export type CameraMode = 'study' | 'contemplation'
 export type TimeMode = TimeName | 'auto'
-export interface Board3DOptions { camera: CameraMode; time: TimeMode; highContrast: boolean }
+export interface Board3DOptions { camera: CameraMode; time: TimeMode; highContrast: boolean; decor: Decor }
 export type FallbackReason = 'webgl2' | 'context-lost' | 'slow'
 export interface Board3DInit {
   /** The app should switch to the 2D BoardView (WebGL2 missing, context lost, or still too slow at the lowest quality). */
@@ -32,7 +34,8 @@ export interface Board3DInit {
   assetBase?: string
 }
 
-const DROP_MS = 140, NUDGE_MS = 260, WOB_MS = 360, DIE_MS = 260, FLY_MS = 720, CAM_MS = 900, TOD_MS = 1800, OMBRE_MS = 900
+// Nothing moves but the stone being placed: view, décor and light changes crossfade (FADE_MS) instead of travelling
+const DROP_MS = 140, FADE_MS = 230, OMBRE_MS = 900, AUTO_MS = 15_000
 const TILT = THREE.MathUtils.degToRad(22)
 const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
 const AO_K = 1.8 // contact-shadow quad half size, in stone radii
@@ -44,11 +47,9 @@ const sstep = (a: number, b: number, v: number) => { const t = clamp01((v - a) /
 const mkCanvas = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h })
 
 interface Stone extends Placed {
-  p: number; c: Sign; seed: number; rotY: number; wobAxis: number
-  px: number; pz: number; fx: number; fz: number; mt0: number; push: [number, number] | null
+  p: number; c: Sign; seed: number; rotY: number
   t0: number; landed: boolean; captured: Stone[]
 }
-interface Leaving { s: Stone; t0: number; fly: boolean; to?: THREE.Vector3; owner: Sign }
 
 function kelvin(K: number) {
   const t = K / 100, c = (v: number) => Math.min(255, Math.max(0, v)) / 255
@@ -188,6 +189,77 @@ function lathe(prof: number[][], seg: number) {
   return g
 }
 
+/* ---------- procedural grounds (tile seamlessly) ---------- */
+const TATAMI_MM = 900, PAPER_MM = 640
+
+/**
+ * One tatami mat's width (900 mm, heri to heri) by 900 mm of its 1.8 m length, 1024 px square: igusa rushes run across
+ * the mat (along u), ~3.3 mm each, straw-green to gold, pinched by the warp threads every ~18 mm; dark cloth heri on
+ * both long edges. Returns colour + height (bump) canvases.
+ */
+function tatamiMaps() {
+  const S = 1024, px = S / TATAMI_MM, r = rng(31), col = mkCanvas(S, S), hgt = mkCanvas(S, S)
+  const ci = col.getContext('2d')!.createImageData(S, S), hi = hgt.getContext('2d')!.createImageData(S, S)
+  // rush boundaries along v, summing exactly to S so the texture tiles
+  const n = Math.round(TATAMI_MM / 3.3), w = Array.from({ length: n }, () => 0.8 + 0.4 * r()), sum = w.reduce((a, b) => a + b)
+  const rows: { y0: number; h: number; c: number[]; ph: number; amp: number; k: number }[] = []
+  const green = [170, 168, 108], gold = [205, 186, 122]
+  let acc = 0
+  for (const wi of w) {
+    const t = 0.3 + 0.4 * r(), l = 0.97 + 0.06 * r()
+    rows.push({ y0: acc, h: (wi / sum) * S, c: green.map((g, i) => (g + (gold[i] - g) * t) * l), ph: r() * 6.283, amp: 0.015 + 0.03 * r(), k: 1 + Math.floor(r() * 4) })
+    acc += (wi / sum) * S
+  }
+  const heri = 22 * px, warp = S / Math.round(TATAMI_MM / 18)
+  let ri = 0
+  for (let y = 0; y < S; y++) {
+    while (ri < rows.length - 1 && y + 0.5 >= rows[ri].y0 + rows[ri].h) ri++
+    const R = rows[ri], t = (y + 0.5 - R.y0) / R.h, prof = Math.pow(Math.sin(Math.PI * Math.min(1, Math.max(0, t))), 0.5)
+    for (let x = 0; x < S; x++) {
+      const o = (y * S + x) * 4
+      let c: number[], h: number
+      if (x < heri || x >= S - heri) { // heri: dark woven cloth, a fine twill, a pale stitch line at its inner edge
+        const tw = ((x + y) % 4 < 2 ? 1 : 0.9) * (0.96 + 0.04 * Math.sin(y * 0.9))
+        const edge = Math.abs(x < heri ? x - heri : x - (S - heri)) < 1.2
+        c = edge ? [92, 84, 70] : [40 * tw, 36 * tw, 33 * tw]; h = 0.55 + 0.05 * tw
+      } else {
+        const wp = (x % warp) / warp, pinch = Math.exp(-(((wp - 0.5) * 14) ** 2)) // warp thread under the rush
+        const along = 1 + R.amp * Math.sin((x / S) * 6.283 * R.k + R.ph) // tiles: whole cycles across S
+        const v = (0.86 + 0.14 * prof) * along * (1 - 0.04 * pinch)
+        c = R.c.map(ch => ch * v); h = prof * (1 - 0.15 * pinch)
+      }
+      ci.data[o] = c[0]; ci.data[o + 1] = c[1]; ci.data[o + 2] = c[2]; ci.data[o + 3] = 255
+      hi.data[o] = hi.data[o + 1] = hi.data[o + 2] = h * 255; hi.data[o + 3] = 255
+    }
+  }
+  col.getContext('2d')!.putImageData(ci, 0, 0); hgt.getContext('2d')!.putImageData(hi, 0, 0)
+  return [col, hgt]
+}
+
+/** Warm off-white washi: soft mottling and faint long kozo fibres, drawn wrapped so it tiles (PAPER_MM square). */
+function paperMap() {
+  const S = 1024, r = rng(57), cv = mkCanvas(S, S), x = cv.getContext('2d')!
+  x.fillStyle = 'rgb(242,237,227)'; x.fillRect(0, 0, S, S)
+  const wrapped = (draw: (ox: number, oy: number) => void) => { for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) draw(ox, oy) }
+  for (let k = 0; k < 40; k++) { // clouds of denser and thinner pulp
+    const cx = r() * S, cy = r() * S, rad = 60 + r() * 180, dark = r() < 0.5
+    wrapped((ox, oy) => {
+      const g = x.createRadialGradient(cx + ox, cy + oy, 0, cx + ox, cy + oy, rad)
+      g.addColorStop(0, dark ? 'rgba(170,150,120,0.05)' : 'rgba(255,253,248,0.07)'); g.addColorStop(1, 'rgba(0,0,0,0)')
+      x.fillStyle = g; x.fillRect(cx + ox - rad, cy + oy - rad, 2 * rad, 2 * rad)
+    })
+  }
+  x.lineCap = 'round'
+  for (let k = 0; k < 1400; k++) { // fibres: long, thin, gently curved
+    const x0 = r() * S, y0 = r() * S, a = r() * Math.PI * 2, len = 20 + r() * 90, bend = (r() - 0.5) * len * 0.6
+    const x1 = x0 + Math.cos(a) * len, y1 = y0 + Math.sin(a) * len, mx = (x0 + x1) / 2 - Math.sin(a) * bend, my = (y0 + y1) / 2 + Math.cos(a) * bend
+    x.strokeStyle = r() < 0.6 ? `rgba(255,252,244,${0.18 + r() * 0.2})` : `rgba(150,128,96,${0.05 + r() * 0.07})`
+    x.lineWidth = 0.6 + r() * 1.1
+    wrapped((ox, oy) => { x.beginPath(); x.moveTo(x0 + ox, y0 + oy); x.quadraticCurveTo(mx + ox, my + oy, x1 + ox, y1 + oy); x.stroke() })
+  }
+  return cv
+}
+
 export class Board3D {
   /** WebGL2 without a major performance caveat (software rendering counts as unsupported). */
   static supported(): boolean {
@@ -206,6 +278,8 @@ export class Board3D {
   private persp = new THREE.PerspectiveCamera(28, 1, 10, 5000)
   private key = new THREE.DirectionalLight(0xffffff, 3)
   private spot = new THREE.SpotLight(0xffe2b8, 0, 0, Math.atan(430 / 1500), 0, 0)
+  /** Lanterne: a warm lamp hanging over the board, soft-edged, pooling on the board and bowls. */
+  private lamp = new THREE.SpotLight(0xffffff, 0, 0, 0.62, 0.95, 2)
   private hc = { value: 0 }
   private slate = slateMaterial()
   private shell = shellMaterial(this.hc)
@@ -241,13 +315,30 @@ export class Board3D {
   private owCanvas = mkCanvas(512, 512)
   private owTex = new THREE.CanvasTexture(this.owCanvas)
   private maps: { diff: THREE.Texture; nor: THREE.Texture; rough: THREE.Texture } | null = null
+  private base: string
+  /** Décor resources, built on demand; a décor switch frees the GPU side of what the new one doesn't use. */
+  private grounds: Partial<Record<Ground, { map: THREE.Texture; bump?: THREE.Texture }>> = {}
+  private envs = new Map<string, Promise<THREE.WebGLRenderTarget>>() // dispose the target: its texture alone won't free it
+  private decorOn: Decor | null = null
+  private decorJob = 0
+  /** Crossfade: the previous frame, drawn over the new one with a fading constant alpha. */
+  private fade: { tex: THREE.FramebufferTexture; t0: number; ms: number } | null = null
+  private fadeMat = new THREE.ShaderMaterial({
+    uniforms: { map: { value: null } }, depthTest: false, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.ConstantAlphaFactor, blendDst: THREE.OneMinusConstantAlphaFactor,
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: 'uniform sampler2D map; varying vec2 vUv; void main() { gl_FragColor = texture2D(map, vUv); }', // raw bytes: no colour management
+  })
+  private fadeScene = new THREE.Scene().add(Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.fadeMat), { frustumCulled: false }))
+  private holding = false // compiling the next look's shaders: the canvas keeps showing the last frame
 
   private state: Board3DState | null = null
   private N = 0
   private coords = false
   private D = dims(19, false)
   private stones = new Map<number, Stone>()
-  private leaving: Leaving[] = []
+  /** A move whose update() came before its drop(): its captures, so the drop can hold them until it lands. */
+  private recent: { p: number; c: Sign; list: Stone[]; at: number } | null = null
   private pendingDrop: { p: number; c: Sign; at: number } | null = null
   private moveNo = 0
   private capCount = { 1: 0, [-1]: 0 } as Record<number, number> // internal count when the app doesn't pass captures
@@ -255,10 +346,9 @@ export class Board3D {
   private own: number[] | null = null
   private hover: Vertex | null = null
 
-  private opts: Board3DOptions = { camera: 'study', time: 'afternoon', highContrast: false }
-  private camE = 0; private camFrom = 0; private camTo = 0; private camT0 = -1e9
-  private par = { x: 0, y: 0, tx: 0, ty: 0 }
-  private todFrom: Tod = TOD.afternoon; private todTo: Tod = TOD.afternoon; private todT0 = -1e9; private tod: Tod = { ...TOD.afternoon }
+  private opts: Board3DOptions = { camera: 'study', time: 'afternoon', highContrast: false, decor: 'atelier' }
+  private camE = 0 // 0 Study, 1 Contemplation
+  private tod: Tod = { ...TOD.afternoon }
   private ombreK = 0; private ombreFrom = 0; private ombreOn = false; private ombreT0 = -1e9
   private hcK = 0
   private noGrid = false // measurements only: the ink lines would pass for stone edges
@@ -271,6 +361,8 @@ export class Board3D {
   private ladder = qualityLadder(window.devicePixelRatio || 1)
   private governor = new Governor(this.ladder.length)
   private q: Quality = this.ladder[0]
+  private pendingQ = false // the governor stepped down: applied at the next scene change, never on a still board
+  private resizeTimer = 0
   private sound: StoneSound
   private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
   private autoTimer = 0
@@ -281,7 +373,7 @@ export class Board3D {
 
   constructor(private canvas: HTMLCanvasElement, private onPlay: (v: Vertex) => boolean, init: Board3DInit = {}) {
     this.onFallback = init.onFallback ?? (() => {})
-    const base = init.assetBase ?? `${import.meta.env.BASE_URL}assets/board3d/`
+    const base = this.base = init.assetBase ?? `${import.meta.env.BASE_URL}assets/board3d/`
     this.sound = new StoneSound(base)
     Object.assign(this.opts, init.options)
     try {
@@ -296,17 +388,19 @@ export class Board3D {
     canvas.style.transition = this.reducedMotion.matches ? '' : 'opacity .6s ease'
     this.setup()
     this.bind()
-    this.applyOptions(true)
+    this.applyOptions()
     void this.boot(base)
   }
 
   /* ---------- public API ---------- */
 
-  /** Camera, light and contrast. Animated unless reduced motion is requested. */
+  /** Camera, light, contrast and décor. Nothing travels: view, light and décor changes crossfade (instant under reduced motion). */
   setOptions(o: Partial<Board3DOptions>) {
     const prev = { ...this.opts }
     Object.assign(this.opts, o)
-    if (prev.camera !== this.opts.camera || prev.time !== this.opts.time || prev.highContrast !== this.opts.highContrast) this.applyOptions(false)
+    if (prev.camera !== this.opts.camera || prev.time !== this.opts.time) void this.transition(() => this.applyOptions())
+    else if (prev.highContrast !== this.opts.highContrast) this.applyOptions()
+    if (prev.decor !== this.opts.decor) void this.switchDecor()
   }
   get options(): Readonly<Board3DOptions> { return this.opts }
 
@@ -319,12 +413,12 @@ export class Board3D {
     this.hover = null
     const N = this.N, p = v[1] * N + v[0], s = this.stones.get(p)
     const now = performance.now()
-    if (s && s.c === c && s.landed && now - s.t0 > 400) { // update() came first: take back the captures it just started removing
-      const back = this.leaving.filter(l => l.owner === c && l.t0 >= now - 60)
-      this.leaving = this.leaving.filter(l => !back.includes(l))
+    if (s && s.c === c && s.landed && now - s.t0 > 400) { // update() came first: put back the captures it just removed
+      const R = this.recent, back = R && R.p === p && R.c === c && now - R.at < 60 ? R.list : []
+      this.recent = null
       if (!this.state?.captures) this.capCount[c] -= back.length
-      s.captured = back.map(l => l.s)
-      for (const r of s.captured) this.stones.set(-1 - r.p, r)
+      s.captured = back
+      for (const r of back) this.stones.set(-1 - r.p, r)
       this.animateDrop(s, now)
     } else this.pendingDrop = { p, c, at: now }
     this.invalidate()
@@ -338,7 +432,7 @@ export class Board3D {
     if (N !== this.N || state.coords !== this.coords) {
       const sizeChanged = N !== this.N
       this.N = N; this.coords = state.coords; this.D = dims(N, state.coords)
-      if (sizeChanged) { this.stones.clear(); this.leaving = []; this.capCount = { 1: 0, [-1]: 0 } }
+      if (sizeChanged) { this.stones.clear(); this.capCount = { 1: 0, [-1]: 0 } }
       this.buildBoard()
     }
     this.state = state
@@ -361,13 +455,17 @@ export class Board3D {
     this.canvas.style.width = `${W}px`; this.canvas.style.height = `${H}px`
     this.renderer.setSize(W, H, false)
     this.composer.setSize(W, H)
+    this.endFade()
     if (this.ready) this.frame(performance.now()) // synchronous: no blank frame while the window is being dragged
+    // quality is re-decided once the size settles (steps down only)
+    clearTimeout(this.resizeTimer)
+    this.resizeTimer = window.setTimeout(() => { if (this.ready && !this.dead) { this.applyPendingQuality(); this.warmUp(); this.invalidate() } }, 300)
   }
 
   destroy() {
     this.dead = true
     cancelAnimationFrame(this.raf)
-    clearInterval(this.autoTimer)
+    clearInterval(this.autoTimer); clearTimeout(this.resizeTimer)
     this.cleanup()
     this.sound.destroy()
     if (!this.renderer) return
@@ -377,9 +475,11 @@ export class Board3D {
       for (const mat of ([] as THREE.Material[]).concat(m.material ?? [])) mat.dispose()
     })
     for (const t of Object.values(this.maps ?? {})) t.dispose()
-    this.tableMat.map?.dispose(); this.tableMat.alphaMap?.dispose()
+    for (const g of Object.values(this.grounds)) { g.map.dispose(); g.bump?.dispose() }
+    this.tableMat.alphaMap?.dispose()
     this.owTex.dispose()
-    ;(this.scene.environment as THREE.Texture | null)?.dispose()
+    for (const e of this.envs.values()) void e.then(t => t.dispose(), () => {})
+    this.endFade(); this.fadeMat.dispose(); (this.fadeScene.children[0] as THREE.Mesh).geometry.dispose()
     this.composer.dispose()
     this.renderer.dispose()
   }
@@ -490,12 +590,17 @@ export class Board3D {
     // the cookie only applies inside the light's projection depth range (default far = 500 would miss the board)
     this.spot.shadow.camera.near = 1000; this.spot.shadow.camera.far = 2200
     scene.add(this.spot, this.spot.target)
+    // Lanterne's lamp (only in the scene's lights while that décor is on: no cost elsewhere)
+    this.lamp.visible = false
+    this.lamp.shadow.mapSize.set(this.q.shadow, this.q.shadow)
+    this.lamp.shadow.bias = -0.0004; this.lamp.shadow.normalBias = 0.25
+    this.lamp.shadow.camera.near = 500; this.lamp.shadow.camera.far = 2600
+    scene.add(this.lamp, this.lamp.target)
   }
 
   private bind() {
     const c = this.canvas
     const move = (e: PointerEvent) => {
-      this.par.tx = (e.offsetX / this.W) * 2 - 1; this.par.ty = (e.offsetY / this.H) * 2 - 1
       const v = this.pick(e), s = this.state
       if (s?.counting) { // only stones are clickable while counting; no ghost stone
         c.style.cursor = v && s.interactive && s.signMap[v[1]][v[0]] ? 'pointer' : 'default'
@@ -504,7 +609,6 @@ export class Board3D {
       }
       const nh = v && s?.interactive && !s.signMap[v[1]][v[0]] ? v : null
       c.style.cursor = nh ? 'pointer' : 'default'
-      if (this.camE > 0 && !this.instant()) this.invalidate() // parallax
       if (nh?.[0] === this.hover?.[0] && nh?.[1] === this.hover?.[1]) return
       this.hover = nh; this.invalidate()
     }
@@ -548,10 +652,10 @@ export class Board3D {
 
   private async boot(base: string) {
     try {
-      const tl = new THREE.TextureLoader()
-      const [diff, nor, rough, hdr] = await Promise.all([
+      const tl = new THREE.TextureLoader(), decor = this.opts.decor
+      const [diff, nor, rough, env] = await Promise.all([
         tl.loadAsync(`${base}kaya_diff.jpg`), tl.loadAsync(`${base}kaya_nor.jpg`), tl.loadAsync(`${base}kaya_rough.jpg`),
-        new HDRLoader().loadAsync(`${base}studio_country_hall_1k.hdr`),
+        this.envFor(LOOKS[decor].sky).then(t => t.texture),
       ])
       if (this.dead) return
       diff.colorSpace = THREE.SRGBColorSpace
@@ -560,24 +664,21 @@ export class Board3D {
       this.maps = { diff, nor, rough }
       Object.assign(this.boardMat, { map: diff, normalMap: nor, roughnessMap: rough }); this.boardMat.needsUpdate = true
       this.bowlMat.map = diff; this.bowlMat.needsUpdate = true
-      const tab = diff.clone() // same image, tiled across the table, grain running side to side
-      tab.wrapS = tab.wrapT = THREE.RepeatWrapping; tab.repeat.set(3200 / 502, 3200 / 424); tab.rotation = Math.PI / 2
-      this.tableMat.map = tab; this.tableMat.needsUpdate = true
-      hdr.mapping = THREE.EquirectangularReflectionMapping
-      const pmrem = new THREE.PMREMGenerator(this.renderer)
-      this.scene.environment = pmrem.fromEquirectangular(hdr).texture
-      hdr.dispose(); pmrem.dispose()
       if (!this.N) { this.N = 19; this.D = dims(19, false); this.buildBoard() }
+      this.applyDecor(decor, env)
       this.updateScene(performance.now())
       // hide the first-frame shader compile: compile both cameras for the off-screen target, then fade in
       this.renderer.setRenderTarget(this.composer.renderTarget1)
+      this.decor.visible = true
       await this.renderer.compileAsync(this.scene, this.ortho)
       await this.renderer.compileAsync(this.scene, this.persp)
       this.renderer.setRenderTarget(null)
       if (this.dead) return
+      this.warmUp() // still invisible: quality is decided here, once
       this.ready = true
       this.frame(performance.now())
       requestAnimationFrame(() => { this.canvas.style.opacity = '1' })
+      if (this.opts.decor !== decor) void this.switchDecor()
     } catch (e) {
       console.error('Board3D: failed to start', e)
       this.fallback('webgl2')
@@ -592,23 +693,159 @@ export class Board3D {
 
   private instant() { return this.reducedMotion.matches }
 
-  private applyOptions(first: boolean) {
-    const now = performance.now(), inst = first || this.instant()
-    const to = this.opts.camera === 'contemplation' ? 1 : 0
-    if (to !== this.camTo) { this.camFrom = this.camE; this.camTo = to; this.camT0 = inst ? -1e9 : now; this.hover = null }
+  private todNow(): Tod {
+    const d = new Date()
+    return this.opts.time === 'auto' ? todAt(d.getHours() + d.getMinutes() / 60) : TOD[this.opts.time]
+  }
+
+  private applyOptions() {
+    const cam = this.opts.camera === 'contemplation' ? 1 : 0
+    if (cam !== this.camE) { this.camE = cam; this.hover = null }
+    this.tod = this.todNow()
     clearInterval(this.autoTimer)
-    const target = () => this.opts.time === 'auto' ? todAt(new Date().getHours() + new Date().getMinutes() / 60) : TOD[this.opts.time]
-    this.todFrom = { ...this.tod }; this.todTo = target(); this.todT0 = inst ? -1e9 : now
-    if (this.opts.time === 'auto') this.autoTimer = window.setInterval(() => { this.todFrom = { ...this.tod }; this.todTo = target(); this.todT0 = this.instant() ? -1e9 : performance.now(); this.invalidate() }, 60_000)
+    // "Auto" follows the clock in steps too small to see (a fraction of a degree, a few kelvin), applied at once
+    if (this.opts.time === 'auto') this.autoTimer = window.setInterval(() => { this.tod = this.todNow(); this.invalidate() }, AUTO_MS)
     this.hcK = this.opts.highContrast ? 1 : 0
     this.invalidate()
+  }
+
+  /**
+   * Swaps the look under a crossfade: the current frame is kept, the change applied, its shaders compiled while the canvas
+   * still shows the old frame, then the old frame fades out over the new one. Instant under reduced motion or before boot.
+   */
+  private async transition(change: () => void, ms = FADE_MS) {
+    if (!this.ready || this.dead) { change(); return }
+    const snap = this.instant() ? null : this.snapshot()
+    change()
+    this.applyPendingQuality() // a step down the governor asked for lands under the fade, never on a still board
+    this.holding = true
+    const vis = this.decor.visible
+    this.decor.visible = true
+    try { await this.renderer.compileAsync(this.scene, this.camE ? this.persp : this.ortho) } finally { this.decor.visible = vis; this.holding = false }
+    if (this.dead) { snap?.dispose(); return }
+    this.endFade()
+    if (snap) this.fade = { tex: snap, t0: performance.now(), ms }
+    this.invalidate()
+  }
+
+  /** The current look, rendered now and copied off the canvas. */
+  private snapshot() {
+    const r = this.renderer, size = r.getDrawingBufferSize(new THREE.Vector2()), tex = new THREE.FramebufferTexture(size.x, size.y)
+    this.updateScene(performance.now()); this.render(); this.drawFade(performance.now())
+    r.setRenderTarget(null)
+    r.copyFramebufferToTexture(tex)
+    return tex
+  }
+
+  private endFade() { this.fade?.tex.dispose(); this.fade = null }
+
+  /** Draws the fading previous frame over the canvas; false once it has gone. */
+  private drawFade(now: number) {
+    const f = this.fade
+    if (!f) return false
+    const t = (now - f.t0) / f.ms
+    if (t >= 1) { this.endFade(); return false }
+    const r = this.renderer
+    this.fadeMat.uniforms.map.value = f.tex; this.fadeMat.blendAlpha = 1 - t * t * (3 - 2 * t)
+    r.setRenderTarget(null); r.autoClear = false
+    r.render(this.fadeScene, this.ortho)
+    r.autoClear = true
+    return true
+  }
+
+  private async switchDecor() {
+    if (!this.ready) return // boot picks up opts.decor
+    const job = ++this.decorJob, d = this.opts.decor
+    const env = (await this.envFor(LOOKS[d].sky)).texture
+    if (job !== this.decorJob || this.dead || d === this.decorOn) return
+    await this.transition(() => this.applyDecor(d, env))
+  }
+
+  /** PMREM environment for an HDRI (or three's RoomEnvironment), cached until a décor switch drops it. */
+  private envFor(sky: string | null) {
+    const k = sky ?? 'room'
+    let e = this.envs.get(k)
+    if (!e) {
+      e = (async () => {
+        const pm = new THREE.PMREMGenerator(this.renderer)
+        try {
+          if (!sky) { const room = new RoomEnvironment(), t = pm.fromScene(room, 0.04); room.dispose(); return t }
+          const hdr = await new HDRLoader().loadAsync(`${this.base}${sky}_1k.hdr`)
+          hdr.mapping = THREE.EquirectangularReflectionMapping
+          const t = pm.fromEquirectangular(hdr)
+          hdr.dispose()
+          return t
+        } finally { pm.dispose() }
+      })()
+      e.catch(() => this.envs.delete(k))
+      this.envs.set(k, e)
+    }
+    return e
+  }
+
+  /** Ground maps, built on first use; after dispose() three re-uploads them from their canvas/image when needed again. */
+  private groundMaps(g: Ground) {
+    let m = this.grounds[g]
+    if (m) return m
+    const plane = 3200, tile = (t: THREE.Texture, mm: number, srgb = true) => {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(plane / mm, plane / mm)
+      t.offset.x = 0.5 - ((0.5 * plane / mm) % 1) // a mat (or tile) centred under the board
+      t.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace
+      return t
+    }
+    if (g === 'walnut') { // the board's own scan, tiled across the table, grain running side to side
+      const t = this.maps!.diff.clone()
+      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(plane / 502, plane / 424); t.rotation = Math.PI / 2
+      m = { map: t }
+    } else if (g === 'tatami') {
+      const [c, h] = tatamiMaps()
+      m = { map: tile(new THREE.CanvasTexture(c), TATAMI_MM), bump: tile(new THREE.CanvasTexture(h), TATAMI_MM, false) }
+    } else m = { map: tile(new THREE.CanvasTexture(paperMap()), PAPER_MM) }
+    return (this.grounds[g] = m)
+  }
+
+  private applyDecor(d: Decor, env: THREE.Texture) {
+    const L = LOOKS[d], g = this.groundMaps(L.ground)
+    this.decorOn = d
+    this.scene.environment = env
+    Object.assign(this.tableMat, { map: g.map, bumpMap: g.bump ?? null, bumpScale: 0.8, roughness: L.rough }); this.tableMat.needsUpdate = true
+    const lamp = L.lamp > 0
+    if (this.key.castShadow === lamp) { this.key.castShadow = !lamp; this.key.shadow.map?.dispose(); this.key.shadow.map = null }
+    if (this.lamp.castShadow !== lamp) { this.lamp.castShadow = this.lamp.visible = lamp; this.lamp.shadow.map?.dispose(); this.lamp.shadow.map = null }
+    // free what the previous décor held on the GPU
+    for (const [k, m] of Object.entries(this.grounds)) if (k !== L.ground) { m.map.dispose(); m.bump?.dispose() }
+    const keep = L.sky ?? 'room'
+    for (const [k, e] of this.envs) if (k !== keep) { this.envs.delete(k); void e.then(t => t.dispose(), () => {}) }
+    this.invalidate()
+  }
+
+  /** Forced full renders, GPU-synchronised by a 1-pixel read-back: ms per frame. */
+  private benchMs(n: number) {
+    const gl = this.renderer.getContext(), px = new Uint8Array(4)
+    this.render(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+    const t0 = performance.now()
+    for (let k = 0; k < n; k++) { this.render(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px) }
+    return (performance.now() - t0) / n
+  }
+
+  /** Startup and after a resize: measure, step down while over budget. Never steps up. */
+  private warmUp() {
+    this.updateScene(performance.now())
+    while (this.governor.measured(this.benchMs(8))) this.applyQuality(this.ladder[this.governor.level])
+  }
+
+  private applyPendingQuality() {
+    if (!this.pendingQ) return
+    this.pendingQ = false
+    this.applyQuality(this.ladder[this.governor.level])
   }
 
   private applyQuality(q: Quality) {
     const prev = this.q
     this.q = q
-    if (q.dpr !== prev.dpr) { this.renderer.setPixelRatio(q.dpr); this.composer.setPixelRatio(q.dpr) }
-    if (q.shadow !== prev.shadow) { this.key.shadow.mapSize.set(q.shadow, q.shadow); this.key.shadow.map?.dispose(); this.key.shadow.map = null }
+    if (q.dpr !== prev.dpr) { this.renderer.setPixelRatio(q.dpr); this.composer.setPixelRatio(q.dpr); this.endFade() }
+    if (q.shadow !== prev.shadow) for (const l of [this.key, this.lamp]) { l.shadow.mapSize.set(q.shadow, q.shadow); l.shadow.map?.dispose(); l.shadow.map = null }
     if (q.msaa !== prev.msaa) for (const rt of [this.composer.renderTarget1, this.composer.renderTarget2]) { rt.samples = q.msaa; rt.dispose() }
     if (q.bowlSegments !== prev.bowlSegments && this.N) this.buildBowls()
     this.invalidate()
@@ -617,6 +854,7 @@ export class Board3D {
   /* ---------- board, labels, bowls ---------- */
 
   private buildBoard() {
+    this.applyPendingQuality() // a new board is a scene change
     const { BW, BD, N } = this.D
     if (this.board) { this.scene.remove(this.board); this.board.geometry.dispose() }
     const geo = new RoundedBoxGeometry(BW, BT, BD, 4, 2.2)
@@ -703,16 +941,9 @@ export class Board3D {
     this.decorKey = ''
   }
 
-  /** Where the k-th prisoner rests on a lid (past 60 they pile on the last spots). */
-  private lidSpot(owner: Sign, k: number, out = new THREE.Vector3()) {
-    const S = this.sets.find(s => s.c === owner)!, L = S.lidRest, p = L[Math.min(k, L.length - 1)]
-    return out.set(S.lid[0] + p.x, -BT + p.y + Math.max(0, k - L.length + 1) * 2 * SH, S.lid[1] + p.z)
-  }
-
   private prisoners(owner: Sign) {
     const c = this.state?.captures
     let n = c ? (owner === 1 ? c.black : c.white) : this.capCount[owner]
-    n -= this.leaving.filter(l => l.fly && l.owner === owner).length
     // the app's count already includes stones still waiting under a falling stone
     if (c) for (const s of this.stones.values()) if (!s.landed && s.c === owner) n -= s.captured.length
     return Math.max(0, n)
@@ -746,11 +977,14 @@ export class Board3D {
 
   private mkStone(p: number, c: Sign): Stone {
     const N = this.N, x = p % N, y = (p / N) | 0, j = jitter(N, x, y, ++this.moveNo)
-    return { p, x, y, c, R: c === 1 ? RB : RW, ...j, tx: j.jx, tz: j.jz, px: j.jx, pz: j.jz, fx: j.jx, fz: j.jz, mt0: -1e9, push: null, t0: -1e9, landed: true, captured: [] }
+    const s: Stone = { p, x, y, c, R: c === 1 ? RB : RW, jx: j.jx, jz: j.jz, tx: j.jx, tz: j.jz, seed: j.seed, rotY: j.rotY, t0: -1e9, landed: true, captured: [] }
+    this.stones.set(p, s)
+    fit(s, this.stones, N) // around the stones already down, which never move
+    return s
   }
 
   private animateDrop(s: Stone, now: number) {
-    if (this.instant()) { this.contact(s, now, false); return }
+    if (this.instant()) { this.contact(s); return }
     s.t0 = now; s.landed = false
   }
 
@@ -758,74 +992,55 @@ export class Board3D {
   private reconcile(state: Board3DState) {
     const N = this.N, now = performance.now(), added: Stone[] = [], removed: Stone[] = []
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      const p = y * N + x, c = state.signMap[y][x], cur = this.stones.get(p)
-      if (cur && cur.c !== c) { this.stones.delete(p); removed.push(cur) }
-      if (c && (!cur || cur.c !== c)) { const s = this.mkStone(p, c); this.stones.set(p, s); added.push(s) }
+      const p = y * N + x, cur = this.stones.get(p)
+      if (cur && cur.c !== state.signMap[y][x]) { this.stones.delete(p); removed.push(cur) }
+    }
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const p = y * N + x, c = state.signMap[y][x]
+      if (c && !this.stones.has(p)) added.push(this.mkStone(p, c))
     }
     if (!added.length && !removed.length) return
     const pd = this.pendingDrop && now - this.pendingDrop.at < 1500 ? this.pendingDrop : null
     const move = added.length === 1 && removed.every(r => r.c === -added[0].c) ? added[0] : null
     if (move && pd && pd.p === move.p && pd.c === move.c) {
       this.pendingDrop = null
-      // the newcomer starts at its jittered spot; the others keep where they are until contact relaxes them
-      relax(this.stones, N); for (const s of this.stones.values()) if (s !== move) { s.tx = s.px; s.tz = s.pz }
-      move.px = move.fx = move.tx = move.jx; move.pz = move.fz = move.tz = move.jz
       move.captured = removed
       for (const r of removed) this.stones.set(-1 - r.p, r) // still on the board until the new stone lands
       this.animateDrop(move, now)
       return
     }
-    // navigation, undo, setup, or a move whose drop() comes later: settle instantly (an interrupted drop lands now)
+    // navigation, undo, setup, or a move whose drop() comes later: settle at once (an interrupted drop lands now)
     for (const [k, s] of this.stones) if (k < 0) this.stones.delete(k); else if (!s.landed) { s.landed = true; s.captured = [] }
-    if (move && removed.length) this.leave(removed, move.c, now, true)
-    relax(this.stones, N)
-    for (const s of this.stones.values()) { s.px = s.fx = s.tx; s.pz = s.fz = s.tz }
+    this.recent = move ? { p: move.p, c: move.c, list: removed, at: now } : null
+    if (move && removed.length && !this.state?.captures) this.capCount[move.c] += removed.length
     if (state.signMap.every(r => r.every(c => !c))) this.capCount = { 1: 0, [-1]: 0 }
   }
 
-  private leave(list: Stone[], owner: Sign, now: number, count: boolean) {
-    if (count && !this.state?.captures) this.capCount[owner] += list.length
-    if (this.instant() || !list.length) return
-    const fly = this.camTo === 1, mine = list.map((s, k): Leaving => ({ s, t0: now + k * 45, fly, owner }))
-    this.leaving.push(...mine)
-    if (fly) { const base = this.prisoners(owner); mine.forEach((l, k) => { l.to = this.lidSpot(owner, base + k) }) }
-  }
-
-  private contact(s: Stone, now: number, animated: boolean) {
+  /** The stone touches the board: its captures vanish (onto the capturer's lid in Contemplation), with sound. */
+  private contact(s: Stone) {
     s.landed = true
     const caps = s.captured
     s.captured = []
     for (const r of caps) this.stones.delete(-1 - r.p)
-    this.leave(caps, s.c, now, true)
-    for (const o of this.stones.values()) { o.fx = o.px; o.fz = o.pz }
-    relax(this.stones, this.N)
-    for (const o of this.stones.values()) {
-      if (!animated) { o.px = o.fx = o.tx; o.pz = o.fz = o.tz; continue }
-      if (o === s) continue
-      const vx = o.px - s.px, vz = o.pz - s.pz, d = Math.hypot(vx, vz) || 1
-      o.mt0 = now; o.push = d < 36 ? [vx / d * 0.5, vz / d * 0.5] : null // ~0.5 mm nudge for touching neighbours
-    }
+    if (caps.length && !this.state?.captures) this.capCount[s.c] += caps.length
     if (this.state?.sound) {
       this.sound.stone(this.N, s.x)
-      // stones reach the lid at the end of their flight; in Study they just leave
-      if (caps.length) this.sound.capture(caps.length, this.N, s.c === 1 ? this.N - 1 : 0, this.camTo === 1 && animated ? FLY_MS / 1000 * 0.85 : 0.09)
+      if (caps.length) this.sound.capture(caps.length, this.N, s.c === 1 ? this.N - 1 : 0, 0.09)
     }
   }
 
   private aoOff = new THREE.Vector2() // contact shadow leans away from the window
-  private _m = new THREE.Matrix4(); private _q = new THREE.Quaternion(); private _q2 = new THREE.Quaternion()
-  private _v = new THREE.Vector3(); private _s = new THREE.Vector3(1, 1, 1); private _ax = new THREE.Vector3()
+  private _m = new THREE.Matrix4(); private _q = new THREE.Quaternion()
+  private _v = new THREE.Vector3(); private _s = new THREE.Vector3(1, 1, 1)
 
   private updateStones(now: number): boolean {
     let busy = false, nb = 0, nw = 0, db = 0, dw = 0, na = 0
     const s0 = this.state, N = this.N, own = this.own, counting = s0?.counting, last = s0?.last
     const lastP = last ? last[1] * N + last[0] : -1
     this.markers[1].visible = this.markers[-1].visible = false
-    const put = (s: Stone, x: number, y: number, z: number, tilt: number, scale: number, aoA: number, aoS: number, dim: boolean) => {
-      const { _m, _q, _q2, _v, _s, _ax } = this
-      _q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, s.rotY)
-      if (tilt) { _ax.set(Math.cos(s.wobAxis), 0, Math.sin(s.wobAxis)); _q2.setFromAxisAngle(_ax, tilt); _q.premultiply(_q2) }
-      _m.compose(_v.set(x, SH + y, z), _q, _s.setScalar(scale))
+    const put = (s: Stone, y: number, aoA: number, aoS: number, dim: boolean) => {
+      const { _m, _q, _v, _s } = this
+      _m.compose(_v.set(s.tx, SH + y, s.tz), _q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, s.rotY), _s.setScalar(1))
       const L = dim ? (s.c === 1 ? this.dimB : this.dimW) : s.c === 1 ? this.layerB : this.layerW
       const i = dim ? (s.c === 1 ? db++ : dw++) : s.c === 1 ? nb++ : nw++
       if (i >= 400) return
@@ -834,46 +1049,21 @@ export class Board3D {
         const mk = this.markers[s.c as 1 | -1]; mk.matrix.copy(_m); mk.visible = true
       }
       if (aoA > 0 && na < 420) {
-        _m.compose(_v.set(x + this.aoOff.x, 0, z + this.aoOff.y), _q.identity(), _s.set(s.R * 2 * AO_K * aoS, 1, s.R * 2 * AO_K * aoS))
+        _m.compose(_v.set(s.tx + this.aoOff.x, 0, s.tz + this.aoOff.y), _q.identity(), _s.set(s.R * 2 * AO_K * aoS, 1, s.R * 2 * AO_K * aoS))
         this.ao.setMatrixAt(na, _m); this.ao.instanceColor!.setXYZ(na++, aoA, aoA, aoA)
       }
     }
     for (const s of this.stones.values()) {
-      let y = 0, tilt = 0
-      if (!s.landed) {
+      let y = 0, k = 1
+      if (!s.landed) { // the only motion: the new stone's last 12 mm, its shadow tightening as it comes down
         const t = (now - s.t0) / DROP_MS
-        if (t >= 1) this.contact(s, now, true); else { y = 12 * (1 - t * t); busy = true }
+        if (t >= 1) this.contact(s); else { y = 12 * (1 - t * t); k = t * t; busy = true }
       }
-      const tc = now - s.t0 - DROP_MS
-      if (s.landed && tc >= 0 && tc < WOB_MS) { tilt = THREE.MathUtils.degToRad(0.4) * Math.exp(-tc / 90) * Math.sin(tc / 62 * Math.PI * 2); busy = true }
-      const tm = (now - s.mt0) / NUDGE_MS
-      if (tm < 1) {
-        const e = 1 - Math.pow(1 - tm, 3), bump = Math.sin(Math.PI * tm) * (1 - tm)
-        s.px = s.fx + (s.tx - s.fx) * e + (s.push ? s.push[0] * bump : 0)
-        s.pz = s.fz + (s.tz - s.fz) * e + (s.push ? s.push[1] * bump : 0)
-        busy = true
-      } else if (s.landed) { s.px = s.tx; s.pz = s.tz }
-      const k = s.landed ? 1 : Math.min(1, (now - s.t0) / DROP_MS) ** 2 // the shadow tightens as the stone comes down
       let dim = false
       if (s.p >= 0 && counting?.dead[s.y]?.[s.x]) dim = true
       else if (s.p >= 0 && own && Math.sign(own[s.p]) === -s.c && sstep(0.4, 0.9, Math.abs(own[s.p])) > 0.5) dim = true // KataGo expects it captured
-      put(s, s.px, y, s.pz, tilt, 1, dim ? 0.3 : 0.25 + 0.75 * k, 1.45 - 0.45 * k, dim)
+      put(s, y, dim ? 0.3 : 0.25 + 0.75 * k, 1.45 - 0.45 * k, dim)
     }
-    this.leaving = this.leaving.filter(l => {
-      const t = (now - l.t0) / (l.fly ? FLY_MS : DIE_MS)
-      if (t < 0) { put(l.s, l.s.px, 0, l.s.pz, 0, 1, 1, 1, false); busy = true; return true }
-      if (t >= 1) { this.decorKey = ''; return false }
-      busy = true
-      if (l.fly && l.to) { // lifted off the board, carried in an arc to the lid
-        const e = easeIO(t), x = lerp(l.s.px, l.to.x, e), z = lerp(l.s.pz, l.to.z, e)
-        const y = lerp(0, l.to.y - SH, e) + Math.sin(Math.PI * t) * 90
-        put(l.s, x, y, z, Math.sin(Math.PI * t) * 0.5, 1, Math.max(0, 1 - t * 4), 1 + t, false)
-      } else {
-        const e = t * t
-        put(l.s, l.s.px, 7 * e, l.s.pz, 0, 1 - 0.9 * e, 1 - e, 1 + e, false)
-      }
-      return true
-    })
     this.layerB.count = nb; this.layerW.count = nw; this.dimB.count = db; this.dimW.count = dw; this.ao.count = na
     for (const L of [this.layerB, this.layerW, this.dimB, this.dimW]) { L.instanceMatrix.needsUpdate = true; L.geometry.attributes.aSeed.needsUpdate = true }
     this.ao.instanceMatrix.needsUpdate = true; this.ao.instanceColor!.needsUpdate = true
@@ -937,21 +1127,19 @@ export class Board3D {
     return Math.max(BD * 1.22, ((BW + 2 * 190) * 1.04) / aspect)
   }
 
+  /** Both cameras are fixed: they depend only on the board and canvas sizes. */
   private placeCameras() {
-    const e = easeIO(this.camE), hn = lerp(this.frameHeight(0), this.frameHeight(1), e), { W, H } = this
-    const o = this.ortho
-    o.top = hn / 2; o.bottom = -hn / 2; o.left = (-hn / 2) * W / H; o.right = (hn / 2) * W / H; o.updateProjectionMatrix()
-    const p = this.persp, fov = Math.exp(lerp(Math.log(0.8), Math.log(28), e)) // dolly-zoom from near-orthographic
-    const tilt = e * (TILT + this.par.y * 0.035), az = e * this.par.x * 0.05
-    const dist = hn / 2 / Math.tan(THREE.MathUtils.degToRad(fov) / 2)
-    const tgt = this._v.set(0, -6 * e, 14 * e)
+    const { W, H } = this, hs = this.frameHeight(0), o = this.ortho
+    o.top = hs / 2; o.bottom = -hs / 2; o.left = (-hs / 2) * W / H; o.right = (hs / 2) * W / H; o.updateProjectionMatrix()
+    const p = this.persp, hc = this.frameHeight(1), fov = 28, dist = hc / 2 / Math.tan(THREE.MathUtils.degToRad(fov) / 2)
+    const tgt = this._v.set(0, -6, 14)
     p.fov = fov; p.aspect = W / H
-    p.position.set(tgt.x + dist * Math.sin(tilt) * Math.sin(az), tgt.y + dist * Math.cos(tilt), tgt.z + dist * Math.sin(tilt) * Math.cos(az))
+    p.position.set(tgt.x, tgt.y + dist * Math.cos(TILT), tgt.z + dist * Math.sin(TILT))
     p.near = Math.max(5, dist - 1200); p.far = dist + 2500
     p.lookAt(tgt); p.updateProjectionMatrix()
   }
 
-  private activeCam() { return this.camE === 0 && this.camTo === 0 ? this.ortho : this.persp }
+  private activeCam() { return this.camE ? this.persp : this.ortho }
 
   private pick(e: MouseEvent): Vertex | null {
     if (!this.ready || !this.N) return null
@@ -971,49 +1159,45 @@ export class Board3D {
 
   private updateScene(now: number): boolean {
     let busy = false
-    if (this.camE !== this.camTo) {
-      const t = Math.min(1, (now - this.camT0) / CAM_MS)
-      this.camE = this.camFrom + (this.camTo - this.camFrom) * t
-      busy = t < 1
-    }
-    const par = this.par
-    if (this.instant()) { par.x = par.y = 0 } else {
-      const pk = Math.min(1, ((now - (this.lastFrame || now)) / 1000) * 5 + 0.08)
-      par.x += (par.tx - par.x) * pk; par.y += (par.ty - par.y) * pk
-      if (this.camE > 0 && (Math.abs(par.tx - par.x) > 1e-3 || Math.abs(par.ty - par.y) > 1e-3)) busy = true
-    }
     this.placeCameras()
     this.decor.visible = this.camE > 0
     if (this.decor.visible) this.updateDecor()
-    // time of day
-    const tt = Math.min(1, (now - this.todT0) / TOD_MS)
-    this.tod = mixTod(this.todFrom, this.todTo, easeIO(tt))
-    if (tt < 1) busy = true
     // ombre et lumière
     const ot = Math.min(1, (now - this.ombreT0) / OMBRE_MS)
     this.ombreK = lerp(this.ombreFrom, this.ombreOn ? 1 : 0, easeIO(ot))
     if (ot < 1) busy = true
-    const tod = this.tod, ok = this.ombreK, ce = easeIO(this.camE), az = THREE.MathUtils.degToRad(tod.az), el0 = THREE.MathUtils.degToRad(tod.el)
+    const L = LOOKS[this.decorOn ?? this.opts.decor], tod = L.tod ?? this.tod, ok = this.ombreK, ce = this.camE
+    const az = THREE.MathUtils.degToRad(tod.az), el0 = THREE.MathUtils.degToRad(tod.el)
     // Study keeps the hour's colour and direction but never lets the sun rake so low that stones shade their neighbours
     const el = lerp(Math.max(el0, THREE.MathUtils.degToRad(22)), el0, ce), lift = lerp(Math.min(1.15, Math.sin(el0) / Math.sin(el) * 1.25), 1, ce)
     this.key.position.set(Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)).multiplyScalar(1600)
     this.aoOff.set(-Math.cos(az), -Math.sin(az)).multiplyScalar(0.5)
-    this.key.color.copy(kelvin(tod.K)); this.key.intensity = tod.I * lift * lerp(1, 0.2, ok)
-    this.scene.environmentIntensity = lerp(Math.max(tod.env, 0.5), tod.env, ce) * lerp(1, 0.35, ok)
+    this.key.color.copy(kelvin(tod.K)); this.key.intensity = tod.I * lift * L.key * lerp(1, 0.2, ok)
+    if (L.lamp) { // Lanterne: the lamp hangs on the same bearing, closer, its cone pooling over board and bowls
+      this.lamp.position.copy(this.key.position).setLength(1250); this.lamp.color.copy(kelvin(tod.K))
+      this.lamp.intensity = L.lamp * 1e6 * lerp(1, 0.25, ok)
+    }
+    this.scene.environmentIntensity = lerp(Math.max(tod.env, 0.5), tod.env, ce) * L.ibl * lerp(1, 0.35, ok)
     this.scene.environmentRotation.y = tod.rot
-    this.renderer.toneMappingExposure = tod.exp
+    this.renderer.toneMappingExposure = tod.exp * L.exp
     this.spot.intensity = 5.5 * ok; this.spot.color.copy(kelvin(lerp(tod.K, 3600, 0.5)))
     // Study damps reflections for readability; high contrast darkens the wood a little and calms the shell
     const c = ce, hc = this.hcK
     // the room: Study keeps the app's linen; Contemplation clears to a warm dark room, darker in the evening
     // (the clear colour skips tone mapping but is sRGB-encoded twice on its way out: these land near #150d0a in the evening, #32261c by day)
     this.roomColor.setRGB(0.0003 + 0.0022 * tod.room, 0.0002 + 0.0013 * tod.room, 0.00015 + 0.00075 * tod.room)
-    this.renderer.setClearColor(this.roomColor, c)
-    this.tableMat.color.setRGB(0.1, 0.064, 0.048).multiplyScalar(0.45 + 0.55 * tod.room)
-    this.tableMat.opacity = c; this.tableMat.visible = c > 0; this.tableMat.envMapIntensity = 0.2 + 0.4 * tod.room // no bright grazing sheen in the dark
-    this.shadowFloor.opacity = 0.24 * (1 - c); this.shadowFloor.visible = c < 1
+    // other décors draw their ground in Study too (tatami, paper, the lamp-lit table)
+    const linen = L.linen && !c
+    this.renderer.setClearColor(this.roomColor, linen ? 0 : 1)
+    if (L.ground === 'walnut') { this.tableMat.color.setRGB(0.1, 0.064, 0.048).multiplyScalar((0.45 + 0.55 * tod.room) * L.tint); this.tableMat.envMapIntensity = 0.2 + 0.4 * tod.room } // no bright grazing sheen in the dark
+    else { this.tableMat.color.setScalar(L.tint); this.tableMat.envMapIntensity = 1 }
+    this.tableMat.visible = !linen
+    // the fade into the room only where it's wanted: otherwise the alpha map is sampled in its opaque middle
+    const fa = this.tableMat.alphaMap!, fade = L.fade && c
+    fa.repeat.setScalar(fade ? 1 : 0.1); fa.offset.setScalar(fade ? 0 : 0.45)
+    this.shadowFloor.visible = linen
     // softer, lighter shadows in the room (a window, not a flash)
-    this.key.shadow.radius = lerp(5, 9, c); this.key.shadow.intensity = lerp(1, 0.82, c)
+    for (const l of [this.key, this.lamp]) { l.shadow.radius = lerp(5, 9, c) * L.soft; l.shadow.intensity = lerp(1, 0.82, c) * L.shade }
     this.hc.value = hc
     for (const m of [this.shell, this.shellDim]) { m.clearcoat = lerp(lerp(0.28, 0.5, c), 0.1, hc); m.envMapIntensity = lerp(0.75, 1, c) }
     for (const m of [this.slate, this.slateDim]) { m.clearcoat = lerp(lerp(0.18, 0.3, c), 0.08, hc); m.envMapIntensity = lerp(0.6, 1, c) }
@@ -1032,14 +1216,15 @@ export class Board3D {
 
   private frame(now: number) {
     cancelAnimationFrame(this.raf); this.raf = 0
-    if (this.dead || !this.ready) return
-    const busy = this.updateScene(now)
-    if (busy && this.lastFrame) {
+    if (this.dead || !this.ready || this.holding) return
+    let busy = this.updateScene(now)
+    if (busy && this.lastFrame && !this.pendingQ) {
       const r = this.governor.sample(now - this.lastFrame)
-      if (r === 'down') this.applyQuality(this.ladder[this.governor.level])
+      if (r === 'down') this.pendingQ = true // applied under the next crossfade, resize or new board
       else if (r === 'fallback') this.fallback('slow')
     }
     this.render()
+    if (this.drawFade(now)) busy = true
     this.lastFrame = busy ? now : 0
     if (busy) this.invalidate()
   }
@@ -1060,7 +1245,7 @@ export class Board3D {
       stones() {
         const cam = self.activeCam(), v = new THREE.Vector3(), css = () => [((v.x + 1) / 2) * self.W, ((1 - v.y) / 2) * self.H]
         return [...self.stones.entries()].filter(([k]) => k >= 0).map(([, s]) => {
-          const [x, y] = (v.set(s.px, SH, s.pz).project(cam), css()), [x2] = (v.set(s.px + s.R, SH, s.pz).project(cam), css())
+          const [x, y] = (v.set(s.tx, SH, s.tz).project(cam), css()), [x2] = (v.set(s.tx + s.R, SH, s.tz).project(cam), css())
           return { x, y, r: x2 - x, c: s.c }
         })
       },
@@ -1074,12 +1259,8 @@ export class Board3D {
       },
       /** Forced full renders, GPU-synchronised by a 1-pixel read-back. */
       bench(n = 60) {
-        const gl = self.renderer.getContext(), px = new Uint8Array(4)
-        self.render(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
-        const t0 = performance.now()
-        for (let k = 0; k < n; k++) { self.render(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px) }
-        const info = self.renderer.info
-        return { msPerFrame: (performance.now() - t0) / n, dpr: self.renderer.getPixelRatio(), size: [self.W, self.H], calls: info.render.calls, triangles: info.render.triangles, textures: info.memory.textures, geometries: info.memory.geometries }
+        const msPerFrame = self.benchMs(n), info = self.renderer.info
+        return { msPerFrame, dpr: self.renderer.getPixelRatio(), size: [self.W, self.H], calls: info.render.calls, triangles: info.render.triangles, textures: info.memory.textures, geometries: info.memory.geometries }
       },
       hideGrid(on: boolean) { self.noGrid = on; self.invalidate() },
       setQuality(level: number) { self.governor.level = level; self.applyQuality(self.ladder[level]) },

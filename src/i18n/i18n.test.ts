@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { loadSgf } from '../sgf'
-import { dicts, failureText, setLang, t, type Msg } from '.'
+import { dicts, failureText, setLang, storedLang, t, type Msg } from '.'
 
 const nb = (s: string) => s.replace(/[  ]/g, ' ') // Intl and French typography use non-breaking spaces
 
@@ -22,6 +22,17 @@ describe('dictionaries', () => {
   it('switch live', () => {
     setLang('en'); expect(t.pass).toBe('Pass')
     setLang('fr'); expect(t.pass).toBe('Passer')
+  })
+})
+
+describe('language setting', () => {
+  it('is English unless the user chose one in the UI', () => {
+    expect(storedLang({})).toBe('en')
+    expect(storedLang({ lang: 'fr' })).toBe('en') // older settings: the auto-detected language, reset once
+    expect(storedLang({ lang: 'fr', langChosen: false })).toBe('en')
+    expect(storedLang({ lang: 'fr', langChosen: true })).toBe('fr')
+    expect(storedLang({ lang: 'en', langChosen: true })).toBe('en')
+    expect(storedLang({ lang: 'de', langChosen: true })).toBe('en')
   })
 })
 

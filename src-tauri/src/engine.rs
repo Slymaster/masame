@@ -415,10 +415,16 @@ mod tests {
     fn fake(name: &str, body: &str) -> Spec {
         use std::os::unix::fs::PermissionsExt;
         let p = std::env::temp_dir().join(format!("baduk-fake-{name}-{}.sh", std::process::id()));
-        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n[ -n \"$BADUK_FAKE_WARM\" ] && exit 0\n{body}\n")).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // macOS scans a new executable on its first exec (~0.5 s, seconds under load): pay it here, not in the start timeout.
+        std::process::Command::new(&p).env("BADUK_FAKE_WARM", "1").status().unwrap();
         Spec { bin: p.clone(), config: p.clone(), model: p, human: None, cwd: std::env::temp_dir(), overrides: vec![] }
     }
+
+    /// Stays alive and silent until killed. Not `cat >/dev/null`: that closes stdout, which the reader takes for an exit.
+    #[cfg(unix)]
+    const HANG: &str = "exec sleep 60";
 
     #[cfg(unix)]
     #[tokio::test]
@@ -427,7 +433,7 @@ mod tests {
         let quiet = |mut e: Arc<Engine>, start| { let m = Arc::get_mut(&mut e).unwrap(); m.query_timeout = ms(200); m.start_timeout = ms(start); e };
         // Never prints the ready line.
         let e = quiet(Engine::new(|_, _| {}), 200);
-        e.ensure(fake("mute", "exec cat >/dev/null")).unwrap();
+        e.ensure(fake("mute", HANG)).unwrap();
         assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), Failure::with("engine_timeout", "start"));
         assert!(matches!(e.status(), Status::Error { error } if error.code == "engine_timeout"));
         // Ready and warm, then never answers.
@@ -446,7 +452,7 @@ exec sleep 5"#)).unwrap();
     #[tokio::test]
     async fn failed_relaunch_is_not_overwritten_by_the_old_exit() {
         let e = Engine::new(|_, _| {});
-        let s = fake("idle", "exec cat >/dev/null");
+        let s = fake("idle", HANG);
         e.ensure(s.clone()).unwrap();
         settle().await;
         let mut bad = s;
@@ -492,7 +498,7 @@ while read l; do id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{\"id
         let statuses = Arc::new(Mutex::new(vec![]));
         let st = statuses.clone();
         let mut e = Engine::new(move |ev, v| if ev == "engine-status" { st.lock().unwrap().push(v["state"].as_str().unwrap().to_string()) });
-        // 2 s leaves room for the first exec of a fresh script (~0.5 s on macOS, more under load); tuning lasts 3.6 s.
+        // Tuning lasts 3.6 s; the 2 s window only has to cover one 0.3 s gap (and the exec, warmed by `fake`).
         Arc::get_mut(&mut e).unwrap().start_timeout = Duration::from_secs(2);
         let tune = "echo 'Performing autotuning' >&2; for i in $(seq 12); do sleep 0.3; echo \"Tuning $i/12\" >&2; done";
         e.ensure(fake("tune", &format!("{tune}\n{SERVE}"))).unwrap();
@@ -501,7 +507,7 @@ while read l; do id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{\"id
         // Tuning that goes quiet still times out.
         let mut e = Engine::new(|_, _| {});
         Arc::get_mut(&mut e).unwrap().start_timeout = Duration::from_millis(300);
-        e.ensure(fake("stall", "echo 'Tuning 1/5' >&2; exec cat >/dev/null")).unwrap();
+        e.ensure(fake("stall", &format!("echo 'Tuning 1/5' >&2; {HANG}"))).unwrap();
         assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), Failure::with("engine_timeout", "start"));
     }
 

@@ -43,6 +43,11 @@ export const fr: Dict = {
   view: 'Regard', study: 'Étude', contemplation: 'Contemplation',
   light: 'Lumière', lights: { auto: 'Auto', morning: 'Matin', afternoon: 'Après-midi', evening: 'Soir' },
   highContrast: 'Contraste élevé',
+  decor: 'Décor',
+  decors: { atelier: 'Atelier', washitsu: 'Washitsu', lanterne: 'Lanterne', clair: 'Clair' },
+  decorHints: { atelier: 'Pièce chaude, table en noyer', washitsu: 'Tatamis, lumière de fenêtre', lanterne: 'La nuit, une seule lanterne', clair: 'Papier clair, lumière douce' },
+  noEffectAtNight: 'Sans effet la nuit',
+  hidePanel: 'Masquer le panneau', showPanel: 'Afficher le panneau',
   fellBack: 'Rendu léger activé : la carte graphique ne suit pas.',
   territoryNeedsNet: 'Installe un réseau d’analyse pour voir le territoire.',
   estimating: 'Estimation…',
@@ -53,13 +58,13 @@ export const fr: Dict = {
   engineWarming: 'Préparation du moteur…',
   engineTuning: 'Accordage du moteur…',
   engineReady: 'Moteur prêt', engineIdle: 'Moteur en veille', noAnalysisNet: 'Aucun réseau d’analyse installé.',
-  footer: { browse: 'parcourir', pass: 'passer', territory: 'territoire', undo: 'annuler', newGame: 'nouvelle partie' },
+  footer: { browse: 'parcourir', pass: 'passer', territory: 'territoire', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau' },
   // barre de menus macOS (src-tauri/src/menu.rs)
   menu: {
     about: 'À propos de Masame', hide: 'Masquer Masame', hideOthers: 'Masquer les autres', showAll: 'Tout afficher', quit: 'Quitter Masame',
     file: 'Fichier', newGame: 'Nouvelle partie', open: 'Ouvrir…', save: 'Enregistrer…',
     edit: 'Édition', undoMove: 'Annuler le coup', copy: 'Copier', selectAll: 'Tout sélectionner',
-    window: 'Fenêtre', minimize: 'Placer dans le Dock', zoom: 'Réduire/agrandir', fullScreen: 'Passer en mode plein écran',
+    window: 'Fenêtre', minimize: 'Placer dans le Dock', zoom: 'Réduire/agrandir', fullScreen: 'Passer en mode plein écran', hidePanel: 'Masquer le panneau', showPanel: 'Afficher le panneau',
   },
   // games against the bot
   botName: (rank: string) => `KataGo humain ${rank}`,

@@ -7,10 +7,11 @@ export type Lang = 'fr' | 'en'
 export type { Dict }
 export const dicts: Record<Lang, Dict> = { fr, en }
 export const isLang = (x: unknown): x is Lang => x === 'fr' || x === 'en'
-/** OS/browser language: French for fr*, English otherwise. */
-export const detectLang = (): Lang => (/^fr(-|$)/i.test(globalThis.navigator?.language ?? '') ? 'fr' : 'en')
+/** English unless the user picked a language in the UI. Older settings stored the OS language without `langChosen`:
+ *  those reset to English once. */
+export const storedLang = (s: { lang?: unknown; langChosen?: unknown }): Lang => (s.langChosen === true && isLang(s.lang) ? s.lang : 'en')
 
-export let lang: Lang = detectLang()
+export let lang: Lang = 'en'
 export let t: Dict = dicts[lang]
 
 export function setLang(l: Lang) {
