@@ -630,7 +630,7 @@ export class Board3D {
     c.addEventListener('webglcontextlost', lost)
     this.reducedMotion.addEventListener('change', motion)
     // labels need the bundled font actually loaded
-    void document.fonts?.load('500 12px Karla').then(() => { if (this.coords && !this.dead) { this.buildLabels(); this.invalidate() } })
+    void document.fonts?.load('500 12px Manrope').then(() => { if (this.coords && !this.dead) { this.buildLabels(); this.invalidate() } })
     // devicePixelRatio changes (window moved to another display): the query only fires once, so re-arm it
     let mq: MediaQueryList, onDpr: () => void
     const arm = () => { mq = matchMedia(`(resolution: ${devicePixelRatio}dppx)`); mq.addEventListener('change', onDpr) }
@@ -892,7 +892,7 @@ export class Board3D {
     const { BW, BD, N } = this.D, k = 2048 / Math.max(BW, BD), cv = mkCanvas(Math.round(BW * k), Math.round(BD * k)), x = cv.getContext('2d')!
     x.fillStyle = '#000'; x.fillRect(0, 0, cv.width, cv.height)
     x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'
-    x.font = `500 ${(6.2 * k).toFixed(1)}px Karla, system-ui, sans-serif`
+    x.font = `500 ${(6.2 * k).toFixed(1)}px Manrope, system-ui, sans-serif`
     const px = (wx: number) => (wx + BW / 2) * k, pz = (wz: number) => (wz + BD / 2) * k
     const off = (RB + this.D.margin) / 2 + 0.6, dy = 6.2 * k * 0.06
     for (let i = 0; i < N; i++) {

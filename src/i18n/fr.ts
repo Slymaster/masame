@@ -7,7 +7,6 @@ const color = (s: number): string => (s === 1 ? 'Noir' : 'Blanc')
 
 export const fr: Dict = {
   // panel
-  tagline: 'Un goban d’artisan',
   board: (n: number, komi: number) => `Goban ${n} × ${n} · komi ${f.num(komi)}`,
   boardLabel: (n: number) => `Goban ${n}×${n}`,
   game: 'Partie',
@@ -86,7 +85,7 @@ export const fr: Dict = {
   sgfSetupOff: 'Pierre de handicap hors du goban',
   sgfMoveOff: (v: string) => `Coup hors du goban : ${v}`,
   // networks sheet
-  networks: 'Réseaux', engineEyebrow: 'Moteur KataGo', close: 'Fermer', closeHint: 'Fermer (Échap)',
+  networks: 'Réseaux', close: 'Fermer', closeHint: 'Fermer (Échap)',
   humanRequired: 'Le réseau Humain est nécessaire pour jouer contre l’IA. Les autres servent à l’analyse et au territoire.',
   managerInAppOnly: 'Le gestionnaire de réseaux n’est disponible que dans l’application.',
   loading: 'Chargement du catalogue…',

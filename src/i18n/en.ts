@@ -6,7 +6,6 @@ const color = (s: number): string => (s === 1 ? 'Black' : 'White')
 
 export const en = {
   // panel
-  tagline: 'A craftsman’s goban',
   board: (n: number, komi: number) => `${n} × ${n} board · komi ${f.num(komi)}`,
   boardLabel: (n: number) => `${n}×${n} Go board`,
   game: 'Game',
@@ -85,7 +84,7 @@ export const en = {
   sgfSetupOff: 'Handicap stone off the board',
   sgfMoveOff: (v: string) => `Move off the board: ${v}`,
   // networks sheet
-  networks: 'Networks', engineEyebrow: 'KataGo engine', close: 'Close', closeHint: 'Close (Esc)',
+  networks: 'Networks', close: 'Close', closeHint: 'Close (Esc)',
   humanRequired: 'The Human network is required to play against the AI. The others power analysis and territory.',
   managerInAppOnly: 'The network manager is only available in the app.',
   loading: 'Loading the catalog…',

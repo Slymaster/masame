@@ -28,7 +28,7 @@ const HOSHI: Record<number, number[][]> = {
 }
 const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ' // no I, by convention
 const DROP_MS = 160
-const LABEL_FONT = 'Karla, system-ui, sans-serif'
+const LABEL_FONT = 'Manrope, system-ui, sans-serif'
 
 const mk = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h })
 
@@ -130,7 +130,7 @@ function drawGrid(x: CanvasRenderingContext2D, g: Geom, coords: boolean) {
     x.fillStyle = 'rgba(58,36,14,0.62)'
     x.font = `500 ${g.font}px ${LABEL_FONT}`
     x.textAlign = 'center'; x.textBaseline = 'middle'
-    const o = g.labelOff, dy = g.font * 0.06 // Karla sits slightly high on 'middle'
+    const o = g.labelOff, dy = g.font * 0.06 // the UI font sits slightly high on 'middle'
     for (let i = 0; i < N; i++) {
       const col = COLS[i], row = String(N - i)
       x.fillText(col, P[i], a - o + dy); x.fillText(col, P[i], z + o + dy)

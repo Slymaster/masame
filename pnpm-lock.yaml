@@ -11,7 +11,7 @@ importers:
       '@fontsource/cormorant-garamond':
         specifier: ^5.3.0
         version: 5.3.0
-      '@fontsource/karla':
+      '@fontsource/manrope':
         specifier: ^5.3.0
         version: 5.3.0
       '@sabaki/go-board':
@@ -72,8 +72,8 @@ packages:
   '@fontsource/cormorant-garamond@5.3.0':
     resolution: {integrity: sha512-weuGsCirGVWBWqpt6YUp0yLThTe4G8YO45noq8wxeJCRvEpq5lFrxNMFSTxcyOyV5k5otzJ8guDzYegdYlcLMQ==}
 
-  '@fontsource/karla@5.3.0':
-    resolution: {integrity: sha512-zHBkxMumwFE+K4RgHQAv2xH0O2lAX9y4zPun5JEFZyNQQclZ5Oz/XvByE3CB5+rnxKEV5BXlZShIEfz0VILDmQ==}
+  '@fontsource/manrope@5.3.0':
+    resolution: {integrity: sha512-obJ1Dv3+uCA6HlHgW8u4BGYxJR9In2HW7gjJhlflEvkrj1X1iSEwu0fToL+JYGC/FEKFfIz1sBuPduvcL2gIAA==}
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -617,7 +617,7 @@ snapshots:
 
   '@fontsource/cormorant-garamond@5.3.0': {}
 
-  '@fontsource/karla@5.3.0': {}
+  '@fontsource/manrope@5.3.0': {}
 
   '@jridgewell/resolve-uri@3.1.2': {}
 

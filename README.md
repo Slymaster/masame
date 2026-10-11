@@ -91,7 +91,7 @@ The foundations and the 3D Living Atelier are in place. Next comes the teacher â
 - [@sabaki/go-board](https://github.com/SabakiHQ/go-board) and [@sabaki/sgf](https://github.com/SabakiHQ/sgf) by Yichuan Shen: board logic and SGF parsing.
 - [three.js](https://threejs.org/), [Tauri](https://tauri.app/) and [React](https://react.dev/).
 - Wood textures from [ambientCG](https://ambientcg.com/), lighting (HDRI) from [Poly Haven](https://polyhaven.com/), stone sounds from [Freesound](https://freesound.org/) by billhails2, Hongsungbock and MPooman â€” all CC0.
-- Typefaces: Cormorant Garamond and Karla, under the SIL Open Font License.
+- Typefaces: Cormorant Garamond and Manrope, under the SIL Open Font License.
 
 ## Licence
 

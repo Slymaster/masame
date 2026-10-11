@@ -176,7 +176,7 @@ Le bois prend une patine au fil de tes parties. Tes joseki maîtrisés s'inscriv
 - **Plateforme** : Mac d'abord (Tauri 2 + KataGo Metal), extensible ensuite.
 - **Distribution** : gratuite. Il faudra signer et notariser l'app (compte Apple Developer) et soigner les crédits et licences dès le départ.
 - **Public cible** : intermédiaire (15k-5k). Ce niveau fixe le rang par défaut de l'adversaire et le programme de joseki.
-- **Direction artistique** : **Atelier (工房)**, choisie parmi trois (voir `design/directions.html`). Kaya au grain fin, pierres d'ardoise et de coquillage, lumière chaude, typographies Cormorant Garamond et Karla.
+- **Direction artistique** : **Atelier (工房)**, choisie parmi trois (voir `design/directions.html`). Kaya au grain fin, pierres d'ardoise et de coquillage, lumière chaude, typographies Cormorant Garamond et Manrope (Karla au départ).
   - Conséquence : la signature « territoire en lavis d'encre » devient **« ombre et lumière »** : le territoire de Noir s'assombrit, celui de Blanc s'éclaire.
   - Sa lisibilité sera retravaillée à l'étape 1, avec la vraie carte de propriété de KataGo.
 

@@ -124,9 +124,9 @@ function Stepper({ label, value, set }: { label: string; value: string; set: (v:
     <div className="row stepper">
       <span>{label}</span>
       <span className="step">
-        <button onClick={() => set(stepRank(value, -1))} aria-label={t.weaker(label)}>‹</button>
+        <button onClick={() => set(stepRank(value, 1))} aria-label={t.stronger(label)}>‹</button>
         <output aria-live="polite">{value}</output>
-        <button onClick={() => set(stepRank(value, 1))} aria-label={t.stronger(label)}>›</button>
+        <button onClick={() => set(stepRank(value, -1))} aria-label={t.weaker(label)}>›</button>
       </span>
     </div>
   )
@@ -422,7 +422,6 @@ export function App() {
         )}
         <aside className="panel" id="panel" hidden={settings.panelHidden}>
           <header>
-            <div className="eyebrow"><i className="mark" />{t.tagline}</div>
             <h1 className="title">Masame <span className="jp">柾目</span></h1>
             <div className="sub">{t.board(size, komi)}</div>
           </header>
