@@ -25,7 +25,6 @@ export function Networks({ nets, progress, onClose, onChanged }: Props) {
     <div className="sheet-back" onClick={onClose}>
       <aside className="sheet" role="dialog" aria-modal="true" aria-label={t.networks} onClick={e => e.stopPropagation()}>
         <header>
-          <div className="eyebrow"><i className="mark" />{t.engineEyebrow}</div>
           <h2 className="title">{t.networks}</h2>
           <button className="close" onClick={onClose} aria-label={t.close} title={t.closeHint}>×</button>
         </header>

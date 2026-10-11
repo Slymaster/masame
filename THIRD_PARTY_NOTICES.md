@@ -116,7 +116,7 @@ The rest are MIT, Apache-2.0, BSD-3-Clause, Zlib, Unlicense or 0BSD, mostly dual
 | Font | Licence | Copyright |
 |---|---|---|
 | Cormorant Garamond (@fontsource/cormorant-garamond) | SIL Open Font License 1.1 | Copyright 2015 The Cormorant Project Authors (github.com/CatharsisFonts/Cormorant) |
-| Karla (@fontsource/karla) | SIL Open Font License 1.1 | Copyright 2019 The Karla Project Authors (github.com/googlefonts/karla) |
+| Manrope (@fontsource/manrope) | SIL Open Font License 1.1 | Copyright 2019 The Manrope Project Authors (github.com/sharanda/manrope) |
 
 The OFL requires that the copyright notice and licence travel with the fonts when they are redistributed; the fonts may not be sold on their own. The licence text is in each package's `LICENSE` file.
 

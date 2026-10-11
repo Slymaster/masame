@@ -1,7 +1,7 @@
 :root {
   --bg: #ECE4D6; --ink: #2A2118; --muted: #857462; --rule: rgba(43, 29, 14, .13); --rule-2: rgba(43, 29, 14, .28);
   --accent: #7A2E22; --hover: rgba(122, 46, 34, .06);
-  --f-title: 'Cormorant Garamond', Georgia, serif; --f-ui: 'Karla', system-ui, sans-serif;
+  --f-title: 'Cormorant Garamond', Georgia, serif; --f-ui: 'Manrope', system-ui, sans-serif;
   --stone-b: radial-gradient(circle at 34% 30%, #6a6a70 0, #2c2c30 38%, #121214 80%);
   --stone-w: radial-gradient(circle at 34% 30%, #fffdf8 0, #f1ebdf 55%, #d7cdbb 100%);
   color-scheme: light;
@@ -31,8 +31,6 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .panel { width: 312px; flex: none; display: flex; flex-direction: column; gap: 26px; overflow-y: auto; padding: 8px 2px 8px 16px; margin-left: -16px }
 .panel > :first-child { margin-top: auto } /* centred when it fits, scrollable from the top when it doesn't */
 .panel > :last-child { margin-bottom: auto }
-.eyebrow { display: flex; align-items: center; gap: 12px; font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted) }
-.mark { display: block; width: 26px; height: 1px; background: var(--accent) }
 .title { margin-top: 12px; font-family: var(--f-title); font-size: 50px; font-weight: 500; font-style: italic; line-height: 1; display: flex; align-items: baseline; gap: 14px }
 .title .jp { font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif; font-style: normal; font-weight: 300; font-size: .44em; color: var(--muted) }
 .sub { margin-top: 12px; font-size: 11.5px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--accent) }
@@ -160,7 +158,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 @media (max-height: 780px) {
   .panel { gap: 16px }
   .title { margin-top: 0; font-size: 40px }
-  .eyebrow, .foot { display: none }
+  .foot { display: none }
   .pl { padding: 5px 0 }
   .btn { padding: 8px 12px }
   .seg button { padding: 6px 0 }

@@ -91,7 +91,7 @@ Les fondations et l'Atelier vivant en 3D sont en place. Viennent ensuite le prof
 - [@sabaki/go-board](https://github.com/SabakiHQ/go-board) et [@sabaki/sgf](https://github.com/SabakiHQ/sgf), de Yichuan Shen : logique du goban et lecture des SGF.
 - [three.js](https://threejs.org/), [Tauri](https://tauri.app/) et [React](https://react.dev/).
 - Textures de bois d'[ambientCG](https://ambientcg.com/), éclairage (HDRI) de [Poly Haven](https://polyhaven.com/), sons de pierres de [Freesound](https://freesound.org/) par billhails2, Hongsungbock et MPooman — tous en CC0.
-- Polices : Cormorant Garamond et Karla, sous SIL Open Font License.
+- Polices : Cormorant Garamond et Manrope, sous SIL Open Font License.
 
 ## Licence
 
