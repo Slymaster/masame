@@ -4,7 +4,7 @@
 use serde::Deserialize;
 
 /// Our items: each emits a "menu" event with its id, which the frontend runs like the matching keyboard shortcut.
-pub const ACTIONS: [&str; 4] = ["new", "open", "save", "undo"];
+pub const ACTIONS: [&str; 5] = ["new", "open", "save", "undo", "panel"];
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +14,8 @@ pub struct Labels {
     file: String, new_game: String, open: String, save: String,
     edit: String, undo_move: String, copy: String, select_all: String,
     window: String, minimize: String, zoom: String, full_screen: String,
+    /// "Hide Panel" or "Show Panel", whichever applies: the frontend resends the labels when the panel toggles.
+    panel: String,
 }
 
 #[cfg(target_os = "macos")]
@@ -34,6 +36,7 @@ pub fn build(app: &tauri::AppHandle, l: &Labels) -> tauri::Result<tauri::menu::M
     ])?;
     let window = Submenu::with_items(app, &l.window, true, &[
         &P::minimize(app, Some(&l.minimize))?, &P::maximize(app, Some(&l.zoom))?, &P::separator(app)?, &P::fullscreen(app, Some(&l.full_screen))?,
+        &item("panel", &l.panel, "CmdOrCtrl+Backslash")?,
     ])?;
     window.set_as_windows_menu_for_nsapp()?;
     Menu::with_items(app, &[&app_menu, &file, &edit, &window])

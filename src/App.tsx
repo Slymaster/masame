@@ -9,7 +9,8 @@ import { analyze, call, inTauri, on, type Analysis, type EngineStatus, type NetS
 import { Networks } from './Networks'
 import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
 import { loadSgf, resignResult, saveSgf, scoreResult } from './sgf'
-import { detectLang, failureText, isLang, LocalizedError, pick, setLang, t, type Lang, type Msg } from './i18n'
+import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
+import { DECORS, type Decor } from './board3d/decors'
 import { isMac, shortcut } from './platform'
 
 const SIZES = [9, 13, 19]
@@ -23,21 +24,23 @@ type Renderer = '3d' | '2d'
 const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
 interface Settings {
   lang: Lang; opponent: 'human' | 'ai'; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; delay: boolean; territory: boolean
-  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean
+  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor
+  langChosen: boolean; panelHidden: boolean
 }
 const SETTINGS_KEY = 'baduk.settings'
 function loadSettings(): Settings {
   const d: Settings = {
-    lang: detectLang(), opponent: 'ai', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, delay: true, territory: false,
-    renderer: '3d', camera: 'study', light: 'auto', highContrast: false,
+    lang: 'en', opponent: 'ai', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, delay: true, territory: false,
+    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', langChosen: false, panelHidden: false,
   }
   let j: Partial<Settings> = {}
   try { j = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') ?? {} } catch { /* private mode or garbage: defaults */ }
   const s = { ...d, ...j }
   return {
-    ...s, lang: isLang(s.lang) ? s.lang : d.lang, myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
+    ...s, lang: storedLang(j), langChosen: j.langChosen === true, myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
+    decor: DECORS.includes(s.decor) ? s.decor : 'atelier', panelHidden: s.panelHidden === true,
   }
 }
 
@@ -85,7 +88,7 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback }: {
     return () => { live = false; ro?.disconnect(); v?.destroy(); view.current = three.current = null }
   }, [mode, view])
   useEffect(() => { view.current?.update(state); if (import.meta.env.DEV) Object.assign(window, { __badukState: state }) })
-  useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => three.current?.setThinking(thinking), [thinking])
   // a fresh canvas per renderer: one canvas can't hold both a 2D and a WebGL context
   return <div className="board-wrap" ref={wrap}><canvas key={mode} ref={canvas} aria-label={t.boardLabel(state.signMap.length)} /></div>
@@ -106,10 +109,12 @@ function Switch({ label, k, on, toggle }: { label: string; k?: string; on: boole
   )
 }
 
-function Seg<T extends string | number>({ label, value, options, set }: { label: string; value: T; options: [T, string][]; set: (v: T) => void }) {
+function Seg<T extends string | number>({ label, value, options, set, disabled, title }: {
+  label: string; value: T; options: [T, string, string?][]; set: (v: T) => void; disabled?: boolean; title?: string
+}) {
   return (
-    <div className="seg" role="radiogroup" aria-label={label}>
-      {options.map(([v, l]) => <button key={v} role="radio" aria-checked={value === v} onClick={() => set(v)}>{l}</button>)}
+    <div className="seg" role="radiogroup" aria-label={label} aria-disabled={disabled || undefined} title={title}>
+      {options.map(([v, l, tip]) => <button key={v} role="radio" aria-checked={value === v} disabled={disabled} title={tip} onClick={() => set(v)}>{l}</button>)}
     </div>
   )
 }
@@ -328,7 +333,8 @@ export function App() {
   }, [settings.territory, ver, game, canAnalyze])
 
   // ⌘/Ctrl commands, shared by the keyboard and the macOS menu bar (whose items emit "menu" with these ids)
-  const commands: Record<string, () => void> = { undo, new: () => newGame(), open, save }
+  const togglePanel = () => set('panelHidden', !settings.panelHidden)
+  const commands: Record<string, () => void> = { undo, new: () => newGame(), open, save, panel: togglePanel }
   const blocked = (target: EventTarget | null) => target instanceof HTMLInputElement || showNets
   const onMenu = useRef((_: string) => {})
   onMenu.current = id => { if (!blocked(document.activeElement) && Object.hasOwn(commands, id)) commands[id]() }
@@ -338,25 +344,27 @@ export function App() {
     return () => { off.then(f => f()) }
   }, [])
   // The macOS menu bar speaks the UI language (its labels live in the dictionaries)
-  useEffect(() => { if (isMac && inTauri()) call('set_language', { labels: t.menu }).catch(console.error) }, [settings.lang])
+  useEffect(() => { if (isMac && inTauri()) call('set_language', { labels: { ...t.menu, panel: settings.panelHidden ? t.menu.showPanel : t.menu.hidePanel } }).catch(console.error) }, [settings.lang, settings.panelHidden])
 
   useEffect(() => {
-    // In the macOS app the menu's key equivalents own ⌘Z/N/O/S: WebKit hands the menu every ⌘-key the page does not
+    // In the macOS app the menu's key equivalents own ⌘Z/N/O/S/\: WebKit hands the menu every ⌘-key the page does not
     // preventDefault, so handling them here as well would run them twice.
     const menuKeys = isMac && inTauri()
     const onKey = (e: KeyboardEvent) => {
       if (blocked(e.target)) return
       const cmd = isMac ? e.metaKey : e.ctrlKey, k = e.key.toLowerCase()
       const act = cmd
-        ? menuKeys ? undefined : commands[({ z: 'undo', n: 'new', o: 'open', s: 'save' } as Record<string, string>)[k]]
+        ? menuKeys ? undefined : commands[({ z: 'undo', n: 'new', o: 'open', s: 'save', '\\': 'panel' } as Record<string, string>)[k]]
         : e.altKey || e.metaKey || e.ctrlKey ? undefined
         : ({
             arrowleft: () => goTo(game.cursor - 1), arrowright: () => goTo(game.cursor + 1),
             home: () => goTo(0), end: () => goTo(game.moves.length),
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
-            t: () => set('territory', !settings.territory),
+            t: () => set('territory', !settings.territory), h: togglePanel,
             ...(renderer === '3d' && {
               v: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
+            }),
+            ...(renderer === '3d' && settings.decor !== 'lanterne' && { // lighting has no effect at night
               l: () => set('light', LIGHTS[(LIGHTS.indexOf(settings.light) + 1) % LIGHTS.length]),
             }),
           } as Record<string, () => void>)[k]
@@ -392,7 +400,7 @@ export function App() {
         <Goban
           view={view}
           mode={renderer}
-          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast }}
+          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor: settings.decor }}
           thinking={thinking}
           onFallback={r => { if (r === 'context-lost') setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
           state={{
@@ -404,7 +412,15 @@ export function App() {
           }}
           onPlay={play}
         />
-        <aside className="panel">
+        <button className="panel-toggle" onClick={togglePanel} aria-expanded={!settings.panelHidden} aria-controls="panel"
+          aria-label={settings.panelHidden ? t.showPanel : t.hidePanel} title={`${settings.panelHidden ? t.showPanel : t.hidePanel} (H)`}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" /><path d="M10 2.5v11" /></svg>
+        </button>
+        {/* hidden panel: only whose turn it is (breathing while the bot thinks), next to the toggle */}
+        {settings.panelHidden && !game.ended && !result && (
+          <i className={`turn st ${toPlay === 1 ? 'b' : 'w'}${thinking ? ' thinking' : ''}`} role="img" aria-label={t.color(toPlay)} />
+        )}
+        <aside className="panel" id="panel" hidden={settings.panelHidden}>
           <header>
             <div className="eyebrow"><i className="mark" />{t.tagline}</div>
             <h1 className="title">Masame <span className="jp">柾目</span></h1>
@@ -488,15 +504,20 @@ export function App() {
                   <Seg label={t.view} value={settings.camera} options={[['study', t.study], ['contemplation', t.contemplation]]} set={v => set('camera', v)} />
                 </div>
                 <div className="field">
+                  <span>{t.decor}</span>
+                  <Seg label={t.decor} value={settings.decor} options={DECORS.map(d => [d, t.decors[d], t.decorHints[d]])} set={v => set('decor', v)} />
+                </div>
+                <div className="field">
                   <span>{t.light} <kbd>L</kbd></span>
-                  <Seg label={t.light} value={settings.light} options={LIGHTS.map(l => [l, t.lights[l]])} set={v => set('light', v)} />
+                  <Seg label={t.light} value={settings.light} options={LIGHTS.map(l => [l, t.lights[l]])} set={v => set('light', v)}
+                    disabled={settings.decor === 'lanterne'} title={settings.decor === 'lanterne' ? t.noEffectAtNight : undefined} />
                 </div>
                 <Switch label={t.highContrast} on={settings.highContrast} toggle={() => set('highContrast', !settings.highContrast)} />
               </>}
             </div>
             <div className="row" style={{ cursor: 'default', gap: 16 }}>
               <span>{t.language}</span>
-              <Seg label={t.language} value={settings.lang} options={[['fr', 'Français'], ['en', 'English']]} set={v => { setLang(v); set('lang', v) }} />
+              <Seg label={t.language} value={settings.lang} options={[['fr', 'Français'], ['en', 'English']]} set={v => { setLang(v); setSettings(s => ({ ...s, lang: v, langChosen: true })) }} />
             </div>
             {settings.territory && (
               <p className="estimate" aria-live="polite">
@@ -510,7 +531,7 @@ export function App() {
             <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}</p>
           </section>
 
-          <footer className="foot"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame}</footer>
+          <footer className="foot"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel}</footer>
         </aside>
       </main>
       {showNets && <Networks nets={nets} progress={progress} onClose={() => setShowNets(false)} onChanged={refreshNets} />}

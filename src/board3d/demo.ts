@@ -4,6 +4,7 @@ import '@fontsource/karla/latin-400.css'
 import '@fontsource/karla/latin-500.css'
 import GoBoard, { type Sign, type Vertex } from '@sabaki/go-board'
 import { Board3D, type Board3DOptions, type Board3DState } from './Board3D'
+import { DECORS } from './decors'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const SETUP: Vertex[] = [[15, 3], [3, 15], [15, 16], [3, 3], [2, 5], [2, 9], [5, 16], [5, 15], [6, 15], [4, 15], [6, 16], [16, 2], [15, 2], [16, 3], [16, 4], [17, 4], [17, 5], [15, 1], [14, 1], [16, 1], [9, 3], [16, 13], [16, 10], [9, 16]]
@@ -84,7 +85,7 @@ ro.observe($('wrap'))
 
 function render() {
   view.update(state())
-  for (const [g, v] of [['size', String(N)], ['camera', view.options.camera], ['time', view.options.time]] as const)
+  for (const [g, v] of [['size', String(N)], ['camera', view.options.camera], ['time', view.options.time], ['decor', view.options.decor]] as const)
     for (const b of $(g).querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === v))
   const b = board()
   $('info').textContent = `${toPlay === 1 ? 'Black' : 'White'} to play${thinking ? ' (thinking…)' : ''}\ncaptures B ${b.getCaptures(1)} · W ${b.getCaptures(-1)}\nquality ${JSON.stringify(view.debug.quality)}`
@@ -102,6 +103,11 @@ function reset(n: number, setup: boolean) {
 $('size').addEventListener('click', e => { const v = (e.target as HTMLElement).dataset.v; if (v) reset(+v, true) })
 $('camera').addEventListener('click', e => { const v = (e.target as HTMLElement).dataset.v; if (v) { view.setOptions({ camera: v as Board3DOptions['camera'] }); render() } })
 $('time').addEventListener('click', e => { const v = (e.target as HTMLElement).dataset.v; if (v) { view.setOptions({ time: v as Board3DOptions['time'] }); render() } })
+// décor picker (built here: the page's markup stays as it was)
+const dec = Object.assign(document.createElement('div'), { className: 'seg', id: 'decor' })
+dec.innerHTML = DECORS.map(d => `<button data-v="${d}">${d}</button>`).join('')
+$('time').after(dec)
+dec.addEventListener('click', e => { const v = (e.target as HTMLElement).dataset.v; if (v) { view.setOptions({ decor: v as Board3DOptions['decor'] }); render() } })
 $('hc').addEventListener('change', e => view.setOptions({ highContrast: (e.target as HTMLInputElement).checked }))
 for (const id of ['ombre', 'counting', 'coords', 'sound']) $(id).addEventListener('change', render)
 $('ai').addEventListener('change', () => { if ($<HTMLInputElement>('ai').checked && toPlay === -1) aiMove() })

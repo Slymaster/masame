@@ -42,6 +42,11 @@ export const en = {
   view: 'View', study: 'Study', contemplation: 'Contemplation',
   light: 'Lighting', lights: { auto: 'Auto', morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' },
   highContrast: 'High contrast',
+  decor: 'Decor',
+  decors: { atelier: 'Atelier', washitsu: 'Washitsu', lanterne: 'Lantern', clair: 'Daylight' },
+  decorHints: { atelier: 'Warm room, walnut table', washitsu: 'Tatami room, window light', lanterne: 'Night, a single lantern', clair: 'Bright paper, soft daylight' },
+  noEffectAtNight: 'No effect at night',
+  hidePanel: 'Hide panel', showPanel: 'Show panel',
   fellBack: 'Switched to light rendering: your graphics hardware couldn’t keep up.',
   territoryNeedsNet: 'Install an analysis network to see territory.',
   estimating: 'Estimating…',
@@ -52,13 +57,13 @@ export const en = {
   engineWarming: 'Warming up the engine…',
   engineTuning: 'Tuning the engine…',
   engineReady: 'Engine ready', engineIdle: 'Engine idle', noAnalysisNet: 'No analysis network installed.',
-  footer: { browse: 'browse', pass: 'pass', territory: 'territory', undo: 'undo', newGame: 'new game' },
+  footer: { browse: 'browse', pass: 'pass', territory: 'territory', undo: 'undo', newGame: 'new game', panel: 'panel' },
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
     about: 'About Masame', hide: 'Hide Masame', hideOthers: 'Hide Others', showAll: 'Show All', quit: 'Quit Masame',
     file: 'File', newGame: 'New Game', open: 'Open…', save: 'Save…',
     edit: 'Edit', undoMove: 'Undo Move', copy: 'Copy', selectAll: 'Select All',
-    window: 'Window', minimize: 'Minimize', zoom: 'Zoom', fullScreen: 'Enter Full Screen',
+    window: 'Window', minimize: 'Minimize', zoom: 'Zoom', fullScreen: 'Enter Full Screen', hidePanel: 'Hide Panel', showPanel: 'Show Panel',
   },
   // games against the bot
   botName: (rank: string) => `KataGo human ${rank}`,

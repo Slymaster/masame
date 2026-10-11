@@ -1,7 +1,8 @@
-// Pure logic of the 3D goban (no three.js, no DOM): real dimensions, hand-placed jitter + relaxation, time of day,
-// the adaptive quality governor and the contrast measure. Covered by logic.test.ts.
+// Pure logic of the 3D goban (no three.js, no DOM): real dimensions, hand-placed jitter + fitting, time of day,
+// the décors' looks, the quality governor and the contrast measure. Covered by logic.test.ts.
 
 import { hash, rng } from '../board/noise'
+import type { Decor } from './decors'
 
 /* ---------- real dimensions (mm) ---------- */
 export const SX = 22, SZ = 23.7          // grid spacing across / along (cells are longer than wide)
@@ -26,23 +27,32 @@ export const hoshiStep = (N: number) => (N >= 19 ? 6 : N >= 13 ? 3 : N >= 9 ? 2 
 /* ---------- placement: jitter and relaxation ---------- */
 export interface Placed { x: number; y: number; R: number; jx: number; jz: number; tx: number; tz: number }
 
-/** Stable hand-placed look per (point, move number): ±1.5 mm offset, random spin, wobble axis and material seed. */
+/** Stable hand-placed look per (point, move number): an offset (±1.5 mm along, ±0.6 mm across, where the 22 mm spacing leaves no slack), random spin and material seed. */
 export function jitter(N: number, x: number, y: number, moveNo: number) {
   const r = rng(Math.floor(hash(x, y, moveNo * 7 + 3) * 4294967296))
   const a = r() * Math.PI * 2, m = Math.sqrt(r()) * 1.5
-  return { jx: gx(N, x) + Math.cos(a) * m, jz: gz(N, y) + Math.sin(a) * m, seed: r(), rotY: r() * Math.PI * 2, wobAxis: r() * Math.PI * 2 }
+  return { jx: gx(N, x) + Math.cos(a) * m * 0.4, jz: gz(N, y) + Math.sin(a) * m, seed: r(), rotY: r() * Math.PI * 2 }
 }
 
-/** Neighbours never interpenetrate (22 mm spacing < 22.2 mm slate diameter): a few relaxation passes on targets tx/tz. */
-export function relax(stones: Map<number, Placed>, N: number, iterations = 8) {
-  for (const s of stones.values()) { s.tx = s.jx; s.tz = s.jz }
-  for (let it = 0; it < iterations; it++) for (const s of stones.values()) for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
-    const x2 = s.x + dx, y2 = s.y + dy
-    if (x2 < 0 || y2 < 0 || x2 >= N || y2 >= N) continue
-    const o = stones.get(y2 * N + x2)
-    if (!o) continue
-    const vx = o.tx - s.tx, vz = o.tz - s.tz, d = Math.hypot(vx, vz) || 1e-6, min = s.R + o.R + 0.12
-    if (d < min) { const k = (min - d) / 2 / d; s.tx -= vx * k; s.tz -= vz * k; o.tx += vx * k; o.tz += vz * k }
+/**
+ * Stones never move once down, so a newcomer fits itself around the stones already there (22 mm spacing < 22.2 mm
+ * slate diameter): a few passes pushing only it out of any overlap, from its jittered spot into tx/tz.
+ * shortcut: squeezed between two neighbours that were themselves placed inwards, a sub-millimetre overlap can remain.
+ */
+export function fit(s: Placed, stones: Map<number, Placed>, N: number, iterations = 24) {
+  s.tx = s.jx; s.tz = s.jz
+  for (let it = 0; it < iterations; it++) {
+    let mx = 0, mz = 0 // all overlaps at once, so a squeezed stone settles midway instead of bouncing between neighbours
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const x2 = s.x + dx, y2 = s.y + dy
+      if ((!dx && !dy) || x2 < 0 || y2 < 0 || x2 >= N || y2 >= N) continue
+      const o = stones.get(y2 * N + x2)
+      if (!o || o === s) continue
+      const vx = s.tx - o.tx, vz = s.tz - o.tz, d = Math.hypot(vx, vz) || 1e-6, min = s.R + o.R + 0.12
+      if (d < min) { mx += vx * (min - d) / d; mz += vz * (min - d) / d }
+    }
+    if (!mx && !mz) return
+    s.tx += 0.6 * mx; s.tz += 0.6 * mz
   }
 }
 
@@ -105,6 +115,37 @@ export function todAt(hours: number): Tod {
   return TOD.evening
 }
 
+/* ---------- décors ---------- */
+export type Ground = 'walnut' | 'tatami' | 'paper'
+/** What a décor changes around the (identical) board, stones and bowls. Multipliers apply to the hour's light. */
+export interface Look {
+  /** Poly Haven HDRI in assets/board3d (`<sky>_1k.hdr`); null = three's procedural RoomEnvironment. */
+  sky: string | null
+  /** null: follows the time of day. Otherwise the décor's own fixed light (Lanterne: a night with no window). */
+  tod: Tod | null
+  ground: Ground
+  /** Ground colour multiplier (walnut: also darkened with the room's brightness). */
+  tint: number
+  rough: number
+  /** Contemplation: the ground fades out into the dark of the room (otherwise it fills the view). */
+  fade: boolean
+  /** Study keeps the app's linen (transparent canvas) instead of drawing the ground. */
+  linen: boolean
+  key: number; ibl: number; exp: number
+  /** Shadow penumbra and strength multipliers. */
+  soft: number; shade: number
+  /** Lanterne: a warm spot over the board, in units of 1e6 cd at 1 m (0 = none: the window key casts the shadows). */
+  lamp: number
+}
+const NIGHT: Tod = { az: 215, el: 64, K: 2650, I: 0, env: 0.5, rot: 2.2, exp: 1, room: 0 }
+export const LOOKS: Record<Decor, Look> = {
+  atelier: { sky: 'studio_country_hall', tod: null, ground: 'walnut', tint: 1, rough: 0.72, fade: true, linen: true, key: 1, ibl: 1, exp: 1, soft: 1, shade: 1, lamp: 0 },
+  washitsu: { sky: 'empty_play_room', tod: null, ground: 'tatami', tint: 0.92, rough: 0.82, fade: false, linen: false, key: 0.92, ibl: 1.1, exp: 1, soft: 1.3, shade: 0.95, lamp: 0 },
+  // time of day has no effect here: a lantern at night
+  lanterne: { sky: 'studio_country_hall', tod: NIGHT, ground: 'walnut', tint: 0.5, rough: 0.72, fade: true, linen: false, key: 0, ibl: 0.25, exp: 1.6, soft: 1, shade: 1, lamp: 3.6 },
+  clair: { sky: null, tod: null, ground: 'paper', tint: 1, rough: 0.94, fade: false, linen: false, key: 0.9, ibl: 0.9, exp: 0.82, soft: 2, shade: 0.8, lamp: 0 },
+}
+
 /* ---------- adaptive quality governor ---------- */
 export interface Quality { dpr: number; shadow: number; msaa: number; bowlSegments: number }
 /** Quality ladder, best first. The pixel ratio is capped by the display's own. */
@@ -120,14 +161,20 @@ export function qualityLadder(deviceDpr: number): Quality[] {
 }
 
 /**
- * Watches frame intervals while something animates (render on demand: still frames don't count).
+ * Quality is decided once: a short measured warm-up at startup and after a resize (`measured`), then only a step down
+ * on sustained slowness (`sample`). It never steps back up, so a still board never shifts between levels; the view applies
+ * a runtime step only at its next scene change. Render on demand: only animated frames are sampled.
  * A window averaging slower than 50 fps steps one level down; at the bottom, a window slower than 30 fps asks for the 2D fallback.
- * shortcut: downgrades only (no upgrade probing) — the level resets with the next Board3D instance.
  */
 export class Governor {
   level = 0
   private dts: number[] = []
-  constructor(readonly levels: number, readonly window = 30, readonly slowMs = 20, readonly fallbackMs = 33) {}
+  constructor(readonly levels: number, readonly window = 30, readonly slowMs = 20, readonly fallbackMs = 33, readonly budgetMs = 12) {}
+  /** Warm-up: ms per GPU-synchronised full frame at the current level. True = stepped down (measure again). */
+  measured(ms: number): boolean {
+    if (this.level < this.levels - 1 && ms > this.budgetMs) { this.level++; this.dts = []; return true }
+    return false
+  }
   /** dt = interval between two consecutive animated frames, ms. */
   sample(dt: number): 'down' | 'fallback' | null {
     if (dt <= 0 || dt > 100) { this.dts = []; return null } // hidden tab, first frame after idle, debugger
