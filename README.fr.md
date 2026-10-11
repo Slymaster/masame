@@ -51,9 +51,13 @@
 
 Masame est jeune, et le dit franchement.
 
-- **macOS, Apple Silicon** marche aujourd'hui, compilé depuis les sources. Le moteur est un KataGo 1.18.2 (Metal) autonome, aux dépendances statiques ; il faut macOS 13 ou plus récent, et aucune bibliothèque Homebrew à l'exécution.
-- **Windows** est écrit — le code, l'installeur NSIS et une compilation KataGo OpenCL avec repli automatique sur le processeur — et compilé par GitHub Actions, mais pas encore testé sur du vrai matériel.
-- **Des versions signées et téléchargeables** arrivent. D'ici là, il faut compiler depuis les sources.
+- **macOS, Apple Silicon** marche aujourd'hui. Le moteur est un KataGo 1.18.2 (Metal) autonome, aux dépendances statiques ; il faut macOS 13 ou plus récent, et aucune bibliothèque Homebrew à l'exécution.
+- **Windows** est écrit — le code, l'installeur NSIS et une compilation KataGo OpenCL avec repli automatique sur le processeur — et compilé par GitHub Actions. L'installeur est disponible en préversion, pas encore testé sur du vrai matériel.
+
+**Télécharge** la dernière version sur la [page des versions](https://github.com/Slymaster/masame/releases/latest) : un DMG pour macOS (Apple Silicon) et un installeur pour Windows (x64). Les versions ne sont pas encore signées ; le système avertit donc au premier lancement :
+
+- **macOS :** si Masame est bloqué, ouvre Réglages Système → Confidentialité et sécurité et clique sur **Ouvrir quand même**.
+- **Windows :** quand SmartScreen apparaît, clique sur **Informations complémentaires**, puis **Exécuter quand même**.
 
 ## Compiler depuis les sources
 

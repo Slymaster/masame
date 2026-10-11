@@ -29,7 +29,7 @@ Legend:
 | Swift CMake modules (`cpp/external/macos`) | Apache-2.0 with Runtime Library Exception | Apple Inc. and the Swift project authors |
 | `cpp/core/sha2.cpp` | licence embedded in the file | see file |
 
-The release build must ship KataGo's `LICENSE` and the licence files of `cpp/external/*` (and katagocoreml's `NOTICE`) next to the binary or in the app's About/licences screen.
+The app ships KataGo's `LICENSE`, the licence files of `cpp/external/*` (and katagocoreml's `NOTICE`) and the licences of protobuf, Abseil and the Windows engine's DLLs in its `resources/licenses/` folder (macOS: `Masame.app/Contents/Resources/resources/licenses/`; Windows: `resources\licenses\` in the install folder). Their copies are kept in [`src-tauri/resources/licenses/`](src-tauri/resources/licenses/).
 
 ### protobuf 29.3 (linked into the macOS engine)
 - Source: https://github.com/protocolbuffers/protobuf
@@ -96,7 +96,7 @@ Notable transitive dependencies:
 | cssparser, selectors, dtoa-short, option-ext | MPL-2.0 | file-level copyleft: source of these crates is available on crates.io; we do not modify them |
 | icu_*, zerovec, yoke, tinystr, litemap, writeable, zerofrom, zerotrie, potential_utf | Unicode-3.0 | |
 
-The rest are MIT, Apache-2.0, BSD-3-Clause, Zlib, Unlicense or 0BSD, mostly dual-licensed. For a release, generate the complete list with its licence texts automatically, for example with [`cargo about`](https://github.com/EmbarkStudios/cargo-about) (and check it with [`cargo deny`](https://github.com/EmbarkStudios/cargo-deny)), and ship it with the app.
+The rest are MIT, Apache-2.0, BSD-3-Clause, Zlib, Unlicense or 0BSD, mostly dual-licensed. Each release build generates the complete list with its licence texts (`scripts/third-party-licenses.mjs`, from `cargo metadata`) and ships it as `THIRD_PARTY_LICENSES.txt` in the app's `resources/licenses/` folder.
 
 ---
 
@@ -110,7 +110,7 @@ The rest are MIT, Apache-2.0, BSD-3-Clause, Zlib, Unlicense or 0BSD, mostly dual
 | @tauri-apps/api, @tauri-apps/plugin-dialog, @tauri-apps/plugin-fs | MIT OR Apache-2.0 | (c) 2019-2025 The Tauri Programme in the Commons Conservancy |
 | three | MIT | (c) 2010-2026 three.js authors |
 
-`@sabaki/sgf` depends on `doken` (MIT, bundled). Its optional dependencies `iconv-lite` (MIT) and `jschardet` (LGPL-2.1+) are replaced by an empty module in `vite.config.ts` and are not bundled; keep it that way, or comply with the LGPL if `jschardet` is ever bundled. For a release, generate the full list from `pnpm-lock.yaml`, for example with `pnpm licenses list --prod`.
+`@sabaki/sgf` depends on `doken` (MIT, bundled). Its optional dependencies `iconv-lite` (MIT) and `jschardet` (LGPL-2.1+) are replaced by an empty module in `vite.config.ts` and are not bundled; keep it that way, or comply with the LGPL if `jschardet` is ever bundled. The same generated `THIRD_PARTY_LICENSES.txt` lists every bundled package with its licence text (from `pnpm licenses list --prod`).
 
 ### Fonts (bundled via Fontsource)
 | Font | Licence | Copyright |
@@ -146,9 +146,9 @@ Procedural effects in the 3D renderer (`src/board3d/`) (shell striations, slate 
 
 ---
 
-## 6. Windows build (planned)
+## 6. Windows build
 
-The Windows version will ship KataGo's official Windows engines (v1.18.1, `opencl` and `eigenavx2` builds). Each official zip contains, besides `katago.exe`:
+The Windows version ships KataGo's official Windows engines (v1.18.1, `opencl` and `eigenavx2` builds). Each official zip contains, besides `katago.exe`:
 
 | File(s) | Component | Licence | Requirement |
 |---|---|---|---|
@@ -158,6 +158,7 @@ The Windows version will ship KataGo's official Windows engines (v1.18.1, `openc
 | `bz2.dll` | bzip2 / libbzip2 | bzip2 licence (BSD-style) | (c) 1996-2010 Julian R Seward; reproduce notice in documentation |
 | `msvcp140*.dll`, `vcruntime140*.dll` | Microsoft Visual C++ runtime | Microsoft Visual Studio licence terms, "Distributable Code" | may be redistributed with an application; or use the official VC++ Redistributable installer |
 | `cacert.pem` | Mozilla CA certificate bundle (via curl) | MPL-2.0 | keep the file unmodified; source available at https://curl.se/docs/caextract.html |
+| `katago.exe` (`eigenavx2` build only) | Eigen (header-only, compiled in) | MPL-2.0 | unmodified; source available at https://gitlab.com/libeigen/eigen |
 
 `OpenCL.dll` (Khronos OpenCL ICD Loader, Apache-2.0, https://github.com/KhronosGroup/OpenCL-ICD-Loader) is not in the official zip and the app does not bundle it. The OpenCL build uses the copy that the GPU driver installs in `System32`; if it is missing, the app falls back to the CPU (Eigen AVX2) build.
 

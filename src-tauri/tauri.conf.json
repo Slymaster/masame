@@ -7,7 +7,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build && node scripts/third-party-licenses.mjs",
     "frontendDist": "../dist"
   },
   "app": {
@@ -41,7 +41,8 @@
       "icons/icon.png"
     ],
     "resources": [
-      "resources/katago/analysis.cfg"
+      "resources/katago/analysis.cfg",
+      "resources/licenses/"
     ],
     "windows": {
       "nsis": {

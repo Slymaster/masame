@@ -1,6 +1,8 @@
-# Tests and unsigned builds for macOS (Apple Silicon: .app + .dmg) and Windows x64 (NSIS installer), as CI verification
-# only: nothing is uploaded for now (see uploadWorkflowArtifacts below). Actions are pinned to commit SHAs (tag in
-# the comment); pnpm's exact version comes from package.json's packageManager field.
+# Tests and builds for macOS (Apple Silicon: .app + .dmg, ad-hoc signed) and Windows x64 (NSIS installer, unsigned) on
+# every push and pull request. On a v* tag push only, the DMG and installer are uploaded as workflow artifacts and the
+# release job turns them into a draft GitHub release (with SHA256SUMS.txt) for the maintainer to review and publish by
+# hand. Actions are pinned to commit SHAs (tag in the comment); pnpm's exact version comes from package.json's
+# packageManager field.
 name: Build
 
 on:
@@ -71,5 +73,64 @@ jobs:
         with:
           tauriScript: pnpm tauri
           args: --bundles ${{ matrix.bundles }}
-          # no published binaries until licence texts ship inside the apps and builds are signed; then upload on push only
+          # off: binaries leave CI only through the explicit tag-only upload below
           uploadWorkflowArtifacts: false
+
+      - name: Upload the DMG (tags only)
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'macOS'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: masame-macos
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload the installer (tags only)
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: masame-windows
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  # Separate job so only this one, which runs no project code beyond reading files, can write to the repository.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the tag matches the app version
+        run: |
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match tauri.conf.json version $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist-release
+          merge-multiple: true
+
+      - name: Write checksums
+        working-directory: dist-release
+        run: |
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+            --title "Masame $VERSION" \
+            --notes-file "docs/release-notes/$GITHUB_REF_NAME.md" \
+            dist-release/*
