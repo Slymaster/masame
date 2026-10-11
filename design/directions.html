@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baduk — Directions artistiques</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Karla:wght@400;500;600&family=Shippori+Mincho:wght@400;500;600&family=Zen+Kaku+Gothic+New:wght@400;500&family=Zen+Old+Mincho:wght@400;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{
+  background:var(--bg);color:var(--ink);font-family:var(--f-ui);
+  transition:background-color .6s ease,color .6s ease;
+  -webkit-font-smoothing:antialiased;min-height:100vh;overflow-x:hidden;
+}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background-image:var(--tex);opacity:var(--tex-o);mix-blend-mode:multiply;transition:opacity .6s}
+
+/* ---------- themes ---------- */
+body[data-theme=atelier]{
+  --bg:#ECE4D6;--ink:#2A2118;--muted:#86766280;--muted:#857462;--rule:rgba(43,29,14,.13);--rule-2:rgba(43,29,14,.28);
+  --accent:#7A2E22;--hover:rgba(122,46,34,.06);
+  --f-title:'Cormorant Garamond',Georgia,serif;--f-ui:'Karla',system-ui,sans-serif;--f-jp:'Shippori Mincho',serif;
+  --title-size:52px;--title-w:500;--title-style:italic;--sub-style:normal;--sub-size:17px;--sub-ls:.18em;--sub-tt:uppercase;
+  --seg-bg:rgba(43,29,14,.05);--seg-on:#F7F2E8;--seg-shadow:0 1px 2px rgba(60,40,15,.14),0 0 0 1px rgba(60,40,15,.06);--seg-r:999px;--btn-r:999px;
+  --switch-on:#7A2E22;
+  --stone-b:radial-gradient(circle at 34% 30%,#6a6a70 0,#2c2c30 38%,#121214 80%);
+  --stone-w:radial-gradient(circle at 34% 30%,#fffdf8 0,#f1ebdf 55%,#d7cdbb 100%);
+  --tex:repeating-linear-gradient(0deg,rgba(110,85,50,.045) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(110,85,50,.035) 0 1px,transparent 1px 4px),var(--noise);--tex-o:.9;
+}
+body[data-theme=sumi]{
+  --bg:#E8DFCC;--ink:#1E1B18;--muted:#7C7466;--rule:rgba(30,27,24,.12);--rule-2:rgba(30,27,24,.3);
+  --accent:#B7372A;--hover:rgba(30,27,24,.05);
+  --f-title:'Shippori Mincho',serif;--f-ui:'Shippori Mincho',serif;--f-jp:'Shippori Mincho',serif;
+  --title-size:46px;--title-w:500;--title-style:normal;--sub-style:normal;--sub-size:16px;--sub-ls:.3em;--sub-tt:none;
+  --seg-bg:transparent;--seg-on:#F3ECDD;--seg-shadow:0 0 0 1px rgba(30,27,24,.16);--seg-r:2px;--btn-r:2px;
+  --switch-on:#1E1B18;
+  --stone-b:radial-gradient(circle at 50% 50%,#38352f 0,#26231f 60%,#0d0c0b 100%);
+  --stone-w:radial-gradient(circle,#fdfbf5 0,#fdfbf5 58%,#1e1b18 62%,#1e1b18 76%,transparent 79%);
+  --tex:var(--noise);--tex-o:.85;
+}
+body[data-theme=karesansui]{
+  --bg:#DCD5C8;--ink:#2E2924;--muted:#7D7468;--rule:rgba(46,41,36,.13);--rule-2:rgba(46,41,36,.3);
+  --accent:#5E6B47;--hover:rgba(94,107,71,.08);
+  --f-title:'Zen Old Mincho',serif;--f-ui:'Zen Kaku Gothic New',system-ui,sans-serif;--f-jp:'Zen Old Mincho',serif;
+  --title-size:42px;--title-w:600;--title-style:normal;--sub-style:normal;--sub-size:15px;--sub-ls:.24em;--sub-tt:none;
+  --seg-bg:rgba(46,41,36,.06);--seg-on:#ECE7DD;--seg-shadow:0 1px 3px rgba(46,41,36,.16);--seg-r:12px;--btn-r:12px;
+  --switch-on:#5E6B47;
+  --stone-b:radial-gradient(ellipse at 36% 32%,#625f59 0,#36332f 45%,#1b1a18 100%);
+  --stone-w:radial-gradient(ellipse at 36% 32%,#f7f5f0 0,#e7e3da 60%,#c7c1b4 100%);
+  --tex:var(--noise);--tex-o:1;
+}
+
+/* ---------- header ---------- */
+.top{position:relative;z-index:2;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 36px;height:76px}
+.brand{display:flex;align-items:baseline;gap:12px;color:var(--muted);font-size:12.5px;letter-spacing:.04em}
+.brand b{font-family:var(--f-jp);font-weight:500;font-size:20px;color:var(--ink);letter-spacing:0}
+.brand span.name{font-family:var(--f-title);font-size:17px;color:var(--ink);letter-spacing:.02em}
+.seg{position:relative;display:flex;padding:4px;border-radius:var(--seg-r);background:var(--seg-bg);box-shadow:inset 0 0 0 1px var(--rule);transition:background .6s}
+.seg button{position:relative;z-index:1;border:0;background:none;font-family:var(--f-ui);font-size:13.5px;color:var(--muted);padding:9px 20px;cursor:pointer;display:flex;gap:9px;align-items:baseline;border-radius:var(--seg-r);transition:color .3s;white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-selected=true]{color:var(--ink)}
+.seg button:focus-visible{outline:1px solid var(--accent);outline-offset:-3px}
+.seg .k{font-size:10px;opacity:.5;font-variant-numeric:tabular-nums;font-family:var(--f-ui)}
+.seg .jp{font-family:var(--f-jp);font-size:12px;opacity:.6}
+.seg-ind{position:absolute;top:4px;bottom:4px;left:0;width:0;border-radius:var(--seg-r);background:var(--seg-on);box-shadow:var(--seg-shadow);transition:transform .5s cubic-bezier(.2,.8,.2,1),width .5s cubic-bezier(.2,.8,.2,1),background .6s,border-radius .6s}
+.hint{justify-self:end;font-size:12px;color:var(--muted);display:flex;gap:14px;align-items:center}
+kbd{font-family:var(--f-ui);font-size:10.5px;line-height:1;border:1px solid var(--rule-2);border-radius:4px;padding:2px 5px 3px;color:var(--muted);margin-right:4px}
+
+/* ---------- stage ---------- */
+.stage{display:flex;justify-content:center;align-items:center;gap:clamp(36px,4.5vw,84px);padding:4px 36px 28px;min-height:calc(100vh - 76px)}
+.board-wrap{flex:none;line-height:0}
+canvas{display:block;-webkit-tap-highlight-color:transparent}
+
+/* ---------- panel ---------- */
+.panel{width:330px;flex:none;display:flex;flex-direction:column;gap:28px}
+.eyebrow{display:flex;align-items:center;gap:12px;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+.mark{flex:none;display:none}
+body[data-theme=atelier] .mark.m-atelier{display:block;width:26px;height:1px;background:var(--accent)}
+body[data-theme=sumi] .mark.m-sumi{display:grid;place-items:center;width:24px;height:24px;background:var(--accent);color:#F7EFE2;font-family:'Shippori Mincho',serif;font-size:14px;letter-spacing:0;border-radius:2px;transform:rotate(-2deg);box-shadow:inset 0 0 0 2px #B7372A,inset 0 0 0 3px rgba(247,239,226,.85)}
+body[data-theme=karesansui] .mark.m-kare{display:block;width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(94,107,71,.14)}
+.title{margin-top:14px;font-family:var(--f-title);font-size:var(--title-size);font-weight:var(--title-w);font-style:var(--title-style);line-height:1;letter-spacing:-.005em;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+.title .jp{font-family:var(--f-jp);font-style:normal;font-weight:400;font-size:.46em;color:var(--muted);letter-spacing:.14em}
+.sub{margin-top:12px;font-family:var(--f-title);font-size:var(--sub-size);letter-spacing:var(--sub-ls);text-transform:var(--sub-tt);color:var(--accent)}
+body[data-theme=atelier] .sub{font-family:var(--f-ui);font-size:11.5px;font-weight:600}
+.mood{margin-top:14px;font-size:14.5px;line-height:1.65;color:var(--muted);max-width:32ch}
+body[data-theme=atelier] .mood{font-family:var(--f-title);font-size:18px;line-height:1.45;font-style:italic;color:#6E5F4D}
+.lab{display:flex;justify-content:space-between;align-items:baseline;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);padding-bottom:12px;border-bottom:1px solid var(--rule);margin-bottom:14px}
+.lab span:last-child{letter-spacing:.06em;text-transform:none;font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.sw{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.sw div{display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--ink);min-width:0}
+.sw i{display:block;width:100%;aspect-ratio:1;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.06)}
+body[data-theme=sumi] .sw i{border-radius:2px}
+body[data-theme=karesansui] .sw i{border-radius:46% 54% 50% 50% / 52% 48% 52% 48%}
+.sw small{font-size:9.5px;color:var(--muted);letter-spacing:.04em;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl{position:relative;display:grid;grid-template-columns:18px 1fr auto;gap:12px;align-items:center;padding:9px 0 9px 0;color:var(--muted);transition:color .3s}
+.pl .st{width:16px;height:16px;border-radius:50%;box-shadow:1px 1.5px 2px rgba(0,0,0,.22)}
+.pl .st.b{background:var(--stone-b)}
+.pl .st.w{background:var(--stone-w)}
+body[data-theme=sumi] .pl .st{box-shadow:none}
+.pl .nm{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl .nm em{font-style:normal;color:var(--muted);font-size:12.5px}
+.pl .cp{font-size:12px;font-variant-numeric:tabular-nums;color:var(--muted)}
+.pl.on{color:var(--ink)}
+.pl::before{content:"";position:absolute;left:-14px;top:50%;width:5px;height:5px;margin-top:-2.5px;border-radius:50%;background:var(--accent);opacity:0;transition:opacity .3s}
+.pl.on::before{opacity:1}
+body[data-theme=sumi] .pl::before{border-radius:0;width:5px;height:5px}
+.row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:14px;cursor:pointer;user-select:none}
+.cap{font-size:11.5px;line-height:1.5;color:var(--muted);margin:0 0 10px;font-style:italic}
+body[data-theme=karesansui] .cap{font-style:normal}
+.sw-t{position:relative;width:38px;height:22px;border-radius:999px;border:0;background:var(--rule-2);cursor:pointer;transition:background .3s;flex:none}
+.sw-t::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#FBF8F2;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+.sw-t[aria-checked=true]{background:var(--switch-on)}
+.sw-t[aria-checked=true]::after{transform:translateX(16px)}
+body[data-theme=sumi] .sw-t,body[data-theme=sumi] .sw-t::after{border-radius:2px}
+.sw-t:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+.acts{display:flex;gap:10px}
+.btn{flex:1;padding:12px 14px;font-family:var(--f-ui);font-size:13.5px;letter-spacing:.02em;border:1px solid var(--rule-2);background:transparent;color:var(--ink);border-radius:var(--btn-r);cursor:pointer;transition:background .25s,border-color .25s}
+.btn:hover{background:var(--hover);border-color:var(--accent)}
+.btn:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+.foot{font-size:11px;color:var(--muted);letter-spacing:.04em;line-height:1.6;padding-top:14px;border-top:1px solid var(--rule)}
+
+@media (max-width:900px){
+  .top{grid-template-columns:1fr;height:auto;gap:14px;justify-items:center;padding:18px 16px 6px}
+  .hint{display:none}
+  .seg button{padding:8px 12px;font-size:12.5px}
+  .seg .jp{display:none}
+  .stage{flex-direction:column;padding:12px 16px 32px;gap:32px;min-height:0}
+  .panel{width:100%;max-width:560px}
+}
+</style>
+</head>
+<body data-theme="atelier">
+<header class="top">
+  <div class="brand"><b>碁</b><span class="name">Baduk</span><span>Direction artistique</span></div>
+  <nav class="seg" role="tablist" aria-label="Direction artistique" id="seg">
+    <span class="seg-ind" id="segInd"></span>
+    <button role="tab" data-t="atelier"><span class="k">1</span>Atelier<span class="jp">工房</span></button>
+    <button role="tab" data-t="sumi"><span class="k">2</span>Sumi<span class="jp">墨</span></button>
+    <button role="tab" data-t="karesansui"><span class="k">3</span>Karesansui<span class="jp">枯山水</span></button>
+  </nav>
+  <div class="hint"><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>direction</span><span><kbd>T</kbd>territoire</span></div>
+</header>
+
+<main class="stage">
+  <div class="board-wrap"><canvas id="board" aria-label="Goban 19×19"></canvas></div>
+  <aside class="panel">
+    <div>
+      <div class="eyebrow"><i class="mark m-atelier"></i><i class="mark m-sumi">碁</i><i class="mark m-kare"></i><span id="pNum">Direction I</span></div>
+      <h1 class="title"><span id="pTitle">Atelier</span><span class="jp" id="pJp">工房</span></h1>
+      <div class="sub" id="pSub">L'objet précieux</div>
+      <p class="mood" id="pMood"></p>
+    </div>
+    <section>
+      <div class="lab"><span>Palette</span><span></span></div>
+      <div class="sw" id="sw"></div>
+    </section>
+    <section>
+      <div class="lab"><span>Partie</span><span id="moveNo">Coup 24</span></div>
+      <div class="pl" id="plB"><i class="st b"></i><span class="nm">Toi <em>· 8k</em></span><span class="cp"><span id="capB">0</span> prises</span></div>
+      <div class="pl" id="plW"><i class="st w"></i><span class="nm">Hon'inbō Shūsaku <em>· style 1846</em></span><span class="cp"><span id="capW">0</span> prises</span></div>
+    </section>
+    <section>
+      <div class="lab"><span>Affichage</span><span></span></div>
+      <div class="row" id="rowTerr"><span>Territoire <kbd style="margin-left:6px">T</kbd></span><button class="sw-t" role="switch" id="togTerr" aria-checked="false" aria-label="Territoire"></button></div>
+      <p class="cap">Simulation — le jeu utilisera l'estimation de KataGo.</p>
+      <div class="row" id="rowSound"><span>Son</span><button class="sw-t" role="switch" id="togSound" aria-checked="true" aria-label="Son"></button></div>
+    </section>
+    <div class="acts"><button class="btn" id="undo">Annuler</button><button class="btn" id="reset">Réinitialiser</button></div>
+    <div class="foot" id="pFoot"></div>
+  </aside>
+</main>
+
+<script>
+'use strict';
+/* ================= data ================= */
+const N = 19, HOSHI = [3, 9, 15];
+const ORDER = ['atelier', 'sumi', 'karesansui'];
+const THEMES = {
+  atelier: {
+    num: 'Direction I', title: 'Atelier', jp: '工房', sub: "L'objet précieux",
+    mood: "Un goban de kaya dans la lumière chaude d'un après-midi. Des pierres que l'on garde un siècle.",
+    swatches: [['Lin', '#ECE4D6'], ['Kaya', '#D8A85E'], ['Encre', '#2B1D0E'], ['Ardoise', '#1A1A1D'], ['Sang-de-bœuf', '#7A2E22']],
+    foot: 'Cormorant Garamond · Karla — kaya masame, ardoise nachiguro, coquillage Hyuga.',
+  },
+  sumi: {
+    num: 'Direction II', title: 'Sumi', jp: '墨', sub: 'Le lavis',
+    mood: "Une partie peinte à l'encre sur washi. Chaque coup est un geste, chaque territoire un lavis qui se diffuse.",
+    swatches: [['Washi', '#F3ECDD'], ['Gris lavis', '#8E877A'], ['Sumi', '#1C1A18'], ['Indigo', '#3E4F6B'], ['Vermillon', '#B7372A']],
+    foot: 'Shippori Mincho — encre, papier, sceau.',
+  },
+  karesansui: {
+    num: 'Direction III', title: 'Karesansui', jp: '枯山水', sub: 'Le jardin sec',
+    mood: "Le gravier ratissé de Ryōan-ji. Les pierres sont posées ; l'influence se lit dans les sillons.",
+    swatches: [['Gravier', '#E4DED2'], ['Argile', '#DCD5C8'], ['Engawa', '#4A3A2C'], ['Basalte', '#2A2826'], ['Mousse', '#5E6B47']],
+    foot: 'Zen Old Mincho · Zen Kaku Gothic New — gravier, basalte, granit.',
+  },
+};
+const SETUP = [[15,3],[3,15],[15,16],[3,3],[2,5],[2,9],[5,16],[5,15],[6,15],[4,15],[6,16],[16,2],[15,2],[16,3],[16,4],[17,4],[17,5],[15,1],[14,1],[16,1],[9,3],[16,13],[16,10],[9,16]];
+
+/* ================= noise ================= */
+function hash(x, y, s) {
+  let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(s | 0, -2048144777)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const stoneRng = (x, y, salt) => rng(Math.floor(hash(x, y, salt) * 4294967296)); // stable per intersection
+const T1 = new Float32Array(4096); { const r = rng(7); for (let i = 0; i < 4096; i++) T1[i] = r(); }
+function n1(u) { const i = Math.floor(u), f = u - i, a = T1[i & 4095], b = T1[(i + 1) & 4095]; return a + (b - a) * f * f * (3 - 2 * f); }
+function vn2(x, y, s) {
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
+  const a = hash(xi, yi, s), b = hash(xi + 1, yi, s), c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s);
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const sstep = (a, b, v) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t); };
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const TAU = Math.PI * 2;
+
+/* ================= rules ================= */
+const idx = (x, y) => y * N + x;
+const DIRS = [[1,0],[-1,0],[0,1],[0,-1]];
+function groupAt(b, p) {
+  const c = b[p], stack = [p], seen = new Set(stack), libs = new Set(), stones = [];
+  while (stack.length) {
+    const q = stack.pop(); stones.push(q);
+    const qx = q % N, qy = (q / N) | 0;
+    for (const [dx, dy] of DIRS) {
+      const nx = qx + dx, ny = qy + dy;
+      if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+      const r = idx(nx, ny);
+      if (b[r] === 0) libs.add(r); else if (b[r] === c && !seen.has(r)) { seen.add(r); stack.push(r); }
+    }
+  }
+  return { stones, libs: libs.size };
+}
+// shortcut: no ko rule, add with real engine
+function tryPlay(b, x, y, c) {
+  const p = idx(x, y);
+  if (b[p] !== 0) return null;
+  const nb = b.slice(); nb[p] = c; let cap = 0;
+  for (const [dx, dy] of DIRS) {
+    const nx = x + dx, ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+    const q = idx(nx, ny);
+    if (nb[q] === -c) { const g = groupAt(nb, q); if (g.libs === 0) { for (const s of g.stones) nb[s] = 0; cap += g.stones.length; } }
+  }
+  if (groupAt(nb, p).libs === 0) return null; // suicide
+  return { b: nb, cap };
+}
+(function selfTest() {
+  const b = new Int8Array(N * N); b[idx(0, 0)] = 1; b[idx(1, 0)] = -1;
+  const r = tryPlay(b, 0, 1, -1);
+  console.assert(r && r.cap === 1 && r.b[idx(0, 0)] === 0, 'capture en coin');
+  const s = new Int8Array(N * N); s[idx(1, 0)] = -1; s[idx(0, 1)] = -1;
+  console.assert(tryPlay(s, 0, 0, 1) === null, 'suicide interdit');
+  const t = new Int8Array(N * N); t[idx(0, 0)] = 1; t[idx(1, 0)] = 1; t[idx(2, 0)] = -1; t[idx(0, 1)] = -1;
+  const u = tryPlay(t, 1, 1, -1);
+  console.assert(u && u.cap === 2 && u.b[idx(0, 0)] === 0 && u.b[idx(1, 0)] === 0, 'capture de groupe');
+  console.assert(tryPlay(t, 0, 0, -1) === null, 'case occupée');
+  console.info('Baduk self-test: règles de capture OK');
+})();
+function ownership(b) {
+  const f = new Float32Array(N * N), st = [];
+  for (let p = 0; p < N * N; p++) if (b[p]) st.push([p % N, (p / N) | 0, b[p]]);
+  const k = 1 / (2 * 1.8 * 1.8);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let s = 0; for (const [sx, sy, c] of st) { const dx = x - sx, dy = y - sy; s += c * Math.exp(-(dx * dx + dy * dy) * k); }
+    f[idx(x, y)] = Math.tanh(s);
+  }
+  return f;
+}
+
+/* ================= game state ================= */
+let st, history, setupState, setupHistory;
+function fresh() { return { b: new Int8Array(N * N), toPlay: 1, capB: 0, capW: 0, last: null, moveNo: 0 }; }
+function apply(x, y) {
+  const r = tryPlay(st.b, x, y, st.toPlay);
+  if (!r) return null;
+  history.push(st);
+  st = { b: r.b, toPlay: -st.toPlay, capB: st.capB + (st.toPlay === 1 ? r.cap : 0), capW: st.capW + (st.toPlay === -1 ? r.cap : 0), last: { x, y }, moveNo: st.moveNo + 1 };
+  return r;
+}
+st = fresh(); history = [];
+for (const [x, y] of SETUP) console.assert(apply(x, y), 'position initiale');
+setupState = st; setupHistory = history.slice();
+
+/* ================= canvas & geometry ================= */
+const canvas = document.getElementById('board'), ctx = canvas.getContext('2d');
+let theme = 'atelier', territory = false, sound = true, S = 600, dpr = 1, G = null;
+let hover = null, anim = null, raf = 0;
+const HAS_FILTER = 'filter' in CanvasRenderingContext2D.prototype;
+const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+
+function geom(th) {
+  let b, bw, frame = 0;
+  if (th === 'atelier') { b = S * 0.018; bw = S * 0.945; }
+  else if (th === 'sumi') { b = S * 0.03; bw = S * 0.94; }
+  else { b = S * 0.022; bw = S * 0.956; frame = Math.max(10, Math.round(S * 0.017)); }
+  const inner = bw - 2 * frame, cell = inner / 19.5, o = b + frame + (inner - 18 * cell) / 2;
+  const lwd = Math.max(1, Math.round(dpr));
+  const snap = v => (Math.round(v * dpr) + (lwd % 2 ? 0.5 : 0)) / dpr;
+  const P = []; for (let i = 0; i < N; i++) P.push(snap(o + i * cell));
+  const r = cell * (th === 'atelier' ? 0.482 : th === 'sumi' ? 0.455 : 0.47);
+  return { bx: b, by: b, bw, frame, cell, ox: o, oy: o, P, r };
+}
+
+/* ================= shared drawing ================= */
+function blobPath(c, cx, cy, r, R, amp, squash = 1, rot = 0) {
+  const p1 = R() * TAU, p2 = R() * TAU, p3 = R() * TAU, cr = Math.cos(rot), sr = Math.sin(rot);
+  c.beginPath();
+  for (let i = 0; i <= 64; i++) {
+    const a = i / 64 * TAU, k = 1 + amp * (0.5 * Math.sin(3 * a + p1) + 0.3 * Math.sin(5 * a + p2) + 0.2 * Math.sin(8 * a + p3));
+    const px = Math.cos(a) * r * k, py = Math.sin(a) * r * k * squash;
+    const X = cx + px * cr - py * sr, Y = cy + px * sr + py * cr;
+    i ? c.lineTo(X, Y) : c.moveTo(X, Y);
+  }
+  c.closePath();
+}
+function blurDraw(dst, src, rad) {
+  if (HAS_FILTER) { dst.save(); dst.filter = `blur(${rad}px)`; dst.drawImage(src, 0, 0); dst.restore(); return; }
+  const k = Math.max(2, rad / 1.5), s = mk(Math.ceil(src.width / k), Math.ceil(src.height / k)), sx = s.getContext('2d');
+  sx.imageSmoothingQuality = 'high'; sx.drawImage(src, 0, 0, s.width, s.height);
+  dst.save(); dst.imageSmoothingQuality = 'high'; dst.drawImage(s, 0, 0, src.width, src.height); dst.restore();
+}
+function plainGrid(c, g, color, lw, edge, hoshiR) {
+  c.strokeStyle = color; c.lineWidth = lw; c.beginPath();
+  const a = g.P[0], z = g.P[N - 1];
+  for (let i = 1; i < N - 1; i++) { c.moveTo(g.P[i], a); c.lineTo(g.P[i], z); c.moveTo(a, g.P[i]); c.lineTo(z, g.P[i]); }
+  c.stroke();
+  c.lineWidth = edge; c.strokeRect(a, a, z - a, z - a);
+  c.fillStyle = color;
+  for (const i of HOSHI) for (const j of HOSHI) { c.beginPath(); c.arc(g.P[i], g.P[j], hoshiR, 0, TAU); c.fill(); }
+}
+
+/* ================= ATELIER ================= */
+function atelierTex(g) {
+  const W = Math.round(S * dpr), cv = mk(W, W), x = cv.getContext('2d');
+  x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const { bx, by, bw } = g, t = S * 0.016;
+  // cast + contact shadow on linen
+  x.save(); x.shadowColor = 'rgba(70,44,18,0.32)'; x.shadowBlur = S * 0.03 * dpr; x.shadowOffsetX = S * 0.008 * dpr; x.shadowOffsetY = S * 0.014 * dpr;
+  x.fillStyle = '#8a5a28'; x.fillRect(bx, by, bw + t * 0.45, bw + t); x.restore();
+  x.save(); x.shadowColor = 'rgba(40,24,8,0.45)'; x.shadowBlur = 3 * dpr; x.shadowOffsetX = 1 * dpr; x.shadowOffsetY = 1.5 * dpr;
+  x.fillStyle = '#8a5a28'; x.fillRect(bx, by, bw + t * 0.45, bw + t); x.restore();
+  // thickness: front (bottom) and right side faces
+  let gr = x.createLinearGradient(0, by + bw, 0, by + bw + t);
+  gr.addColorStop(0, '#A8763A'); gr.addColorStop(1, '#7A4F22');
+  x.fillStyle = gr; x.beginPath(); x.moveTo(bx, by + bw); x.lineTo(bx + bw, by + bw); x.lineTo(bx + bw + t * 0.45, by + bw + t); x.lineTo(bx + t * 0.45 * 0.0, by + bw + t); x.closePath(); x.fill();
+  gr = x.createLinearGradient(bx + bw, 0, bx + bw + t * 0.45, 0);
+  gr.addColorStop(0, '#9A6A32'); gr.addColorStop(1, '#6E4520');
+  x.fillStyle = gr; x.beginPath(); x.moveTo(bx + bw, by); x.lineTo(bx + bw + t * 0.45, by + t * 0.5); x.lineTo(bx + bw + t * 0.45, by + bw + t); x.lineTo(bx + bw, by + bw); x.closePath(); x.fill();
+  // end-grain hint on the front face
+  x.save(); x.beginPath(); x.rect(bx, by + bw, bw + t, t); x.clip();
+  const R = rng(5);
+  for (let i = 0; i < bw; i += 1.5 + R() * 3) { x.strokeStyle = `rgba(60,35,12,${0.05 + R() * 0.08})`; x.lineWidth = 0.6; x.beginPath(); x.moveTo(bx + i, by + bw); x.lineTo(bx + i + t * 0.3, by + bw + t); x.stroke(); }
+  x.restore();
+  // top face: procedural masame
+  const w = Math.round(bw * dpr), img = x.createImageData(w, w), d = img.data;
+  const L = [224, 180, 110], D = [176, 120, 58];
+  for (let j = 0; j < w; j++) {
+    const Y = j / dpr;
+    const warp = 3.2 * Math.sin(Y * 0.0045 + 1.3) + 1.1 * Math.sin(Y * 0.019 + 0.4) + 5 * (n1(Y * 0.005 + 50) - 0.5);
+    for (let i = 0; i < w; i++) {
+      const X = i / dpr;
+      const u = X + warp + 0.9 * Math.sin(Y * 0.011 + X * 0.003);
+      const g1 = n1(u * 0.62), g2 = n1(u * 0.15 + 100), g3 = n1(u * 0.022 + 300);
+      const along = 0.55 + 0.9 * vn2(u * 0.09, Y * 0.0045, 5);
+      const v = 0.5 * Math.pow(g1, 6) * along + 0.18 * g2 * along + 0.42 * (g3 - 0.5);
+      const lg = 1.035 - 0.07 * ((X + Y) / (2 * bw));
+      const tt = clamp01(0.36 + v);
+      const nz = (hash(i, j, 9) - 0.5) * 5;
+      const o = (j * w + i) * 4;
+      d[o] = (L[0] + (D[0] - L[0]) * tt) * lg + nz;
+      d[o + 1] = (L[1] + (D[1] - L[1]) * tt) * lg + nz;
+      d[o + 2] = (L[2] + (D[2] - L[2]) * tt) * lg + nz * 0.8;
+      d[o + 3] = 255;
+    }
+  }
+  const tmp = mk(w, w); tmp.getContext('2d').putImageData(img, 0, 0);
+  x.drawImage(tmp, bx, by, bw, bw);
+  // warm afternoon light falling from upper left
+  gr = x.createRadialGradient(bx + bw * 0.15, by + bw * 0.1, 0, bx + bw * 0.15, by + bw * 0.1, bw * 1.25);
+  gr.addColorStop(0, 'rgba(255,236,196,0.16)'); gr.addColorStop(1, 'rgba(90,50,10,0.10)');
+  x.fillStyle = gr; x.fillRect(bx, by, bw, bw);
+  // bevel
+  x.fillStyle = 'rgba(255,238,205,0.45)'; x.fillRect(bx, by, bw, 1); x.fillRect(bx, by, 1, bw);
+  x.fillStyle = 'rgba(80,46,14,0.35)'; x.fillRect(bx, by + bw - 1, bw, 1); x.fillRect(bx + bw - 1, by, 1, bw);
+  return { canvas: cv };
+}
+function atelierTerritory(x, g, b, f) {
+  // chiaroscuro: soft shadow field (black) and warm light field (white), empty points only
+  const W = x.canvas.width, dk = mk(W, W), lt = mk(W, W), d = dk.getContext('2d'), l = lt.getContext('2d'), c = g.cell;
+  d.setTransform(dpr, 0, 0, dpr, 0, 0); l.setTransform(dpr, 0, 0, dpr, 0, 0);
+  for (let y = 0; y < N; y++) for (let X = 0; X < N; X++) {
+    const p = idx(X, y); if (b[p]) continue;
+    const v = f[p], a = sstep(0.05, 0.95, Math.abs(v)); if (a <= 0) continue;
+    if (v > 0) { d.fillStyle = `rgba(92,50,16,${0.46 * a})`; d.fillRect(g.P[X] - c / 2, g.P[y] - c / 2, c, c); }
+    else { l.fillStyle = `rgba(255,234,186,${0.8 * a})`; l.fillRect(g.P[X] - c / 2, g.P[y] - c / 2, c, c); }
+  }
+  const bd = mk(W, W), bl = mk(W, W);
+  blurDraw(bd.getContext('2d'), dk, c * 0.55 * dpr); blurDraw(bl.getContext('2d'), lt, c * 0.55 * dpr);
+  x.save(); x.setTransform(1, 0, 0, 1, 0, 0);
+  x.globalCompositeOperation = 'multiply'; x.drawImage(bd, 0, 0);
+  x.globalCompositeOperation = 'screen'; x.drawImage(bl, 0, 0);
+  x.restore();
+}
+function atelierShadow(c, g, cx, cy, t) {
+  const r = g.r, e = 1 - easeOut(t), off = r * (0.1 + 0.16 * e), blur = r * (0.22 + 0.35 * e);
+  const sx = cx + off * 0.8, sy = cy + off * 1.15;
+  const gr = c.createRadialGradient(sx, sy, r * 0.6, sx, sy, r + blur);
+  gr.addColorStop(0, `rgba(48,26,6,${0.5 - 0.2 * e})`); gr.addColorStop(1, 'rgba(48,26,6,0)');
+  c.fillStyle = gr; c.beginPath(); c.arc(sx, sy, r + blur, 0, TAU); c.fill();
+}
+function atelierStone(c, g, X, Y, col, t) {
+  const cx = g.P[X], cy = g.P[Y], s = 1.06 - 0.06 * easeOut(t), r = g.r * s;
+  c.save(); c.translate(cx, cy);
+  if (col === 1) {
+    const R = stoneRng(X, Y, 11), tn = (R() - 0.5) * 9;
+    const gr = c.createRadialGradient(-r * 0.38, -r * 0.42, r * 0.04, 0, 0, r);
+    const k = v => Math.round(v + tn);
+    gr.addColorStop(0, `rgb(${k(92)},${k(92)},${k(98)})`); gr.addColorStop(0.32, `rgb(${k(54)},${k(54)},${k(59)})`);
+    gr.addColorStop(0.78, `rgb(${k(24)},${k(24)},${k(27)})`); gr.addColorStop(1, 'rgb(13,13,15)');
+    c.fillStyle = gr; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill();
+    const sp = c.createRadialGradient(-r * 0.36, -r * 0.42, 0, -r * 0.36, -r * 0.42, r * 0.5);
+    sp.addColorStop(0, 'rgba(255,250,240,0.17)'); sp.addColorStop(1, 'rgba(255,250,240,0)');
+    c.fillStyle = sp; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill();
+    const rim = c.createRadialGradient(r * 0.3, r * 0.35, r * 0.5, 0, 0, r);
+    rim.addColorStop(0, 'rgba(255,220,170,0)'); rim.addColorStop(1, 'rgba(255,215,160,0.07)');
+    c.fillStyle = rim; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill();
+  } else {
+    const R = stoneRng(X, Y, 23), ang = R() * TAU, tn = (R() - 0.5) * 6;
+    const gr = c.createRadialGradient(-r * 0.3, -r * 0.36, r * 0.05, 0, 0, r);
+    const k = (a, b, cc) => `rgb(${Math.round(a + tn)},${Math.round(b + tn)},${Math.round(cc + tn)})`;
+    gr.addColorStop(0, k(255, 254, 249)); gr.addColorStop(0.55, k(246, 241, 230)); gr.addColorStop(0.88, k(229, 221, 205)); gr.addColorStop(1, k(212, 202, 184));
+    c.fillStyle = gr; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill();
+    c.save(); c.clip();
+    const Dd = r * 3.4, ccx = Math.cos(ang) * Dd, ccy = Math.sin(ang) * Dd;
+    for (let rad = Dd - r * 1.1; rad < Dd + r * 1.1;) {
+      c.strokeStyle = `rgba(150,126,92,${0.025 + R() * 0.055})`; c.lineWidth = r * (0.012 + R() * 0.03);
+      c.beginPath(); c.arc(ccx, ccy, rad, 0, TAU); c.stroke();
+      rad += r * (0.045 + R() * 0.09);
+    }
+    c.restore();
+    const sp = c.createRadialGradient(-r * 0.34, -r * 0.4, 0, -r * 0.34, -r * 0.4, r * 0.42);
+    sp.addColorStop(0, 'rgba(255,255,255,0.55)'); sp.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = sp; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill();
+    c.strokeStyle = 'rgba(120,96,62,0.32)'; c.lineWidth = 0.6; c.beginPath(); c.arc(0, 0, r - 0.3, 0, TAU); c.stroke();
+  }
+  c.restore();
+}
+function atelierLast(c, g, X, Y, col) {
+  c.strokeStyle = col === 1 ? 'rgba(238,230,214,0.92)' : 'rgba(26,26,29,0.85)';
+  c.lineWidth = Math.max(1.2, g.r * 0.085);
+  c.beginPath(); c.arc(g.P[X], g.P[Y], g.r * 0.4, 0, TAU); c.stroke();
+}
+
+/* ================= SUMI ================= */
+function decklePath(bx, by, w, h, seed) {
+  const p = new Path2D(), per = 2 * (w + h), n = Math.ceil(per / 2.5);
+  for (let k = 0; k <= n; k++) {
+    const s = (k % n) / n * per; let x, y, nx, ny;
+    if (s < w) { x = bx + s; y = by; nx = 0; ny = 1; }
+    else if (s < w + h) { x = bx + w; y = by + s - w; nx = -1; ny = 0; }
+    else if (s < 2 * w + h) { x = bx + w - (s - w - h); y = by + h; nx = 0; ny = -1; }
+    else { x = bx; y = by + h - (s - 2 * w - h); nx = 1; ny = 0; }
+    const j = 3.2 * n1(s * 0.05 + seed) + 1.4 * n1(s * 0.33 + seed + 40) + 0.7 * hash(k, 1, seed);
+    x += nx * j; y += ny * j;
+    k ? p.lineTo(x, y) : p.moveTo(x, y);
+  }
+  p.closePath(); return p;
+}
+function sumiTex(g) {
+  const W = Math.round(S * dpr), cv = mk(W, W), x = cv.getContext('2d');
+  x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const { bx, by, bw } = g, path = decklePath(bx, by, bw, bw, 17);
+  x.save(); x.shadowColor = 'rgba(90,70,40,0.16)'; x.shadowBlur = 16 * dpr; x.shadowOffsetY = 4 * dpr; x.fillStyle = '#F3ECDD'; x.fill(path); x.restore();
+  const w = Math.round(bw * dpr) + 8, img = x.createImageData(w, w), d = img.data;
+  for (let j = 0; j < w; j++) for (let i = 0; i < w; i++) {
+    const X = i / dpr, Y = j / dpr;
+    const m = (vn2(X * 0.018, Y * 0.018, 3) - 0.5) * 7 + (vn2(X * 0.08, Y * 0.06, 4) - 0.5) * 4;
+    let nz = (hash(i, j, 21) - 0.5) * 5 + m;
+    const h = hash(i >> 1, j >> 1, 22); if (h < 0.0012) nz -= 18 + h * 12000;
+    const o = (j * w + i) * 4;
+    d[o] = 243 + nz; d[o + 1] = 236 + nz; d[o + 2] = 221 + nz * 1.1; d[o + 3] = 255;
+  }
+  const tmp = mk(w, w); tmp.getContext('2d').putImageData(img, 0, 0);
+  x.save(); x.clip(path); x.drawImage(tmp, bx - 4 / dpr, by - 4 / dpr, w / dpr, w / dpr);
+  const R = rng(99), cnt = Math.round(bw * bw / 650);
+  for (let k = 0; k < cnt; k++) {
+    const sx = bx + R() * bw, sy = by + R() * bw, a = R() * TAU, len = 4 + R() * 20, bend = (R() - 0.5) * len * 0.6;
+    const ex = sx + Math.cos(a) * len, ey = sy + Math.sin(a) * len;
+    x.strokeStyle = R() < 0.55 ? `rgba(255,253,246,${0.35 + R() * 0.4})` : `rgba(150,132,100,${0.06 + R() * 0.1})`;
+    x.lineWidth = 0.3 + R() * 0.6;
+    x.beginPath(); x.moveTo(sx, sy); x.quadraticCurveTo((sx + ex) / 2 - Math.sin(a) * bend, (sy + ey) / 2 + Math.cos(a) * bend, ex, ey); x.stroke();
+  }
+  x.restore();
+  x.strokeStyle = 'rgba(160,140,108,0.22)'; x.lineWidth = 0.7; x.stroke(path);
+  // granulation for washes
+  const gw = W, gi = x.createImageData(gw, gw), gd = gi.data;
+  for (let j = 0; j < gw; j++) for (let i = 0; i < gw; i++) {
+    const v = vn2(i * 0.45 / dpr, j * 0.45 / dpr, 8) * 0.45 + vn2(i * 1.3 / dpr, j * 1.3 / dpr, 10) * 0.3 + hash(i, j, 9) * 0.25, o = (j * gw + i) * 4;
+    gd[o] = gd[o + 1] = gd[o + 2] = 0; gd[o + 3] = Math.max(0, (v - 0.4)) * 190;
+  }
+  const gran = mk(gw, gw); gran.getContext('2d').putImageData(gi, 0, 0);
+  return { canvas: cv, path, gran };
+}
+function brushLine(c, x0, y0, x1, y1, w, seed) {
+  const len = Math.hypot(x1 - x0, y1 - y0), n = Math.max(2, Math.ceil(len / 4)), nx = -(y1 - y0) / len, ny = (x1 - x0) / len;
+  const top = [], bot = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, px = x0 + (x1 - x0) * t, py = y0 + (y1 - y0) * t;
+    const taper = Math.min(1, 0.55 + Math.min(t, 1 - t) * 30);
+    const ww = w * (0.78 + 0.38 * n1(seed + t * len * 0.035)) * taper / 2;
+    const dr = 0.25 * (n1(seed + 77 + t * len * 0.01) - 0.5);
+    top.push([px + nx * (ww + dr), py + ny * (ww + dr)]); bot.push([px - nx * (ww - dr), py - ny * (ww - dr)]);
+  }
+  c.beginPath(); c.moveTo(top[0][0], top[0][1]);
+  for (const p of top) c.lineTo(p[0], p[1]);
+  for (let i = bot.length - 1; i >= 0; i--) c.lineTo(bot[i][0], bot[i][1]);
+  c.closePath(); c.fill();
+}
+function sumiGrid(c, g) {
+  c.fillStyle = 'rgba(126,119,106,0.92)';
+  const a = g.P[0], z = g.P[N - 1];
+  for (let i = 0; i < N; i++) {
+    const w = (i === 0 || i === N - 1) ? 1.7 : 1.05;
+    brushLine(c, g.P[i], a - 0.5, g.P[i], z + 0.5, w, i * 13.7);
+    brushLine(c, a - 0.5, g.P[i], z + 0.5, g.P[i], w, 300 + i * 9.1);
+  }
+  c.fillStyle = 'rgba(100,93,82,0.95)';
+  for (const i of HOSHI) for (const j of HOSHI) { blobPath(c, g.P[i], g.P[j], g.cell * 0.085, rng(i * 31 + j), 0.12); c.fill(); }
+}
+function sumiTerritory(x, g, b, f, tex) {
+  const W = x.canvas.width, wash = mk(W, W), w = wash.getContext('2d');
+  w.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const c = g.cell;
+  for (let y = 0; y < N; y++) for (let X = 0; X < N; X++) {
+    const v = f[idx(X, y)], a = Math.abs(v); if (a < 0.12) continue;
+    let edge = 0;
+    for (const [dx, dy] of DIRS) { const nx = X + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue; const u = f[idx(nx, ny)]; if (u * v < 0 || Math.abs(u) < 0.3) edge = 1; }
+    const al = (v > 0 ? 0.3 : 0.24) * sstep(0.1, 0.9, a) + edge * 0.1;
+    w.fillStyle = v > 0 ? `rgba(40,37,34,${al})` : `rgba(48,72,118,${al * 1.25})`;
+    w.fillRect(g.P[X] - c / 2, g.P[y] - c / 2, c, c);
+  }
+  const bl = mk(W, W), bx = bl.getContext('2d');
+  blurDraw(bx, wash, c * 0.42 * dpr);
+  bx.globalCompositeOperation = 'destination-out'; bx.drawImage(tex.gran, 0, 0);
+  x.save(); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clip(tex.path); x.setTransform(1, 0, 0, 1, 0, 0);
+  x.globalCompositeOperation = 'multiply'; x.drawImage(bl, 0, 0); x.restore();
+}
+function ensoPath(c, cx, cy, r, R, prog) {
+  const a0 = R() * TAU, gap = (20 + R() * 10) * Math.PI / 180, ph = R() * TAU, ph2 = R() * TAU, wmax = r * (0.17 + R() * 0.04);
+  const n = Math.max(6, Math.ceil(90 * prog)), out = [], inn = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n * prog, a = a0 + t * (TAU - gap);
+    const press = t < 0.07 ? 0.6 + 0.4 * (t / 0.07) : 1;
+    const tail = t > 0.55 ? 1 - 0.78 * Math.pow((t - 0.55) / 0.45, 1.4) : 1;
+    const w = wmax * press * tail * (0.86 + 0.14 * Math.sin(t * 11 + ph)) / 2;
+    const rad = r * 0.8 * (1 + 0.03 * Math.sin(t * TAU * 1.3 + ph2));
+    out.push([cx + Math.cos(a) * (rad + w), cy + Math.sin(a) * (rad + w)]);
+    inn.push([cx + Math.cos(a) * (rad - w), cy + Math.sin(a) * (rad - w)]);
+  }
+  c.beginPath(); c.moveTo(out[0][0], out[0][1]);
+  for (const p of out) c.lineTo(p[0], p[1]);
+  for (let i = inn.length - 1; i >= 0; i--) c.lineTo(inn[i][0], inn[i][1]);
+  c.closePath(); c.fill();
+  const r0 = r * 0.8, w0 = wmax * 0.3; // brush entry blob
+  c.beginPath(); c.arc(cx + Math.cos(a0) * r0, cy + Math.sin(a0) * r0, w0, 0, TAU); c.fill();
+}
+function sumiStone(c, g, X, Y, col, t) {
+  const cx = g.P[X], cy = g.P[Y], k = 0.6 + 0.4 * easeOut(t), r = g.r;
+  if (col === 1) {
+    const R = stoneRng(X, Y, 31), rr = r * k, ox = (R() - 0.5) * r * 0.3, oy = (R() - 0.5) * r * 0.3;
+    const sat = R() < 0.32, sa = R() * TAU, sd = 1.13 + R() * 0.14, sr = 0.035 + R() * 0.04;
+    const bl1 = [R() * TAU, R() * 0.45, 0.25 + R() * 0.2];
+    c.save();
+    c.shadowColor = 'rgba(30,27,24,0.35)'; c.shadowBlur = r * 0.16 * dpr;
+    const gr = c.createRadialGradient(cx + ox, cy + oy, 0, cx, cy, rr * 1.04);
+    gr.addColorStop(0, 'rgb(58,55,51)'); gr.addColorStop(0.55, 'rgb(42,40,37)'); gr.addColorStop(0.86, 'rgb(22,21,19)'); gr.addColorStop(1, 'rgb(9,9,8)');
+    c.fillStyle = gr; blobPath(c, cx, cy, rr, R, 0.045); c.fill();
+    c.restore();
+    // ink mottling, slightly lighter blot where pigment thinned
+    const bx = cx + Math.cos(bl1[0]) * rr * bl1[1], by = cy + Math.sin(bl1[0]) * rr * bl1[1];
+    const mg = c.createRadialGradient(bx, by, 0, bx, by, rr * bl1[2]);
+    mg.addColorStop(0, 'rgba(120,112,100,0.10)'); mg.addColorStop(1, 'rgba(120,112,100,0)');
+    c.fillStyle = mg; c.beginPath(); c.arc(bx, by, rr * bl1[2], 0, TAU); c.fill();
+    if (sat && t >= 1) { c.fillStyle = 'rgba(22,20,18,0.85)'; c.beginPath(); c.arc(cx + Math.cos(sa) * r * sd, cy + Math.sin(sa) * r * sd, r * sr, 0, TAU); c.fill(); }
+  } else {
+    const R = stoneRng(X, Y, 37);
+    c.fillStyle = '#FDFBF5'; blobPath(c, cx, cy, r * 0.86 * k, R, 0.012); c.fill();
+    c.fillStyle = 'rgba(26,24,22,0.9)'; ensoPath(c, cx, cy, r, R, easeOut(t));
+  }
+}
+function sumiLast(c, g, X, Y, col) {
+  const R = stoneRng(X, Y, 41), s = g.r * 0.4, rot = (R() - 0.5) * 0.18;
+  c.save(); c.translate(g.P[X], g.P[Y]); c.rotate(rot);
+  c.fillStyle = '#B7372A'; c.globalAlpha = 0.95;
+  c.beginPath(); c.roundRect ? c.roundRect(-s / 2, -s / 2, s, s, s * 0.12) : c.rect(-s / 2, -s / 2, s, s); c.fill();
+  c.strokeStyle = col === 1 ? 'rgba(20,18,16,0.6)' : 'rgba(253,251,245,0.85)'; c.lineWidth = s * 0.1;
+  c.strokeRect(-s * 0.3, -s * 0.3, s * 0.6, s * 0.6);
+  c.restore();
+}
+
+/* ================= KARESANSUI ================= */
+function kareTex(g) {
+  const W = Math.round(S * dpr), cv = mk(W, W), x = cv.getContext('2d');
+  x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const { bx, by, bw, frame: F } = g;
+  x.save(); x.shadowColor = 'rgba(50,38,25,0.35)'; x.shadowBlur = 20 * dpr; x.shadowOffsetY = 7 * dpr; x.shadowOffsetX = 3 * dpr;
+  x.fillStyle = '#4A3A2C'; x.fillRect(bx, by, bw, bw); x.restore();
+  const R = rng(3), sides = [
+    [[bx, by], [bx + bw, by], [bx + bw - F, by + F], [bx + F, by + F], 'h', 0.10],
+    [[bx, by + bw], [bx + bw, by + bw], [bx + bw - F, by + bw - F], [bx + F, by + bw - F], 'h', -0.12],
+    [[bx, by], [bx, by + bw], [bx + F, by + bw - F], [bx + F, by + F], 'v', 0.06],
+    [[bx + bw, by], [bx + bw, by + bw], [bx + bw - F, by + bw - F], [bx + bw - F, by + F], 'v', -0.1],
+  ];
+  for (const [a, b2, c2, d2, dir, lit] of sides) {
+    x.save(); x.beginPath(); x.moveTo(...a); x.lineTo(...b2); x.lineTo(...c2); x.lineTo(...d2); x.closePath(); x.clip();
+    x.fillStyle = lit > 0 ? `rgba(255,225,190,${lit})` : `rgba(0,0,0,${-lit})`; x.fillRect(bx, by, bw, bw);
+    for (let k = 0; k < F * 2.2; k++) {
+      const o = R() * F, w2 = 0.3 + R() * 0.9;
+      x.strokeStyle = R() < 0.5 ? `rgba(20,12,6,${0.12 + R() * 0.2})` : `rgba(140,110,80,${0.06 + R() * 0.12})`; x.lineWidth = w2;
+      x.beginPath();
+      if (dir === 'h') { const yy = (a[1] === by ? by : by + bw - F) + o; x.moveTo(bx, yy); x.bezierCurveTo(bx + bw * 0.3, yy + (R() - 0.5) * 1.5, bx + bw * 0.7, yy + (R() - 0.5) * 1.5, bx + bw, yy); }
+      else { const xx = (a[0] === bx ? bx : bx + bw - F) + o; x.moveTo(xx, by); x.bezierCurveTo(xx + (R() - 0.5) * 1.5, by + bw * 0.3, xx + (R() - 0.5) * 1.5, by + bw * 0.7, xx, by + bw); }
+      x.stroke();
+    }
+    x.restore();
+  }
+  x.fillStyle = 'rgba(255,230,200,0.12)'; x.fillRect(bx, by, bw, 1);
+  // gravel
+  const ix = bx + F, iw = bw - 2 * F, x0 = Math.round(ix * dpr), w = Math.round(iw * dpr);
+  const img = x.createImageData(w, w), d = img.data;
+  for (let j = 0; j < w; j++) for (let i = 0; i < w; i++) {
+    const X = i / dpr, Y = j / dpr;
+    let v = (hash(i, j, 3) - 0.5) * 13;
+    const pb = vn2(X * 0.75, Y * 0.75, 4); if (pb > 0.74) v -= (pb - 0.74) * 55; else if (pb < 0.22) v += (0.22 - pb) * 30;
+    v += (vn2(X * 0.012, Y * 0.012, 5) - 0.5) * 7;
+    const warm = (hash(i >> 1, j >> 1, 6) - 0.5) * 4;
+    const o = (j * w + i) * 4;
+    d[o] = 228 + v + warm; d[o + 1] = 222 + v; d[o + 2] = 210 + v - warm; d[o + 3] = 255;
+  }
+  x.setTransform(1, 0, 0, 1, 0, 0); x.putImageData(img, x0, x0); x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const iy = ix, sh = (x1, y1, x2, y2, a) => { const gr = x.createLinearGradient(x1, y1, x2, y2); gr.addColorStop(0, `rgba(40,28,16,${a})`); gr.addColorStop(1, 'rgba(40,28,16,0)'); return gr; };
+  x.fillStyle = sh(0, iy, 0, iy + 9, 0.32); x.fillRect(ix, iy, iw, 9);
+  x.fillStyle = sh(ix, 0, ix + 8, 0, 0.24); x.fillRect(ix, iy, 8, iw);
+  x.fillStyle = sh(0, iy + iw, 0, iy + iw - 4, 0.12); x.fillRect(ix, iy + iw - 4, iw, 4);
+  x.fillStyle = sh(ix + iw, 0, ix + iw - 4, 0, 0.12); x.fillRect(ix + iw - 4, iy, 4, iw);
+  x.strokeStyle = 'rgba(20,14,8,0.5)'; x.lineWidth = 1; x.strokeRect(ix - 0.5, iy - 0.5, iw + 1, iw + 1);
+  const gravel = x.getImageData(x0, x0, w, w);
+  return { canvas: cv, gravel, x0, w };
+}
+function fineField(b) {
+  // ownership sampled every 1/4 cell from -1 to 19 (smooth contours, no edge clamping)
+  const M = 81, F = new Float32Array(M * M), stn = [], k = 1 / (2 * 1.8 * 1.8);
+  for (let p = 0; p < N * N; p++) if (b[p]) stn.push([p % N, (p / N) | 0, b[p]]);
+  for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
+    const u = -1 + i / 4, v = -1 + j / 4; let s = 0;
+    for (const [sx, sy, c] of stn) { const dx = u - sx, dy = v - sy; s += c * Math.exp(-(dx * dx + dy * dy) * k); }
+    F[j * M + i] = Math.tanh(s);
+  }
+  return F;
+}
+function kareRake(base, g, b, f0, tex) {
+  const f = f0 && fineField(b), M = 81;
+  const { gravel, x0, w } = tex, out = new ImageData(new Uint8ClampedArray(gravel.data), w, w), d = out.data;
+  const s = dpr, cp = g.cell * s, oxp = g.ox * s - x0, oyp = g.oy * s - x0;
+  const dist = new Float32Array(w * w).fill(1e9), near = new Int16Array(w * w).fill(-1);
+  const stones = [];
+  for (let p = 0; p < N * N; p++) if (b[p]) stones.push([g.P[p % N] * s - x0, g.P[(p / N) | 0] * s - x0]);
+  const RR = 1.3 * cp;
+  stones.forEach(([sx, sy], k) => {
+    const i0 = Math.max(0, Math.floor(sx - RR)), i1 = Math.min(w - 1, Math.ceil(sx + RR)), j0 = Math.max(0, Math.floor(sy - RR)), j1 = Math.min(w - 1, Math.ceil(sy + RR));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const dd = Math.hypot(i - sx, j - sy), p = j * w + i; if (dd < dist[p]) { dist[p] = dd; near[p] = k; } }
+  });
+  const lx = -0.55, ly = -0.72, wv = cp * 0.07, sp = cp / 3, rings = [0.62 * cp, 0.85 * cp, 1.08 * cp];
+  const K = 30, V = 7, A1 = 1.15 * cp, A2 = 1.3 * cp, Rf0 = 1.16 * cp, Rf1 = 1.25 * cp;
+  for (let j = 0; j < w; j++) for (let i = 0; i < w; i++) {
+    const p = j * w + i, D = dist[p];
+    let hx = 0, hy = 0, dep = 0;
+    if (D < Rf1) {
+      let sm = 1e9; for (const rk of rings) { const q = D - rk; if (Math.abs(q) < Math.abs(sm)) sm = q; }
+      const ar = 1 - sstep(Rf0, Rf1, D), e = Math.exp(-(sm / wv) * (sm / wv)), sl = 2 * sm / wv * e * ar;
+      const [sx, sy] = stones[near[p]], nx = (i - sx) / (D + 1e-6), ny = (j - sy) / (D + 1e-6);
+      hx += sl * nx; hy += sl * ny; dep += e * ar;
+    }
+    const as = sstep(A1, A2, D);
+    if (as > 0) {
+      if (!territory) {
+        const wav = s * 1.5 * Math.sin(i / (s * 75) + 0.7) + s * 0.6 * Math.sin(i / (s * 23) + 2.1);
+        const dwy = 1.5 / 75 * Math.cos(i / (s * 75) + 0.7) + 0.6 / 23 * Math.cos(i / (s * 23) + 2.1);
+        let q = ((j + wav - oyp - cp / 6) % sp + sp) % sp; if (q > sp / 2) q -= sp;
+        const e = Math.exp(-(q / wv) * (q / wv)), sl = 2 * q / wv * e * as * 0.85;
+        hy += sl; hx += sl * dwy; dep += e * as * 0.85;
+      } else {
+        let gx = ((i - oxp) / cp + 1) * 4, gy = ((j - oyp) / cp + 1) * 4;
+        gx = Math.min(80, Math.max(0, gx)); gy = Math.min(80, Math.max(0, gy));
+        const xi = Math.min(79, Math.floor(gx)), yi = Math.min(79, Math.floor(gy)), fx = gx - xi, fy = gy - yi;
+        const f00 = f[yi * M + xi], f10 = f[yi * M + xi + 1], f01 = f[(yi + 1) * M + xi], f11 = f[(yi + 1) * M + xi + 1];
+        const F = f00 + (f10 - f00) * fx + (f01 - f00) * fy + (f00 - f10 - f01 + f11) * fx * fy;
+        const dFx = ((f10 - f00) * (1 - fy) + (f11 - f01) * fy) * 4 / cp, dFy = ((f01 - f00) * (1 - fx) + (f11 - f10) * fx) * 4 / cp;
+        const gm = Math.hypot(dFx, dFy) + 1e-7, q = F / 0.25, k = Math.round(q);
+        if (Math.abs(k) < 4) {
+          const fr = k === 0, ww = fr ? wv * 1.6 : wv, A = fr ? 1.8 : 0.9;
+          const sp2 = (q - k) * 0.25 / gm, e = Math.exp(-(sp2 / ww) * (sp2 / ww)), sl = A * 2 * sp2 / ww * e * as;
+          hx += sl * dFx / gm; hy += sl * dFy / gm; dep += A * e * as;
+        }
+        const tint = F * as * 5;
+        d[p * 4] += tint; d[p * 4 + 2] -= tint;
+      }
+    }
+    if (hx || hy || dep) {
+      const dl = -(hx * lx + hy * ly) * K - dep * V, o = p * 4;
+      d[o] += dl; d[o + 1] += dl; d[o + 2] += dl * 0.95;
+    }
+  }
+  base.putImageData(out, x0, x0);
+}
+function kareShadow(c, g, cx, cy, t) {
+  const r = g.r, e = 1 - easeOut(t), off = r * (0.12 + 0.2 * e), blur = r * (0.25 + 0.4 * e);
+  const sx = cx + off * 0.7, sy = cy + off * 1.1;
+  const gr = c.createRadialGradient(sx, sy, r * 0.55, sx, sy, r + blur);
+  gr.addColorStop(0, `rgba(58,46,32,${0.42 - 0.2 * e})`); gr.addColorStop(1, 'rgba(58,46,32,0)');
+  c.fillStyle = gr; c.beginPath(); c.arc(sx, sy, r + blur, 0, TAU); c.fill();
+}
+function kareStone(c, g, X, Y, col, t) {
+  const e = 1 - easeOut(t), cx = g.P[X], cy = g.P[Y] - g.r * 0.12 * e, r = g.r * (1 + 0.05 * e);
+  const R = stoneRng(X, Y, col === 1 ? 47 : 53), squash = 0.93 + R() * 0.07, rot = R() * Math.PI;
+  c.save();
+  blobPath(c, cx, cy, r, R, 0.04, squash, rot);
+  const gr = c.createRadialGradient(cx - r * 0.34, cy - r * 0.38, r * 0.05, cx, cy, r * 1.02);
+  if (col === 1) { gr.addColorStop(0, '#625f59'); gr.addColorStop(0.45, '#37342f'); gr.addColorStop(1, '#191816'); }
+  else { gr.addColorStop(0, '#F8F6F1'); gr.addColorStop(0.6, '#E9E5DC'); gr.addColorStop(1, '#C8C2B5'); }
+  c.fillStyle = gr; c.fill(); c.clip();
+  const n = col === 1 ? 46 : 80;
+  for (let k = 0; k < n; k++) {
+    const a = R() * TAU, rd = Math.sqrt(R()) * r, sz = r * (0.012 + R() * 0.03), ty = R();
+    c.fillStyle = col === 1 ? (ty < 0.8 ? `rgba(220,215,205,${0.05 + R() * 0.09})` : `rgba(0,0,0,${0.2 + R() * 0.2})`)
+      : (ty < 0.6 ? `rgba(112,106,98,${0.3 + R() * 0.35})` : ty < 0.82 ? `rgba(52,50,46,${0.45 + R() * 0.3})` : `rgba(176,152,118,${0.35 + R() * 0.3})`);
+    c.beginPath(); c.arc(cx + Math.cos(a) * rd, cy + Math.sin(a) * rd, sz, 0, TAU); c.fill();
+  }
+  const hl = c.createRadialGradient(cx - r * 0.4, cy - r * 0.45, 0, cx - r * 0.4, cy - r * 0.45, r * 0.7);
+  hl.addColorStop(0, col === 1 ? 'rgba(255,250,240,0.07)' : 'rgba(255,255,255,0.35)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = hl; c.fillRect(cx - r * 1.2, cy - r * 1.2, r * 2.4, r * 2.4);
+  c.restore();
+  c.strokeStyle = col === 1 ? 'rgba(0,0,0,0.35)' : 'rgba(96,86,70,0.32)'; c.lineWidth = 0.6;
+  const R2 = stoneRng(X, Y, col === 1 ? 47 : 53); R2(); R2(); // same outline as the fill
+  blobPath(c, cx, cy, r, R2, 0.04, squash, rot); c.stroke();
+}
+function kareLast(c, g, X, Y, col) {
+  const cx = g.P[X], cy = g.P[Y], r = g.r * 0.19;
+  c.fillStyle = col === 1 ? 'rgba(160,178,120,0.22)' : 'rgba(94,107,71,0.18)'; c.beginPath(); c.arc(cx, cy, r * 1.8, 0, TAU); c.fill();
+  c.fillStyle = col === 1 ? '#8E9C6C' : '#5E6B47'; c.beginPath(); c.arc(cx, cy, r, 0, TAU); c.fill();
+}
+
+/* ================= theme dispatch ================= */
+const R_ = {
+  atelier: { tex: atelierTex, shadow: atelierShadow, stone: atelierStone, last: atelierLast, dur: 160,
+    grid: (c, g) => plainGrid(c, g, 'rgba(43,29,14,0.86)', 1, 1.6, g.cell * 0.085),
+    terr: atelierTerritory },
+  sumi: { tex: sumiTex, shadow: null, stone: sumiStone, last: sumiLast, dur: 300,
+    grid: sumiGrid, terr: (x, g, b, f, tex) => sumiTerritory(x, g, b, f, tex) },
+  karesansui: { tex: kareTex, shadow: kareShadow, stone: kareStone, last: kareLast, dur: 500,
+    grid: (c, g) => plainGrid(c, g, 'rgba(150,140,121,0.95)', 1, 1.4, g.cell * 0.075), terr: null },
+};
+
+/* ================= layers ================= */
+const texCache = new Map(); let cache = { texKey: '', tex: null, baseKey: '', base: null, stKey: '', stones: null };
+const posKey = b => b.join('');
+function ensureLayers() {
+  const W = canvas.width, texKey = `${theme}|${S}|${dpr}`, T = R_[theme];
+  if (cache.texKey !== texKey) {
+    if (!texCache.has(texKey)) texCache.set(texKey, T.tex(G));
+    cache.tex = texCache.get(texKey); cache.texKey = texKey; cache.baseKey = '';
+  }
+  const pk = posKey(st.b);
+  const baseKey = `${texKey}|${territory}|${(territory || theme === 'karesansui') ? pk : ''}`;
+  if (cache.baseKey !== baseKey) {
+    const cv = mk(W, W), x = cv.getContext('2d');
+    x.drawImage(cache.tex.canvas, 0, 0);
+    const f = territory ? ownership(st.b) : null;
+    if (theme === 'karesansui') kareRake(x, G, st.b, f, cache.tex);
+    else if (territory) T.terr(x, G, st.b, f, cache.tex);
+    x.setTransform(dpr, 0, 0, dpr, 0, 0); T.grid(x, G);
+    cache.base = cv; cache.baseKey = baseKey;
+  }
+  const ex = anim ? idx(anim.x, anim.y) : -1, stKey = `${texKey}|${pk}|${ex}`;
+  if (cache.stKey !== stKey) {
+    const cv = mk(W, W), x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const list = []; for (let p = 0; p < N * N; p++) if (st.b[p] && p !== ex) list.push([p % N, (p / N) | 0, st.b[p]]);
+    if (T.shadow) for (const [X, Y] of list) T.shadow(x, G, G.P[X], G.P[Y], 1);
+    for (const [X, Y, c] of list) T.stone(x, G, X, Y, c, 1);
+    cache.stones = cv; cache.stKey = stKey;
+  }
+}
+function frame(now) {
+  raf = 0;
+  let t = 1;
+  if (anim) { t = clamp01((now - anim.start) / anim.dur); if (t >= 1) anim = null; }
+  ensureLayers();
+  const T = R_[theme];
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (anim && anim.prevBase && anim.theme === theme) {
+    ctx.drawImage(anim.prevBase, 0, 0); ctx.globalAlpha = sstep(0, 1, t); ctx.drawImage(cache.base, 0, 0); ctx.globalAlpha = 1;
+  } else ctx.drawImage(cache.base, 0, 0);
+  ctx.drawImage(cache.stones, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (anim) {
+    if (T.shadow) T.shadow(ctx, G, G.P[anim.x], G.P[anim.y], t);
+    T.stone(ctx, G, anim.x, anim.y, anim.c, t);
+  }
+  if (st.last && st.b[idx(st.last.x, st.last.y)] && (!anim || t > 0.6)) T.last(ctx, G, st.last.x, st.last.y, st.b[idx(st.last.x, st.last.y)]);
+  if (hover && !st.b[idx(hover.x, hover.y)]) { ctx.globalAlpha = 0.35; T.stone(ctx, G, hover.x, hover.y, st.toPlay, 1); ctx.globalAlpha = 1; }
+  if (anim) req();
+}
+const req = () => { if (!raf) raf = requestAnimationFrame(frame); };
+
+/* ================= sound ================= */
+let AC = null, NB = null;
+function audio() {
+  if (!AC) {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    NB = AC.createBuffer(1, AC.sampleRate, AC.sampleRate); const ch = NB.getChannelData(0); for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+  }
+  if (AC.state === 'suspended') AC.resume();
+  return AC;
+}
+function burst(t0, freq, q, decay, gain, type = 'bandpass') {
+  const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  s.buffer = NB; f.type = type; f.frequency.value = freq; f.Q.value = q;
+  g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(gain, t0 + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
+  s.connect(f).connect(g).connect(AC.destination); s.start(t0, Math.random() * 0.5); s.stop(t0 + decay + 0.02);
+}
+function tone(t0, f0, f1, decay, gain) {
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + decay);
+  g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(gain, t0 + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
+  o.connect(g).connect(AC.destination); o.start(t0); o.stop(t0 + decay + 0.02);
+}
+function playSound() {
+  if (!sound) return;
+  try { audio(); } catch (e) { return; }
+  const t = AC.currentTime + 0.005;
+  if (theme === 'atelier') { burst(t, 2500, 1.6, 0.045, 0.9); tone(t, 200, 150, 0.06, 0.45); }
+  else if (theme === 'sumi') { burst(t, 900, 1.1, 0.08, 0.55); tone(t, 360, 280, 0.07, 0.16); }
+  else {
+    burst(t, 1200, 0.9, 0.15, 0.45); tone(t, 150, 110, 0.05, 0.2);
+    const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+    for (let k = 0; k < n; k++) burst(t + 0.018 + Math.random() * 0.08, 2800 + Math.random() * 2600, 3, 0.014, 0.18);
+  }
+}
+
+/* ================= UI ================= */
+const $ = id => document.getElementById(id);
+function updatePanel() {
+  $('moveNo').textContent = `Coup ${st.moveNo}`;
+  $('capB').textContent = st.capB; $('capW').textContent = st.capW;
+  $('plB').classList.toggle('on', st.toPlay === 1); $('plW').classList.toggle('on', st.toPlay === -1);
+  $('undo').disabled = history.length === 0;
+}
+function placeInd() {
+  const b = document.querySelector(`.seg button[data-t=${theme}]`), ind = $('segInd');
+  ind.style.width = b.offsetWidth + 'px'; ind.style.transform = `translateX(${b.offsetLeft}px)`;
+}
+function setTheme(t, first) {
+  theme = t; document.body.dataset.theme = t;
+  const d = THEMES[t];
+  $('pNum').textContent = d.num; $('pTitle').textContent = d.title; $('pJp').textContent = d.jp; $('pSub').textContent = d.sub; $('pMood').textContent = d.mood; $('pFoot').textContent = d.foot;
+  $('sw').innerHTML = d.swatches.map(([n, h]) => `<div><i style="background:${h}"></i><span>${n}</span><small>${h}</small></div>`).join('');
+  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-selected', b.dataset.t === t));
+  placeInd(); anim = null; G = geom(t); req();
+  if (!first) canvas.animate([{ opacity: 0.25 }, { opacity: 1 }], { duration: 420, easing: 'ease-out' });
+}
+function setTerritory(v) { territory = v; $('togTerr').setAttribute('aria-checked', v); req(); }
+function setSound(v) { sound = v; $('togSound').setAttribute('aria-checked', v); }
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  S = Math.max(280, Math.floor(w < 900 ? Math.min(w - 32, h * 0.92) : Math.min(h * 0.88, h - 100, w * 0.62, w - 470)));
+  dpr = window.devicePixelRatio || 1;
+  canvas.style.width = canvas.style.height = S + 'px';
+  canvas.width = canvas.height = Math.round(S * dpr);
+  texCache.clear(); cache = { texKey: '', tex: null, baseKey: '', base: null, stKey: '', stones: null };
+  G = geom(theme); anim = null; placeInd(); req();
+}
+function pick(e) {
+  const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const x = Math.round((mx - G.ox) / G.cell), y = Math.round((my - G.oy) / G.cell);
+  if (x < 0 || y < 0 || x >= N || y >= N) return null;
+  if (Math.hypot(mx - G.P[x], my - G.P[y]) > G.cell * 0.5) return null;
+  return { x, y };
+}
+canvas.addEventListener('pointermove', e => {
+  const h = pick(e), ok = h && !st.b[idx(h.x, h.y)];
+  canvas.style.cursor = ok ? 'pointer' : 'default';
+  const nh = ok ? h : null;
+  if ((nh && hover && nh.x === hover.x && nh.y === hover.y) || (!nh && !hover)) return;
+  hover = nh; req();
+});
+canvas.addEventListener('pointerleave', () => { hover = null; req(); });
+canvas.addEventListener('click', e => {
+  const h = pick(e); if (!h) return;
+  const prevBase = cache.base, c = st.toPlay;
+  if (!apply(h.x, h.y)) return;
+  anim = { x: h.x, y: h.y, c, start: performance.now(), dur: R_[theme].dur, prevBase: theme === 'karesansui' ? prevBase : null, theme };
+  hover = null; playSound(); updatePanel(); req();
+});
+$('undo').onclick = () => { if (!history.length) return; st = history.pop(); anim = null; updatePanel(); req(); };
+$('reset').onclick = () => { st = setupState; history = setupHistory.slice(); anim = null; updatePanel(); req(); };
+$('rowTerr').onclick = () => setTerritory(!territory);
+$('rowSound').onclick = () => setSound(!sound);
+document.querySelectorAll('.seg button').forEach(b => b.onclick = () => setTheme(b.dataset.t));
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key >= '1' && e.key <= '3') setTheme(ORDER[+e.key - 1]);
+  else if (e.key === 't' || e.key === 'T') setTerritory(!territory);
+});
+addEventListener('resize', () => { clearTimeout(resize.t); resize.t = setTimeout(resize, 120); });
+
+// page grain (data URL generated once)
+(function noise() {
+  const c = mk(220, 220), x = c.getContext('2d'), im = x.createImageData(220, 220);
+  for (let i = 0; i < im.data.length; i += 4) { const v = Math.random(); im.data[i] = im.data[i + 1] = im.data[i + 2] = 90; im.data[i + 3] = v < 0.5 ? v * 26 : 0; }
+  x.putImageData(im, 0, 0); document.documentElement.style.setProperty('--noise', `url(${c.toDataURL()})`);
+})();
+
+// url params: ?theme=sumi&territoire=1&son=0
+const Q = new URLSearchParams(location.search);
+setTheme(ORDER.includes(Q.get('theme')) ? Q.get('theme') : 'atelier', true);
+if (Q.get('territoire') === '1') setTerritory(true);
+if (Q.get('son') === '0') setSound(false);
+resize(); updatePanel();
+document.fonts && document.fonts.ready.then(placeInd);
+</script>
+</body>
+</html>

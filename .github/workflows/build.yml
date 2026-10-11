@@ -1,0 +1,75 @@
+# Tests and unsigned builds for macOS (Apple Silicon: .app + .dmg) and Windows x64 (NSIS installer), as CI verification
+# only: nothing is uploaded for now (see uploadWorkflowArtifacts below). Actions are pinned to commit SHAs (tag in
+# the comment); pnpm's exact version comes from package.json's packageManager field.
+name: Build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            bundles: app,dmg
+          - os: windows-latest
+            bundles: nsis
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build # dist/ must exist before cargo compiles the app (generate_context!)
+
+      # The engine must be in place before cargo runs: tauri-build checks bundled binaries and resources.
+      - name: Cache the KataGo build (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: vendor
+          key: katago-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-katago.sh') }}
+      - name: Build KataGo (macOS, Metal)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ninja pkg-config
+          scripts/build-katago.sh
+      - name: Fetch KataGo (Windows, official OpenCL + CPU builds)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/fetch-windows-engine.ps1
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --locked
+
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        with:
+          tauriScript: pnpm tauri
+          args: --bundles ${{ matrix.bundles }}
+          # no published binaries until licence texts ship inside the apps and builds are signed; then upload on push only
+          uploadWorkflowArtifacts: false

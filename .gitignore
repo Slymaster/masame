@@ -1,0 +1,17 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+.DS_Store
+*.log
+.playwright-mcp/
+vendor/
+src-tauri/binaries/
+# Local tooling and secrets
+.claude/
+.env
+.env.*
+*.part
+src-tauri/resources/katago-win/
+design/screenshots/
+design/atelier3d/

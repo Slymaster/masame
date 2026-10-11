@@ -1,0 +1,370 @@
+mod backend;
+mod engine;
+mod failure;
+mod menu;
+mod networks;
+
+use engine::{Engine, Spec, Status};
+use failure::{Failure, Res};
+use networks::Entry;
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+
+struct App {
+    engine: Arc<Engine>,
+    http: reqwest::Client,
+    catalog: Mutex<Vec<Entry>>,
+    downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    #[cfg(windows)]
+    failed_variants: Mutex<Vec<&'static str>>, // engine builds that failed to start in this session
+}
+
+/// Models, settings and caches. Local (not roaming) on Windows: %LOCALAPPDATA%\<identifier>; on macOS the same
+/// ~/Library/Application Support/<identifier> as app_data_dir.
+fn data_dir(app: &AppHandle) -> Res<PathBuf> { app.path().app_local_data_dir().map_err(|e| Failure::with("models_dir", e)) }
+fn models_dir(app: &AppHandle) -> Res<PathBuf> { Ok(data_dir(app)?.join("models")) }
+fn settings_path(app: &AppHandle) -> Res<PathBuf> { Ok(data_dir(app)?.join("settings.json")) }
+
+fn read_settings(app: &AppHandle) -> Value { parse_settings(&settings_path(app).ok().and_then(|p| std::fs::read(p).ok()).unwrap_or_default()) }
+
+/// Always an object (anything else, even valid JSON, reads as empty), so `settings[key] = value` never panics: it can
+/// run with the engine lock held (the Windows fallback).
+fn parse_settings(bytes: &[u8]) -> Value { serde_json::from_slice(bytes).ok().filter(Value::is_object).unwrap_or(json!({})) }
+
+fn write_setting(app: &AppHandle, key: &str, value: Value) -> Res<()> {
+    let path = settings_path(app)?;
+    let mut settings = read_settings(app);
+    settings[key] = value;
+    std::fs::write(&path, serde_json::to_vec_pretty(&settings).unwrap()).map_err(|e| Failure::with("settings_write", e))
+}
+
+/// Active analysis net: the saved choice if installed, else the default, else any installed kata1 net.
+fn active_network(app: &AppHandle) -> Option<String> {
+    let dir = models_dir(app).ok()?;
+    let ok = |n: &str| networks::valid_name(n) && n != networks::HUMAN && networks::file(&dir, n).is_file();
+    let saved = read_settings(app)["activeNetwork"].as_str().map(String::from);
+    saved.filter(|n| ok(n))
+        .or_else(|| ok(networks::DEFAULT_NETWORK).then(|| networks::DEFAULT_NETWORK.into()))
+        .or_else(|| networks::installed(&dir).into_iter().find(|i| i.complete && ok(&i.name)).map(|i| i.name))
+}
+
+/// Dev-only overrides: in a release build the environment never picks the binary, config or model the app runs.
+fn env_path(k: &str) -> Option<PathBuf> { if cfg!(debug_assertions) { std::env::var_os(k).map(PathBuf::from) } else { None } }
+
+/// The one place that decides which KataGo binary runs, and its platform-specific overrides: BADUK_KATAGO (dev), else
+/// on macOS the bundled sidecar, which Tauri places next to the app executable; on Windows (below) one of the official
+/// builds bundled as resources.
+#[cfg(not(windows))]
+fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
+    env_path("BADUK_KATAGO")
+        .or_else(|| Some(std::env::current_exe().ok()?.parent()?.join(format!("katago{}", std::env::consts::EXE_SUFFIX))))
+        .map(|b| (b, vec![]))
+        .ok_or(Failure::new("engine_missing"))
+}
+
+/// Windows: resources/katago-win/<variant>/katago.exe (next to its DLLs), the variant chosen by backend.rs.
+#[cfg(windows)]
+fn engine_bin(app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
+    // OpenCL's tuning cache would default to katago.exe's folder, which is read-only once installed. Relative to
+    // KataGo's working directory, the data dir (an absolute path could hold characters its narrow argv cannot).
+    let home = vec![OsString::from("homeDataDir=katago")];
+    if let Some(b) = env_path("BADUK_KATAGO") { return Ok((b, home)) }
+    let failed = app.state::<App>().failed_variants.lock().unwrap().clone();
+    // No candidate: no OpenCL driver and no AVX2.
+    let variant = backend::pick(&candidates(app), &failed).ok_or(Failure::with("cpu_unsupported", "no OpenCL.dll"))?;
+    let bin = app.path().resolve(Path::new("resources").join("katago-win").join(variant).join("katago.exe"), BaseDirectory::Resource)
+        .map_err(|e| Failure::with("engine_missing", e))?;
+    Ok((bin, home))
+}
+
+#[cfg(windows)]
+fn candidates(app: &AppHandle) -> Vec<&'static str> { backend::candidates(read_settings(app)["engineVariant"].as_str(), opencl_ok(), cpu_ok()) }
+
+/// The OpenCL build imports OpenCL.dll, which only a GPU driver installs (in System32); it is not bundled. Without the
+/// system copy, the loader would go on to the current directory and PATH, where anyone could have planted one.
+#[cfg(windows)]
+fn opencl_ok() -> bool {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
+    let mut buf = [0u16; 260];
+    // Length without the terminating NUL; 0 on error, or the size needed if the buffer is too small.
+    let n = unsafe { GetSystemDirectoryW(buf.as_mut_ptr(), buf.len() as u32) } as usize;
+    n > 0 && n < buf.len() && PathBuf::from(OsString::from_wide(&buf[..n])).join("OpenCL.dll").is_file()
+}
+
+/// The CPU build is compiled for AVX2 + FMA; without them it would die on an illegal instruction.
+#[cfg(windows)]
+fn cpu_ok() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    { is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") }
+    #[cfg(not(target_arch = "x86_64"))]
+    { false }
+}
+
+/// Windows: a bundled build that fails before it is ready (driver crash, hang) is replaced by the next candidate for
+/// this session. Nothing is persisted here: a bad model or config crashes every build, so only a build that reaches
+/// Ready is remembered (engine_ready). Engine calls this with its process lock held, so it must not touch the engine.
+#[cfg(windows)]
+fn engine_fallback(app: &AppHandle, spec: &engine::Spec, error: Failure) -> Res<engine::Spec> {
+    let Some(variant) = backend::variant_of(&spec.bin).filter(|_| backend::is_backend_failure(error.code) && env_path("BADUK_KATAGO").is_none())
+    else { return Err(error) };
+    let next = backend::next(&candidates(app), &mut app.state::<App>().failed_variants.lock().unwrap(), variant);
+    let Some(next) = next else {
+        // Every candidate failed: the last error (likely the model or config), or, when OpenCL failed and the CPU build
+        // cannot run here, say so with OpenCL's own error as detail.
+        return Err(if cpu_ok() { error } else { Failure { code: "cpu_unsupported", detail: error.detail.or(Some(error.code.into())) } });
+    };
+    eprintln!("[katago] {variant} failed ({error:?}), falling back to {next}");
+    engine_spec(app)
+}
+
+/// Windows: the bundled build that reached Ready becomes the one the next launch starts with.
+#[cfg(windows)]
+fn engine_ready(app: &AppHandle, spec: &engine::Spec) {
+    if env_path("BADUK_KATAGO").is_some() { return }
+    if let Some(v) = backend::to_persist(read_settings(app)["engineVariant"].as_str(), &spec.bin) {
+        let _ = write_setting(app, "engineVariant", json!(v));
+    }
+}
+
+const CONFIG: &str = "analysis.cfg";
+
+/// KataGo reads its config from the data dir, its working directory (see engine::args): the bundled one is copied
+/// there when missing or different.
+fn install_config(app: &AppHandle) -> Res<()> {
+    let src = app.path().resolve(Path::new("resources").join("katago").join(CONFIG), BaseDirectory::Resource)
+        .map_err(|e| Failure::with("config_missing", e))?;
+    let bytes = std::fs::read(&src).map_err(|e| Failure::with("config_missing", e))?;
+    let dir = data_dir(app)?;
+    if std::fs::read(dir.join(CONFIG)).ok().as_ref() != Some(&bytes) {
+        std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(CONFIG), &bytes)).map_err(|e| Failure::with("config_missing", e))?;
+    }
+    Ok(())
+}
+
+/// Engine binary + bundled config + active net, with env overrides for development against another KataGo build.
+fn engine_spec(app: &AppHandle) -> Res<Spec> {
+    let models = models_dir(app)?;
+    let (bin, overrides) = engine_bin(app)?;
+    let config = match env_path("BADUK_KATAGO_CONFIG") { Some(p) => p, None => data_dir(app)?.join(CONFIG) };
+    let model = match env_path("BADUK_KATAGO_MODEL") {
+        Some(p) => p,
+        None => networks::file(&models, &active_network(app).ok_or(Failure::new("no_analysis_net"))?),
+    };
+    let human = Some(networks::file(&models, networks::HUMAN)).filter(|p| p.is_file());
+    Ok(Spec { bin, config, model, human, cwd: data_dir(app)?, overrides })
+}
+
+fn ensure_engine(app: &AppHandle, s: &App) -> Res<()> {
+    match engine_spec(app) {
+        Ok(spec) => s.engine.ensure(spec),
+        Err(e) => { s.engine.stop(); Err(e) } // e.g. the last analysis net was deleted
+    }
+}
+
+#[tauri::command]
+async fn networks_catalog(app: AppHandle, s: State<'_, App>) -> Res<Value> {
+    let cache = data_dir(&app)?.join("catalog.json");
+    let (nets, error) = match networks::fetch_nets(&s.http).await {
+        Ok(nets) => {
+            let _ = std::fs::create_dir_all(data_dir(&app)?);
+            let _ = std::fs::write(&cache, serde_json::to_vec(&nets).unwrap());
+            (nets, None)
+        }
+        Err(e) => {
+            // Offline: last good catalog, re-validated since it is just a file on disk.
+            let cached: Vec<networks::ApiNet> = std::fs::read(&cache).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+            (cached.into_iter().filter(networks::validate).collect(), Some(e)) // e.code == "catalog_offline"
+        }
+    };
+    let entries = networks::catalog(&nets);
+    *s.catalog.lock().unwrap() = entries.clone();
+    Ok(json!({ "entries": entries, "error": error }))
+}
+
+#[tauri::command]
+fn networks_state(app: AppHandle, s: State<'_, App>) -> Res<Value> {
+    let downloading: Vec<String> = s.downloads.lock().unwrap().keys().cloned().collect();
+    let active = active_network(&app);
+    Ok(json!({
+        "installed": networks::installed(&models_dir(&app)?),
+        "active": active,
+        "activeKey": active.as_deref().and_then(networks::preset_key),
+        "downloading": downloading,
+        "human": networks::HUMAN,
+    }))
+}
+
+#[tauri::command]
+fn network_download(app: AppHandle, s: State<'_, App>, name: String) -> Res<()> {
+    // Only names from our own catalog: the webview never supplies a URL.
+    let entry = {
+        let mut cat = s.catalog.lock().unwrap();
+        if cat.is_empty() { *cat = networks::catalog(&[]) }
+        cat.iter().find(|e| e.name == name).cloned().ok_or(Failure::new("unknown_network"))?
+    };
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut d = s.downloads.lock().unwrap();
+        if d.contains_key(&name) { return Ok(()) }
+        d.insert(name.clone(), cancel.clone());
+    }
+    let (http, dir) = (s.http.clone(), models_dir(&app)?);
+    tauri::async_runtime::spawn(async move {
+        let send = |state: &str, got: u64, error: Option<Failure>| {
+            let _ = app.emit("network-progress", json!({ "name": entry.name, "state": state, "received": got, "total": entry.bytes, "error": error }));
+        };
+        let mut last = Instant::now();
+        let r = networks::download(&http, &entry, &dir, &cancel, |got, total| {
+            if got == total || last.elapsed().as_millis() >= 120 { last = Instant::now(); send("downloading", got, None) }
+        }).await;
+        let r = match r {
+            Ok(true) => {
+                send("verifying", entry.bytes, None);
+                let (d, e) = (dir.clone(), entry.clone());
+                tauri::async_runtime::spawn_blocking(move || networks::finish(&d, &e.name, e.bytes, &e.sha256)).await
+                    .unwrap_or_else(|e| Err(Failure::with("install_failed", e))).map(|_| true)
+            }
+            other => other,
+        };
+        app.state::<App>().downloads.lock().unwrap().remove(&entry.name);
+        match r {
+            Ok(true) => send("done", entry.bytes, None),
+            Ok(false) => send("cancelled", 0, None),
+            Err(m) => send("error", 0, Some(m)),
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn network_cancel(s: State<'_, App>, name: String) {
+    if let Some(c) = s.downloads.lock().unwrap().get(&name) { c.store(true, Ordering::Relaxed) }
+}
+
+#[tauri::command]
+fn network_delete(app: AppHandle, s: State<'_, App>, name: String) -> Res<()> {
+    if s.downloads.lock().unwrap().contains_key(&name) { return Err(Failure::new("download_running")) }
+    let file = networks::file(&models_dir(&app)?, &name);
+    if s.engine.running_spec().is_some_and(|sp| sp.model == file || sp.human.as_ref() == Some(&file)) { s.engine.stop() }
+    networks::remove(&models_dir(&app)?, &name)
+}
+
+#[tauri::command]
+async fn network_set_active(app: AppHandle, s: State<'_, App>, name: String) -> Res<()> {
+    if !networks::valid_name(&name) || !networks::file(&models_dir(&app)?, &name).is_file() { return Err(Failure::new("not_installed")) }
+    write_setting(&app, "activeNetwork", json!(name))?;
+    if s.engine.running_spec().is_some() { ensure_engine(&app, &s)? } // restart on the new net
+    Ok(())
+}
+
+#[tauri::command]
+fn engine_status(s: State<'_, App>) -> Status { s.engine.status() }
+
+#[tauri::command]
+async fn engine_start(app: AppHandle, s: State<'_, App>) -> Res<()> { ensure_engine(&app, &s) } // async: spawning needs the tokio runtime
+
+#[tauri::command]
+fn engine_stop(s: State<'_, App>) { s.engine.stop() }
+
+/// One analysis query (positions are built by the frontend); starts or restarts the engine as needed.
+#[tauri::command]
+async fn engine_analyze(app: AppHandle, s: State<'_, App>, query: Value) -> Res<Value> {
+    ensure_engine(&app, &s)?;
+    s.engine.analyze(query).await
+}
+
+/// Opens one of a few fixed pages (credits) in the default browser; the webview never passes a URL.
+#[tauri::command]
+fn open_link(which: String) -> Res<()> {
+    let url = match which.as_str() {
+        "katago" => "https://github.com/lightvector/KataGo",
+        "license" => "https://katagotraining.org/network_license/",
+        _ => return Err(Failure::new("unknown_link")),
+    };
+    open_url(url)
+}
+
+#[cfg(target_os = "macos")]
+fn open_url(url: &str) -> Res<()> {
+    // Absolute path: never resolved through PATH.
+    std::process::Command::new("/usr/bin/open").arg(url).spawn().map(|_| ()).map_err(|e| Failure::with("open_failed", e))
+}
+
+#[cfg(windows)]
+fn open_url(url: &str) -> Res<()> {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let (verb, file) = (wide("open"), wide(url));
+    // The default browser via the shell's URL association: no command line, no PATH lookup.
+    let r = unsafe { ShellExecuteW(0 as _, verb.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
+    if r as usize > 32 { Ok(()) } else { Err(Failure::with("open_failed", r as usize)) }
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn open_url(_url: &str) -> Res<()> { Err(Failure::new("open_failed")) } // shortcut: no Linux build yet
+
+/// Rebuilds the macOS menu bar in the UI language; `labels` come from the frontend dictionary. No-op elsewhere.
+#[tauri::command]
+fn set_language(app: AppHandle, labels: menu::Labels) -> Res<()> {
+    #[cfg(target_os = "macos")]
+    app.set_menu(menu::build(&app, &labels).map_err(|e| Failure::with("menu_failed", e))?).map_err(|e| Failure::with("menu_failed", e))?;
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, labels);
+    Ok(())
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            let h = app.handle().clone();
+            let engine = Engine::new(move |ev, payload| { let _ = h.emit(ev, payload); });
+            #[cfg(windows)]
+            let engine = {
+                let (h, h2) = (app.handle().clone(), app.handle().clone());
+                engine.with_fallback(move |spec, e| engine_fallback(&h, spec, e)).with_on_ready(move |spec| engine_ready(&h2, spec))
+            };
+            if let Err(e) = install_config(app.handle()) { eprintln!("[katago] config not installed: {e:?}") }
+            app.manage(App {
+                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(),
+                #[cfg(windows)]
+                failed_variants: Default::default(),
+            });
+            Ok(())
+        })
+        // Our menu items (macOS) go to the frontend, which runs them exactly like their keyboard shortcuts.
+        .on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); })
+        .invoke_handler(tauri::generate_handler![
+            networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
+            engine_status, engine_start, engine_stop, engine_analyze, open_link, set_language
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, ev| if let RunEvent::Exit = ev { app.state::<App>().engine.kill() });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_are_always_an_object() {
+        assert_eq!(parse_settings(br#"{"engineVariant":"opencl"}"#)["engineVariant"], "opencl");
+        for b in [&b""[..], b"not json", b"[1,2]", b"null", b"42", b"\"x\""] {
+            let mut v = parse_settings(b);
+            v["activeNetwork"] = json!("n"); // would panic on an array, number or string
+            assert_eq!(v, json!({"activeNetwork": "n"}));
+        }
+    }
+}

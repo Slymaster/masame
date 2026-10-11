@@ -1,0 +1,1099 @@
+// "Atelier vivant": the real-time 3D goban (three.js, WebGL2). Same contract as the Canvas2D BoardView
+// (constructor(canvas, onPlay), update(state), drop(v, c), resize(size), destroy()), so the app can swap renderers.
+// Units are millimetres. Only MeshPhysicalMaterial / MeshBasicMaterial / ShadowMaterial + PMREM, so a WebGPURenderer
+// port stays possible; the onBeforeCompile GLSL snippets (grid ink, shell stripes, slate micro-roughness, AO alpha) are
+// the parts that would need a TSL rewrite.
+
+import * as THREE from 'three'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import type { Sign, Vertex } from '@sabaki/go-board'
+import type { BoardState } from '../board/BoardView'
+import { rng } from '../board/noise'
+import { bowlHeap, BT, dims, dropStones, Governor, gx, gz, hoshiStep, jitter, lens, mixTod, qualityLadder, RB, relax, RW, SH, SX, SZ, TOD, todAt, type Placed, type Quality, type Rest, type TimeName, type Tod } from './logic'
+import { StoneSound } from './sound3d'
+
+export interface Board3DState extends BoardState {
+  /** Prisoners shown on each lid in Contemplation (black = white stones taken by Black). Optional: without it the view counts the captures it animates. */
+  captures?: { black: number; white: number }
+}
+export type CameraMode = 'study' | 'contemplation'
+export type TimeMode = TimeName | 'auto'
+export interface Board3DOptions { camera: CameraMode; time: TimeMode; highContrast: boolean }
+export type FallbackReason = 'webgl2' | 'context-lost' | 'slow'
+export interface Board3DInit {
+  /** The app should switch to the 2D BoardView (WebGL2 missing, context lost, or still too slow at the lowest quality). */
+  onFallback?: (reason: FallbackReason) => void
+  options?: Partial<Board3DOptions>
+  /** Where kaya_*.jpg, *.mp3 and the HDRI live (default: `${BASE_URL}assets/board3d/`). */
+  assetBase?: string
+}
+
+const DROP_MS = 140, NUDGE_MS = 260, WOB_MS = 360, DIE_MS = 260, FLY_MS = 720, CAM_MS = 900, TOD_MS = 1800, OMBRE_MS = 900
+const TILT = THREE.MathUtils.degToRad(22)
+const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
+const AO_K = 1.8 // contact-shadow quad half size, in stone radii
+const KAYA_PX_MM = 4.08 // scan density: 2048 px along the grain = 502 mm
+const easeIO = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+const lerp = THREE.MathUtils.lerp
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
+const sstep = (a: number, b: number, v: number) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t) }
+const mkCanvas = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h })
+
+interface Stone extends Placed {
+  p: number; c: Sign; seed: number; rotY: number; wobAxis: number
+  px: number; pz: number; fx: number; fz: number; mt0: number; push: [number, number] | null
+  t0: number; landed: boolean; captured: Stone[]
+}
+interface Leaving { s: Stone; t0: number; fly: boolean; to?: THREE.Vector3; owner: Sign }
+
+function kelvin(K: number) {
+  const t = K / 100, c = (v: number) => Math.min(255, Math.max(0, v)) / 255
+  const r = t <= 66 ? 255 : 329.698727446 * Math.pow(t - 60, -0.1332047592)
+  const g = t <= 66 ? 99.4708025861 * Math.log(t) - 161.1195681661 : 288.1221695283 * Math.pow(t - 60, -0.0755148492)
+  const b = t >= 66 ? 255 : t <= 19 ? 0 : 138.5177312231 * Math.log(t - 10) - 305.0447927307
+  return new THREE.Color().setRGB(c(r), c(g), c(b), THREE.SRGBColorSpace)
+}
+
+/* ---------- shaders ---------- */
+const GLSL_GRID = /* glsl */`
+uniform vec3 uInk; uniform float uLim, uStep, uFive, uHalf;
+varying vec3 vLoc;
+float lineAA(float c, float sp, float h, float lim) {
+  float n = clamp(floor(c / sp + 0.5), -lim, lim);
+  float dd = abs(c - n * sp), w = max(fwidth(c), 1e-4);
+  float hw = max(h, 0.55 * w);                         // never thinner than ~1px; fade instead
+  return clamp((hw - dd) / w + 0.5, 0.0, 1.0) * sqrt(h / hw);
+}
+float span(float c, float ext, float h) { float w = max(fwidth(c), 1e-4); return clamp((ext + h - abs(c)) / w + 0.5, 0.0, 1.0); }
+float gridInk(vec3 p) {
+  if (p.y < ${(BT / 2 - 0.01).toFixed(2)}) return 0.0;
+  // odd N: lines sit on multiples of the spacing; even N would need a half offset (only 9/13/19 are played)
+  float lx = lineAA(p.x, ${SX.toFixed(2)}, uHalf, uLim) * span(p.z, uLim * ${SZ.toFixed(2)}, uHalf);
+  float lz = lineAA(p.z, ${SZ.toFixed(2)}, uHalf, uLim) * span(p.x, uLim * ${SX.toFixed(2)}, uHalf);
+  float ho = 0.0;
+  if (uStep > 0.0) {
+    vec2 k = clamp(floor(p.xz / (uStep * vec2(${SX.toFixed(2)}, ${SZ.toFixed(2)})) + 0.5), -1.0, 1.0);
+    vec2 h = k * uStep * vec2(${SX.toFixed(2)}, ${SZ.toFixed(2)});
+    float hd = length(p.xz - h), hwid = max(fwidth(hd), 1e-4);
+    ho = clamp((2.0 - hd) / hwid + 0.5, 0.0, 1.0);
+    if (uFive > 0.5 && ((k.x == 0.0) != (k.y == 0.0))) ho = 0.0; // 9×9 and 13×13: corners + centre only
+  }
+  return max(max(lx, lz), ho) * 0.94;
+}`
+const GLSL_NOISE = /* glsl */`
+varying vec3 vObj; varying float vSeed;
+float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }`
+type Shader = THREE.WebGLProgramParametersWithUniforms
+function stoneVS(sh: Shader) {
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed;\nvarying vec3 vObj; varying float vSeed;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObj = position; vSeed = aSeed;')
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + GLSL_NOISE)
+}
+function slateMaterial(extra: THREE.MeshPhysicalMaterialParameters = {}) {
+  const m = new THREE.MeshPhysicalMaterial({ color: 0x18181b, roughness: 0.42, metalness: 0, specularIntensity: 0.7, clearcoat: 0.3, clearcoatRoughness: 0.42, ...extra })
+  m.onBeforeCompile = sh => {
+    stoneVS(sh)
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float sd = vSeed * 97.0;
+        diffuseColor.rgb *= 0.9 + 0.2 * fract(sd * 0.31);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        { float n = 0.6 * vnoise(vObj.xz * 1.3 + sd) + 0.4 * vnoise(vObj.xz * 3.7 - sd);
+          n = mix(n, 0.5, smoothstep(0.4, 1.2, fwidth(vObj.x * 3.7)));
+          roughnessFactor = clamp(roughnessFactor * (0.78 + 0.44 * n), 0.08, 1.0); }`)
+  }
+  m.customProgramCacheKey = () => 'slate'
+  return m
+}
+function shellMaterial(hc: { value: number }, extra: THREE.MeshPhysicalMaterialParameters = {}) {
+  const m = new THREE.MeshPhysicalMaterial({
+    color: 0xfdfbf6, roughness: 0.3, metalness: 0, specularIntensity: 0.8,
+    clearcoat: 0.5, clearcoatRoughness: 0.14, sheen: 0.3,
+    // nacre-free but pearly: a whisper of thin-film colour in the highlight
+    iridescence: 0.14, iridescenceIOR: 1.45, iridescenceThicknessRange: [220, 420],
+    emissive: new THREE.Color(0.075, 0.072, 0.066), // a little light comes back out of the shell
+    sheenColor: new THREE.Color(0xfff1dc), sheenRoughness: 0.55, ...extra,
+  })
+  m.onBeforeCompile = sh => {
+    stoneVS(sh)
+    sh.uniforms.uHC = hc
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uHC;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float sd = vSeed * 97.0, rr = length(vObj.xz) / ${RW.toFixed(2)};
+        // Hyuga growth lines: concentric arcs around a far centre => parallel, slightly curved, uneven; pitch and depth vary per stone
+        vec2 C = vec2(8.0 * (fract(sd * 0.53) - 0.5), -(45.0 + 80.0 * fract(sd * 0.137)));
+        float d = length(vObj.xz - C), pitch = 1.0 + 0.6 * fract(sd * 0.29);
+        float ph = d * pitch + 1.7 * sin(d * 0.21 + sd) + 0.8 * sin(d * 0.67 + sd * 1.7);
+        float tri = 1.0 - abs(fract(ph) - 0.5) * 2.0;
+        float aa = 1.0 - smoothstep(0.25, 0.65, fwidth(ph));
+        float stripe = smoothstep(0.6, 1.0, tri) * (0.35 + 0.65 * smoothstep(-0.3, 0.8, sin(d * 0.39 + sd * 2.3))) * aa * (1.0 - 0.6 * uHC);
+        float broad = 0.5 + 0.5 * sin(d * 1.1 + sd * 3.1 + 1.3 * sin(d * 0.3));
+        float depth = 0.55 + 0.45 * fract(sd * 0.71);
+        diffuseColor.rgb *= 1.0 - (vec3(0.075, 0.095, 0.13) * stripe + vec3(0.025, 0.032, 0.045) * broad) * depth;
+        // the girdle: warmer and deeper where the shell is thin (a firm dark rim in high contrast)
+        diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(0.9, 0.85, 0.76), vec3(0.35, 0.31, 0.27), uHC), smoothstep(0.72 + 0.12 * uHC, 1.0, rr) * (0.55 + 0.45 * uHC));`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor *= 1.0 + 0.35 * stripe;`)
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        #if NUM_DIR_LIGHTS > 0
+        { // cheap translucency: the window's light wraps warm through the thin girdle; the far side of the girdle falls darker
+          float rim = smoothstep(0.62, 1.0, rr), nl = dot(normal, directionalLights[0].direction);
+          float wrap = clamp((nl + 0.45) / 1.45, 0.0, 1.0) * (1.0 - clamp(nl, 0.0, 1.0));
+          reflectedLight.directDiffuse += directionalLights[0].color * vec3(1.0, 0.78, 0.55) * diffuseColor.rgb * wrap * rim * 0.16;
+          float away = rim * smoothstep(0.15, -0.55, nl);
+          reflectedLight.indirectDiffuse *= 1.0 - 0.5 * away;
+          reflectedLight.indirectSpecular *= 1.0 - 0.35 * away;
+        }
+        #endif`)
+  }
+  m.customProgramCacheKey = () => 'shell'
+  return m
+}
+
+/** Biconvex lens: a dome with a rounded girdle. */
+function stoneGeo(R: number) {
+  const pts: THREE.Vector2[] = [], n = 11, prof = (r: number) => lens(r, R)
+  for (let k = 0; k <= n; k++) { const r = R * Math.sin((k / n) * Math.PI / 2); pts.push(new THREE.Vector2(r, -prof(r))) }
+  for (let k = 1; k <= n; k++) { const r = R * Math.sin(((n - k) / n) * Math.PI / 2); pts.push(new THREE.Vector2(r, prof(r))) }
+  const g = new THREE.LatheGeometry(pts, 36) // ~1.5k triangles: a full 19×19 stays near 1M with the shadow pass
+  g.userData.prof = prof
+  return g
+}
+function stoneLayer(geo: THREE.BufferGeometry, mat: THREE.Material, n: number) {
+  const g = geo.clone(), seeds = new THREE.InstancedBufferAttribute(new Float32Array(n), 1)
+  seeds.setUsage(THREE.DynamicDrawUsage)
+  g.setAttribute('aSeed', seeds)
+  const m = new THREE.InstancedMesh(g, mat, n)
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.count = 0; m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false
+  return m
+}
+function markerGeo(prof: (r: number) => number) {
+  const g = new THREE.RingGeometry(1.75, 2.35, 40, 1).rotateX(-Math.PI / 2), P = g.attributes.position
+  for (let i = 0; i < P.count; i++) P.setY(i, prof(Math.hypot(P.getX(i), P.getZ(i))) + 0.04)
+  g.computeVertexNormals()
+  return g
+}
+/** Mulberry go-ke: outer wall up to the lip, then down the inside (closed profile, mm). */
+const BOWL_PROFILE = [[0, 0], [44, 0], [47, 3], [58, 18], [64, 40], [61, 62], [52, 74], [49, 75], [47, 72], [55, 58], [57, 40], [50, 20], [36, 12], [0, 11]]
+const LID_PROFILE = [[0, 0], [30, 0], [33, 2], [52, 9], [63, 16], [65, 19], [62, 20], [50, 13], [31, 6], [0, 5]] // inverted lid = shallow dish
+function lathe(prof: number[][], seg: number) {
+  const g = new THREE.LatheGeometry(prof.map(([x, y]) => new THREE.Vector2(x, y)), seg), uv = g.attributes.uv
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.8, uv.getY(i) * 0.35) // grain wraps around the bowl
+  return g
+}
+
+export class Board3D {
+  /** WebGL2 without a major performance caveat (software rendering counts as unsupported). */
+  static supported(): boolean {
+    try {
+      const gl = mkCanvas(1, 1).getContext('webgl2', { failIfMajorPerformanceCaveat: true })
+      if (!gl) return false
+      gl.getExtension('WEBGL_lose_context')?.loseContext()
+      return true
+    } catch { return false }
+  }
+
+  private renderer!: THREE.WebGLRenderer
+  private composer!: EffectComposer
+  private scene = new THREE.Scene()
+  private ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 100, 6000)
+  private persp = new THREE.PerspectiveCamera(28, 1, 10, 5000)
+  private key = new THREE.DirectionalLight(0xffffff, 3)
+  private spot = new THREE.SpotLight(0xffe2b8, 0, 0, Math.atan(430 / 1500), 0, 0)
+  private hc = { value: 0 }
+  private slate = slateMaterial()
+  private shell = shellMaterial(this.hc)
+  private slateDim = slateMaterial({ transparent: true, opacity: 0.38, depthWrite: false })
+  private shellDim = shellMaterial(this.hc, { transparent: true, opacity: 0.45, depthWrite: false })
+  private geoB = stoneGeo(RB)
+  private geoW = stoneGeo(RW)
+  private layerB = stoneLayer(this.geoB, this.slate, 400)
+  private layerW = stoneLayer(this.geoW, this.shell, 400)
+  private dimB = stoneLayer(this.geoB, this.slateDim, 400)
+  private dimW = stoneLayer(this.geoW, this.shellDim, 400)
+  private decorB = stoneLayer(this.geoB, this.slate, 120)
+  private decorW = stoneLayer(this.geoW, this.shell, 120)
+  private ao!: THREE.InstancedMesh
+  private terr!: { 1: THREE.InstancedMesh; [-1]: THREE.InstancedMesh }
+  private ghost!: THREE.Mesh
+  private ghostMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
+  private markers!: { 1: THREE.Mesh; [-1]: THREE.Mesh }
+  private boardMat!: THREE.MeshPhysicalMaterial
+  /** Pale golden kaya (the scan, barely graded): readability comes from the stones' contact shadow and rim, not dark wood. */
+  private woodTone = new THREE.Color(0.47, 0.442, 0.395)
+  private boardU = { uInk: { value: new THREE.Color(0x120c07) }, uLim: { value: 9 }, uStep: { value: 6 }, uFive: { value: 0 }, uHalf: { value: 0.5 } }
+  private board: THREE.Mesh | null = null
+  private labels: THREE.Mesh | null = null
+  private bowlMat = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.26, 0.15, 0.09), roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.16 })
+  private decor = new THREE.Group()
+  private bowls: THREE.Mesh[] = []
+  private sets: { c: Sign; bowl: [number, number]; lid: [number, number]; heap: Rest[]; lidRest: Rest[] }[] = []
+  private ground!: THREE.Group
+  private shadowFloor = new THREE.ShadowMaterial({ color: 0x2a1606, opacity: 0.24 })
+  private tableMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.72, transparent: true, depthWrite: false })
+  private roomColor = new THREE.Color()
+  private owCanvas = mkCanvas(512, 512)
+  private owTex = new THREE.CanvasTexture(this.owCanvas)
+  private maps: { diff: THREE.Texture; nor: THREE.Texture; rough: THREE.Texture } | null = null
+
+  private state: Board3DState | null = null
+  private N = 0
+  private coords = false
+  private D = dims(19, false)
+  private stones = new Map<number, Stone>()
+  private leaving: Leaving[] = []
+  private pendingDrop: { p: number; c: Sign; at: number } | null = null
+  private moveNo = 0
+  private capCount = { 1: 0, [-1]: 0 } as Record<number, number> // internal count when the app doesn't pass captures
+  private decorKey = ''
+  private own: number[] | null = null
+  private hover: Vertex | null = null
+
+  private opts: Board3DOptions = { camera: 'study', time: 'afternoon', highContrast: false }
+  private camE = 0; private camFrom = 0; private camTo = 0; private camT0 = -1e9
+  private par = { x: 0, y: 0, tx: 0, ty: 0 }
+  private todFrom: Tod = TOD.afternoon; private todTo: Tod = TOD.afternoon; private todT0 = -1e9; private tod: Tod = { ...TOD.afternoon }
+  private ombreK = 0; private ombreFrom = 0; private ombreOn = false; private ombreT0 = -1e9
+  private hcK = 0
+  private noGrid = false // measurements only: the ink lines would pass for stone edges
+
+  private W = 1; private H = 1
+  private raf = 0
+  private lastFrame = 0
+  private ready = false
+  private dead = false
+  private ladder = qualityLadder(window.devicePixelRatio || 1)
+  private governor = new Governor(this.ladder.length)
+  private q: Quality = this.ladder[0]
+  private sound: StoneSound
+  private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
+  private autoTimer = 0
+  private cleanup: () => void = () => {}
+  private onFallback: (r: FallbackReason) => void
+  private fellBack = false
+  private ray = new THREE.Raycaster()
+
+  constructor(private canvas: HTMLCanvasElement, private onPlay: (v: Vertex) => boolean, init: Board3DInit = {}) {
+    this.onFallback = init.onFallback ?? (() => {})
+    const base = init.assetBase ?? `${import.meta.env.BASE_URL}assets/board3d/`
+    this.sound = new StoneSound(base)
+    Object.assign(this.opts, init.options)
+    try {
+      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: true })
+    } catch {
+      this.dead = true
+      queueMicrotask(() => this.fallback('webgl2'))
+      return
+    }
+    this.sound.preload()
+    canvas.style.opacity = '0'
+    canvas.style.transition = this.reducedMotion.matches ? '' : 'opacity .6s ease'
+    this.setup()
+    this.bind()
+    this.applyOptions(true)
+    void this.boot(base)
+  }
+
+  /* ---------- public API ---------- */
+
+  /** Camera, light and contrast. Animated unless reduced motion is requested. */
+  setOptions(o: Partial<Board3DOptions>) {
+    const prev = { ...this.opts }
+    Object.assign(this.opts, o)
+    if (prev.camera !== this.opts.camera || prev.time !== this.opts.time || prev.highContrast !== this.opts.highContrast) this.applyOptions(false)
+  }
+  get options(): Readonly<Board3DOptions> { return this.opts }
+
+  /** The quiet "stones stirred in the bowl" loop while the AI thinks. */
+  setThinking(on: boolean) { this.sound.setThinking(on) }
+
+  /** Animates and sounds a stone landing (the player's click, or the bot's move). */
+  drop(v: Vertex, c: Sign) {
+    if (this.dead) return
+    this.hover = null
+    const N = this.N, p = v[1] * N + v[0], s = this.stones.get(p)
+    const now = performance.now()
+    if (s && s.c === c && s.landed && now - s.t0 > 400) { // update() came first: take back the captures it just started removing
+      const back = this.leaving.filter(l => l.owner === c && l.t0 >= now - 60)
+      this.leaving = this.leaving.filter(l => !back.includes(l))
+      if (!this.state?.captures) this.capCount[c] -= back.length
+      s.captured = back.map(l => l.s)
+      for (const r of s.captured) this.stones.set(-1 - r.p, r)
+      this.animateDrop(s, now)
+    } else this.pendingDrop = { p, c, at: now }
+    this.invalidate()
+  }
+
+  update(state: Board3DState) {
+    if (this.dead) return
+    if (!state.interactive || state.counting) this.hover = null
+    this.sound.setEnabled(state.sound)
+    const N = state.signMap.length
+    if (N !== this.N || state.coords !== this.coords) {
+      const sizeChanged = N !== this.N
+      this.N = N; this.coords = state.coords; this.D = dims(N, state.coords)
+      if (sizeChanged) { this.stones.clear(); this.leaving = []; this.capCount = { 1: 0, [-1]: 0 } }
+      this.buildBoard()
+    }
+    this.state = state
+    this.reconcile(state)
+    const own = state.ownership?.length === N * N ? state.ownership : null
+    if (own !== this.own) {
+      this.own = own
+      if (own) this.paintOwnership(own)
+      if (!!own !== this.ombreOn) { this.ombreFrom = this.ombreK; this.ombreOn = !!own; this.ombreT0 = this.instant() ? -1e9 : performance.now() }
+    }
+    this.invalidate()
+  }
+
+  /** Canvas size in CSS pixels; height defaults to width (the 2D view's square contract). */
+  resize(width: number, height = width) {
+    if (this.dead) return
+    const W = Math.max(200, Math.floor(width)), H = Math.max(200, Math.floor(height))
+    if (W === this.W && H === this.H) return
+    this.W = W; this.H = H
+    this.canvas.style.width = `${W}px`; this.canvas.style.height = `${H}px`
+    this.renderer.setSize(W, H, false)
+    this.composer.setSize(W, H)
+    if (this.ready) this.frame(performance.now()) // synchronous: no blank frame while the window is being dragged
+  }
+
+  destroy() {
+    this.dead = true
+    cancelAnimationFrame(this.raf)
+    clearInterval(this.autoTimer)
+    this.cleanup()
+    this.sound.destroy()
+    if (!this.renderer) return
+    this.scene.traverse(o => {
+      const m = o as THREE.Mesh
+      m.geometry?.dispose()
+      for (const mat of ([] as THREE.Material[]).concat(m.material ?? [])) mat.dispose()
+    })
+    for (const t of Object.values(this.maps ?? {})) t.dispose()
+    this.tableMat.map?.dispose(); this.tableMat.alphaMap?.dispose()
+    this.owTex.dispose()
+    ;(this.scene.environment as THREE.Texture | null)?.dispose()
+    this.composer.dispose()
+    this.renderer.dispose()
+  }
+
+  /* ---------- setup ---------- */
+
+  private setup() {
+    const r = this.renderer, scene = this.scene
+    r.setClearColor(0x000000, 0)
+    r.outputColorSpace = THREE.SRGBColorSpace
+    r.toneMapping = THREE.ACESFilmicToneMapping
+    r.shadowMap.enabled = true
+    r.shadowMap.type = THREE.PCFShadowMap // PCF + radius (Vogel disk) = soft penumbra
+    r.setPixelRatio(this.q.dpr)
+    const float = r.extensions.has('EXT_color_buffer_float')
+    const rt = new THREE.WebGLRenderTarget(1, 1, { type: float ? THREE.HalfFloatType : THREE.UnsignedByteType, samples: this.q.msaa })
+    this.composer = new EffectComposer(r, rt)
+    this.composer.setPixelRatio(this.q.dpr)
+    this.composer.addPass(new RenderPass(scene, this.ortho))
+    this.composer.addPass(new OutputPass())
+
+    this.ortho.position.set(0, 3000, 0); this.ortho.up.set(0, 0, -1); this.ortho.lookAt(0, 0, 0)
+    this.persp.up.set(0, 0, -1)
+
+    scene.add(this.layerB, this.layerW, this.dimB, this.dimW)
+    for (const m of [this.dimB, this.dimW]) { m.renderOrder = 2; m.castShadow = false }
+
+    // contact AO blobs, alpha per instance through instanceColor.r
+    // the quad spans 2 × AO_K stone radii: ambient occlusion densest under the girdle, easing out over ~half a radius
+    const S = 256, cv = mkCanvas(S, S), x = cv.getContext('2d')!, im = x.createImageData(S, S), e = 1 / AO_K
+    for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+      const rr = Math.hypot(i + 0.5 - S / 2, j + 0.5 - S / 2) / (S / 2)
+      const a = Math.pow(1 - sstep(e * 0.97, e * 1.5, rr), 1.2) * 0.9 + 0.1 * (1 - sstep(e, 1, rr)), o = (j * S + i) * 4
+      im.data[o] = im.data[o + 1] = im.data[o + 2] = 255; im.data[o + 3] = a * 255
+    }
+    x.putImageData(im, 0, 0)
+    const aoMat = new THREE.MeshBasicMaterial({ color: 0x0c0603, map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false, opacity: 0.89 })
+    aoMat.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n#ifdef USE_INSTANCING_COLOR\ndiffuseColor.a *= vColor.r;\n#endif') }
+    this.ao = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), aoMat, 420)
+    this.ao.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(420 * 3), 3)
+    this.ao.count = 0; this.ao.frustumCulled = false; this.ao.renderOrder = 1; this.ao.position.y = 0.06
+    scene.add(this.ao)
+
+    // counting: small slate / shell tiles on counted points
+    const tile = new THREE.BoxGeometry(7, 1.2, 7)
+    const tileMat = (c: number, rough: number) => new THREE.MeshPhysicalMaterial({ color: c, roughness: rough, clearcoat: 0.3 })
+    this.terr = { 1: new THREE.InstancedMesh(tile, tileMat(0x1c1c20, 0.5), 361), [-1]: new THREE.InstancedMesh(tile, tileMat(0xf2ede2, 0.35), 361) }
+    for (const m of Object.values(this.terr)) { m.count = 0; m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; scene.add(m) }
+
+    // hover ghost + last-move marker
+    this.ghostMats = {
+      1: new THREE.MeshPhysicalMaterial({ color: 0x18181b, roughness: 0.45, transparent: true, opacity: 0.5, depthWrite: false }),
+      [-1]: new THREE.MeshPhysicalMaterial({ color: 0xf4efe4, roughness: 0.35, transparent: true, opacity: 0.6, depthWrite: false }),
+    }
+    this.ghost = new THREE.Mesh(this.geoB, this.ghostMats[1]); this.ghost.visible = false; this.ghost.renderOrder = 3
+    scene.add(this.ghost)
+    const mm = (c: number) => new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+    this.markers = { 1: new THREE.Mesh(markerGeo(this.geoB.userData.prof), mm(0xe9dcc4)), [-1]: new THREE.Mesh(markerGeo(this.geoW.userData.prof), mm(0x2a201a)) }
+    for (const m of Object.values(this.markers)) { m.matrixAutoUpdate = false; m.visible = false; scene.add(m) }
+
+    // the table. Study: shadows only (the app's linen shows through). Contemplation: a dark wooden table fading into a
+    // warm dark room (the canvas clears to the room colour), lit by the window
+    this.ground = new THREE.Group()
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), this.shadowFloor)
+    floor.receiveShadow = true
+    const fade = mkCanvas(256, 256), fx = fade.getContext('2d')!, fg = fx.createRadialGradient(128, 128, 0, 128, 128, 128)
+    fg.addColorStop(0, '#fff'); fg.addColorStop(0.2, '#fff'); fg.addColorStop(0.36, '#999'); fg.addColorStop(0.55, '#000'); fg.addColorStop(1, '#000')
+    fx.fillStyle = fg; fx.fillRect(0, 0, 256, 256)
+    this.tableMat.alphaMap = new THREE.CanvasTexture(fade)
+    const table = new THREE.Mesh(new THREE.PlaneGeometry(3200, 3200).rotateX(-Math.PI / 2), this.tableMat)
+    table.receiveShadow = true; table.renderOrder = -1; table.position.y = -0.2
+    const ug = mkCanvas(256, 256), ux = ug.getContext('2d')!, grad = ux.createRadialGradient(128, 128, 60, 128, 128, 128)
+    grad.addColorStop(0, '#fff'); grad.addColorStop(1, '#000'); ux.fillStyle = grad; ux.fillRect(0, 0, 256, 256)
+    const under = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x1a0e04, alphaMap: new THREE.CanvasTexture(ug), transparent: true, opacity: 0.5, depthWrite: false }))
+    under.name = 'under'; under.position.y = 0.3; under.renderOrder = 0
+    this.ground.add(table, floor, under)
+    scene.add(this.ground)
+
+    // board material: kaya scan + lacquered ink grid
+    this.boardMat = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(0.62, 0.6, 0.57), roughness: 1, metalness: 0,
+      normalScale: new THREE.Vector2(0.6, 0.6), clearcoat: 0.18, clearcoatRoughness: 0.4, specularIntensity: 0.5,
+    })
+    this.boardMat.onBeforeCompile = sh => {
+      Object.assign(sh.uniforms, this.boardU)
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLoc;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLoc = position;')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + GLSL_GRID)
+        .replace('#include <map_fragment>', '#include <map_fragment>\nfloat ink = gridInk(vLoc);\ndiffuseColor.rgb = mix(diffuseColor.rgb, uInk, ink);')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.45, ink);')
+    }
+    this.boardMat.customProgramCacheKey = () => 'kaya'
+
+    // go-ke (Contemplation only): bowls with inverted lids; prisoners collect on the capturer's lid
+    this.decor.visible = false
+    this.decor.add(this.decorB, this.decorW)
+    scene.add(this.decor)
+
+    // lights: the window (key, follows the time of day) and "Ombre et lumière", the ownership field as a light cookie
+    this.key.castShadow = true
+    this.key.shadow.mapSize.set(this.q.shadow, this.q.shadow)
+    this.key.shadow.bias = -0.0004; this.key.shadow.normalBias = 0.25; this.key.shadow.radius = 6
+    scene.add(this.key, this.key.target)
+    this.owTex.colorSpace = THREE.SRGBColorSpace
+    // oblique, like a high window: its mirror highlight never lands in the top-down camera
+    this.spot.position.set(-420, 1400, -320); this.spot.target.position.set(0, 0, 0); this.spot.map = this.owTex
+    // the cookie only applies inside the light's projection depth range (default far = 500 would miss the board)
+    this.spot.shadow.camera.near = 1000; this.spot.shadow.camera.far = 2200
+    scene.add(this.spot, this.spot.target)
+  }
+
+  private bind() {
+    const c = this.canvas
+    const move = (e: PointerEvent) => {
+      this.par.tx = (e.offsetX / this.W) * 2 - 1; this.par.ty = (e.offsetY / this.H) * 2 - 1
+      const v = this.pick(e), s = this.state
+      if (s?.counting) { // only stones are clickable while counting; no ghost stone
+        c.style.cursor = v && s.interactive && s.signMap[v[1]][v[0]] ? 'pointer' : 'default'
+        if (this.hover) { this.hover = null; this.invalidate() }
+        return
+      }
+      const nh = v && s?.interactive && !s.signMap[v[1]][v[0]] ? v : null
+      c.style.cursor = nh ? 'pointer' : 'default'
+      if (this.camE > 0 && !this.instant()) this.invalidate() // parallax
+      if (nh?.[0] === this.hover?.[0] && nh?.[1] === this.hover?.[1]) return
+      this.hover = nh; this.invalidate()
+    }
+    const leave = () => { this.hover = null; this.invalidate() }
+    const down = () => this.sound.prime()
+    const click = (e: MouseEvent) => {
+      const v = this.pick(e), s = this.state
+      if (!v || !s?.interactive) return
+      if (s.counting) { this.onPlay(v); return }
+      const col = s.toPlay
+      if (this.onPlay(v)) this.drop(v, col)
+    }
+    const lost = (e: Event) => { e.preventDefault(); this.fallback('context-lost') }
+    const motion = () => this.invalidate()
+    c.addEventListener('pointermove', move)
+    c.addEventListener('pointerleave', leave)
+    c.addEventListener('pointerdown', down)
+    c.addEventListener('click', click)
+    c.addEventListener('webglcontextlost', lost)
+    this.reducedMotion.addEventListener('change', motion)
+    // labels need the bundled font actually loaded
+    void document.fonts?.load('500 12px Karla').then(() => { if (this.coords && !this.dead) { this.buildLabels(); this.invalidate() } })
+    // devicePixelRatio changes (window moved to another display): the query only fires once, so re-arm it
+    let mq: MediaQueryList, onDpr: () => void
+    const arm = () => { mq = matchMedia(`(resolution: ${devicePixelRatio}dppx)`); mq.addEventListener('change', onDpr) }
+    onDpr = () => {
+      mq.removeEventListener('change', onDpr); arm()
+      this.ladder = qualityLadder(devicePixelRatio || 1); this.applyQuality(this.ladder[this.governor.level])
+    }
+    arm()
+    this.cleanup = () => {
+      mq.removeEventListener('change', onDpr)
+      c.removeEventListener('pointermove', move)
+      c.removeEventListener('pointerleave', leave)
+      c.removeEventListener('pointerdown', down)
+      c.removeEventListener('click', click)
+      c.removeEventListener('webglcontextlost', lost)
+      this.reducedMotion.removeEventListener('change', motion)
+    }
+  }
+
+  private async boot(base: string) {
+    try {
+      const tl = new THREE.TextureLoader()
+      const [diff, nor, rough, hdr] = await Promise.all([
+        tl.loadAsync(`${base}kaya_diff.jpg`), tl.loadAsync(`${base}kaya_nor.jpg`), tl.loadAsync(`${base}kaya_rough.jpg`),
+        new HDRLoader().loadAsync(`${base}studio_country_hall_1k.hdr`),
+      ])
+      if (this.dead) return
+      diff.colorSpace = THREE.SRGBColorSpace
+      const aniso = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+      for (const t of [diff, nor, rough]) t.anisotropy = aniso
+      this.maps = { diff, nor, rough }
+      Object.assign(this.boardMat, { map: diff, normalMap: nor, roughnessMap: rough }); this.boardMat.needsUpdate = true
+      this.bowlMat.map = diff; this.bowlMat.needsUpdate = true
+      const tab = diff.clone() // same image, tiled across the table, grain running side to side
+      tab.wrapS = tab.wrapT = THREE.RepeatWrapping; tab.repeat.set(3200 / 502, 3200 / 424); tab.rotation = Math.PI / 2
+      this.tableMat.map = tab; this.tableMat.needsUpdate = true
+      hdr.mapping = THREE.EquirectangularReflectionMapping
+      const pmrem = new THREE.PMREMGenerator(this.renderer)
+      this.scene.environment = pmrem.fromEquirectangular(hdr).texture
+      hdr.dispose(); pmrem.dispose()
+      if (!this.N) { this.N = 19; this.D = dims(19, false); this.buildBoard() }
+      this.updateScene(performance.now())
+      // hide the first-frame shader compile: compile both cameras for the off-screen target, then fade in
+      this.renderer.setRenderTarget(this.composer.renderTarget1)
+      await this.renderer.compileAsync(this.scene, this.ortho)
+      await this.renderer.compileAsync(this.scene, this.persp)
+      this.renderer.setRenderTarget(null)
+      if (this.dead) return
+      this.ready = true
+      this.frame(performance.now())
+      requestAnimationFrame(() => { this.canvas.style.opacity = '1' })
+    } catch (e) {
+      console.error('Board3D: failed to start', e)
+      this.fallback('webgl2')
+    }
+  }
+
+  private fallback(r: FallbackReason) {
+    if (this.fellBack) return
+    this.fellBack = true
+    this.onFallback(r)
+  }
+
+  private instant() { return this.reducedMotion.matches }
+
+  private applyOptions(first: boolean) {
+    const now = performance.now(), inst = first || this.instant()
+    const to = this.opts.camera === 'contemplation' ? 1 : 0
+    if (to !== this.camTo) { this.camFrom = this.camE; this.camTo = to; this.camT0 = inst ? -1e9 : now; this.hover = null }
+    clearInterval(this.autoTimer)
+    const target = () => this.opts.time === 'auto' ? todAt(new Date().getHours() + new Date().getMinutes() / 60) : TOD[this.opts.time]
+    this.todFrom = { ...this.tod }; this.todTo = target(); this.todT0 = inst ? -1e9 : now
+    if (this.opts.time === 'auto') this.autoTimer = window.setInterval(() => { this.todFrom = { ...this.tod }; this.todTo = target(); this.todT0 = this.instant() ? -1e9 : performance.now(); this.invalidate() }, 60_000)
+    this.hcK = this.opts.highContrast ? 1 : 0
+    this.invalidate()
+  }
+
+  private applyQuality(q: Quality) {
+    const prev = this.q
+    this.q = q
+    if (q.dpr !== prev.dpr) { this.renderer.setPixelRatio(q.dpr); this.composer.setPixelRatio(q.dpr) }
+    if (q.shadow !== prev.shadow) { this.key.shadow.mapSize.set(q.shadow, q.shadow); this.key.shadow.map?.dispose(); this.key.shadow.map = null }
+    if (q.msaa !== prev.msaa) for (const rt of [this.composer.renderTarget1, this.composer.renderTarget2]) { rt.samples = q.msaa; rt.dispose() }
+    if (q.bowlSegments !== prev.bowlSegments && this.N) this.buildBowls()
+    this.invalidate()
+  }
+
+  /* ---------- board, labels, bowls ---------- */
+
+  private buildBoard() {
+    const { BW, BD, N } = this.D
+    if (this.board) { this.scene.remove(this.board); this.board.geometry.dispose() }
+    const geo = new RoundedBoxGeometry(BW, BT, BD, 4, 2.2)
+    // planar UVs at the scan's real density; the grain runs along the board's depth (player to player)
+    const P = geo.attributes.position, Nn = geo.attributes.normal, uv = geo.attributes.uv
+    const U = 2048 / KAYA_PX_MM, V = 1732 / KAYA_PX_MM
+    for (let i = 0; i < P.count; i++) {
+      const x = P.getX(i), y = P.getY(i), z = P.getZ(i), nx = Math.abs(Nn.getX(i)), ny = Math.abs(Nn.getY(i))
+      if (ny > 0.6) uv.setXY(i, 0.5 + z / U, 0.5 + x / V)                // top: fibres along z
+      else if (nx > 0.6) uv.setXY(i, 0.5 + z / U, 0.5 + (y + 80) / V)     // long sides: fibres continue
+      else uv.setXY(i, 0.5 + (y * 3) / U, 0.5 + x / V)                    // ends: end grain reads as fine vertical lines
+    }
+    this.board = new THREE.Mesh(geo, this.boardMat)
+    this.board.position.y = -BT / 2; this.board.castShadow = true; this.board.receiveShadow = true
+    this.scene.add(this.board)
+    this.boardU.uLim.value = (N - 1) / 2
+    this.boardU.uStep.value = hoshiStep(N)
+    this.boardU.uFive.value = N < 19 ? 1 : 0
+    const under = this.ground.getObjectByName('under')!
+    under.scale.set(BW * 1.3, 1, BD * 1.3)
+    this.ground.position.y = -BT
+    // shadow frustum covers board + bowls
+    const ext = BW / 2 + 260
+    Object.assign(this.key.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, near: 600, far: 2800 })
+    this.key.shadow.camera.updateProjectionMatrix()
+    this.buildLabels()
+    this.buildBowls()
+    if (this.own) this.paintOwnership(this.own)
+  }
+
+  /** Coordinates, drawn in the board margin (only when enabled): small lacquered letters, readable from the player's side. */
+  private buildLabels() {
+    if (this.labels) { this.scene.remove(this.labels); this.labels.geometry.dispose(); (this.labels.material as THREE.MeshPhysicalMaterial).alphaMap?.dispose(); (this.labels.material as THREE.Material).dispose(); this.labels = null }
+    if (!this.coords) return
+    const { BW, BD, N } = this.D, k = 2048 / Math.max(BW, BD), cv = mkCanvas(Math.round(BW * k), Math.round(BD * k)), x = cv.getContext('2d')!
+    x.fillStyle = '#000'; x.fillRect(0, 0, cv.width, cv.height)
+    x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'
+    x.font = `500 ${(6.2 * k).toFixed(1)}px Karla, system-ui, sans-serif`
+    const px = (wx: number) => (wx + BW / 2) * k, pz = (wz: number) => (wz + BD / 2) * k
+    const off = (RB + this.D.margin) / 2 + 0.6, dy = 6.2 * k * 0.06
+    for (let i = 0; i < N; i++) {
+      const col = COLS[i], row = String(N - i)
+      x.fillText(col, px(gx(N, i)), pz(gz(N, 0) - off * (SZ / SX)) + dy)
+      x.fillText(col, px(gx(N, i)), pz(gz(N, N - 1) + off * (SZ / SX)) + dy)
+      x.fillText(row, px(gx(N, 0) - off), pz(gz(N, i)) + dy)
+      x.fillText(row, px(gx(N, N - 1) + off), pz(gz(N, i)) + dy)
+    }
+    const tex = new THREE.CanvasTexture(cv)
+    tex.anisotropy = 4
+    const mat = new THREE.MeshPhysicalMaterial({ color: 0x2b1a0b, alphaMap: tex, transparent: true, opacity: 0.66, roughness: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })
+    this.labels = new THREE.Mesh(new THREE.PlaneGeometry(BW, BD).rotateX(-Math.PI / 2), mat)
+    this.labels.position.y = 0.02; this.labels.receiveShadow = true; this.labels.renderOrder = 1
+    this.scene.add(this.labels)
+  }
+
+  private buildBowls() {
+    for (const b of this.bowls) { this.decor.remove(b); b.geometry.dispose() }
+    this.bowls = []
+    const { BW, BD } = this.D, bx = BW / 2 + 112, seg = this.q.bowlSegments
+    // the player sits at +z: Black's bowl to the right, White's across the board
+    // the stones at rest are dropped once, in order, onto the bowl's fill and the lid's dish: nothing interpenetrates
+    const lidY = (d: number) => d < 31 ? 5 + d / 31 : 6 + (d - 31) * 7 / 19
+    const heap = (c: Sign) => {
+      const R = c === 1 ? RB : RW, r = rng(c === 1 ? 11 : 23)
+      // a hidden bed first, so the gaps of the visible layer show stones rather than the bottom of the bowl
+      return dropStones([...bowlHeap(R, 43, 0, r), ...bowlHeap(R, 40, 6, r)], R, d => 50 + SH + 2.5 * (1 - (d / 43) ** 2), r, 0.12, 50 + 5 * SH + 2)
+    }
+    const pile = (prisoner: Sign) => {
+      const R = prisoner === 1 ? RB : RW, r = rng(prisoner === 1 ? 5 : 17)
+      // a loose sunflower inside the flat of the dish; past ~8 stones they start resting on each other
+      const pts = Array.from({ length: 60 }, (_, k) => { const a = k * 2.39996 + r(), d = 12.6 * Math.sqrt(k % 8) + r() * 2; return [Math.cos(a) * d, Math.sin(a) * d] })
+      return dropStones(pts, R, d => Math.max(lidY(d) + SH, lidY(d + R) + 0.3), r, 0.08)
+    }
+    this.sets = [
+      { c: 1, bowl: [bx, BD * 0.3], lid: [bx - 4, BD * 0.3 - 145], heap: heap(1), lidRest: pile(-1) },
+      { c: -1, bowl: [-bx, -BD * 0.3], lid: [-bx + 4, -BD * 0.3 + 145], heap: heap(-1), lidRest: pile(1) },
+    ]
+    const bowl = lathe(BOWL_PROFILE, seg), lid = lathe(LID_PROFILE, seg)
+    for (const S of this.sets) {
+      const b = new THREE.Mesh(bowl, this.bowlMat), l = new THREE.Mesh(lid, this.bowlMat)
+      b.position.set(S.bowl[0], -BT, S.bowl[1]); l.position.set(S.lid[0], -BT, S.lid[1])
+      for (const m of [b, l]) { m.castShadow = m.receiveShadow = true; this.decor.add(m); this.bowls.push(m) }
+    }
+    this.decorKey = ''
+  }
+
+  /** Where the k-th prisoner rests on a lid (past 60 they pile on the last spots). */
+  private lidSpot(owner: Sign, k: number, out = new THREE.Vector3()) {
+    const S = this.sets.find(s => s.c === owner)!, L = S.lidRest, p = L[Math.min(k, L.length - 1)]
+    return out.set(S.lid[0] + p.x, -BT + p.y + Math.max(0, k - L.length + 1) * 2 * SH, S.lid[1] + p.z)
+  }
+
+  private prisoners(owner: Sign) {
+    const c = this.state?.captures
+    let n = c ? (owner === 1 ? c.black : c.white) : this.capCount[owner]
+    n -= this.leaving.filter(l => l.fly && l.owner === owner).length
+    // the app's count already includes stones still waiting under a falling stone
+    if (c) for (const s of this.stones.values()) if (!s.landed && s.c === owner) n -= s.captured.length
+    return Math.max(0, n)
+  }
+
+  private updateDecor() {
+    const nb = this.prisoners(1), nw = this.prisoners(-1), key = `${nb}|${nw}|${this.N}|${this.coords}|${this.q.bowlSegments}`
+    if (key === this.decorKey) return
+    this.decorKey = key
+    let ib = 0, iw = 0
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), q2 = new THREE.Quaternion(), v = new THREE.Vector3(), ax = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1)
+    const add = (c: Sign, p: Rest, ox: number, oz: number, k: number) => {
+      const L = c === 1 ? this.decorB : this.decorW, i = c === 1 ? ib++ : iw++
+      if (i >= 120) return
+      const h = ((Math.sin((k + 1) * 12.9898 + c * 78.233) * 43758.5453) % 1 + 1) % 1
+      // spin, then dip towards p.dir (axis = up × dir)
+      q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, h * 6.283).premultiply(q2.setFromAxisAngle(ax.set(Math.sin(p.dir), 0, -Math.cos(p.dir)), p.tilt))
+      m.compose(v.set(ox + p.x, -BT + p.y, oz + p.z), q, one)
+      L.setMatrixAt(i, m); (L.geometry.attributes.aSeed.array as Float32Array)[i] = h
+    }
+    for (const S of this.sets) {
+      S.heap.forEach((p, k) => add(S.c, p, S.bowl[0], S.bowl[1], k))
+      const n = Math.min(S.c === 1 ? nb : nw, 60)
+      for (let k = 0; k < n; k++) add(-S.c as Sign, S.lidRest[k], S.lid[0], S.lid[1], 200 + k) // prisoners on the lid
+    }
+    this.decorB.count = Math.min(ib, 120); this.decorW.count = Math.min(iw, 120)
+    for (const L of [this.decorB, this.decorW]) { L.instanceMatrix.needsUpdate = true; L.geometry.attributes.aSeed.needsUpdate = true }
+  }
+
+  /* ---------- stones ---------- */
+
+  private mkStone(p: number, c: Sign): Stone {
+    const N = this.N, x = p % N, y = (p / N) | 0, j = jitter(N, x, y, ++this.moveNo)
+    return { p, x, y, c, R: c === 1 ? RB : RW, ...j, tx: j.jx, tz: j.jz, px: j.jx, pz: j.jz, fx: j.jx, fz: j.jz, mt0: -1e9, push: null, t0: -1e9, landed: true, captured: [] }
+  }
+
+  private animateDrop(s: Stone, now: number) {
+    if (this.instant()) { this.contact(s, now, false); return }
+    s.t0 = now; s.landed = false
+  }
+
+  /** Diffs the position against the stones on the board: a single new stone with removed opponents is a move with captures. */
+  private reconcile(state: Board3DState) {
+    const N = this.N, now = performance.now(), added: Stone[] = [], removed: Stone[] = []
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const p = y * N + x, c = state.signMap[y][x], cur = this.stones.get(p)
+      if (cur && cur.c !== c) { this.stones.delete(p); removed.push(cur) }
+      if (c && (!cur || cur.c !== c)) { const s = this.mkStone(p, c); this.stones.set(p, s); added.push(s) }
+    }
+    if (!added.length && !removed.length) return
+    const pd = this.pendingDrop && now - this.pendingDrop.at < 1500 ? this.pendingDrop : null
+    const move = added.length === 1 && removed.every(r => r.c === -added[0].c) ? added[0] : null
+    if (move && pd && pd.p === move.p && pd.c === move.c) {
+      this.pendingDrop = null
+      // the newcomer starts at its jittered spot; the others keep where they are until contact relaxes them
+      relax(this.stones, N); for (const s of this.stones.values()) if (s !== move) { s.tx = s.px; s.tz = s.pz }
+      move.px = move.fx = move.tx = move.jx; move.pz = move.fz = move.tz = move.jz
+      move.captured = removed
+      for (const r of removed) this.stones.set(-1 - r.p, r) // still on the board until the new stone lands
+      this.animateDrop(move, now)
+      return
+    }
+    // navigation, undo, setup, or a move whose drop() comes later: settle instantly (an interrupted drop lands now)
+    for (const [k, s] of this.stones) if (k < 0) this.stones.delete(k); else if (!s.landed) { s.landed = true; s.captured = [] }
+    if (move && removed.length) this.leave(removed, move.c, now, true)
+    relax(this.stones, N)
+    for (const s of this.stones.values()) { s.px = s.fx = s.tx; s.pz = s.fz = s.tz }
+    if (state.signMap.every(r => r.every(c => !c))) this.capCount = { 1: 0, [-1]: 0 }
+  }
+
+  private leave(list: Stone[], owner: Sign, now: number, count: boolean) {
+    if (count && !this.state?.captures) this.capCount[owner] += list.length
+    if (this.instant() || !list.length) return
+    const fly = this.camTo === 1, mine = list.map((s, k): Leaving => ({ s, t0: now + k * 45, fly, owner }))
+    this.leaving.push(...mine)
+    if (fly) { const base = this.prisoners(owner); mine.forEach((l, k) => { l.to = this.lidSpot(owner, base + k) }) }
+  }
+
+  private contact(s: Stone, now: number, animated: boolean) {
+    s.landed = true
+    const caps = s.captured
+    s.captured = []
+    for (const r of caps) this.stones.delete(-1 - r.p)
+    this.leave(caps, s.c, now, true)
+    for (const o of this.stones.values()) { o.fx = o.px; o.fz = o.pz }
+    relax(this.stones, this.N)
+    for (const o of this.stones.values()) {
+      if (!animated) { o.px = o.fx = o.tx; o.pz = o.fz = o.tz; continue }
+      if (o === s) continue
+      const vx = o.px - s.px, vz = o.pz - s.pz, d = Math.hypot(vx, vz) || 1
+      o.mt0 = now; o.push = d < 36 ? [vx / d * 0.5, vz / d * 0.5] : null // ~0.5 mm nudge for touching neighbours
+    }
+    if (this.state?.sound) {
+      this.sound.stone(this.N, s.x)
+      // stones reach the lid at the end of their flight; in Study they just leave
+      if (caps.length) this.sound.capture(caps.length, this.N, s.c === 1 ? this.N - 1 : 0, this.camTo === 1 && animated ? FLY_MS / 1000 * 0.85 : 0.09)
+    }
+  }
+
+  private aoOff = new THREE.Vector2() // contact shadow leans away from the window
+  private _m = new THREE.Matrix4(); private _q = new THREE.Quaternion(); private _q2 = new THREE.Quaternion()
+  private _v = new THREE.Vector3(); private _s = new THREE.Vector3(1, 1, 1); private _ax = new THREE.Vector3()
+
+  private updateStones(now: number): boolean {
+    let busy = false, nb = 0, nw = 0, db = 0, dw = 0, na = 0
+    const s0 = this.state, N = this.N, own = this.own, counting = s0?.counting, last = s0?.last
+    const lastP = last ? last[1] * N + last[0] : -1
+    this.markers[1].visible = this.markers[-1].visible = false
+    const put = (s: Stone, x: number, y: number, z: number, tilt: number, scale: number, aoA: number, aoS: number, dim: boolean) => {
+      const { _m, _q, _q2, _v, _s, _ax } = this
+      _q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, s.rotY)
+      if (tilt) { _ax.set(Math.cos(s.wobAxis), 0, Math.sin(s.wobAxis)); _q2.setFromAxisAngle(_ax, tilt); _q.premultiply(_q2) }
+      _m.compose(_v.set(x, SH + y, z), _q, _s.setScalar(scale))
+      const L = dim ? (s.c === 1 ? this.dimB : this.dimW) : s.c === 1 ? this.layerB : this.layerW
+      const i = dim ? (s.c === 1 ? db++ : dw++) : s.c === 1 ? nb++ : nw++
+      if (i >= 400) return
+      L.setMatrixAt(i, _m); (L.geometry.attributes.aSeed.array as Float32Array)[i] = s.seed
+      if (s.p === lastP && this.stones.get(lastP) === s && s.landed && !dim) {
+        const mk = this.markers[s.c as 1 | -1]; mk.matrix.copy(_m); mk.visible = true
+      }
+      if (aoA > 0 && na < 420) {
+        _m.compose(_v.set(x + this.aoOff.x, 0, z + this.aoOff.y), _q.identity(), _s.set(s.R * 2 * AO_K * aoS, 1, s.R * 2 * AO_K * aoS))
+        this.ao.setMatrixAt(na, _m); this.ao.instanceColor!.setXYZ(na++, aoA, aoA, aoA)
+      }
+    }
+    for (const s of this.stones.values()) {
+      let y = 0, tilt = 0
+      if (!s.landed) {
+        const t = (now - s.t0) / DROP_MS
+        if (t >= 1) this.contact(s, now, true); else { y = 12 * (1 - t * t); busy = true }
+      }
+      const tc = now - s.t0 - DROP_MS
+      if (s.landed && tc >= 0 && tc < WOB_MS) { tilt = THREE.MathUtils.degToRad(0.4) * Math.exp(-tc / 90) * Math.sin(tc / 62 * Math.PI * 2); busy = true }
+      const tm = (now - s.mt0) / NUDGE_MS
+      if (tm < 1) {
+        const e = 1 - Math.pow(1 - tm, 3), bump = Math.sin(Math.PI * tm) * (1 - tm)
+        s.px = s.fx + (s.tx - s.fx) * e + (s.push ? s.push[0] * bump : 0)
+        s.pz = s.fz + (s.tz - s.fz) * e + (s.push ? s.push[1] * bump : 0)
+        busy = true
+      } else if (s.landed) { s.px = s.tx; s.pz = s.tz }
+      const k = s.landed ? 1 : Math.min(1, (now - s.t0) / DROP_MS) ** 2 // the shadow tightens as the stone comes down
+      let dim = false
+      if (s.p >= 0 && counting?.dead[s.y]?.[s.x]) dim = true
+      else if (s.p >= 0 && own && Math.sign(own[s.p]) === -s.c && sstep(0.4, 0.9, Math.abs(own[s.p])) > 0.5) dim = true // KataGo expects it captured
+      put(s, s.px, y, s.pz, tilt, 1, dim ? 0.3 : 0.25 + 0.75 * k, 1.45 - 0.45 * k, dim)
+    }
+    this.leaving = this.leaving.filter(l => {
+      const t = (now - l.t0) / (l.fly ? FLY_MS : DIE_MS)
+      if (t < 0) { put(l.s, l.s.px, 0, l.s.pz, 0, 1, 1, 1, false); busy = true; return true }
+      if (t >= 1) { this.decorKey = ''; return false }
+      busy = true
+      if (l.fly && l.to) { // lifted off the board, carried in an arc to the lid
+        const e = easeIO(t), x = lerp(l.s.px, l.to.x, e), z = lerp(l.s.pz, l.to.z, e)
+        const y = lerp(0, l.to.y - SH, e) + Math.sin(Math.PI * t) * 90
+        put(l.s, x, y, z, Math.sin(Math.PI * t) * 0.5, 1, Math.max(0, 1 - t * 4), 1 + t, false)
+      } else {
+        const e = t * t
+        put(l.s, l.s.px, 7 * e, l.s.pz, 0, 1 - 0.9 * e, 1 - e, 1 + e, false)
+      }
+      return true
+    })
+    this.layerB.count = nb; this.layerW.count = nw; this.dimB.count = db; this.dimW.count = dw; this.ao.count = na
+    for (const L of [this.layerB, this.layerW, this.dimB, this.dimW]) { L.instanceMatrix.needsUpdate = true; L.geometry.attributes.aSeed.needsUpdate = true }
+    this.ao.instanceMatrix.needsUpdate = true; this.ao.instanceColor!.needsUpdate = true
+
+    // counting: territory tiles (on dead stones too, lifted above them)
+    const t1 = this.terr[1], t2 = this.terr[-1]
+    let n1 = 0, n2 = 0
+    if (counting) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const o = counting.territory[y]?.[x]
+      if (!o) continue
+      const lift = s0!.signMap[y][x] ? 2 * SH + 0.8 : 0.6
+      this._m.makeTranslation(gx(N, x), lift, gz(N, y))
+      if (o === 1) t1.setMatrixAt(n1++, this._m); else t2.setMatrixAt(n2++, this._m)
+    }
+    t1.count = n1; t2.count = n2; t1.instanceMatrix.needsUpdate = t2.instanceMatrix.needsUpdate = true
+
+    // hover ghost
+    const h = this.hover, st = s0
+    const ok = !!(h && st && st.interactive && !st.counting && !st.signMap[h[1]]?.[h[0]] && this.ready)
+    this.ghost.visible = ok
+    if (ok && st && h) {
+      this.ghost.geometry = st.toPlay === 1 ? this.geoB : this.geoW
+      this.ghost.material = this.ghostMats[st.toPlay === 1 ? 1 : -1]
+      this.ghost.position.set(gx(N, h[0]), SH, gz(N, h[1]))
+    }
+    return busy
+  }
+
+  /* ---------- "Ombre et lumière": the ownership cookie ---------- */
+
+  private paintOwnership(own: number[]) {
+    const N = this.N, OW = this.owCanvas.width, x = this.owCanvas.getContext('2d')!
+    this.spot.updateMatrixWorld(); this.spot.target.updateMatrixWorld(); this.spot.shadow.updateMatrices(this.spot)
+    const M = this.spot.shadow.matrix, v = new THREE.Vector4()
+    const uv = (wx: number, wz: number): [number, number] => { v.set(wx, 0, wz, 1).applyMatrix4(M); return [v.x / v.w * OW, (1 - v.y / v.w) * OW] }
+    const tmp = mkCanvas(OW, OW), t = tmp.getContext('2d')!
+    // off-board: neutral level falling off to darkness so the cone never shows a hard edge
+    const rg = t.createRadialGradient(OW / 2, OW / 2, OW * 0.3, OW / 2, OW / 2, OW / 2)
+    rg.addColorStop(0, 'rgb(77,70,59)'); rg.addColorStop(1, 'rgb(0,0,0)')
+    t.fillStyle = rg; t.fillRect(0, 0, OW, OW)
+    const hx = SX * 0.52, hz = SZ * 0.52
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const o = own[j * N + i], s = Math.sign(o) * Math.pow(Math.abs(o), 0.5)
+      const l = s > 0 ? 0.3 * (1 - s) : 0.3 + 0.7 * -s // +1 Black => shadow, -1 White => full warm light, 0 => neutral
+      t.fillStyle = `rgb(${(255 * l) | 0},${(232 * l) | 0},${(196 * l) | 0})`
+      t.beginPath() // the light looks down obliquely, so each cell projects to an arbitrary quad (slightly padded)
+      for (const [dx, dz] of [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]]) t.lineTo(...uv(gx(N, i) + dx, gz(N, j) + dz))
+      t.fill()
+    }
+    x.clearRect(0, 0, OW, OW)
+    x.filter = `blur(${((OW * SX) / (this.D.BW * 1.7) * 0.42).toFixed(1)}px)`
+    x.drawImage(tmp, 0, 0); x.filter = 'none'
+    this.owTex.needsUpdate = true
+  }
+
+  /* ---------- cameras ---------- */
+
+  private frameHeight(mode: 0 | 1) {
+    const { BW, BD } = this.D, aspect = Math.max(0.4, this.W / this.H)
+    if (mode === 0) return Math.max(BD * 1.1, (BW * 1.1) / aspect)
+    return Math.max(BD * 1.22, ((BW + 2 * 190) * 1.04) / aspect)
+  }
+
+  private placeCameras() {
+    const e = easeIO(this.camE), hn = lerp(this.frameHeight(0), this.frameHeight(1), e), { W, H } = this
+    const o = this.ortho
+    o.top = hn / 2; o.bottom = -hn / 2; o.left = (-hn / 2) * W / H; o.right = (hn / 2) * W / H; o.updateProjectionMatrix()
+    const p = this.persp, fov = Math.exp(lerp(Math.log(0.8), Math.log(28), e)) // dolly-zoom from near-orthographic
+    const tilt = e * (TILT + this.par.y * 0.035), az = e * this.par.x * 0.05
+    const dist = hn / 2 / Math.tan(THREE.MathUtils.degToRad(fov) / 2)
+    const tgt = this._v.set(0, -6 * e, 14 * e)
+    p.fov = fov; p.aspect = W / H
+    p.position.set(tgt.x + dist * Math.sin(tilt) * Math.sin(az), tgt.y + dist * Math.cos(tilt), tgt.z + dist * Math.sin(tilt) * Math.cos(az))
+    p.near = Math.max(5, dist - 1200); p.far = dist + 2500
+    p.lookAt(tgt); p.updateProjectionMatrix()
+  }
+
+  private activeCam() { return this.camE === 0 && this.camTo === 0 ? this.ortho : this.persp }
+
+  private pick(e: MouseEvent): Vertex | null {
+    if (!this.ready || !this.N) return null
+    const r = this.canvas.getBoundingClientRect(), ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
+    this.ray.setFromCamera(ndc, this.activeCam())
+    const hit = this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -SH), new THREE.Vector3())
+    if (!hit) return null
+    const N = this.N, i = Math.round(hit.x / SX + (N - 1) / 2), j = Math.round(hit.z / SZ + (N - 1) / 2)
+    if (i < 0 || j < 0 || i >= N || j >= N) return null
+    if (Math.abs(hit.x - gx(N, i)) > SX * 0.5 || Math.abs(hit.z - gz(N, j)) > SZ * 0.5) return null
+    return [i, j]
+  }
+
+  /* ---------- frame loop (render on demand) ---------- */
+
+  private invalidate() { if (!this.raf && !this.dead) this.raf = requestAnimationFrame(t => this.frame(t)) }
+
+  private updateScene(now: number): boolean {
+    let busy = false
+    if (this.camE !== this.camTo) {
+      const t = Math.min(1, (now - this.camT0) / CAM_MS)
+      this.camE = this.camFrom + (this.camTo - this.camFrom) * t
+      busy = t < 1
+    }
+    const par = this.par
+    if (this.instant()) { par.x = par.y = 0 } else {
+      const pk = Math.min(1, ((now - (this.lastFrame || now)) / 1000) * 5 + 0.08)
+      par.x += (par.tx - par.x) * pk; par.y += (par.ty - par.y) * pk
+      if (this.camE > 0 && (Math.abs(par.tx - par.x) > 1e-3 || Math.abs(par.ty - par.y) > 1e-3)) busy = true
+    }
+    this.placeCameras()
+    this.decor.visible = this.camE > 0
+    if (this.decor.visible) this.updateDecor()
+    // time of day
+    const tt = Math.min(1, (now - this.todT0) / TOD_MS)
+    this.tod = mixTod(this.todFrom, this.todTo, easeIO(tt))
+    if (tt < 1) busy = true
+    // ombre et lumière
+    const ot = Math.min(1, (now - this.ombreT0) / OMBRE_MS)
+    this.ombreK = lerp(this.ombreFrom, this.ombreOn ? 1 : 0, easeIO(ot))
+    if (ot < 1) busy = true
+    const tod = this.tod, ok = this.ombreK, ce = easeIO(this.camE), az = THREE.MathUtils.degToRad(tod.az), el0 = THREE.MathUtils.degToRad(tod.el)
+    // Study keeps the hour's colour and direction but never lets the sun rake so low that stones shade their neighbours
+    const el = lerp(Math.max(el0, THREE.MathUtils.degToRad(22)), el0, ce), lift = lerp(Math.min(1.15, Math.sin(el0) / Math.sin(el) * 1.25), 1, ce)
+    this.key.position.set(Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)).multiplyScalar(1600)
+    this.aoOff.set(-Math.cos(az), -Math.sin(az)).multiplyScalar(0.5)
+    this.key.color.copy(kelvin(tod.K)); this.key.intensity = tod.I * lift * lerp(1, 0.2, ok)
+    this.scene.environmentIntensity = lerp(Math.max(tod.env, 0.5), tod.env, ce) * lerp(1, 0.35, ok)
+    this.scene.environmentRotation.y = tod.rot
+    this.renderer.toneMappingExposure = tod.exp
+    this.spot.intensity = 5.5 * ok; this.spot.color.copy(kelvin(lerp(tod.K, 3600, 0.5)))
+    // Study damps reflections for readability; high contrast darkens the wood a little and calms the shell
+    const c = ce, hc = this.hcK
+    // the room: Study keeps the app's linen; Contemplation clears to a warm dark room, darker in the evening
+    // (the clear colour skips tone mapping but is sRGB-encoded twice on its way out: these land near #150d0a in the evening, #32261c by day)
+    this.roomColor.setRGB(0.0003 + 0.0022 * tod.room, 0.0002 + 0.0013 * tod.room, 0.00015 + 0.00075 * tod.room)
+    this.renderer.setClearColor(this.roomColor, c)
+    this.tableMat.color.setRGB(0.1, 0.064, 0.048).multiplyScalar(0.45 + 0.55 * tod.room)
+    this.tableMat.opacity = c; this.tableMat.visible = c > 0; this.tableMat.envMapIntensity = 0.2 + 0.4 * tod.room // no bright grazing sheen in the dark
+    this.shadowFloor.opacity = 0.24 * (1 - c); this.shadowFloor.visible = c < 1
+    // softer, lighter shadows in the room (a window, not a flash)
+    this.key.shadow.radius = lerp(5, 9, c); this.key.shadow.intensity = lerp(1, 0.82, c)
+    this.hc.value = hc
+    for (const m of [this.shell, this.shellDim]) { m.clearcoat = lerp(lerp(0.28, 0.5, c), 0.1, hc); m.envMapIntensity = lerp(0.75, 1, c) }
+    for (const m of [this.slate, this.slateDim]) { m.clearcoat = lerp(lerp(0.18, 0.3, c), 0.08, hc); m.envMapIntensity = lerp(0.6, 1, c) }
+    this.boardMat.color.copy(this.woodTone).multiplyScalar(lerp(1, 0.88, hc))
+    this.boardMat.normalScale.setScalar(lerp(0.6, 0.25, hc))
+    this.boardU.uHalf.value = this.noGrid ? 0 : lerp(0.5, 0.62, hc)
+    if (this.updateStones(now)) busy = true
+    return busy
+  }
+
+  private camOverride: THREE.PerspectiveCamera | null = null // debug close-up
+  private render(cam: THREE.Camera = this.camOverride ?? this.activeCam()) {
+    ;(this.composer.passes[0] as RenderPass).camera = cam
+    this.composer.render()
+  }
+
+  private frame(now: number) {
+    cancelAnimationFrame(this.raf); this.raf = 0
+    if (this.dead || !this.ready) return
+    const busy = this.updateScene(now)
+    if (busy && this.lastFrame) {
+      const r = this.governor.sample(now - this.lastFrame)
+      if (r === 'down') this.applyQuality(this.ladder[this.governor.level])
+      else if (r === 'fallback') this.fallback('slow')
+    }
+    this.render()
+    this.lastFrame = busy ? now : 0
+    if (busy) this.invalidate()
+  }
+
+  /* ---------- dev helpers (demo page, measurements, screenshots) ---------- */
+
+  /** Not part of the app contract: used by board3d.html to measure contrast and frame time. */
+  get debug() {
+    const self = this
+    return {
+      get quality() { return { level: self.governor.level, ...self.q } },
+      /** CSS-pixel position of an intersection (stone top). */
+      project(i: number, j: number, y = SH * 2) {
+        const v = new THREE.Vector3(gx(self.N, i), y, gz(self.N, j)).project(self.activeCam())
+        return [((v.x + 1) / 2) * self.W, ((1 - v.y) / 2) * self.H]
+      },
+      /** Stones on the board as drawn: CSS-pixel centre (girdle height) and radius, colour. */
+      stones() {
+        const cam = self.activeCam(), v = new THREE.Vector3(), css = () => [((v.x + 1) / 2) * self.W, ((1 - v.y) / 2) * self.H]
+        return [...self.stones.entries()].filter(([k]) => k >= 0).map(([, s]) => {
+          const [x, y] = (v.set(s.px, SH, s.pz).project(cam), css()), [x2] = (v.set(s.px + s.R, SH, s.pz).project(cam), css())
+          return { x, y, r: x2 - x, c: s.c }
+        })
+      },
+      /** Renders now (all animations settled) and reads back sRGB pixels at CSS coordinates. */
+      sample(points: number[][]) {
+        self.updateScene(performance.now() + 1e5)
+        self.render()
+        const gl = self.renderer.getContext(), px = new Uint8Array(4), r = self.renderer.getPixelRatio(), out: number[][] = []
+        for (const [x, y] of points) { gl.readPixels(Math.round(x * r), Math.round((self.H - y) * r), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); out.push([...px]) }
+        return out
+      },
+      /** Forced full renders, GPU-synchronised by a 1-pixel read-back. */
+      bench(n = 60) {
+        const gl = self.renderer.getContext(), px = new Uint8Array(4)
+        self.render(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+        const t0 = performance.now()
+        for (let k = 0; k < n; k++) { self.render(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px) }
+        const info = self.renderer.info
+        return { msPerFrame: (performance.now() - t0) / n, dpr: self.renderer.getPixelRatio(), size: [self.W, self.H], calls: info.render.calls, triangles: info.render.triangles, textures: info.memory.textures, geometries: info.memory.geometries }
+      },
+      hideGrid(on: boolean) { self.noGrid = on; self.invalidate() },
+      setQuality(level: number) { self.governor.level = level; self.applyQuality(self.ladder[level]) },
+      /** Macro framing for material inspection (null restores the camera). */
+      closeUp(at: [number, number] | null, dist = 160, tilt = 50) {
+        if (!at) { self.camOverride = null; self.invalidate(); return }
+        const p = (self.camOverride ??= new THREE.PerspectiveCamera()), t = THREE.MathUtils.degToRad(tilt)
+        p.up.set(0, 0, -1)
+        self.updateScene(performance.now() + 1e5)
+        p.fov = 24; p.aspect = self.W / self.H
+        p.position.set(at[0] - 40, dist * Math.cos(t), at[1] + dist * Math.sin(t)); p.near = 5; p.far = 3000
+        p.lookAt(at[0], 0, at[1]); p.updateProjectionMatrix()
+        self.render(p)
+      },
+    }
+  }
+}

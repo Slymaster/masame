@@ -1,0 +1,43 @@
+<!doctype html>
+<!-- Dev-only demo of the 3D goban (not part of the production build: Vite only bundles index.html). Open /board3d.html with `pnpm dev`. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Board3D demo</title>
+    <link rel="icon" href="data:," />
+    <style>
+      * { box-sizing: border-box; margin: 0 }
+      html, body { height: 100%; background: #ECE4D6; color: #2A2118; font: 13px Karla, system-ui, sans-serif }
+      body { display: flex }
+      .wrap { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; line-height: 0 }
+      aside { width: 250px; padding: 20px 18px; display: flex; flex-direction: column; gap: 12px; border-left: 1px solid rgba(43, 29, 14, .13); overflow: auto }
+      h1 { font: italic 500 26px 'Cormorant Garamond', Georgia, serif }
+      .seg { display: flex; flex-wrap: wrap; gap: 4px }
+      button { font: inherit; padding: 6px 10px; border: 1px solid rgba(43, 29, 14, .28); background: none; border-radius: 999px; cursor: pointer }
+      button[aria-pressed=true] { background: #2A2118; color: #ECE4D6 }
+      label { display: flex; gap: 8px; align-items: center; cursor: pointer }
+      pre { font: 11px ui-monospace, monospace; white-space: pre-wrap; color: #857462 }
+      #msg { color: #9C4A36 }
+    </style>
+  </head>
+  <body>
+    <div class="wrap" id="wrap"><canvas id="c" aria-label="Goban"></canvas></div>
+    <aside>
+      <h1>Board3D</h1>
+      <div class="seg" id="size"><button data-v="9">9×9</button><button data-v="13">13×13</button><button data-v="19">19×19</button></div>
+      <div class="seg" id="camera"><button data-v="study">Study</button><button data-v="contemplation">Contemplation</button></div>
+      <div class="seg" id="time"><button data-v="morning">Morning</button><button data-v="afternoon">Afternoon</button><button data-v="evening">Evening</button><button data-v="auto">Auto</button></div>
+      <label><input type="checkbox" id="ombre" /> Ombre et lumière (demo ownership)</label>
+      <label><input type="checkbox" id="counting" /> Counting (demo dead + territory)</label>
+      <label><input type="checkbox" id="ai" /> AI opponent (thinking loop)</label>
+      <label><input type="checkbox" id="coords" /> Coordinates</label>
+      <label><input type="checkbox" id="sound" checked /> Sound</label>
+      <label><input type="checkbox" id="hc" /> High contrast</label>
+      <div class="seg"><button id="setup">Setup position</button><button id="clear">Clear</button><button id="undo">Undo</button><button id="bench">Bench</button></div>
+      <pre id="info"></pre>
+      <p id="msg"></p>
+    </aside>
+    <script type="module" src="/src/board3d/demo.ts"></script>
+  </body>
+</html>
