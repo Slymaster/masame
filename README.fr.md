@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="Licence : MIT" src="https://img.shields.io/badge/licence-MIT-8a6a4a?style=flat-square"></a>
-  <img alt="macOS · Windows" src="https://img.shields.io/badge/macOS%20%C2%B7%20Windows-6b5a48?style=flat-square">
+  <img alt="macOS · Windows · Linux" src="https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-6b5a48?style=flat-square">
   <img alt="KataGo 1.18" src="https://img.shields.io/badge/KataGo-1.18-3d3229?style=flat-square">
 </p>
 
@@ -53,15 +53,25 @@ Masame est jeune, et le dit franchement.
 
 - **macOS, Apple Silicon** marche aujourd'hui. Le moteur est un KataGo 1.18.2 (Metal) autonome, aux dépendances statiques ; il faut macOS 13 ou plus récent, et aucune bibliothèque Homebrew à l'exécution.
 - **Windows** est écrit — le code, l'installeur NSIS et une compilation KataGo OpenCL avec repli automatique sur le processeur — et compilé par GitHub Actions. L'installeur est disponible en préversion, pas encore testé sur du vrai matériel.
+- **Linux, x86_64** est nouveau : une AppImage, un .deb et un .rpm, compilés sur Ubuntu 22.04 par GitHub Actions, avec KataGo 1.18.2 compilé depuis les sources (OpenCL, avec repli automatique sur le processeur). En préversion aussi.
 
-**Télécharge** la dernière version sur la [page des versions](https://github.com/Slymaster/masame/releases/latest) : un DMG pour macOS (Apple Silicon) et un installeur pour Windows (x64). Les versions ne sont pas encore signées ; le système avertit donc au premier lancement :
+**Télécharge** la dernière version sur la [page des versions](https://github.com/Slymaster/masame/releases/latest) : un DMG pour macOS (Apple Silicon), un installeur pour Windows (x64), et une AppImage, un .deb et un .rpm pour Linux (x86_64). Les versions ne sont pas encore signées ; le système avertit donc au premier lancement :
 
 - **macOS :** si Masame est bloqué, ouvre Réglages Système → Confidentialité et sécurité et clique sur **Ouvrir quand même**.
 - **Windows :** quand SmartScreen apparaît, clique sur **Informations complémentaires**, puis **Exécuter quand même**.
 
+Sous **Linux**, Masame demande glibc 2.35 ou plus récent (Ubuntu 22.04+, Debian 12, Fedora, Linux Mint 21+). Quelques points à savoir :
+
+- L'AppImage peut demander `libfuse2` (ou lance-la avec `--appimage-extract-and-run`).
+- Fenêtre vide avec le pilote propriétaire NVIDIA : lance Masame avec `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
+- Le bruit des pierres demande les plugins « good » de GStreamer (`gstreamer1.0-plugins-good` sur Debian et Ubuntu).
+- Le goban 3D demande WebGL2 ; sans lui, Masame passe au goban 2D.
+
 ## Compiler depuis les sources
 
 Il faut Node.js 22, [pnpm](https://pnpm.io/) 9, [Rust](https://www.rust-lang.org/tools/install) (stable) avec les [prérequis de Tauri 2](https://v2.tauri.app/start/prerequisites/), et sur macOS Xcode (pour AppleClang, Swift et Metal) ainsi que `cmake`, `ninja`, `pkg-config`, `curl` et `git`. Protobuf et abseil sont compilés depuis des sources épinglées ; voir l'en-tête de [`scripts/build-katago.sh`](scripts/build-katago.sh).
+
+Sous Linux (x86_64), compile plutôt le moteur avec `scripts/build-katago-linux.sh`, qui demande `g++`, `cmake`, `ninja`, `git` et les paquets de développement de zlib, Eigen 3 et OpenCL (sur Debian et Ubuntu : `ninja-build cmake zlib1g-dev libeigen3-dev ocl-icd-opencl-dev opencl-headers`). Il compile les moteurs OpenCL et CPU dans `src-tauri/resources/katago-linux/`.
 
 ```sh
 git clone https://github.com/Slymaster/masame.git

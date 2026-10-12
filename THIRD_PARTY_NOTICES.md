@@ -11,8 +11,8 @@ Legend:
 
 ## 1. Go engine
 
-### KataGo (built, macOS; bundled, Windows)
-- Source: https://github.com/lightvector/KataGo (v1.18.2 on macOS, built by `scripts/build-katago.sh`; official v1.18.1 release on Windows)
+### KataGo (built, macOS and Linux; bundled, Windows)
+- Source: https://github.com/lightvector/KataGo (v1.18.2 on macOS, built by `scripts/build-katago.sh`; v1.18.2 on Linux, built by `scripts/build-katago-linux.sh`; official v1.18.1 release on Windows)
 - Licence: MIT
 - Copyright 2025 David J Wu ("lightvector") and/or other authors of the content in the KataGo repository.
 - Requirement: include the copyright notice and permission text with every copy. The KataGo LICENSE file also names third-party code under `cpp/external/` with its own licences. The parts that can be compiled into the macOS Metal binary are:
@@ -29,7 +29,7 @@ Legend:
 | Swift CMake modules (`cpp/external/macos`) | Apache-2.0 with Runtime Library Exception | Apple Inc. and the Swift project authors |
 | `cpp/core/sha2.cpp` | licence embedded in the file | see file |
 
-The app ships KataGo's `LICENSE`, the licence files of `cpp/external/*` (and katagocoreml's `NOTICE`) and the licences of protobuf, Abseil and the Windows engine's DLLs in its `resources/licenses/` folder (macOS: `Masame.app/Contents/Resources/resources/licenses/`; Windows: `resources\licenses\` in the install folder). Their copies are kept in [`src-tauri/resources/licenses/`](src-tauri/resources/licenses/).
+The app ships KataGo's `LICENSE`, the licence files of `cpp/external/*` (and katagocoreml's `NOTICE`) and the licences of protobuf, Abseil, the Windows engine's DLLs and Eigen (Linux) in its `resources/licenses/` folder (macOS: `Masame.app/Contents/Resources/resources/licenses/`; Windows: `resources\licenses\` in the install folder; Linux: `/usr/lib/Masame/resources/licenses/` for the .deb and .rpm). Their copies are kept in [`src-tauri/resources/licenses/`](src-tauri/resources/licenses/).
 
 ### protobuf 29.3 (linked into the macOS engine)
 - Source: https://github.com/protocolbuffers/protobuf
@@ -163,3 +163,17 @@ The Windows version ships KataGo's official Windows engines (v1.18.1, `opencl` a
 `OpenCL.dll` (Khronos OpenCL ICD Loader, Apache-2.0, https://github.com/KhronosGroup/OpenCL-ICD-Loader) is not in the official zip and the app does not bundle it. The OpenCL build uses the copy that the GPU driver installs in `System32`; if it is missing, the app falls back to the CPU (Eigen AVX2) build.
 
 Engines downloaded on demand (OpenVINO, DirectML/ONNX Runtime, CUDA/TensorRT builds) bring their own runtime licences; they must be reviewed and listed here before that feature ships.
+
+---
+
+## 7. Linux build
+
+The Linux version (x86_64; AppImage, .deb and .rpm, built on Ubuntu 22.04) ships KataGo v1.18.2 built from source by `scripts/build-katago-linux.sh`, at the same pinned commit as macOS, in two variants: `opencl` (GPU) and `eigenavx2` (CPU, AVX2 + FMA). The app starts the OpenCL build and falls back to the CPU build when it fails.
+
+| File(s) | Component | Licence | Requirement |
+|---|---|---|---|
+| `katago` (`eigenavx2` build only) | Eigen 3.4.0 (header-only, compiled in, from Ubuntu 22.04's `libeigen3-dev`) | MPL-2.0 | unmodified, compiled with `EIGEN_MPL2_ONLY` so no LGPL part of Eigen is used; source available at https://gitlab.com/libeigen/eigen; licence text in `resources/licenses/linux-engine/` |
+
+glibc, libstdc++, libgcc, zlib and the OpenCL ICD loader (`libOpenCL.so.1`) are system libraries, linked dynamically and not shipped by us. Without an OpenCL driver, the app uses the CPU build.
+
+The AppImage also bundles libraries from Ubuntu 22.04 so that it runs on other distributions (WebKitGTK, GTK, GLib and their dependencies, many under the LGPL), unmodified. Each release publishes `linux-appimage-libraries.txt` next to the AppImage: every bundled file with its Ubuntu package and version, how to get the corresponding source, and each package's copyright file. The .deb and .rpm bundle none of these; they depend on the distribution's packages.

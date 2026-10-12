@@ -29,6 +29,7 @@
   },
   "bundle": {
     "active": true,
+    "category": "BoardGame",
     "targets": [
       "app"
     ],

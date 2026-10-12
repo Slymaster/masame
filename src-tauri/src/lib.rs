@@ -22,7 +22,7 @@ struct App {
     http: reqwest::Client,
     catalog: Mutex<Vec<Entry>>,
     downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     failed_variants: Mutex<Vec<&'static str>>, // engine builds that failed to start in this session
 }
 
@@ -35,7 +35,7 @@ fn settings_path(app: &AppHandle) -> Res<PathBuf> { Ok(data_dir(app)?.join("sett
 fn read_settings(app: &AppHandle) -> Value { parse_settings(&settings_path(app).ok().and_then(|p| std::fs::read(p).ok()).unwrap_or_default()) }
 
 /// Always an object (anything else, even valid JSON, reads as empty), so `settings[key] = value` never panics: it can
-/// run with the engine lock held (the Windows fallback).
+/// run with the engine lock held (the engine fallback).
 fn parse_settings(bytes: &[u8]) -> Value { serde_json::from_slice(bytes).ok().filter(Value::is_object).unwrap_or(json!({})) }
 
 fn write_setting(app: &AppHandle, key: &str, value: Value) -> Res<()> {
@@ -59,9 +59,9 @@ fn active_network(app: &AppHandle) -> Option<String> {
 fn env_path(k: &str) -> Option<PathBuf> { if cfg!(debug_assertions) { std::env::var_os(k).map(PathBuf::from) } else { None } }
 
 /// The one place that decides which KataGo binary runs, and its platform-specific overrides: BADUK_KATAGO (dev), else
-/// on macOS the bundled sidecar, which Tauri places next to the app executable; on Windows (below) one of the official
+/// on macOS the bundled sidecar, which Tauri places next to the app executable; on Windows and Linux (below) one of the
 /// builds bundled as resources.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
     env_path("BADUK_KATAGO")
         .or_else(|| Some(std::env::current_exe().ok()?.parent()?.join(format!("katago{}", std::env::consts::EXE_SUFFIX))))
@@ -69,22 +69,26 @@ fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
         .ok_or(Failure::new("engine_missing"))
 }
 
-/// Windows: resources/katago-win/<variant>/katago.exe (next to its DLLs), the variant chosen by backend.rs.
-#[cfg(windows)]
+/// Windows: resources/katago-win/<variant>/katago.exe (next to its DLLs); Linux:
+/// resources/katago-linux/<variant>/katago. The variant is chosen by backend.rs.
+#[cfg(any(windows, target_os = "linux"))]
 fn engine_bin(app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
-    // OpenCL's tuning cache would default to katago.exe's folder, which is read-only once installed. Relative to
-    // KataGo's working directory, the data dir (an absolute path could hold characters its narrow argv cannot).
+    // OpenCL's tuning cache would default to the binary's folder, which is read-only once installed. Relative to
+    // KataGo's working directory, the data dir (on Windows an absolute path could hold characters its narrow argv
+    // cannot).
     let home = vec![OsString::from("homeDataDir=katago")];
     if let Some(b) = env_path("BADUK_KATAGO") { return Ok((b, home)) }
     let failed = app.state::<App>().failed_variants.lock().unwrap().clone();
     // No candidate: no OpenCL driver and no AVX2.
     let variant = backend::pick(&candidates(app), &failed).ok_or(Failure::with("cpu_unsupported", "no OpenCL.dll"))?;
-    let bin = app.path().resolve(Path::new("resources").join("katago-win").join(variant).join("katago.exe"), BaseDirectory::Resource)
+    let folder = if cfg!(windows) { "katago-win" } else { "katago-linux" };
+    let exe = format!("katago{}", std::env::consts::EXE_SUFFIX);
+    let bin = app.path().resolve(Path::new("resources").join(folder).join(variant).join(exe), BaseDirectory::Resource)
         .map_err(|e| Failure::with("engine_missing", e))?;
     Ok((bin, home))
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn candidates(app: &AppHandle) -> Vec<&'static str> { backend::candidates(read_settings(app)["engineVariant"].as_str(), opencl_ok(), cpu_ok()) }
 
 /// The OpenCL build imports OpenCL.dll, which only a GPU driver installs (in System32); it is not bundled. Without the
@@ -99,8 +103,13 @@ fn opencl_ok() -> bool {
     n > 0 && n < buf.len() && PathBuf::from(OsString::from_wide(&buf[..n])).join("OpenCL.dll").is_file()
 }
 
+/// Linux: libOpenCL.so.1 is only looked up in the system library paths (no planting concern); without a driver the
+/// OpenCL build fails before Ready and engine_fallback moves on to the CPU build. Only a Ready variant is remembered.
+#[cfg(target_os = "linux")]
+fn opencl_ok() -> bool { true }
+
 /// The CPU build is compiled for AVX2 + FMA; without them it would die on an illegal instruction.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn cpu_ok() -> bool {
     #[cfg(target_arch = "x86_64")]
     { is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") }
@@ -108,10 +117,10 @@ fn cpu_ok() -> bool {
     { false }
 }
 
-/// Windows: a bundled build that fails before it is ready (driver crash, hang) is replaced by the next candidate for
-/// this session. Nothing is persisted here: a bad model or config crashes every build, so only a build that reaches
-/// Ready is remembered (engine_ready). Engine calls this with its process lock held, so it must not touch the engine.
-#[cfg(windows)]
+/// Windows and Linux: a bundled build that fails before it is ready (driver crash, hang) is replaced by the next
+/// candidate for this session. Nothing is persisted here: a bad model or config crashes every build, so only a build
+/// that reaches Ready is remembered (engine_ready). Engine calls this with its process lock held, so it must not touch the engine.
+#[cfg(any(windows, target_os = "linux"))]
 fn engine_fallback(app: &AppHandle, spec: &engine::Spec, error: Failure) -> Res<engine::Spec> {
     let Some(variant) = backend::variant_of(&spec.bin).filter(|_| backend::is_backend_failure(error.code) && env_path("BADUK_KATAGO").is_none())
     else { return Err(error) };
@@ -125,8 +134,8 @@ fn engine_fallback(app: &AppHandle, spec: &engine::Spec, error: Failure) -> Res<
     engine_spec(app)
 }
 
-/// Windows: the bundled build that reached Ready becomes the one the next launch starts with.
-#[cfg(windows)]
+/// Windows and Linux: the bundled build that reached Ready becomes the one the next launch starts with.
+#[cfg(any(windows, target_os = "linux"))]
 fn engine_ready(app: &AppHandle, spec: &engine::Spec) {
     if env_path("BADUK_KATAGO").is_some() { return }
     if let Some(v) = backend::to_persist(read_settings(app)["engineVariant"].as_str(), &spec.bin) {
@@ -310,7 +319,10 @@ fn open_url(url: &str) -> Res<()> {
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
-fn open_url(_url: &str) -> Res<()> { Err(Failure::new("open_failed")) } // shortcut: no Linux build yet
+fn open_url(url: &str) -> Res<()> {
+    // Absolute path: never resolved through PATH.
+    std::process::Command::new("/usr/bin/xdg-open").arg(url).spawn().map(|_| ()).map_err(|e| Failure::with("open_failed", e))
+}
 
 /// Rebuilds the macOS menu bar in the UI language; `labels` come from the frontend dictionary. No-op elsewhere.
 #[tauri::command]
@@ -330,7 +342,7 @@ pub fn run() {
         .setup(|app| {
             let h = app.handle().clone();
             let engine = Engine::new(move |ev, payload| { let _ = h.emit(ev, payload); });
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             let engine = {
                 let (h, h2) = (app.handle().clone(), app.handle().clone());
                 engine.with_fallback(move |spec, e| engine_fallback(&h, spec, e)).with_on_ready(move |spec| engine_ready(&h2, spec))
@@ -338,7 +350,7 @@ pub fn run() {
             if let Err(e) = install_config(app.handle()) { eprintln!("[katago] config not installed: {e:?}") }
             app.manage(App {
                 engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(),
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "linux"))]
                 failed_variants: Default::default(),
             });
             Ok(())

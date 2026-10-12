@@ -1,8 +1,8 @@
-# Tests and builds for macOS (Apple Silicon: .app + .dmg, ad-hoc signed) and Windows x64 (NSIS installer, unsigned) on
-# every push and pull request. On a v* tag push only, the DMG and installer are uploaded as workflow artifacts and the
-# release job turns them into a draft GitHub release (with SHA256SUMS.txt) for the maintainer to review and publish by
-# hand. Actions are pinned to commit SHAs (tag in the comment); pnpm's exact version comes from package.json's
-# packageManager field.
+# Tests and builds for macOS (Apple Silicon: .app + .dmg, ad-hoc signed), Windows x64 (NSIS installer, unsigned) and
+# Linux x86_64 (AppImage, .deb, .rpm; built on Ubuntu 22.04 for a glibc 2.35 baseline) on every push and pull request.
+# On a v* tag push only, the packages are uploaded as workflow artifacts and the release job turns them into a draft
+# GitHub release (with SHA256SUMS.txt) for the maintainer to review and publish by hand. Actions are pinned to commit
+# SHAs (tag in the comment); pnpm's exact version comes from package.json's packageManager field.
 name: Build
 
 on:
@@ -26,6 +26,8 @@ jobs:
             bundles: app,dmg
           - os: windows-latest
             bundles: nsis
+          - os: ubuntu-22.04
+            bundles: appimage,deb,rpm
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,6 +46,15 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # Tauri 2's WebKitGTK stack (and patchelf for the AppImage), then the engine's build dependencies.
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libxdo-dev librsvg2-dev patchelf \
+            ninja-build cmake zlib1g-dev libeigen3-dev ocl-icd-opencl-dev opencl-headers
+
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm build # dist/ must exist before cargo compiles the app (generate_context!)
@@ -60,6 +71,15 @@ jobs:
         run: |
           brew install ninja pkg-config
           scripts/build-katago.sh
+      - name: Cache the KataGo build (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: vendor
+          key: katago-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-katago-linux.sh') }}
+      - name: Build KataGo (Linux, OpenCL + CPU)
+        if: runner.os == 'Linux'
+        run: scripts/build-katago-linux.sh
       - name: Fetch KataGo (Windows, official OpenCL + CPU builds)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -76,6 +96,14 @@ jobs:
           # off: binaries leave CI only through the explicit tag-only upload below
           uploadWorkflowArtifacts: false
 
+      # The AppImage bundles Ubuntu's WebKitGTK, GTK, GLib...: list them with their packages, versions and licences.
+      - name: List the AppImage's bundled libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          appimages=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          [ ${#appimages[@]} -eq 1 ] || { echo "::error::expected one AppImage, found ${#appimages[@]}"; exit 1; }
+          scripts/linux-appimage-libraries.sh "${appimages[0]}" src-tauri/target/release/bundle/appimage/linux-appimage-libraries.txt
+
       - name: Upload the DMG (tags only)
         if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'macOS'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -90,6 +118,19 @@ jobs:
         with:
           name: masame-windows
           path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload the Linux packages (tags only)
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: masame-linux
+          # Several folders: the artifact keeps them under bundle/ (appimage/, deb/, rpm/); the release job flattens.
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/linux-appimage-libraries.txt
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error
           retention-days: 7
 
@@ -122,6 +163,9 @@ jobs:
       - name: Write checksums
         working-directory: dist-release
         run: |
+          # Artifacts with several folders (Linux) arrive as subfolders: move every file to the top, refusing duplicates.
+          find . -mindepth 2 -type f -exec mv -n -t . {} +
+          find . -mindepth 1 -type d -delete
           sha256sum -- * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
