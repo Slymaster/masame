@@ -57,7 +57,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJBMkY2NkUyRTBGQTIzMEIKUldRTEkvcmc0bVl2dWlGOW5qaU5WcGFFRzJVeWJtQWxpUXJ1emJLRnFSVnZTU0xhOXdvVllzUlgK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk1QkMzOEJCMUMyNjczQjcKUldTM2N5WWN1emk4bGVsV2djcGl0OEVxSjFhYkZ0V3RuSWhldXZKdkxHRnl0L2JVdzN4TWtIdXUK",
       "endpoints": [
         "https://github.com/Slymaster/masame/releases/latest/download/latest.json"
       ],
