@@ -45,7 +45,7 @@
 - **Comptage.** Le moteur propose les pierres mortes ; tu les corriges d'un clic.
 - **Revue de partie.** Jusqu'à trois moments où un coup a coûté le plus de points, chacun une courte leçon : trouve toi-même la punition, vois-la, puis vois le bon coup. Après une partie contre l'IA, ou à tout moment dans une partie à deux joueurs ou un SGF. Elle tourne en local, en une minute environ.
 - **Jouer en ligne sur OGS.** Des parties classées sur [online-go.com](https://online-go.com) contre des joueurs, sur le goban de Masame, avec pendules ; tes parties OGS terminées s'ouvrent pour la revue.
-- **Règles et parties. Captures, ko, suicide, passe, annulation, navigation dans les coups, ouverture et enregistrement SGF.
+- **Règles et parties.** Captures, ko, suicide, passe, annulation, navigation dans les coups, ouverture et enregistrement SGF.
 - **Deux langues.** Entièrement en français et en anglais ; suit la langue du système et se change dans l'app.
 - **Un mode léger 2D.** Un goban Canvas, utilisé automatiquement quand le rendu 3D n'est pas disponible.
 

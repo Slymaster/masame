@@ -117,12 +117,11 @@ export const findMatchRequest = (size: BoardSize, speed: Speed, uuid: string): p
 })
 
 export interface Player { id: number; username: string; rank: string }
-export type Phase = GobanEnginePhase
 export interface Followed {
   id: number
   game: Game
   me: Sign | 0
-  phase: Phase
+  phase: GobanEnginePhase
   clock?: protocol.GameClock
   tc?: JGOFTimeControl
   rules: GobanEngineRules
@@ -299,7 +298,8 @@ export function follow(id: number, onEvent: (ev: GameEvent, state: Followed | nu
     try { state = apply(state, ev, me?.id) } catch (e) { state = null; ev = ['error', (e as { code?: string }).code ?? String(e)] }
     // without a state, a move means handicap placement went on: fetch the game again until it is complete
     if (name === 'gamedata') asked = false
-    else if (!asked && (state?.reload || (!state && name === 'move'))) { asked = true; join() }
+    // an error (a refused move, kept on the board by the optimistic play) also takes the server's version
+    else if (!asked && (state?.reload || (!state && name === 'move') || name === 'error')) { asked = true; join() }
     onEvent(ev, state)
   }] as const)
   for (const [e, h] of handlers) ee.on(e, h)
@@ -313,7 +313,6 @@ export function follow(id: number, onEvent: (ev: GameEvent, state: Followed | nu
 }
 
 export const move = (id: number, v: Vertex | null) => live().send('game/move', { game_id: id, move: toOgs(v) })
-export const pass = (id: number) => move(id, null)
 export const resign = (id: number) => live().send('game/resign', { game_id: id })
 export const setRemoved = (id: number, stones: Vertex[], removed: boolean) =>
   live().send('game/removed_stones/set', { game_id: id, removed, stones: stonesString(stones) })
@@ -324,12 +323,15 @@ export const acceptRemoved = (id: number, stones: Vertex[]) =>
 export function findMatch(size: BoardSize, speed: Speed): { cancel(): void; started: Promise<number> } {
   const s = live(), uuid = crypto.randomUUID()
   let stop = () => {}
+  // asked again on every reconnect: the server may have dropped the entry with the connection
+  const ask = () => s.send('automatch/find_match', findMatchRequest(size, speed, uuid))
   const started = new Promise<number>(resolve => {
     const on = (d: { uuid: string; game_id: number }) => { if (d.uuid === uuid) { stop(); resolve(d.game_id) } }
     s.on('automatch/start', on)
-    stop = () => { s.off('automatch/start', on) }
+    s.on('connect', ask)
+    stop = () => { s.off('automatch/start', on); s.off('connect', ask) }
   })
-  s.send('automatch/find_match', findMatchRequest(size, speed, uuid))
+  if (s.connected) ask() // otherwise the connect handler asks
   return { cancel: () => { stop(); s.send('automatch/cancel', { uuid }) }, started }
 }
 

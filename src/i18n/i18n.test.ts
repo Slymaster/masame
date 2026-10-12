@@ -124,6 +124,9 @@ describe('OGS', () => {
     setLang('en')
     expect([t.ogsResult(-1, 'resign'), t.ogsResult(1, 'time'), t.ogsResult(-1, 'score', 4.5), t.ogsResult(1, 'forfeit'), t.ogsResult(0, 'cancel')])
       .toEqual(['White wins by resignation.', 'Black wins on time.', 'White wins by 4.5 points.', 'Black wins by forfeit.', 'Game cancelled.'])
+    expect([t.ogsResult(0, 'score', 0), t.ogsResult(0, 'score', 4.5), t.ogsResult(0, 'resign')]).toEqual(['Draw.', 'Game over.', 'Game over.']) // no invented winner
+    expect([nb(t.periods(3, 30)), nb(t.days(2, 4))]).toEqual(['3×30 s', '2 d 4 h'])
+    expect(t.periods(3, 30) + t.days(2, 4)).not.toMatch(/ /) // nbsp: never wraps
     expect(t.ogsSearching(9, t.paces.blitz)).toBe('Looking for a 9×9 blitz opponent…')
     expect(t.ogsBoard(19, 6.5, t.rules.chinese)).toBe('19×19 · komi 6.5 · Chinese rules · OGS')
     setLang('fr')

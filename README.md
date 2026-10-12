@@ -45,7 +45,7 @@
 - **Counting.** The engine proposes the dead stones; you correct them with a click.
 - **Game review.** Up to three moments where a move cost the most points, each a short lesson: find the punishment yourself, see it, then see the better move. After a game against the AI, or at any time in a two-player or SGF game. It runs locally, in about a minute.
 - **Online play on OGS.** Ranked games on [online-go.com](https://online-go.com) against people, on Masame's board, with clocks; your finished OGS games open for review.
-- **Rules and records. Captures, ko, suicide, pass, undo, move navigation, SGF open and save.
+- **Rules and records.** Captures, ko, suicide, pass, undo, move navigation, SGF open and save.
 - **Two languages.** Entirely in French and English, following the system language, switchable in the app.
 - **A 2D light mode.** A Canvas board, used automatically when the 3D renderer is unavailable.
 

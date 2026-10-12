@@ -132,11 +132,12 @@ export const en = {
   ogsLeaveAsk: 'The game goes on at OGS and your clock keeps running. Leave anyway?', ogsLeave: 'Leave',
   ogsResignAsk: 'Resign this game? It counts as a loss on OGS.',
   ogsResult: (winner: number, how: string, points?: number) => how === 'cancel' ? 'Game cancelled.'
-    : how === 'score' && !winner ? 'Draw.'
+    : how === 'score' && !winner && !points ? 'Draw.'
+    : !winner ? 'Game over.' // OGS named no winner
     : `${color(winner)} wins ${how === 'resign' ? 'by resignation' : how === 'time' ? 'on time' : how === 'score' ? `by ${pts(points ?? 0)}` : 'by forfeit'}.`,
-  periods: (n: number, s: number) => `${n}×${s} s`,
+  periods: (n: number, s: number) => `${n}×${s} s`,
   stones: (n: number) => f.plural(n, 'stone', 'stones'),
-  days: (d: number, h: number) => `${d} d ${h} h`,
+  days: (d: number, h: number) => `${d} d ${h} h`,
   // files
   sgfFilter: 'SGF game',
   openTitle: 'Open a game', saveTitle: 'Save the game',

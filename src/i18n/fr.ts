@@ -133,11 +133,12 @@ export const fr: Dict = {
   ogsLeaveAsk: 'La partie continue sur OGS et ta pendule tourne. Quitter quand même ?', ogsLeave: 'Quitter',
   ogsResignAsk: 'Abandonner cette partie ? Elle compte comme une défaite sur OGS.',
   ogsResult: (winner: number, how: string, points?: number) => how === 'cancel' ? 'Partie annulée.'
-    : how === 'score' && !winner ? 'Égalité.'
+    : how === 'score' && !winner && !points ? 'Égalité.'
+    : !winner ? 'Partie terminée.'
     : `${color(winner)} gagne ${how === 'resign' ? 'par abandon' : how === 'time' ? 'au temps' : how === 'score' ? `de ${pts(points ?? 0)}` : 'par forfait'}.`,
   periods: (n: number, s: number) => `${n}×${s} s`,
   stones: (n: number) => f.plural(n, 'pierre', 'pierres'),
-  days: (d: number, h: number) => `${d} j ${h} h`,
+  days: (d: number, h: number) => `${d} j ${h} h`,
   // files
   sgfFilter: 'Partie SGF',
   openTitle: 'Ouvrir une partie', saveTitle: 'Enregistrer la partie',

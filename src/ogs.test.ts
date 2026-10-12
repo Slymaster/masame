@@ -302,7 +302,7 @@ describe('session', () => {
     expect(b.sent.find(m => m[0] === 'game/connect')![1]).toEqual({ game_id: 1, chat: false })
 
     ogs.move(1, [3, 3])
-    ogs.pass(1)
+    ogs.move(1, null)
     ogs.setRemoved(1, [[9, 2], [9, 4]], true)
     ogs.acceptRemoved(1, [[9, 2]])
     leave()
@@ -327,6 +327,10 @@ describe('session', () => {
     last().receive(['game/1/gamedata', live])
     last().receive(['game/1/undo_accepted', 116])
     expect(last().commands()).toHaveLength(4)
+    last().receive(['game/1/gamedata', live])
+    last().receive(['game/1/error', 'Illegal move'])
+    last().receive(['game/1/error', 'Illegal move'])
+    expect(last().commands()).toHaveLength(5) // a refused move: the game is fetched again, once
   })
 
   it('lets disconnect win over a connect still in progress', async () => {
@@ -357,6 +361,13 @@ describe('session', () => {
     last().receive(['automatch/start', { uuid: 'someone-else', game_id: 5 }])
     last().receive(['automatch/start', { uuid: req.uuid, game_id: 77 }])
     expect(await m.started).toBe(77)
+    const r = ogs.findMatch(13, 'rapid'), asked = last().sent.filter(x => x[0] === 'automatch/find_match')
+    last().end(1006)
+    vi.advanceTimersByTime(1000)
+    last().open()
+    expect(last().commands()).toEqual(['authenticate', 'automatch/find_match']) // the pending search, asked again
+    expect(last().sent[1][1].uuid).toBe(asked[asked.length - 1][1].uuid)
+    r.cancel()
     const c = ogs.findMatch(9, 'blitz')
     c.cancel()
     expect(last().sent[last().sent.length - 1]).toEqual(['automatch/cancel', { uuid: last().sent[last().sent.length - 2][1].uuid }])

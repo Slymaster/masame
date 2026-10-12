@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { call, inTauri } from './katago'
 import { failureText, t } from './i18n'
 import * as ogs from './ogs'
@@ -9,11 +9,17 @@ const silent = (e: unknown) => (e as { code?: string })?.code === 'ogs_cancelled
 /** The Game sheet's OGS part: sign-in, automatch and my games. Whether we're signed in is asked when it appears. */
 export function OgsSection({ speed, setSpeed, onFind, onResume, onImport, onSignOut }: {
   speed: ogs.Speed; setSpeed: (s: ogs.Speed) => void; onFind: () => void
-  onResume: (id: number) => void; onImport: (id: number) => void; onSignOut: () => void
+  onResume: (id: number) => void; onImport: (id: number) => void; onSignOut: () => Promise<boolean>
 }) {
   const [me, setMe] = useState<ogs.Player | null | undefined>(ogs.me ?? undefined) // undefined: not known yet
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // the sign-in button gives way to Cancel while the browser is out: focus follows, then lands on what replaces it
+  const cancel = useRef<HTMLButtonElement>(null), main = useRef<HTMLButtonElement>(null), waited = useRef(false)
+  useEffect(() => {
+    if (waiting) cancel.current?.focus(); else if (waited.current) main.current?.focus()
+    waited.current = waiting
+  }, [waiting])
   useEffect(() => {
     if (!inTauri()) return setMe(null)
     ogs.connect().then(setMe, e => { setMe(null); if (e?.code !== 'ogs_login_required') setError(failureText(e)) })
@@ -22,7 +28,11 @@ export function OgsSection({ speed, setSpeed, onFind, onResume, onImport, onSign
     setWaiting(true); setError(null)
     call('ogs_login').then(() => ogs.connect()).then(setMe, e => { if (!silent(e)) setError(failureText(e)) }).finally(() => setWaiting(false))
   }
-  const signOut = () => { onSignOut(); setError(null); ogs.logout().then(() => setMe(null), e => setError(failureText(e))) }
+  const signOut = async () => {
+    if (!(await onSignOut())) return
+    setError(null)
+    ogs.logout().then(() => setMe(null), e => setError(failureText(e)))
+  }
 
   return <>
     {me ? <>
@@ -33,12 +43,12 @@ export function OgsSection({ speed, setSpeed, onFind, onResume, onImport, onSign
         <span>{t.pace}</span>
         <Seg label={t.pace} value={speed} options={(['blitz', 'rapid', 'live'] as const).map(s => [s, t.paces[s]])} set={setSpeed} />
       </div>
-      <button className="btn accent" onClick={onFind}>{t.ogsFind}</button>
+      <button className="btn accent" ref={main} onClick={onFind}>{t.ogsFind}</button>
     </> : <>
       <p className="quiet">{inTauri() ? t.ogsSignInHelp : t.ogsInAppOnly}</p>
       {waiting
-        ? <p className="quiet" aria-live="polite">{t.ogsWaiting} <button className="link" onClick={() => void call('ogs_login_cancel').catch(() => {})}>{t.cancel}</button></p>
-        : <button className="btn accent" onClick={signIn} disabled={!inTauri() || me === undefined}>{t.ogsSignIn}</button>}
+        ? <p className="quiet" aria-live="polite">{t.ogsWaiting} <button className="link" ref={cancel} onClick={() => void call('ogs_login_cancel').catch(() => {})}>{t.cancel}</button></p>
+        : <button className="btn accent" ref={main} onClick={signIn} disabled={!inTauri() || me === undefined}>{t.ogsSignIn}</button>}
     </>}
     {error && <p className="quiet err" role="alert">{error}</p>}
     {me && <Games onResume={onResume} onImport={onImport} />}
@@ -51,11 +61,11 @@ function Games({ onResume, onImport }: { onResume: (id: number) => void; onImpor
   useEffect(() => {
     let live = true
     const load = (f: () => Promise<ogs.GameRow[]>, i: 0 | 1) =>
-      f().then(r => r, e => failureText(e)).then(r => live && setLists(l => (i ? [l[0], r] : [r, l[1]])))
+      f().catch(failureText).then(r => live && setLists(l => (i ? [l[0], r] : [r, l[1]])))
     load(ogs.activeGames, 0); load(ogs.finishedGames, 1)
     return () => { live = false }
   }, [])
-  const who = (g: ogs.GameRow) => <>{g.opponent.username}{g.opponent.rank && <span className="rk">{g.opponent.rank}</span>}</>
+  const who = (g: ogs.GameRow) => <><span className="nm">{g.opponent.username}</span>{g.opponent.rank && <span className="rk">{g.opponent.rank}</span>}</>
   return (
     <div className="ogs-games">
       <div className="lab"><span>{t.ogsGames}</span><span /></div>

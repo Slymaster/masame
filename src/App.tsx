@@ -114,11 +114,11 @@ function useMsg() {
   return [m, useCallback((v: Msg | null) => set(() => v), [])] as const
 }
 
-function Switch({ label, k, on, toggle }: { label: string; k?: string; on: boolean; toggle: () => void }) {
+function Switch({ label, k, on, toggle, disabled, title }: { label: string; k?: string; on: boolean; toggle: () => void; disabled?: boolean; title?: string }) {
   return (
-    <div className="row" onClick={toggle}>
+    <div className="row" onClick={disabled ? undefined : toggle} title={title}>
       <span>{label} {k && <kbd>{k}</kbd>}</span>
-      <button className="switch" role="switch" aria-checked={on} aria-label={label} onClick={e => { e.stopPropagation(); toggle() }} />
+      <button className="switch" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={e => { e.stopPropagation(); toggle() }} />
     </div>
   )
 }
@@ -163,7 +163,8 @@ export function App() {
   // the followed OGS game (its leave() in a ref), an automatch search, the socket's state
   const [online, setOnline] = useState<ogs.Followed | null>(null)
   const leaveOnline = useRef<(() => void) | null>(null)
-  const [search, setSearch] = useState<{ size: number; speed: ogs.Speed; cancel: () => void } | null>(null)
+  const [search, setSearch] = useState<{ size: number; speed: ogs.Speed } | null>(null)
+  const searching = useRef<(() => void) | null>(null) // cancels the pending automatch
   const ogsStatus = useSyncExternalStore(ogs.onStatus, ogs.getStatus)
   const [session2d, setSession2d] = useState(false) // 2D after a WebGL context loss, for this session only
   const renderer: Renderer = session2d ? '2d' : settings.renderer
@@ -286,21 +287,15 @@ export function App() {
       } else if (pick(t.refused, r)) setNote(d => pick(d.refused, r)!)
       return r === 'ok'
     }
-    if (online) {
-      if (removal) {
-        const r = v && ogs.removalToggle(game.board.signMap, removal.removed, v)
-        if (r) send(() => ogs.setRemoved(removal.id, r.stones, r.removed))
-        return false
-      }
-      if (!humanTurn) return false
-      const r = game.play(v) // optimistic: OGS echoes it back
-      if (r === 'ok') { changed(); if (!send(() => ogs.move(online.id, v))) game.undo() }
-      else if (pick(t.refused, r)) setNote(d => pick(d.refused, r)!)
-      return r === 'ok'
+    if (removal) {
+      const r = v && ogs.removalToggle(game.board.signMap, removal.removed, v)
+      if (r) send(() => ogs.setRemoved(removal.id, r.stones, r.removed))
+      return false
     }
     if (locked || !humanTurn) return false
     const r = game.play(v)
-    if (r === 'ok') { setDirty(true); setCounting(null); if (!bot) setResult(null); changed() }
+    if (r === 'ok' && online) { changed(); if (!send(() => ogs.move(online.id, v))) game.undo() } // optimistic: OGS echoes it back
+    else if (r === 'ok') { setDirty(true); setCounting(null); if (!bot) setResult(null); changed() }
     else if (pick(t.refused, r)) setNote(d => pick(d.refused, r)!)
     return r === 'ok'
   }
@@ -318,8 +313,10 @@ export function App() {
     shown.goTo(i) // in a lesson, an owed answer (ask) waits until the cursor is back at the branch end
     changed()
   }
+  // online is cleared only here, and only with the board replaced: an unfinished OGS position never becomes a local
+  // game open to KataGo (a finished one may stay, see signOut)
   const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null) }
-  const start = (g: Game, b: typeof bot) => { stopOnline(); show(g, b) }
+  const start = (g: Game, b: typeof bot) => { cancelSearch(); stopOnline(); show(g, b) }
   const show = (g: Game, b: typeof bot) => {
     setGame(g); setBot(b); setResult(null); setNote(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); winrates.current = []
   }
@@ -334,12 +331,12 @@ export function App() {
       start(new Game({ size, playerBlack: me === 1 ? '' : name, playerWhite: me === 1 ? name : '' }), { sign: -me as Sign, rank })
     } else start(new Game({ size }), null)
   }
-  const open = async (read: () => Promise<string | null> = openSgfFile) => {
+  const open = async (read: () => Promise<string | null> = openSgfFile, asked = false) => {
     try {
       const text = await read()
       if (text === null) return
       const g = loadSgf(text)
-      if (!(await canLeave())) return
+      if (!asked && !(await canLeave())) return
       start(g, null); setNextSize(SIZES.includes(g.info.size) ? g.info.size : nextSize)
     } catch (e) {
       setNote(d => d.openFailed(failureText(e, d)))
@@ -357,14 +354,17 @@ export function App() {
   // OGS: a socket send fails only when signed out
   const send = (f: () => void) => { try { f(); return true } catch (e) { setNote(d => failureText(e, d)); return false } }
   const follow = (id: number) => {
-    stopOnline()
-    let shownGame: Game | null = null, len = 0
+    start(new Game({ size: game.info.size }), null) // an empty board until the gamedata
+    let shownGame: Game | null = null, len = 0, error: Msg | null = null
     try {
       leaveOnline.current = ogs.follow(id, (ev, s) => {
-        if (ev[0] === 'error') setNote(d => failureText(typeof ev[1] === 'string' ? { code: ev[1] } : ev[1], d))
+        if (ev[0] === 'error') setNote(error = d => failureText(typeof ev[1] === 'string' ? { code: ev[1] } : ev[1], d))
         if (!s) return
-        if (s.game !== shownGame) { shownGame = s.game; show(s.game, null) } // first gamedata or a reload
-        else if (ev[0] === 'move' && s.game.moves.length > len) {
+        if (s.game !== shownGame) { // first gamedata or a reload, which an error asks for: the error stays shown
+          shownGame = s.game; show(s.game, null)
+          if (error) setNote(error)
+          error = null
+        } else if (ev[0] === 'move' && s.game.moves.length > len) {
           const m = s.game.lastMove!
           if (m.sign !== s.me) { if (m.vertex) view.current?.drop(m.vertex, m.sign); else view.current?.pass?.(m.sign) }
           changed()
@@ -376,16 +376,25 @@ export function App() {
     } catch (e) { setNote(d => failureText(e, d)) }
   }
   const resume = async (id: number) => { if (online?.id !== id && await canLeave()) follow(id) }
+  const importGame = async (id: number) => { if (await canLeave()) open(() => ogs.sgf(id), true) }
   const find = async () => {
     if (!(await canLeave())) return // the shown game is left once a match starts
-    search?.cancel()
+    cancelSearch()
     try {
       const size = nextSize as ogs.BoardSize, speed = settings.ogsSpeed, m = ogs.findMatch(size, speed)
-      setSearch({ size, speed, cancel: m.cancel })
-      m.started.then(id => { setSearch(null); follow(id) })
+      searching.current = m.cancel
+      setSearch({ size, speed })
+      m.started.then(id => { searching.current = null; follow(id) })
     } catch (e) { setNote(d => failureText(e, d)) }
   }
-  const cancelSearch = () => { search?.cancel(); setSearch(null) }
+  const cancelSearch = () => { searching.current?.(); searching.current = null; setSearch(null) }
+  /** Before signing out: an unfinished OGS game is left (asked first) and its board replaced; a finished one stays. */
+  const signOut = async () => {
+    if (ongoing && !(await askFirst(t.ogsLeaveAsk, t.ogsLeave))) return false
+    if (ongoing) start(new Game({ size: game.info.size }), null)
+    else { cancelSearch(); stopOnline() }
+    return true
+  }
 
   /** End of a game: record the result (and, against the bot, nudge its rank toward a 50 % win rate, once). */
   const finish = (text: Msg, botWon: boolean | null, re: string) => {
@@ -541,7 +550,9 @@ export function App() {
 
   // ⌘/Ctrl commands, shared by the keyboard and the macOS menu bar (whose items emit "menu" with these ids)
   const togglePanel = () => set('panelHidden', !settings.panelHidden)
-  const commands: Record<string, () => void> = { undo, new: () => newGame(), open, save, panel: togglePanel }
+  // ⌘N with OGS as the opponent: the Game sheet, where an OGS game starts
+  const newCommand = () => { if (settings.opponent !== 'ogs') return void newGame(); opener.current = document.activeElement as HTMLElement | null; setSheet('game') }
+  const commands: Record<string, () => void> = { undo, new: newCommand, open, save, panel: togglePanel }
   // a focused range keeps the shortcuts: its arrows/Home/End go through goTo (preventDefault: no second native step)
   const blocked = (target: EventTarget | null) => target instanceof HTMLInputElement && target.type !== 'range' || sheet !== null
   const onMenu = useRef((_: string) => {})
@@ -610,7 +621,7 @@ export function App() {
     : review.step === 'punish' ? [['better', t.seeBetter, () => openMoment(review.k, 'better')]]
     : lastMoment ? [['back', t.backToGame, leaveReview]] : [['next', t.nextMoment, () => openMoment(review.k + 1, 'try')]]
   const message = review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
-    : search ? t.ogsSearching(search.size, t.paces[search.speed])
+    : search ? note?.(t) ?? t.ogsSearching(search.size, t.paces[search.speed])
     : ongoing && ogsStatus !== 'online' ? t.ogsReconnecting
     : result ? [result(t), note?.(t)].filter(Boolean).join(' ')
     : countingNow || removal ? t.countingHelp
@@ -758,7 +769,7 @@ export function App() {
                 return (
                   <div key={c} role="group" aria-label={t.color(c)}
                     className={`pc ${c === 1 ? 'b' : 'w'}${toPlay === c && playing ? ' on' : ''}${thinking && bot?.sign === c ? ' thinking' : ''}`}>
-                    <div className="lbl">{bot ? c === bot.sign ? t.ai : t.you : (c === 1 ? playerBlack : playerWhite) || t.color(c)}{rank && <span className="rk">{rank}</span>}</div>
+                    <div className="lbl"><span className="nm">{bot ? c === bot.sign ? t.ai : t.you : (c === 1 ? playerBlack : playerWhite) || t.color(c)}</span>{rank && <span className="rk">{rank}</span>}</div>
                     <div aria-live={countingOpen ? 'polite' : undefined}>
                       <div className="state" aria-live={online ? 'polite' : undefined}>{stateOf(c)}</div>
                       {online?.clock && !result ? <div className="sub"><Clock clock={online.clock} tc={online.tc} color={c} pausedSince={online.pausedSince} /></div> : sub && <div className="sub">{sub}</div>}
@@ -808,7 +819,7 @@ export function App() {
               <Seg label={t.opponent} value={settings.opponent} options={[['human', t.twoPlayers], ['ai', t.ai], ['ogs', 'OGS']]} set={v => set('opponent', v)} />
               {settings.opponent === 'ogs' ? (
                 <OgsSection speed={settings.ogsSpeed} setSpeed={v => set('ogsSpeed', v)} onFind={() => { closeSheet(); find() }}
-                  onResume={id => { closeSheet(); resume(id) }} onImport={id => { closeSheet(); open(() => ogs.sgf(id)) }} onSignOut={() => { cancelSearch(); stopOnline() }} />
+                  onResume={id => { closeSheet(); resume(id) }} onImport={id => { closeSheet(); importGame(id) }} onSignOut={signOut} />
               ) : <>
               {settings.opponent === 'ai' && (canPlayAI ? <>
                 <Seg label={t.yourColor} value={settings.color} options={[['b', t.black], ['w', t.white], ['r', t.random]]} set={v => set('color', v)} />
@@ -837,7 +848,8 @@ export function App() {
             <div className="lab"><span>{t.boardSection}</span><span /></div>
             <Switch label={t.coords} k="C" on={coords} toggle={() => setCoords(v => !v)} />
             <Switch label={t.sound} k="M" on={sound} toggle={() => setSound(v => !v)} />
-            <Switch label={t.territory} k="T" on={settings.territory} toggle={() => set('territory', !settings.territory)} />
+            <Switch label={t.territory} k="T" on={settings.territory} toggle={() => set('territory', !settings.territory)}
+              disabled={ongoing} title={ongoing ? t.ogsUnavailable : undefined} />
           </section>
 
           <section id="display">
