@@ -94,6 +94,7 @@ export const fr: Dict = {
   readingHelp: 'Recherche des coups qui ont coûté le plus de points. Environ une minute.',
   percent: (p: number) => f.pct(p),
   reviewFailed: (m: string) => `La revue s’est interrompue. ${m}`,
+  answerFailed: (m: string) => `Pas de réponse. ${m}`,
   noMoments: (s: number) => `Aucun coup${s ? ` de ${color(s)}` : ''} n’a perdu 2 points ou plus.`,
   moment: (k: number, n: number, mv: number, loss: number) => `Moment ${k}/${n} · coup ${mv} · −${pts(loss)}`,
   moments: 'Moments clés', lesson: 'Leçon',

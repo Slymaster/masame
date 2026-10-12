@@ -175,7 +175,7 @@ export function App() {
     branch: Game | null; ask: boolean; gap: number | null; explored: boolean } | null>(null)
   const [reviewTry, retryReview] = useReducer((x: number) => x + 1, 0)
   const scan = useRef<{ last: Game['board']; leads: (number | undefined)[] } | null>(null) // scan leads of the record ending on `last`
-  const scanRun = useRef<Promise<unknown>>(Promise.resolve()) // the last readGame: the next one starts once it settles (2 queries at most)
+  const scanRun = useRef<Promise<unknown>>(Promise.resolve()) // the last readGame or answer: the next one starts once it settles (2 queries at most)
 
   const refreshNets = useCallback(() => { if (inTauri()) call<NetState>('networks_state').then(setNets, () => {}) }, [])
   useEffect(() => {
@@ -282,8 +282,7 @@ export function App() {
   const goTo = (i: number) => {
     i = Math.max(review?.branch ? from : 0, Math.min(shown.moves.length, i))
     if (i === shown.cursor) return
-    shown.goTo(i)
-    if (review) setReview(x => x && { ...x, ask: false })
+    shown.goTo(i) // in a lesson, an owed answer (ask) waits until the cursor is back at the branch end
     changed()
   }
   const start = (g: Game, b: typeof bot) => {
@@ -438,13 +437,15 @@ export function App() {
 
   // In a lesson, the engine answers each move played on the branch; a try from the lesson's start is graded.
   const lesson = review?.branch
-  const answering = !!lesson && !!review?.ask && lesson.cursor === lesson.moves.length && !lesson.ended
+  const answering = !!lesson && !!review?.ask && !review.error && lesson.cursor === lesson.moves.length && !lesson.ended
   useEffect(() => {
     if (!answering || !lesson || !m) return
     let live = true
     const graded = review!.step === 'try' && lesson.cursor === from + 1, tried = lesson.lastMove!.vertex
     setThinking(true)
-    analyze(lesson, REPLY).then(a => {
+    const run = scanRun.current.catch(() => {}).then(() => { if (!live) throw null; return analyze(lesson, REPLY) }) // cancelled while queued: send nothing
+    scanRun.current = run
+    run.then(a => {
       if (!live) return
       const v = a.pv[0], sign = lesson.toPlay
       if (v === undefined) throw new LocalizedError(d => d.badAnswer)
@@ -456,16 +457,13 @@ export function App() {
     }).catch(e => live && setReview(x => x && { ...x, error: e })).finally(() => live && setThinking(false))
     return () => { live = false; setThinking(false) }
   }, [answering, ver, lesson, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
-  // a caption link remounts the caption (keyed by its text): when the focused element went away, focus the new first link
-  const lastFocus = useRef<Element | null>(null)
+  // a caption link remounts the caption (keyed by its text): right after one is activated, focus the new first link,
+  // except while reading, where the only link leaves the review
+  const refocus = useRef(false)
   useEffect(() => {
-    const f = (e: FocusEvent) => { lastFocus.current = e.target as Element }
-    document.addEventListener('focusin', f)
-    return () => document.removeEventListener('focusin', f)
-  }, [])
-  useEffect(() => {
-    if (document.activeElement === document.body && lastFocus.current && !lastFocus.current.isConnected)
-      document.querySelector<HTMLElement>('.note .link')?.focus()
+    if (!refocus.current) return
+    refocus.current = false
+    if (document.activeElement === document.body && !reading) document.querySelector<HTMLElement>('.note .link')?.focus()
   })
 
   // ⌘/Ctrl commands, shared by the keyboard and the macOS menu bar (whose items emit "menu" with these ids)
@@ -537,7 +535,7 @@ export function App() {
     : review.step === 'try' ? [...(graded ? [[t.retry, () => openMoment(review.k, 'try')] as [string, () => void]] : []), [t.seePunishment, () => openMoment(review.k, 'punish')]]
     : review.step === 'punish' ? [[t.seeBetter, () => openMoment(review.k, 'better')]]
     : lastMoment ? [[t.backToGame, leaveReview]] : [[t.nextMoment, () => openMoment(review.k + 1, 'try')]]
-  const message = review ? (review.error ? t.reviewFailed(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
+  const message = review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
     : result ? [result(t), note?.(t)].filter(Boolean).join(' ')
     : countingNow ? t.countingHelp
     : game.ended ? t.countingWait
@@ -593,7 +591,7 @@ export function App() {
           <p className="note" aria-live="polite">
             {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message}>
               <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>
-              {links.map(([label, act]) => <button key={label} className="link" onClick={act}>{label}</button>)}
+              {links.map(([label, act]) => <button key={label} className="link" onClick={() => { refocus.current = true; act() }}>{label}</button>)}
             </span>}
           </p>
         </Goban>

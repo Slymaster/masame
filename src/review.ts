@@ -23,9 +23,13 @@ export const scanQuery = (positions: number) => ({ maxVisits: 100, overrideSetti
 export const DEEP = { maxVisits: 400, includeOwnership: true, analysisPVLen: 7, overrideSettings: { maxTime: DEEP_TIME } }
 export const REPLY = { maxVisits: 200, overrideSettings: { maxTime: 1.5 } }
 
-/** Positions the engine can read: up to the first SGF move onto an occupied point (fromRecord lets it through). */
+/**
+ * Positions the engine can read: up to the first SGF move fromRecord lets through but KataGo refuses or replays
+ * differently: onto an occupied point, a single-stone suicide, or the same colour twice in a row.
+ */
 export function reviewEnd(g: Game): number {
-  const i = g.moves.findIndex((m, i) => !!m.vertex && g.boards[i].get(m.vertex) !== 0)
+  const i = g.moves.findIndex((m, i) => (i > 0 && m.sign === g.moves[i - 1].sign)
+    || !!m.vertex && (g.boards[i].get(m.vertex) !== 0 || g.boards[i + 1].get(m.vertex) === 0))
   return i < 0 ? g.moves.length : i
 }
 

@@ -93,6 +93,7 @@ export const en = {
   readingHelp: 'Looking for the moves that cost the most points. About a minute.',
   percent: (p: number) => f.pct(p),
   reviewFailed: (m: string) => `The review stopped. ${m}`,
+  answerFailed: (m: string) => `No answer came. ${m}`,
   noMoments: (s: number) => `No move${s ? ` by ${color(s)}` : ''} lost 2 points or more.`,
   moment: (k: number, n: number, mv: number, loss: number) => `Moment ${k}/${n} · move ${mv} · −${pts(loss)}`,
   moments: 'Key moments', lesson: 'Lesson',

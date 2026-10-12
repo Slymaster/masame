@@ -45,6 +45,12 @@ describe('reviewEnd', () => {
     expect(reviewEnd(g)).toBe(5)
     const bad = Game.fromRecord({ size: 9 }, record([[0, 0], [1, 1], [0, 0], [2, 2]]))
     expect(reviewEnd(bad)).toBe(2)
+    // White B9, Black F4, White A8, Black A9 (lone-stone suicide), White G3
+    const suicide = Game.fromRecord({ size: 9 }, [[-1, [1, 0]], [1, [5, 5]], [-1, [0, 1]], [1, [0, 0]], [-1, [6, 6]]]
+      .map(([sign, vertex]) => ({ sign, vertex }) as Move))
+    expect(reviewEnd(suicide)).toBe(3)
+    const twice = Game.fromRecord({ size: 9 }, [{ sign: 1, vertex: [2, 2] }, { sign: 1, vertex: [6, 6] }, { sign: -1, vertex: [4, 4] }])
+    expect(reviewEnd(twice)).toBe(1)
   })
 })
 
