@@ -538,7 +538,7 @@ export class Board3D {
         .replace('#include <begin_vertex>', `#include <begin_vertex>\nvAo = vec2(uv.x - 0.5, 0.5 - uv.y) * ${(2 * AO_K).toFixed(3)};`)
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vAo; uniform vec2 uAoDir; uniform float uAoLean;')
         .replace('#include <color_fragment>', `#include <color_fragment>
-        #ifdef USE_INSTANCING_COLOR
+        #ifdef USE_COLOR
         { float r = length(vAo), d = max(r - 1.0, 0.0), t = 0.5 + 0.5 * dot(vAo / max(r, 1e-3), uAoDir);
           float reach = mix(${AO_REACH_LIT.toFixed(3)}, ${AO_REACH.toFixed(3)} + uAoLean, t), k = d / reach, l = d / ${AO_LINE_W.toFixed(3)};
           diffuseColor.a *= min(1.0, max(mix(${AO_LIT.toFixed(3)}, 1.0, t * t) * exp(-4.0 * k * k) * vColor.r, exp(-l * l) * vColor.g)); }
