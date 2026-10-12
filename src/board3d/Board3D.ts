@@ -304,8 +304,9 @@ export class Board3D {
   private hc = { value: 0 }
   private slate = slateMaterial()
   private shell = shellMaterial(this.hc)
-  private slateDim = slateMaterial({ transparent: true, opacity: 0.38, depthWrite: false })
-  private shellDim = shellMaterial(this.hc, { transparent: true, opacity: 0.45, depthWrite: false })
+  // dying stones: faded but clearly present (greyed slate, dulled shell), like the 2D board's grey stones
+  private slateDim = slateMaterial({ color: 0x5a5a60, roughness: 0.6, clearcoat: 0.1 })
+  private shellDim = shellMaterial(this.hc, { color: 0xb4b0a8, roughness: 0.5, sheen: 0 })
   private geoB = stoneGeo(RB)
   private geoW = stoneGeo(RW)
   private layerB = stoneLayer(this.geoB, this.slate, 400)
@@ -1088,7 +1089,7 @@ export class Board3D {
       let dim = false
       if (s.p >= 0 && counting?.dead[s.y]?.[s.x]) dim = true
       else if (s.p >= 0 && own && Math.sign(own[s.p]) === -s.c && sstep(0.4, 0.9, Math.abs(own[s.p])) > 0.5) dim = true // KataGo expects it captured
-      put(s, y, dim ? 0.3 : 0.25 + 0.75 * k, 1.45 - 0.45 * k, dim)
+      put(s, y, dim ? 0.6 : 0.25 + 0.75 * k, 1.45 - 0.45 * k, dim)
     }
     this.layerB.count = nb; this.layerW.count = nw; this.dimB.count = db; this.dimW.count = dw; this.ao.count = na
     for (const L of [this.layerB, this.layerW, this.dimB, this.dimW]) { L.instanceMatrix.needsUpdate = true; L.geometry.attributes.aSeed.needsUpdate = true }
