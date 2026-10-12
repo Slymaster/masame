@@ -147,7 +147,7 @@ pub fn catalog(nets: &[ApiNet]) -> Vec<Entry> {
 }
 
 /// Everything but `https_only`, so tests can talk to a local plain-HTTP server with the same policies.
-fn builder() -> reqwest::ClientBuilder {
+pub(crate) fn builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .user_agent(USER_AGENT)
         // Every endpoint answers 200/206 directly; following a redirect would escape the host allowlist.
