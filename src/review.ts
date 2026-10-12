@@ -72,9 +72,17 @@ export function gradeTry(m: Moment, tried: Vertex | null, lead: number): number 
 
 export const verdict = (m: Moment, gap: number): 'found' | 'missed' | 'short' => (gap < FOUND ? 'found' : m.loss - gap < 1 ? 'missed' : 'short')
 
+/** Promise.all that settles only once every promise has: a rejection leaves nothing of this run in flight. */
+async function settled<T>(ps: Promise<T>[]): Promise<T[]> {
+  const r = await Promise.allSettled(ps)
+  for (const x of r) if (x.status === 'rejected') throw x.reason
+  return r.map(x => (x as PromiseFulfilledResult<T>).value)
+}
+
 /**
  * Scans every position (2 queries in flight, results cached in `leads`), then confirms the worst candidates with
- * deeper searches until MAX_MOMENTS are kept. Moments come back in game order.
+ * deeper searches until MAX_MOMENTS are kept. Moments come back in game order. Settles only once none of its
+ * queries is in flight, so a caller can start the next run after it without exceeding 2.
  */
 export async function readGame(game: Game, side: Sign | 0, leads: (number | undefined)[],
   ask: (at: number, query: object) => Promise<Analysis>, live: () => boolean, progress: (pct: number) => void): Promise<Moment[]> {
@@ -93,14 +101,15 @@ export async function readGame(game: Game, side: Sign | 0, leads: (number | unde
       tick(step)
     }
   }
-  await Promise.all([worker(), worker()])
+  await settled([worker(), worker()])
   const moments: Moment[] = []
   for (const at of pickMoments(leads, game.moves.slice(0, end), side, game.info.size)) {
     if (!live() || moments.length >= MAX_MOMENTS) break
-    const [before, after] = await Promise.all([ask(at, DEEP), ask(at + 1, DEEP)])
+    const [before, after] = await settled([ask(at, DEEP), ask(at + 1, DEEP)])
     tick(DEEP_TIME)
     const sign = game.moves[at].sign, loss = sign * (before.scoreLead - after.scoreLead)
-    if (loss >= MIN_LOSS && before.pv[0] && after.pv[0])
+    // a 'better move' equal to the mistake would contradict itself (search noise between the two checks)
+    if (loss >= MIN_LOSS && before.pv[0] && after.pv[0] && !same(before.pv[0], game.moves[at].vertex))
       moments.push({ at, sign, loss, lead: after.scoreLead, punish: after.pv, better: before.pv, ...shift(before.ownership, after.ownership) })
   }
   return moments.sort((a, b) => a.at - b.at)

@@ -99,7 +99,7 @@ export const en = {
   steps: { try: 'Your try', punish: 'The punishment', better: 'Better move' },
   tryAsk: (p: number, mv: number) => `Play ${color(p)}: how do you punish move ${mv}?`,
   tryHelp: (p: number, s: number, loss: number) =>
-    `${color(s)}’s move costs ${pts(loss)} only if ${color(p)} finds the reply. Look for it as ${color(p)}: ${color(s)} answers each try, and ← takes it back.`,
+    `${color(s)}’s move costs ${pts(loss)} only if ${color(p)} finds the reply. Look for it as ${color(p)}: ${color(s)} answers each try, and Try again takes it back.`,
   found: 'Found it: that punishes the mistake.',
   shortOf: (gap: number) => `${pts(gap)} from the best punishment.`,
   missed: (s: number, gap: number) => `${color(s)} gets away with it: ${pts(gap)} from the best punishment.`,

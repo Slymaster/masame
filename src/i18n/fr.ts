@@ -100,7 +100,7 @@ export const fr: Dict = {
   steps: { try: 'Ton essai', punish: 'La punition', better: 'Le bon coup' },
   tryAsk: (p: number, mv: number) => `Joue ${color(p)} : comment punir le coup ${mv} ?`,
   tryHelp: (p: number, s: number, loss: number) =>
-    `Le coup de ${color(s)} ne coûte ${pts(loss)} que si ${color(p)} trouve la réponse. Cherche-la en jouant ${color(p)} : ${color(s)} répond à chaque essai, et ← le reprend.`,
+    `Le coup de ${color(s)} ne coûte ${pts(loss)} que si ${color(p)} trouve la réponse. Cherche-la en jouant ${color(p)} : ${color(s)} répond à chaque essai, et Réessayer le reprend.`,
   found: 'Trouvé : ce coup punit l’erreur.',
   shortOf: (gap: number) => `À ${pts(gap)} de la meilleure punition.`,
   missed: (s: number, gap: number) => `${color(s)} s’en tire : à ${pts(gap)} de la meilleure punition.`,

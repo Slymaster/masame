@@ -175,6 +175,7 @@ export function App() {
     branch: Game | null; ask: boolean; gap: number | null; explored: boolean } | null>(null)
   const [reviewTry, retryReview] = useReducer((x: number) => x + 1, 0)
   const scan = useRef<{ last: Game['board']; leads: (number | undefined)[] } | null>(null) // scan leads of the record ending on `last`
+  const scanRun = useRef<Promise<unknown>>(Promise.resolve()) // the last readGame: the next one starts once it settles (2 queries at most)
 
   const refreshNets = useCallback(() => { if (inTauri()) call<NetState>('networks_state').then(setNets, () => {}) }, [])
   useEffect(() => {
@@ -255,7 +256,7 @@ export function App() {
       return false
     }
     if (review) {
-      if (!review.branch || thinking || !v || shown.ended) return false
+      if (!review.branch || thinking || !v || shown.ended || review.error) return false // after an error, only Try again goes on
       const r = shown.play(v)
       if (r === 'ok') {
         const graded = shown.cursor === from + 1 // a new try from the lesson's start: graded again
@@ -427,9 +428,11 @@ export function App() {
   useEffect(() => {
     if (!reading || !review || !scan.current) return
     let live = true
-    readGame(game, review.side, scan.current.leads, (at, q) => analyze(game.branch(at), q as Record<string, unknown>), () => live,
-      pct => live && setReview(x => x && { ...x, pct }))
-      .then(ms => { if (live) openMoment(0, 'try', ms) }, e => live && setReview(x => x && { ...x, error: e }))
+    const leads = scan.current.leads
+    const run = scanRun.current.catch(() => {}).then(() => readGame(game, review.side, leads,
+      (at, q) => analyze(game.branch(at), q as Record<string, unknown>), () => live, pct => live && setReview(x => x && { ...x, pct })))
+    scanRun.current = run
+    run.then(ms => { if (live) openMoment(0, 'try', ms) }, e => live && setReview(x => x && { ...x, error: e }))
     return () => { live = false }
   }, [reading, review?.side, game, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -448,11 +451,22 @@ export function App() {
       if (lesson.play(v) !== 'ok') lesson.play(null)
       if (v && lesson.lastMove?.vertex) view.current?.drop(v, sign)
       else view.current?.pass?.(sign)
-      setReview(x => x && { ...x, ask: false, gap: graded ? gradeTry(m, tried, a.scoreLead) : x.gap })
+      setReview(x => x && { ...x, ask: false, error: null, gap: graded ? gradeTry(m, tried, a.scoreLead) : x.gap })
       changed()
     }).catch(e => live && setReview(x => x && { ...x, error: e })).finally(() => live && setThinking(false))
     return () => { live = false; setThinking(false) }
   }, [answering, ver, lesson, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
+  // a caption link remounts the caption (keyed by its text): when the focused element went away, focus the new first link
+  const lastFocus = useRef<Element | null>(null)
+  useEffect(() => {
+    const f = (e: FocusEvent) => { lastFocus.current = e.target as Element }
+    document.addEventListener('focusin', f)
+    return () => document.removeEventListener('focusin', f)
+  }, [])
+  useEffect(() => {
+    if (document.activeElement === document.body && lastFocus.current && !lastFocus.current.isConnected)
+      document.querySelector<HTMLElement>('.note .link')?.focus()
+  })
 
   // ⌘/Ctrl commands, shared by the keyboard and the macOS menu bar (whose items emit "menu" with these ids)
   const togglePanel = () => set('panelHidden', !settings.panelHidden)
@@ -564,10 +578,10 @@ export function App() {
           options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor: settings.decor }}
           thinking={thinking}
           // while the engine starts (OpenCL tuning loads the GPU) a slow verdict is not the hardware's: this session only
-          onFallback={r => { if (r === 'context-lost' || (r === 'slow' && engineBusy)) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
+          onFallback={r => { if (r === 'context-lost' || (r === 'slow' && (engineBusy || reading))) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
           state={{
             signMap: board.signMap, last: last?.vertex ?? null, toPlay, coords, sound,
-            interactive: countingNow ? !result : review ? !!review.branch && !thinking && !shown.ended : !game.ended && !locked && humanTurn,
+            interactive: countingNow ? !result : review ? !!review.branch && !thinking && !shown.ended && !review.error : !game.ended && !locked && humanTurn,
             // ② and ③: what changed hands, until the player explores
             ownership: countingNow ? null : review ? (m && !review.explored ? review.step === 'punish' ? m.lost : review.step === 'better' ? m.kept : null : null)
               : shownOwn?.data ?? null,
@@ -630,8 +644,8 @@ export function App() {
             <button className="btn" onClick={undo} disabled={game.cursor === 0 || (!!bot && !!result) || !!review} title={shortcut('Z')}>{t.undo}</button>
             <button className="btn" onClick={open} title={shortcut('O')}>{t.open}</button>
             <button className="btn" onClick={save} title={shortcut('S')}>{t.save}</button>
-            {review ? <button className="btn" onClick={leaveReview} title="Esc">{t.backToGame}</button>
-              : reviewShown ? <button className={`btn${result ? ' accent' : ''}`} onClick={() => startReview(bot ? -bot.sign as Sign : 0)}
+            {review ? <button key="back" className="btn" onClick={leaveReview} title="Esc">{t.backToGame}</button>
+              : reviewShown ? <button key="review" className={`btn${result ? ' accent' : ''}`} onClick={() => startReview(bot ? -bot.sign as Sign : 0)}
                 disabled={!canAnalyze} title={canAnalyze ? undefined : t.reviewNeedsNet}>{t.reviewGame}</button>
               : bot && <button className="btn" onClick={resign} disabled={!!result}>{t.resign}</button>}
           </div>
@@ -651,7 +665,7 @@ export function App() {
                   <i style={{ width: `${review.pct}%` }} />
                 </div>
               </> : !m ? <p className="estimate">{t.noMoments(review.side)}</p> : <>
-                <p className="estimate" aria-live="polite">{t.moment(review.k + 1, review.moments!.length, m.at + 1, m.loss)}</p>
+                <p className="estimate">{t.moment(review.k + 1, review.moments!.length, m.at + 1, m.loss)}</p>
                 {review.moments!.length > 1 && (
                   <Seg label={t.moments} value={review.k} options={review.moments!.map((_, i) => [i, String(i + 1)])} set={k => openMoment(k, 'try')} />
                 )}

@@ -105,7 +105,7 @@ function fakeEngine(leads: number[], opts: { failAt?: number; deep?: Record<numb
     inFlight--
     if (id === opts.failAt) throw new Error('engine_stopped')
     const deep = 'includeOwnership' in query ? opts.deep?.[at] : undefined
-    return { winrate: 0.5, scoreLead: leads[at], topMove: '', pv: [[at % 9, 0]], ownership: [at % 2 ? 0.9 : -0.9, 0.1], humanPolicy: null, ...deep }
+    return { winrate: 0.5, scoreLead: leads[at], topMove: '', pv: [[at % 9, 8]], ownership: [at % 2 ? 0.9 : -0.9, 0.1], humanPolicy: null, ...deep }
   }
   return { ask, calls, max: () => max }
 }
@@ -126,10 +126,14 @@ describe('readGame', () => {
     expect(scanQuery(23).overrideSettings.maxTime).toBeCloseTo(120 / 23)
     expect(scanQuery(1000).overrideSettings.maxTime).toBe(0.25)
     expect(ms.map(m => [m.at, m.sign, m.loss])).toEqual([[9, -1, 6], [14, 1, 3], [20, 1, 2.5]]) // 2 is replaced by 20
-    expect(ms[0].punish).toEqual([[1, 0]])
-    expect(ms[0].better).toEqual([[0, 0]])
+    expect(ms[0].punish).toEqual([[1, 8]])
+    expect(ms[0].better).toEqual([[0, 8]])
     expect([ms[0].lost, ms[0].kept]).toEqual([[-0.9, 0], [0.9, 0]]) // the point that changed hands, from both sides
     expect(pct.every((p, i) => p <= 99 && (i === 0 || p >= pct[i - 1]))).toBe(true)
+  })
+  it('drops a moment whose better move is the mistake itself', async () => {
+    const e = fakeEngine(leads, { deep: { 2: { pv: [[2, 0]] } } }) // game.moves[2] is [2, 0]
+    expect((await readGame(game, 0, [], e.ask, () => true, () => {})).map(m => m.at)).toEqual([9, 14, 20])
   })
   it('keeps at most three moments and filters by colour', async () => {
     expect((await readGame(game, 0, [], fakeEngine(leads).ask, () => true, () => {})).map(m => m.at)).toEqual([2, 9, 14])
@@ -146,8 +150,8 @@ describe('readGame', () => {
     const e = fakeEngine(leads, { failAt: 3 })
     const cache: (number | undefined)[] = []
     await expect(readGame(game, 0, cache, e.ask, () => true, () => {})).rejects.toThrow('engine_stopped')
-    await new Promise(r => setTimeout(r, 10))
-    expect(e.calls.length).toBe(4) // the 4th was already in flight
+    expect(e.calls.length).toBe(4) // the 4th was already in flight, and has settled
+    expect(cache[3]).toBe(leads[3])
     expect(cache.filter(x => x !== undefined).length).toBe(3)
   })
   it('stops when no longer live', async () => {
