@@ -391,14 +391,16 @@ export function App() {
   const botName = bot ? t.botName(bot.rank) : '' // in the current language (the SGF gets the one at save time)
   const board = game.board, total = game.moves.length, toPlay = game.toPlay, last = game.lastMove
   const shownOwn = settings.territory && own?.game === game ? own : null
-  const engineWait = engine.state === 'tuning' ? t.engineTuning(engine.step, engine.done, engine.total)
+  const engineWait = engine.state === 'tuning' ? t.tuningCaption
     : thinking && engine.state === 'starting' ? t.engineStarting
     : thinking && engine.state === 'warming' ? t.engineWarming : null
   const message = result ? [result(t), note?.(t)].filter(Boolean).join(' ')
     : countingNow ? t.countingHelp
     : game.ended ? t.countingWait
     : (botError ?? note)?.(t) ?? engineWait
-      ?? (last && !last.vertex ? (bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null)
+      ?? (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null)
+  // tuning progress: outside the key (no re-fade per update) and aria-hidden (announced once)
+  const tuned = message === t.tuningCaption && engine.state === 'tuning' ? t.tuningProgress(engine.step, engine.done, engine.total) : ''
   const humanNet = nets?.installed.find(i => i.name === nets.human)
   const engineLine = !inTauri() ? t.engineInAppOnly
     : engine.state === 'error' ? failureText(engine.error)
@@ -418,7 +420,7 @@ export function App() {
           options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor: settings.decor }}
           thinking={thinking}
           // while the engine starts (OpenCL tuning loads the GPU) a slow verdict is not the hardware's: this session only
-          onFallback={r => { if (r === 'context-lost' || engineBusy) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
+          onFallback={r => { if (r === 'context-lost' || (r === 'slow' && engineBusy)) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
           state={{
             signMap: board.signMap, last: last?.vertex ?? null, toPlay, coords, sound,
             interactive: countingNow ? !result : !game.ended && !locked && humanTurn,
@@ -429,9 +431,9 @@ export function App() {
           onPlay={play}
         >
           <p className="note" aria-live="polite">
-            {message && <span key={message}>
-              {message}
-              {botError && !result && <> <button className="link" onClick={retryBot}>{t.retry}</button></>}
+            {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message}>
+              <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>
+              {botError && !result && <button className="link" onClick={retryBot}>{t.retry}</button>}
             </span>}
           </p>
         </Goban>

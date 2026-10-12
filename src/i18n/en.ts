@@ -3,6 +3,7 @@ import { fmt } from './format'
 
 const f = fmt('en-US')
 const color = (s: number): string => (s === 1 ? 'Black' : 'White')
+const tuningProgress = (step: number, done: number, total: number) => [step && `step ${step}`, total && `${done}/${total}`].filter(Boolean).join(' · ')
 
 export const en = {
   // panel
@@ -56,7 +57,9 @@ export const en = {
   engineStarting: 'Starting the engine… The first time, this can take a few minutes.',
   engineWarming: 'Warming up the engine…',
   engineTuning: (step: number, done: number, total: number) =>
-    `Tuning KataGo for this graphics card (first launch only, a few minutes)${step ? ` · step ${step}` : ''}${total ? ` · ${done}/${total}` : ''}`,
+    [`Tuning KataGo for this graphics card (first launch only, a few minutes)`, tuningProgress(step, done, total)].filter(Boolean).join(' · '),
+  tuningCaption: 'Tuning KataGo for your graphics card (first launch only)', // the short form, under the board
+  tuningProgress,
   engineReady: 'Engine ready', engineIdle: 'Engine idle', noAnalysisNet: 'No analysis network installed.',
   footer: { browse: 'browse', pass: 'pass', territory: 'territory', undo: 'undo', newGame: 'new game', panel: 'panel' },
   // macOS menu bar (src-tauri/src/menu.rs)
