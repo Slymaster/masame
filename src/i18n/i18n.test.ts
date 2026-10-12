@@ -132,6 +132,7 @@ describe('OGS', () => {
     setLang('fr')
     expect([t.ogsResult(-1, 'resign'), t.ogsResult(1, 'time'), t.ogsResult(-1, 'score', 4.5), t.ogsResult(1, 'forfeit'), t.ogsResult(0, 'cancel')])
       .toEqual(['Blanc gagne par abandon.', 'Noir gagne au temps.', 'Blanc gagne de 4,5 points.', 'Noir gagne par forfait.', 'Partie annulée.'])
+    expect([t.ogsResult(0, 'score', 0), t.ogsResult(0, 'resign')]).toEqual(['Égalité.', 'Partie terminée.'])
     expect(t.ogsSearching(9, t.paces.blitz)).toBe('Recherche d’un adversaire 9×9 blitz…')
     expect(nb(t.days(2, 4))).toBe('2 j 4 h')
     for (const s of [t.ogsSignInHelp, t.ogsSignedIn('x'), t.ogsLeaveAsk, t.ogsResignAsk, t.failures.ogs_port_busy, t.periods(3, 30)])

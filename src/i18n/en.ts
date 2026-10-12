@@ -214,6 +214,7 @@ export const en = {
     ogs_placing_handicap: 'Handicap stones are still being placed on OGS.',
     ogs_http: 'OGS answered with an error.',
     ogs_offline: 'Not connected to OGS.',
+    ogs_refused: 'OGS refused this move.',
   },
 }
 

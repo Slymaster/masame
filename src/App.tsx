@@ -164,6 +164,7 @@ export function App() {
   const [online, setOnline] = useState<ogs.Followed | null>(null)
   const leaveOnline = useRef<(() => void) | null>(null)
   const [search, setSearch] = useState<{ size: number; speed: ogs.Speed } | null>(null)
+  const [joining, setJoining] = useState(false) // followed, its first gamedata not here yet
   const searching = useRef<(() => void) | null>(null) // cancels the pending automatch
   const ogsStatus = useSyncExternalStore(ogs.onStatus, ogs.getStatus)
   const [session2d, setSession2d] = useState(false) // 2D after a WebGL context loss, for this session only
@@ -260,7 +261,7 @@ export function App() {
   // OGS forbids engine help in an ongoing game: no KataGo query of any kind until it is finished
   const ongoing = !!online && online.phase !== 'finished'
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
-  const humanTurn = online ? online.phase === 'play' && atEnd && game.toPlay === online.me : !bot || game.toPlay !== bot.sign
+  const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && game.toPlay === online.me : !bot || game.toPlay !== bot.sign
   const mine: Sign | 0 = bot ? -bot.sign as Sign : online?.me ?? 0 // the side a review looks at
   const shown = review?.branch ?? game
   const m = review?.moments?.[review.k]
@@ -315,14 +316,17 @@ export function App() {
   }
   // online is cleared only here, and only with the board replaced: an unfinished OGS position never becomes a local
   // game open to KataGo (a finished one may stay, see signOut)
-  const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null) }
+  const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null); setJoining(false) }
   const start = (g: Game, b: typeof bot) => { cancelSearch(); stopOnline(); show(g, b) }
   const show = (g: Game, b: typeof bot) => {
     setGame(g); setBot(b); setResult(null); setNote(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); winrates.current = []
   }
   /** Leaving the shown game: an unfinished OGS game goes on without us; unsaved moves are lost. */
   const canLeave = async () => ongoing ? askFirst(t.ogsLeaveAsk, t.ogsLeave) : !dirty || confirmDiscard()
+  // an action that may replace the game cancels a pending search before any picker, download or dialog: a match
+  // starting meanwhile would be abandoned without the leave question; backing out leaves the search cancelled
   const newGame = async (size = nextSize) => {
+    cancelSearch()
     if (!(await canLeave())) return
     setNextSize(size)
     if (settings.opponent === 'ai' && canPlayAI) {
@@ -332,6 +336,7 @@ export function App() {
     } else start(new Game({ size }), null)
   }
   const open = async (read: () => Promise<string | null> = openSgfFile, asked = false) => {
+    cancelSearch()
     try {
       const text = await read()
       if (text === null) return
@@ -354,11 +359,12 @@ export function App() {
   // OGS: a socket send fails only when signed out
   const send = (f: () => void) => { try { f(); return true } catch (e) { setNote(d => failureText(e, d)); return false } }
   const follow = (id: number) => {
-    start(new Game({ size: game.info.size }), null) // an empty board until the gamedata
+    start(new Game({ size: game.info.size }), null); setJoining(true) // an empty board, not playable, until the gamedata
     let shownGame: Game | null = null, len = 0, error: Msg | null = null
     try {
       leaveOnline.current = ogs.follow(id, (ev, s) => {
         if (ev[0] === 'error') setNote(error = d => failureText(typeof ev[1] === 'string' ? { code: ev[1] } : ev[1], d))
+        if (s) setJoining(false)
         if (!s) return
         if (s.game !== shownGame) { // first gamedata or a reload, which an error asks for: the error stays shown
           shownGame = s.game; show(s.game, null)
@@ -375,8 +381,8 @@ export function App() {
       })
     } catch (e) { setNote(d => failureText(e, d)) }
   }
-  const resume = async (id: number) => { if (online?.id !== id && await canLeave()) follow(id) }
-  const importGame = async (id: number) => { if (await canLeave()) open(() => ogs.sgf(id), true) }
+  const resume = async (id: number) => { if (online?.id === id) return; cancelSearch(); if (await canLeave()) follow(id) }
+  const importGame = async (id: number) => { cancelSearch(); if (await canLeave()) open(() => ogs.sgf(id), true) }
   const find = async () => {
     if (!(await canLeave())) return // the shown game is left once a match starts
     cancelSearch()

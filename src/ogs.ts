@@ -296,6 +296,7 @@ export function follow(id: number, onEvent: (ev: GameEvent, state: Followed | nu
   const handlers = EVENTS.map(name => [`game/${id}/${name}`, (data: unknown) => {
     let ev: GameEvent = [name, data]
     try { state = apply(state, ev, me?.id) } catch (e) { state = null; ev = ['error', (e as { code?: string }).code ?? String(e)] }
+    if (name === 'error') ev = ['error', fail('ogs_refused', typeof data === 'string' ? data : undefined)] // the server's English text as detail
     // without a state, a move means handicap placement went on: fetch the game again until it is complete
     if (name === 'gamedata') asked = false
     // an error (a refused move, kept on the board by the optimistic play) also takes the server's version

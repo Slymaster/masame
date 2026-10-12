@@ -319,7 +319,8 @@ describe('session', () => {
   it('re-fetches the game when the record goes out of sync', async () => {
     await ogs.connect()
     last().open()
-    ogs.follow(1, () => {})
+    const events: ogs.GameEvent[] = []
+    ogs.follow(1, e => events.push(e))
     last().receive(['game/1/gamedata', live])
     last().receive(['game/1/move', { game_id: 1, move_number: 200, move: [0, 0, 1] }])
     for (let i = 0; i < 3; i++) last().receive(['game/1/clock', live.clock])
@@ -330,6 +331,7 @@ describe('session', () => {
     last().receive(['game/1/gamedata', live])
     last().receive(['game/1/error', 'Illegal move'])
     last().receive(['game/1/error', 'Illegal move'])
+    expect(events.at(-1)).toMatchObject(['error', { code: 'ogs_refused', detail: 'Illegal move' }])
     expect(last().commands()).toHaveLength(5) // a refused move: the game is fetched again, once
   })
 

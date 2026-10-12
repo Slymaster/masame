@@ -215,5 +215,6 @@ export const fr: Dict = {
     ogs_placing_handicap: 'Les pierres de handicap sont encore en cours de placement sur OGS.',
     ogs_http: 'OGS a répondu par une erreur.',
     ogs_offline: 'Pas connecté à OGS.',
+    ogs_refused: 'OGS a refusé ce coup.',
   },
 }
