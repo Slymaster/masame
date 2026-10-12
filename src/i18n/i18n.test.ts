@@ -45,8 +45,10 @@ describe('formatting', () => {
     expect(t.estimate(3.4)).toBe('Estimation : Noir +3,5')
     expect(t.estimate(-0.6)).toBe('Estimation : Blanc +0,5')
     expect([0, 1, 2].map(t.captures)).toEqual(['0 prise', '1 prise', '2 prises'])
-    expect(t.board(19, 6.5)).toBe('Goban 19 × 19 · komi 6,5')
-    expect(nb(t.side(-1, 81.5, 70, 5, 6.5))).toBe('Blanc 81,5 : 70 de territoire, 5 prisonniers, komi 6,5')
+    expect(t.board(19, 6.5)).toBe('19×19 · komi 6,5 · règles japonaises')
+    expect(t.points(81.5)).toBe('81,5 points')
+    expect(t.tally(70, 5, 6.5)).toBe('70 de territoire · 5 prisonniers · komi 6,5')
+    expect(t.tally(70, 1)).toBe('70 de territoire · 1 prisonnier')
     expect(t.mb(99_066_230)).toBe('99 Mo')
     expect(nb(t.games(12345))).toBe('12 345 parties')
     expect(nb(t.progress(42, '12 Mo', '99 Mo'))).toBe('42 % · 12 Mo / 99 Mo')
@@ -64,7 +66,9 @@ describe('formatting', () => {
     expect(t.engineTuning(3, 40, 120)).toBe('Réglage de KataGo pour cette carte graphique (premier lancement seulement, quelques minutes) · étape 3 · 40/120')
     expect(t.botPasses(-1)).toBe('Blanc passe. À toi de jouer.')
     expect(t.tuningProgress(3, 40, 120)).toBe('étape 3 · 40/120')
-    for (const s of [t.engineTuning(3, 40, 120), t.tuningCaption, t.botPasses(1)]) expect(s).not.toMatch(/ [:;!?]/) // French: nbsp before double punctuation
+    for (const s of [t.engineTuning(3, 40, 120), t.tuningCaption, t.botPasses(1), t.yourMove, t.thinking, t.passed, t.resigned, t.territory,
+      t.settings, t.tally(70, 5, 6.5)]) expect(s).not.toMatch(/ [:;!?]/) // French: nbsp before double punctuation
+    expect([t.yourMove, t.thinking, t.waiting, t.wins, t.territory]).toEqual(['À toi de jouer', 'réfléchit…', 'attend', 'gagne', 'Ombre et lumière'])
   })
   it('English: decimal point, plurals with 0 plural, MB', () => {
     setLang('en')
@@ -72,8 +76,11 @@ describe('formatting', () => {
     expect(t.score(0)).toBe('Draw.')
     expect(t.estimate(3.4)).toBe('Estimate: Black +3.5')
     expect([0, 1, 2].map(t.captures)).toEqual(['0 captures', '1 capture', '2 captures'])
-    expect(t.board(19, 6.5)).toBe('19 × 19 board · komi 6.5')
-    expect(t.side(1, 75, 70, 1)).toBe('Black 75: 70 territory, 1 prisoner')
+    expect(t.board(19, 6.5)).toBe('19×19 · komi 6.5 · Japanese rules')
+    expect(t.points(81.5)).toBe('81.5 points')
+    expect(t.tally(70, 5, 6.5)).toBe('70 territory · 5 prisoners · komi 6.5')
+    expect(t.tally(70, 1)).toBe('70 territory · 1 prisoner')
+    expect([t.yourMove, t.thinking, t.passed, t.resigned, t.wins, t.territory]).toEqual(['Your move', 'thinking…', 'passed', 'resigned', 'wins', 'Light and shadow'])
     expect(t.mb(99_066_230)).toBe('99 MB')
     expect(t.games(12345)).toBe('12,345 games')
     expect(t.progress(42, '12 MB', '99 MB')).toBe('42% · 12 MB / 99 MB')
@@ -90,6 +97,24 @@ describe('formatting', () => {
     expect(failureText({ code: 'new_code' })).toBe('new_code')
     expect(failureText({ code: 'constructor' })).toBe('constructor')
     expect(failureText(new Error('x'))).toBe('x')
+  })
+})
+
+describe('game review', () => {
+  afterEach(() => setLang('fr'))
+  it('formats points, moves and colours in both languages', () => {
+    setLang('en')
+    expect(t.moment(1, 3, 47, 6.54)).toBe('Moment 1/3 · move 47 · −6.5 points')
+    expect([t.shortOf(1.23), t.shortOf(1)]).toEqual(['1.2 points from the best punishment.', '1 point from the best punishment.'])
+    expect(t.tryAsk(-1, 47)).toBe('Play White: how do you punish move 47?')
+    expect(t.noMoments(1)).toBe('No move by Black lost 2 points or more.')
+    setLang('fr')
+    expect(t.moment(1, 3, 47, 6.54)).toBe('Moment 1/3 · coup 47 · −6,5 points')
+    expect([t.shortOf(1.23), t.shortOf(1)]).toEqual(['À 1,2 point de la meilleure punition.', 'À 1 point de la meilleure punition.'])
+    expect(nb(t.tryAsk(-1, 47))).toBe('Joue Blanc : comment punir le coup 47 ?')
+    expect(t.noMoments(0)).toBe('Aucun coup n’a perdu 2 points ou plus.')
+    for (const s of [t.tryAsk(-1, 47), t.found, t.missed(1, 6.1), t.punishLine(-1, 'R14', 1, 6.5), t.betterLine(1, 'R13', 6.5),
+      t.tryHelp(-1, 1, 6.5), t.punishHelp, t.betterHelp]) expect(s).not.toMatch(/ [:;!?]/)
   })
 })
 

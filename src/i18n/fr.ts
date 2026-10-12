@@ -5,25 +5,30 @@ import { fmt } from './format'
 const f = fmt('fr-FR')
 const color = (s: number): string => (s === 1 ? 'Noir' : 'Blanc')
 const tuningProgress = (step: number, done: number, total: number) => [step && `étape ${step}`, total && `${done}/${total}`].filter(Boolean).join(' · ')
+const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
 
 export const fr: Dict = {
-  // panel
-  board: (n: number, komi: number) => `Goban ${n} × ${n} · komi ${f.num(komi)}`,
+  // card
+  board: (n: number, komi: number) => `${n}×${n} · komi ${f.num(komi)} · règles japonaises`,
   boardLabel: (n: number) => `Goban ${n}×${n}`,
   game: 'Partie',
   moveOf: (i: number, n: number) => (i < n ? `Coup ${i} / ${n}` : `Coup ${n}`),
+  move: (i: number) => `Coup ${i}`,
+  you: 'Toi', yourMove: 'À toi de jouer', thinking: 'réfléchit…', waiting: 'attend', passed: 'a passé', resigned: 'a abandonné', wins: 'gagne',
+  points: (n: number) => f.plural(n, 'point', 'points'),
+  tally: (territory: number, prisoners: number, komi?: number) =>
+    `${f.num(territory)} de territoire · ${f.plural(prisoners, 'prisonnier', 'prisonniers')}${komi ? ` · komi ${f.num(komi)}` : ''}`,
+  settings: 'Réglages', boardSection: 'Goban', appSection: 'Application', keyboard: 'Clavier',
   color,
   captures: (n: number) => f.plural(n, 'prise', 'prises'),
   passes: (s: number) => `${color(s)} passe.`,
   botPasses: (s: number) => `${color(s)} passe. À toi de jouer.`,
   countingWait: 'Deux passes consécutives : la partie est terminée. Comptage…',
   countingHelp: 'Comptage : clique sur un groupe pour le marquer mort ou vivant, puis valide le score.',
-  side: (s: number, total: number, territory: number, prisoners: number, komi?: number) =>
-    `${color(s)} ${f.num(total)} : ${f.num(territory)} de territoire, ${f.plural(prisoners, 'prisonnier', 'prisonniers')}${komi ? `, komi ${f.num(komi)}` : ''}`,
   validate: 'Valider le score',
   score: (lead: number) => (lead === 0 ? 'Égalité.' : `${color(lead > 0 ? 1 : -1)} gagne de ${f.num(Math.abs(lead))}.`),
-  refused: { ko: 'Ko : la reprise immédiate est interdite. Jouez ailleurs d’abord.', suicide: 'Coup interdit : ce serait un suicide.' },
-  history: 'Historique', start: 'Début', prev: 'Coup précédent', next: 'Coup suivant', end: 'Fin',
+  refused: { ko: 'Ko : la reprise immédiate est interdite. Joue ailleurs d’abord.', suicide: 'Coup interdit : ce serait un suicide.' },
+  history: 'Historique', prev: 'Coup précédent', next: 'Coup suivant',
   pass: 'Passer', undo: 'Annuler', open: 'Ouvrir…', save: 'Enregistrer…', resign: 'Abandonner',
   openFailed: (m: string) => `Impossible d’ouvrir ce fichier : ${m}`,
   saved: 'Partie enregistrée.',
@@ -39,7 +44,7 @@ export const fr: Dict = {
   aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
     `Pour jouer contre l’IA, installe le réseau Humain${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' et un réseau d’analyse' : ''}.`,
   openNetworks: 'Ouvrir les réseaux',
-  display: 'Affichage', coords: 'Coordonnées', sound: 'Son', territory: 'Territoire', language: 'Langue',
+  display: 'Affichage', coords: 'Coordonnées', sound: 'Son', territory: 'Ombre et lumière', language: 'Langue',
   rendering: 'Rendu', render3d: 'Atelier vivant (3D)', render2d: 'Léger (2D)',
   view: 'Regard', study: 'Étude', contemplation: 'Contemplation',
   light: 'Lumière', lights: { auto: 'Auto', morning: 'Matin', afternoon: 'Après-midi', evening: 'Soir' },
@@ -69,7 +74,7 @@ export const fr: Dict = {
   updateDownloading: (p: number | null) => (p === null ? 'Téléchargement de la mise à jour…' : `Téléchargement de la mise à jour… ${f.pct(p)}`),
   updateInstalling: 'Installation de la mise à jour…',
   autoUpdate: 'Rechercher les mises à jour automatiquement',
-  footer: { browse: 'parcourir', pass: 'passer', territory: 'territoire', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau' },
+  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau' },
   // barre de menus macOS (src-tauri/src/menu.rs)
   menu: {
     about: 'À propos de Masame', hide: 'Masquer Masame', hideOthers: 'Masquer les autres', showAll: 'Tout afficher', quit: 'Quitter Masame',
@@ -85,6 +90,32 @@ export const fr: Dict = {
   rankAdjusted: (r: string) => `Niveau de l’IA ajusté : ${r} pour la prochaine partie.`,
   humanSilent: 'Le réseau Humain ne répond pas. Vérifie qu’il est installé.',
   badAnswer: 'Réponse de KataGo illisible.',
+  // game review (p: the colour that punishes, s: the colour that made the mistake)
+  review: 'Revue', reviewGame: 'Revoir la partie', backToGame: 'Retour à la partie',
+  reviewNeedsNet: 'Installe un réseau d’analyse pour revoir une partie.',
+  reviewSide: 'Erreurs de', both: 'Les deux',
+  reading: 'Lecture de la partie…',
+  readingHelp: 'Recherche des coups qui ont coûté le plus de points. Environ une minute.',
+  percent: (p: number) => f.pct(p),
+  reviewFailed: (m: string) => `La revue s’est interrompue. ${m}`,
+  answerFailed: (m: string) => `Pas de réponse. ${m}`,
+  noMoments: (s: number) => `Aucun coup${s ? ` de ${color(s)}` : ''} n’a perdu 2 points ou plus.`,
+  moment: (k: number, n: number, mv: number, loss: number) => `Moment ${k}/${n} · coup ${mv} · −${pts(loss)}`,
+  moments: 'Moments clés', lesson: 'Leçon',
+  steps: { try: 'Ton essai', punish: 'La punition', better: 'Le bon coup' },
+  tryAsk: (p: number, mv: number) => `Joue ${color(p)} : comment punir le coup ${mv} ?`,
+  tryHelp: (p: number, s: number, loss: number) =>
+    `Le coup de ${color(s)} ne coûte ${pts(loss)} que si ${color(p)} trouve la réponse. Cherche-la en jouant ${color(p)} : ${color(s)} répond à chaque essai, et Réessayer le reprend.`,
+  found: 'Trouvé : ce coup punit l’erreur.',
+  shortOf: (gap: number) => `À ${pts(gap)} de la meilleure punition.`,
+  missed: (s: number, gap: number) => `${color(s)} s’en tire : à ${pts(gap)} de la meilleure punition.`,
+  seePunishment: 'Voir la punition',
+  punishLine: (p: number, v: string, s: number, loss: number) => `${color(p)} ${v} punit l’erreur : ${color(s)} perd ${pts(loss)}.`,
+  punishHelp: '→ suit la ligne, et la lumière montre ce qui a changé de camp. Joue où tu veux pour explorer : chaque coup reçoit une réponse.',
+  seeBetter: 'Voir le bon coup',
+  betterLine: (s: number, v: string, loss: number) => `Mieux : ${color(s)} ${v}, qui garde ces ${pts(loss)}.`,
+  betterHelp: '→ suit la ligne. Compare sa lumière avec celle de la punition. Joue où tu veux pour explorer : chaque coup reçoit une réponse.',
+  nextMoment: 'Moment suivant',
   // files
   sgfFilter: 'Partie SGF',
   openTitle: 'Ouvrir une partie', saveTitle: 'Enregistrer la partie',

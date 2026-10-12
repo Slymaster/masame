@@ -43,6 +43,7 @@
 - **Un adversaire humain.** KataGo, avec son réseau humain (SL), imite un joueur de 20k à 9d, avec ajustement automatique du niveau et temps de réflexion naturels (optionnels).
 - **Ombre et lumière.** L'estimation de propriété de KataGo affichée en vraie lumière et ombre sur le goban.
 - **Comptage.** Le moteur propose les pierres mortes ; tu les corriges d'un clic.
+- **Revue de partie.** Jusqu'à trois moments où un coup a coûté le plus de points, chacun une courte leçon : trouve toi-même la punition, vois-la, puis vois le bon coup. Après une partie contre l'IA, ou à tout moment dans une partie à deux joueurs ou un SGF. Elle tourne en local, en une minute environ.
 - **Règles et parties.** Captures, ko, suicide, passe, annulation, navigation dans les coups, ouverture et enregistrement SGF.
 - **Deux langues.** Entièrement en français et en anglais ; suit la langue du système et se change dans l'app.
 - **Un mode léger 2D.** Un goban Canvas, utilisé automatiquement quand le rendu 3D n'est pas disponible.
@@ -93,12 +94,12 @@ Les réseaux sont publiés par le projet KataGo sous la [KataGo Neural Network L
 
 - Aucune télémétrie, aucune mesure d'audience, aucun compte.
 - Les requêtes réseau vont à katagotraining.org (le catalogue des réseaux et leur téléchargement) et à GitHub pour les mises à jour (github.com et ses serveurs de fichiers).
-- Au plus une fois par jour, Masame demande à GitHub si une nouvelle version existe (tu peux le désactiver dans le panneau). Une mise à jour n'est téléchargée que si tu cliques sur Installer, et elle est vérifiée avec la clé de signature de Masame avant d'être installée.
+- Au plus une fois par jour, Masame demande à GitHub si une nouvelle version existe (tu peux le désactiver dans les Réglages). Une mise à jour n'est téléchargée que si tu cliques sur Installer, et elle est vérifiée avec la clé de signature de Masame avant d'être installée.
 - Tes parties restent sur ta machine ; les fichiers SGF sont enregistrés là où tu le choisis.
 
 ## Feuille de route
 
-Les fondations et l'Atelier vivant en 3D sont en place. Viennent ensuite le professeur — une revue locale et automatique de tes parties, les trois moments qui les ont décidées, « devine, puis découvre » —, puis un client OGS, puis un entraînement quotidien construit à partir de tes propres parties. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
+Les fondations, l'Atelier vivant en 3D et la première partie du professeur sont en place : une revue locale de tes parties, les trois moments qui les ont décidées, « devine, puis découvre ». Viennent ensuite un client OGS, puis un entraînement quotidien construit à partir de tes propres parties. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
 
 ## Remerciements
 

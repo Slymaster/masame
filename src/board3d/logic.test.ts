@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bowlHeap, contrast, dims, dropStones, fit, FIT_REACH, Governor, gx, gz, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, panFor, qualityLadder, RB, RW, settle, silhouette, TOD, todAt, worstGap, type Placed } from './logic'
+import { bowlHeap, cardSkin, contrast, dims, dropStones, fit, FIT_REACH, Governor, gx, gz, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, panFor, qualityLadder, RB, RW, settle, silhouette, TOD, todAt, worstGap, type Placed } from './logic'
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -116,6 +116,17 @@ describe('time of day', () => {
     expect(el).toBeLessThan(0.2)
     expect(K).toBeLessThan(15)
     expect(exp).toBeLessThan(0.003)
+  })
+})
+
+describe('card skin', () => {
+  it('is Laque on the dark backdrops only, Washi in 2D', () => {
+    const table = Object.fromEntries(DECORS.flatMap(d => (['study', 'contemplation'] as const).map(c => [`${d}/${c}`, cardSkin('3d', c, d)])))
+    expect(table).toEqual({
+      'atelier/study': 'washi', 'atelier/contemplation': 'laque', 'washitsu/study': 'washi', 'washitsu/contemplation': 'washi',
+      'lanterne/study': 'laque', 'lanterne/contemplation': 'laque', 'clair/study': 'washi', 'clair/contemplation': 'washi',
+    })
+    for (const d of DECORS) for (const c of ['study', 'contemplation'] as const) expect(cardSkin('2d', c, d)).toBe('washi')
   })
 })
 

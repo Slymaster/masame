@@ -43,6 +43,7 @@
 - **A human opponent.** KataGo with its human SL network imitates a player from 20k to 9d, with optional automatic level adjustment and natural thinking times.
 - **Light and Shadow.** KataGo's ownership estimate shown as real light and shade on the board.
 - **Counting.** The engine proposes the dead stones; you correct them with a click.
+- **Game review.** Up to three moments where a move cost the most points, each a short lesson: find the punishment yourself, see it, then see the better move. After a game against the AI, or at any time in a two-player or SGF game. It runs locally, in about a minute.
 - **Rules and records.** Captures, ko, suicide, pass, undo, move navigation, SGF open and save.
 - **Two languages.** Entirely in French and English, following the system language, switchable in the app.
 - **A 2D light mode.** A Canvas board, used automatically when the 3D renderer is unavailable.
@@ -93,12 +94,12 @@ The networks are published by the KataGo project under the [KataGo Neural Networ
 
 - No telemetry, no analytics, no account.
 - Network requests go to katagotraining.org (the network catalogue and the network downloads) and to GitHub for updates (github.com and its file servers).
-- At most once a day, Masame asks GitHub whether a new version exists (you can turn this off in the panel). An update is downloaded only when you click Install, and is checked against Masame's signing key before it is installed.
+- At most once a day, Masame asks GitHub whether a new version exists (you can turn this off in Settings). An update is downloaded only when you click Install, and is checked against Masame's signing key before it is installed.
 - Your games stay on your machine; SGF files are saved where you choose.
 
 ## Roadmap
 
-The foundations and the 3D Living Atelier are in place. Next comes the teacher — an automatic local review of your games, the three moments that decided them, "guess, then reveal" — then an OGS client, then daily training built from your own games. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
+The foundations, the 3D Living Atelier and the teacher's first part are in place: a local review of your games, the three moments that decided them, "guess, then reveal". Next comes an OGS client, then daily training built from your own games. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
 
 ## Credits
 
