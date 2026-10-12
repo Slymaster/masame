@@ -64,37 +64,65 @@ export function fit(s: Placed, stones: Map<number, Placed>, N: number, iteration
 
 /** Overlap allowed after fitting (mm): centred slate stones already sit 0.2 mm into each other across the 22 mm spacing. */
 export const FIT_TOL = 0.3
-/** Farthest a fitted stone may sit from its grid point (mm) before it gives up its jitter. */
-export const FIT_REACH = 3
+/**
+ * Room a stone leaves for each empty neighbouring point (mm): a stone of its own size centred there may overlap it by
+ * at most this. Stones never move, so this is what keeps a later newcomer from being squeezed; it limits a lone stone
+ * only across (22 mm spacing), and only slate: to ≈0.6 mm.
+ */
+export const FIT_ROOM = 0.8
+/** Hard cap on a placed stone's distance from its grid point (mm). */
+export const FIT_REACH = 4.5
 
-/** Smallest gap (mm, negative = overlap) between a stone and its 8 neighbours. */
-export function worstGap(s: Placed, stones: Map<number, Placed>, N: number) {
-  let w = Infinity
+/** Smallest gap (mm, negative = overlap) between a stone and its 8 neighbours, and that neighbour. */
+function nearest(s: Placed, stones: Map<number, Placed>, N: number): [number, Placed | null] {
+  let w = Infinity, n: Placed | null = null
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const x2 = s.x + dx, y2 = s.y + dy, o = (dx || dy) && x2 >= 0 && y2 >= 0 && x2 < N && y2 < N ? stones.get(y2 * N + x2) : undefined
-    if (o && o !== s) w = Math.min(w, Math.hypot(s.tx - o.tx, s.tz - o.tz) - s.R - o.R)
+    if (!o || o === s) continue
+    const g = Math.hypot(s.tx - o.tx, s.tz - o.tz) - s.R - o.R
+    if (g < w) { w = g; n = o }
   }
-  return w
+  return [w, n]
+}
+export const worstGap = (s: Placed, stones: Map<number, Placed>, N: number) => nearest(s, stones, N)[0]
+
+/** How far (mm) a stone at its current spot breaks FIT_TOL against its neighbours and FIT_ROOM towards empty points. */
+function excess(s: Placed, stones: Map<number, Placed>, N: number, cx: number, cz: number, sx: number, sz: number) {
+  let room = Infinity
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const x2 = s.x + dx, y2 = s.y + dy
+    if ((!dx && !dy) || x2 < 0 || y2 < 0 || x2 >= N || y2 >= N || stones.has(y2 * N + x2)) continue
+    room = Math.min(room, Math.hypot(s.tx - cx - dx * sx, s.tz - cz - dy * sz) - 2 * s.R)
+  }
+  return Math.max(0, -worstGap(s, stones, N) - FIT_TOL) + Math.max(0, -room - FIT_ROOM)
 }
 
 /**
- * fit(), then a crowded newcomer gives up some of its jitter, like a stone pushed by its neighbours: while it still
- * overlaps by more than FIT_TOL, its offset from the grid point (cx, cz) is halved (up to 4 times), then dropped.
+ * fit(), and when that leaves the newcomer overlapping by more than FIT_TOL, crowding an empty point (FIT_ROOM) or past
+ * FIT_REACH, it tries a few spots, like a stone pushed by its neighbours: its jitter scaled down (each fitted), and small
+ * steps from its grid point (cx, cz) away from the neighbour it hits most (raw and fitted). It keeps the spot with the
+ * least excess within FIT_REACH, then the one closest to its jitter. Stones already down never move.
+ * (sx, sz): grid spacing, for the empty points around it.
  */
-export function settle(s: Placed, stones: Map<number, Placed>, N: number, cx: number, cz: number) {
-  const bad = () => worstGap(s, stones, N) < -FIT_TOL || Math.hypot(s.tx - cx, s.tz - cz) > FIT_REACH
+export function settle(s: Placed, stones: Map<number, Placed>, N: number, cx: number, cz: number, sx = SX, sz = SZ) {
+  const ok = () => Math.hypot(s.tx - cx, s.tz - cz) <= FIT_REACH
   fit(s, stones, N)
-  for (let k = 0; k <= 4 && bad(); k++) {
-    const h = k < 4 ? 0.5 : 0
-    s.jx = cx + (s.jx - cx) * h; s.jz = cz + (s.jz - cz) * h
-    fit(s, stones, N)
+  if (ok() && !excess(s, stones, N, cx, cz, sx, sz)) return
+  const o = nearest(s, stones, N)[1], jx = s.jx, jz = s.jz, cands: number[][] = []
+  for (const f of [1, 0.75, 0.5, 0.25, 0]) { s.jx = cx + (jx - cx) * f; s.jz = cz + (jz - cz) * f; fit(s, stones, N); cands.push([s.tx, s.tz]) }
+  const ux = o ? cx - o.tx : 0, uz = o ? cz - o.tz : 0, ul = Math.hypot(ux, uz) || 1
+  for (const d of [0, 0.5, 1, 1.5]) {
+    s.jx = cx + ux / ul * d; s.jz = cz + uz / ul * d
+    cands.push([s.jx, s.jz]); fit(s, stones, N); cands.push([s.tx, s.tz])
   }
-  // squeezed from both sides, pushing can make it worse: then the grid point itself
-  if (bad()) {
-    const [tx, tz, w] = [s.tx, s.tz, worstGap(s, stones, N)]
-    s.tx = cx; s.tz = cz
-    if (worstGap(s, stones, N) < w) { s.tx = tx; s.tz = tz }
+  let best = Infinity, bx = cx, bz = cz
+  for (const [tx, tz] of cands) {
+    s.tx = tx; s.tz = tz
+    if (!ok()) continue
+    const score = excess(s, stones, N, cx, cz, sx, sz) * 1e3 + Math.hypot(tx - jx, tz - jz)
+    if (score < best) { best = score; bx = tx; bz = tz }
   }
+  s.jx = jx; s.jz = jz; s.tx = bx; s.tz = bz
 }
 
 /* ---------- stones at rest in a bowl or on a lid ---------- */

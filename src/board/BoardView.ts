@@ -347,7 +347,7 @@ export class BoardView {
   private place(N: number, p: number, c: Sign) {
     const x = p % N, y = (p / N) | 0, j = jitter(N, x, y, ++this.moveNo, J_AMP, J_AMP)
     const s = { x, y, c, R: J_R, jx: x * J_MM + j.jx - gx(N, x), jz: y * J_MM + j.jz - gz(N, y), tx: 0, tz: 0 }
-    this.placed.set(p, s); settle(s, this.placed, N, x * J_MM, y * J_MM) // around the stones already down
+    this.placed.set(p, s); settle(s, this.placed, N, x * J_MM, y * J_MM, J_MM, J_MM) // around the stones already down
     this.placedId++
   }
 
