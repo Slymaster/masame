@@ -54,11 +54,11 @@ function webgl2() {
 }
 
 /** What App drives, whichever renderer is mounted: the Canvas2D BoardView ("light") or the lazily loaded Board3D. */
-type View = { update(s: Board3DState): void; drop(v: Vertex, c: Sign): void; destroy(): void }
+type View = { update(s: Board3DState): void; drop(v: Vertex, c: Sign): void; pass?(c: Sign): void; destroy(): void }
 
-function Goban({ state, onPlay, view, mode, options, thinking, onFallback }: {
+function Goban({ state, onPlay, view, mode, options, thinking, onFallback, children }: {
   state: Board3DState; onPlay: (v: Vertex) => boolean; view: React.RefObject<View | null>
-  mode: Renderer; options: Board3DOptions; thinking: boolean; onFallback: (r: FallbackReason) => void
+  mode: Renderer; options: Board3DOptions; thinking: boolean; onFallback: (r: FallbackReason) => void; children?: React.ReactNode
 }) {
   const wrap = useRef<HTMLDivElement>(null), canvas = useRef<HTMLCanvasElement>(null), three = useRef<Board3D | null>(null)
   const latest = useRef({ onPlay, onFallback, state, options, thinking })
@@ -91,7 +91,7 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback }: {
   useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => three.current?.setThinking(thinking), [thinking])
   // a fresh canvas per renderer: one canvas can't hold both a 2D and a WebGL context
-  return <div className="board-wrap" ref={wrap}><canvas key={mode} ref={canvas} aria-label={t.boardLabel(state.signMap.length)} /></div>
+  return <div className="board-wrap" ref={wrap}><canvas key={mode} ref={canvas} aria-label={t.boardLabel(state.signMap.length)} />{children}</div>
 }
 
 /** State holding a Msg, rendered at display time (a bare function given to useState's setter would run as an updater). */
@@ -184,6 +184,16 @@ export function App() {
 
   const canAnalyze = !!nets?.active
   const canPlayAI = canAnalyze && !!nets?.installed.some(i => i.complete && i.name === nets.human)
+  const engineBusy = engine.state === 'starting' || engine.state === 'tuning' || engine.state === 'warming'
+
+  // Start the engine a few seconds after launch when an AI game is likely, so a first-run OpenCL tuning (minutes)
+  // happens while the player sets up rather than on the bot's first move.
+  const earlyStart = useRef(false)
+  useEffect(() => {
+    if (earlyStart.current || settings.opponent !== 'ai' || !canPlayAI) return
+    const id = setTimeout(() => { earlyStart.current = true; call('engine_start').catch(() => {}) }, 5000) // errors arrive as engine-status
+    return () => clearTimeout(id)
+  }, [settings.opponent, canPlayAI])
 
   const changed = () => { setNote(null); setBotError(null); rerender() }
   const humanTurn = !bot || game.toPlay !== bot.sign
@@ -303,6 +313,7 @@ export function App() {
       const v: Vertex | null = m.kind === 'play' ? [m.index % n, Math.floor(m.index / n)] : null
       if (game.play(v) !== 'ok') game.play(null) // shortcut: an illegal sample (superko corner case) becomes a pass
       if (v && game.lastMove?.vertex) view.current?.drop(v, bot.sign)
+      else view.current?.pass?.(bot.sign)
       setDirty(true); changed()
     }).catch(e => live && setBotError(d => d.botFailed(failureText(e, d)))).finally(() => live && setThinking(false))
     return () => { live = false; setThinking(false) }
@@ -380,15 +391,21 @@ export function App() {
   const botName = bot ? t.botName(bot.rank) : '' // in the current language (the SGF gets the one at save time)
   const board = game.board, total = game.moves.length, toPlay = game.toPlay, last = game.lastMove
   const shownOwn = settings.territory && own?.game === game ? own : null
+  const engineWait = engine.state === 'tuning' ? t.tuningCaption
+    : thinking && engine.state === 'starting' ? t.engineStarting
+    : thinking && engine.state === 'warming' ? t.engineWarming : null
   const message = result ? [result(t), note?.(t)].filter(Boolean).join(' ')
     : countingNow ? t.countingHelp
     : game.ended ? t.countingWait
-    : (botError ?? note)?.(t) ?? (last && !last.vertex ? t.passes(last.sign) : null)
+    : (botError ?? note)?.(t) ?? engineWait
+      ?? (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null)
+  // tuning progress: outside the key (no re-fade per update) and aria-hidden (announced once)
+  const tuned = message === t.tuningCaption && engine.state === 'tuning' ? t.tuningProgress(engine.step, engine.done, engine.total) : ''
   const humanNet = nets?.installed.find(i => i.name === nets.human)
   const engineLine = !inTauri() ? t.engineInAppOnly
     : engine.state === 'error' ? failureText(engine.error)
     : engine.state === 'starting' ? t.engineStarting
-    : engine.state === 'tuning' ? t.engineTuning
+    : engine.state === 'tuning' ? t.engineTuning(engine.step, engine.done, engine.total)
     : engine.state === 'warming' ? t.engineWarming
     : !canAnalyze ? t.noAnalysisNet
     : `${engine.state === 'ready' ? t.engineReady : t.engineIdle} · ${pick(t.labels, nets?.activeKey ?? '') ?? nets?.active}`
@@ -402,7 +419,8 @@ export function App() {
           mode={renderer}
           options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor: settings.decor }}
           thinking={thinking}
-          onFallback={r => { if (r === 'context-lost') setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
+          // while the engine starts (OpenCL tuning loads the GPU) a slow verdict is not the hardware's: this session only
+          onFallback={r => { if (r === 'context-lost' || (r === 'slow' && engineBusy)) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
           state={{
             signMap: board.signMap, last: last?.vertex ?? null, toPlay, coords, sound,
             interactive: countingNow ? !result : !game.ended && !locked && humanTurn,
@@ -411,7 +429,14 @@ export function App() {
             captures: { black: board.getCaptures(1), white: board.getCaptures(-1) }, // the 3D lids: prisoners taken by each
           }}
           onPlay={play}
-        />
+        >
+          <p className="note" aria-live="polite">
+            {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message}>
+              <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>
+              {botError && !result && <button className="link" onClick={retryBot}>{t.retry}</button>}
+            </span>}
+          </p>
+        </Goban>
         <button className="panel-toggle" onClick={togglePanel} aria-expanded={!settings.panelHidden} aria-controls="panel"
           aria-label={settings.panelHidden ? t.showPanel : t.hidePanel} title={`${settings.panelHidden ? t.showPanel : t.hidePanel} (H)`}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" /><path d="M10 2.5v11" /></svg>
@@ -438,10 +463,6 @@ export function App() {
                 <span className="cp">{t.captures(board.getCaptures(sign))}</span>
               </div>
             ))}
-            <p className="note" aria-live="polite">
-              {message}
-              {botError && !result && <> <button className="link" onClick={retryBot}>{t.retry}</button></>}
-            </p>
             {final && (
               <p className="estimate" aria-live="polite">
                 {t.side(1, final.black.total, final.black.territory, final.black.prisoners)}<br />

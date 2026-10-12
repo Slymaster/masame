@@ -53,6 +53,19 @@ describe('formatting', () => {
     expect(t.month('2026-10-11T00:00:00Z')).toBe('oct. 2026')
     expect(t.botName('8k')).toBe('KataGo humain 8k')
   })
+  it('engine tuning progress and the bot passing', () => {
+    setLang('en')
+    expect(t.engineTuning(3, 40, 120)).toBe('Tuning KataGo for this graphics card (first launch only, a few minutes) · step 3 · 40/120')
+    expect(t.engineTuning(0, 0, 0)).toBe('Tuning KataGo for this graphics card (first launch only, a few minutes)')
+    expect(t.botPasses(-1)).toBe('White passes. Your move.')
+    expect(t.tuningProgress(3, 40, 120)).toBe('step 3 · 40/120')
+    expect(t.tuningProgress(0, 0, 63)).toBe('0/63')
+    setLang('fr')
+    expect(t.engineTuning(3, 40, 120)).toBe('Réglage de KataGo pour cette carte graphique (premier lancement seulement, quelques minutes) · étape 3 · 40/120')
+    expect(t.botPasses(-1)).toBe('Blanc passe. À toi de jouer.')
+    expect(t.tuningProgress(3, 40, 120)).toBe('étape 3 · 40/120')
+    for (const s of [t.engineTuning(3, 40, 120), t.tuningCaption, t.botPasses(1)]) expect(s).not.toMatch(/ [:;!?]/) // French: nbsp before double punctuation
+  })
   it('English: decimal point, plurals with 0 plural, MB', () => {
     setLang('en')
     expect(t.score(-4.5)).toBe('White wins by 4.5.')

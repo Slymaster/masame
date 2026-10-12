@@ -24,7 +24,7 @@ kbd { font-family: var(--f-ui); font-size: 10.5px; line-height: 1; border: 1px s
 .titlebar { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 10 }
 
 .stage { position: relative; height: 100%; display: flex; align-items: stretch; gap: clamp(28px, 4vw, 72px); padding: 44px clamp(28px, 3.5vw, 56px) 28px }
-.board-wrap { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; line-height: 0 }
+.board-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; line-height: 0 }
 canvas { display: block; -webkit-tap-highlight-color: transparent }
 
 .panel[hidden] { display: none } /* hidden panel: the board takes the whole stage (ResizeObserver refits it) */
@@ -50,6 +50,12 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .pl.on::before { opacity: 1 }
 
 .note { min-height: 2.9em; margin-top: 6px; font-family: var(--f-title); font-style: italic; font-size: 16px; line-height: 1.4; color: #6E5F4D }
+/* caption under the board, in the stage's bottom padding: visible with the panel hidden */
+.board-wrap > .note { position: absolute; left: 0; right: 0; bottom: -26px; min-height: 0; margin: 0; text-align: center; pointer-events: none }
+.board-wrap > .note > span { display: inline-flex; gap: .3em; max-width: 100%; padding: 1px 14px; border-radius: 999px; background: var(--bg); white-space: nowrap; pointer-events: auto; animation: fade .3s ease-out }
+/* one line, inside the stage's bottom padding, so it never covers the board; the full text is in the title */
+.board-wrap > .note .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis }
+.board-wrap > .note .link { flex: none }
 .nav { display: flex; gap: 6px; margin-top: 4px }
 .nav button { flex: 1; height: 30px; border: 0; border-radius: 999px; background: rgba(43, 29, 14, .05); color: var(--ink); font-size: 14px; cursor: pointer; transition: background .25s, opacity .25s }
 .nav button:hover:not(:disabled) { background: var(--hover) }

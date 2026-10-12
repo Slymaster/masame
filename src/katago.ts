@@ -21,7 +21,8 @@ export interface NetState {
 /** Rust-side error: a stable code (texts live in strings.ts) + optional technical detail. */
 export interface Failure { code: string; detail?: string }
 export interface Progress { name: string; state: 'downloading' | 'verifying' | 'done' | 'error' | 'cancelled'; received: number; total: number; error: Failure | null }
-export type EngineStatus = { state: 'stopped' | 'starting' | 'tuning' | 'warming' | 'ready' } | { state: 'error'; error: Failure }
+export type EngineStatus = { state: 'stopped' | 'starting' | 'warming' | 'ready' } | { state: 'tuning'; step: number; done: number; total: number }
+  | { state: 'error'; error: Failure }
 
 export async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!inTauri()) throw new LocalizedError(d => d.engineInAppOnly)

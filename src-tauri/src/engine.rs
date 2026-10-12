@@ -28,8 +28,10 @@ pub struct Spec { pub bin: PathBuf, pub config: PathBuf, pub model: PathBuf, pub
 #[derive(Serialize, Clone, PartialEq, Debug)]
 #[serde(tag = "state", rename_all = "camelCase")]
 /// Tuning: OpenCL measures kernels on its first run on a GPU (seconds to minutes; progress lines keep it alive).
+/// Tuning progress: `step` counts the tuner's passes (one per kernel and parameter set), `done`/`total` the configs of
+/// the current pass as last reported (KataGo only prints a better config or every 20th).
 /// Warming: KataGo is up but Metal/CoreML compiles the nets on the first evaluation; a hidden query pays that cost.
-pub enum Status { Stopped, Starting, Tuning, Warming, Ready, Error { error: Failure } }
+pub enum Status { Stopped, Starting, Tuning { step: u32, done: u32, total: u32 }, Warming, Ready, Error { error: Failure } }
 
 type Emit = Arc<dyn Fn(&str, Value) + Send + Sync>;
 /// Given a launch that failed before Ready, the spec to launch instead (another engine build), or the error to report.
@@ -53,6 +55,18 @@ fn args(spec: &Spec) -> Vec<OsString> {
 /// "Tuning i/N …", "Tuning xGemm for convolutions", "Done tuning, saved results to …".
 fn is_tuning_line(l: &str) -> bool {
     l.contains("Performing autotuning") || l.contains("Done tuning") || l.starts_with("Tuning ") || l.starts_with("Testing ")
+}
+
+/// Tuning progress after `line`, given the previous (step, done, total): "Testing N different configs" opens a new
+/// step, "Tuning i/N …" (verbose: "Tuning * i/N") reports within it; other lines change nothing (None).
+fn tuning_progress(line: &str, prev: (u32, u32, u32)) -> Option<(u32, u32, u32)> {
+    if let Some(n) = line.strip_prefix("Testing ").and_then(|r| r.strip_suffix(" different configs")) {
+        return Some((prev.0 + 1, 0, n.parse().ok()?));
+    }
+    let r = line.strip_prefix("Tuning ")?.trim_start_matches(['*', ' ']);
+    let (i, rest) = r.split_once('/')?;
+    let n = rest.split(' ').next()?;
+    Some((prev.0, i.parse().ok()?, n.parse().ok()?))
 }
 
 struct Proc { child: Child, tx: mpsc::UnboundedSender<String>, spec: Spec }
@@ -108,7 +122,7 @@ impl Engine {
         }
     }
 
-    fn starting(&self) -> bool { matches!(self.status(), Status::Starting | Status::Tuning | Status::Warming) }
+    fn starting(&self) -> bool { matches!(self.status(), Status::Starting | Status::Tuning { .. } | Status::Warming) }
 
     pub fn status(&self) -> Status { self.status.borrow().clone() }
 
@@ -169,7 +183,7 @@ impl Engine {
             while let Ok(Some(l)) = lines.next_line().await {
                 if cfg!(debug_assertions) { eprintln!("[katago] {l}") }
                 if me.gen.load(Ordering::SeqCst) == gen {
-                    if l.contains(READY_LINE) { me.warm_up(gen) } else if is_tuning_line(&l) { me.tuning() }
+                    if l.contains(READY_LINE) { me.warm_up(gen) } else if is_tuning_line(&l) { me.tuning(&l) }
                 }
                 let mut buf = me.stderr.lock().unwrap();
                 if buf.len() == STDERR_KEEP { buf.pop_front(); }
@@ -192,7 +206,7 @@ impl Engine {
             loop {
                 let due = *me.progress.lock().unwrap() + wait;
                 tokio::time::sleep_until(due.into()).await;
-                if me.gen.load(Ordering::SeqCst) != gen || !matches!(me.status(), Status::Starting | Status::Tuning) { return }
+                if me.gen.load(Ordering::SeqCst) != gen || !matches!(me.status(), Status::Starting | Status::Tuning { .. }) { return }
                 if Instant::now() >= *me.progress.lock().unwrap() + wait { break }
             }
             me.report(gen, Failure::with("engine_timeout", "start"), true);
@@ -200,12 +214,25 @@ impl Engine {
         Ok(())
     }
 
-    /// A tuning line: Starting becomes Tuning, and the start deadline moves back.
-    fn tuning(&self) {
+    /// A tuning line: Starting becomes Tuning, its progress is updated, and the start deadline moves back.
+    /// Only a changed status is emitted.
+    fn tuning(&self, line: &str) {
         *self.progress.lock().unwrap() = Instant::now();
-        if self.status.send_if_modified(|s| if *s == Status::Starting { *s = Status::Tuning; true } else { false }) {
-            (self.emit)("engine-status", serde_json::to_value(Status::Tuning).unwrap());
-        }
+        let mut next = None;
+        self.status.send_if_modified(|s| {
+            let prev = match *s {
+                Status::Starting => (0, 0, 0),
+                Status::Tuning { step, done, total } => (step, done, total),
+                _ => return false,
+            };
+            let (step, done, total) = tuning_progress(line, prev).unwrap_or(prev);
+            let n = Status::Tuning { step, done, total };
+            if *s == n { return false }
+            *s = n.clone();
+            next = Some(n);
+            true
+        });
+        if let Some(n) = next { (self.emit)("engine-status", serde_json::to_value(n).unwrap()) }
     }
 
     /// Generation `gen` failed. Before Ready, the fallback may relaunch another build; otherwise the error is reported
@@ -293,7 +320,7 @@ impl Engine {
         loop {
             match &*st.borrow_and_update() {
                 Status::Ready => break,
-                Status::Starting | Status::Tuning | Status::Warming => {}
+                Status::Starting | Status::Tuning { .. } | Status::Warming => {}
                 Status::Stopped => return Err(stopped()),
                 Status::Error { error } => return Err(error.clone()),
             }
@@ -491,19 +518,40 @@ while read l; do id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{\"id
         for l in ["Started, ready to begin handling requests", "2026-10-11: Loaded model", "Model tuning info"] { assert!(!is_tuning_line(l), "{l}") }
     }
 
-    /// OpenCL tuning outlasts the start timeout, but each progress line moves the deadline back.
+    #[test]
+    fn tuning_progress_follows_the_tuner() {
+        let p = (2, 7, 40);
+        assert_eq!(tuning_progress("Testing 63 different configs", p), Some((3, 0, 63)));
+        assert_eq!(tuning_progress("Tuning 0/63 (reference) Calls/sec 1.1e+04 ErrorProp 0 XGemmDirect", (3, 0, 63)), Some((3, 0, 63)));
+        assert_eq!(tuning_progress("Tuning 20/63 ...", (3, 0, 63)), Some((3, 20, 63)));
+        assert_eq!(tuning_progress("Tuning * 21/63 Calls/sec 2.2e+04 ErrorProp 0 XGemmDirect", (3, 20, 63)), Some((3, 21, 63)));
+        assert_eq!(tuning_progress("Tuning 5/63 failed: CL_OUT_OF_RESOURCES", (3, 0, 63)), Some((3, 5, 63)));
+        for l in ["Tuning xGemm for convolutions", "Performing autotuning", "Done tuning, saved results to x"] {
+            assert_eq!(tuning_progress(l, p), None, "{l}")
+        }
+    }
+
+    /// OpenCL tuning outlasts the start timeout, but each progress line moves the deadline back; repeated lines
+    /// (same progress) are not re-emitted.
     #[cfg(unix)]
     #[tokio::test]
     async fn tuning_progress_keeps_the_startup_alive() {
         let statuses = Arc::new(Mutex::new(vec![]));
         let st = statuses.clone();
-        let mut e = Engine::new(move |ev, v| if ev == "engine-status" { st.lock().unwrap().push(v["state"].as_str().unwrap().to_string()) });
+        let mut e = Engine::new(move |ev, v| if ev == "engine-status" {
+            let s = v["state"].as_str().unwrap().to_string();
+            st.lock().unwrap().push(if s == "tuning" { format!("{s} {} {}/{}", v["step"], v["done"], v["total"]) } else { s })
+        });
         // Tuning lasts 3.6 s; the 2 s window only has to cover one 0.3 s gap (and the exec, warmed by `fake`).
         Arc::get_mut(&mut e).unwrap().start_timeout = Duration::from_secs(2);
-        let tune = "echo 'Performing autotuning' >&2; for i in $(seq 12); do sleep 0.3; echo \"Tuning $i/12\" >&2; done";
+        let tune = "echo 'Performing autotuning' >&2; echo 'Testing 12 different configs' >&2; \
+            for i in $(seq 12); do sleep 0.3; echo \"Tuning $i/12\" >&2; echo \"Tuning $i/12\" >&2; done; echo 'Done tuning' >&2";
         e.ensure(fake("tune", &format!("{tune}\n{SERVE}"))).unwrap();
         e.analyze(json!({"moves": []})).await.unwrap();
-        assert_eq!(*statuses.lock().unwrap(), ["starting", "tuning", "warming", "ready"]);
+        let tuning = (1..=12).map(|i| format!("tuning 1 {i}/12"));
+        let want: Vec<String> = ["starting".into(), "tuning 0 0/0".into(), "tuning 1 0/12".into()].into_iter().chain(tuning)
+            .chain(["warming".into(), "ready".into()]).collect();
+        assert_eq!(*statuses.lock().unwrap(), want);
         // Tuning that goes quiet still times out.
         let mut e = Engine::new(|_, _| {});
         Arc::get_mut(&mut e).unwrap().start_timeout = Duration::from_millis(300);
