@@ -15,7 +15,7 @@ use tokio::sync::{oneshot, Mutex};
 use crate::failure::{Failure, Res};
 
 const BASE: &str = "https://online-go.com";
-const CLIENT_ID: &str = ""; // Masame's public OAuth client id on OGS (not a secret)
+const CLIENT_ID: &str = "Zcn8DN7Jg5uCKB184btHYhvUllN6cxnU6enuDdOJ"; // Masame's public OAuth client id on OGS (not a secret)
 const PORT: u16 = 0; // 0 = any free port (RFC 8252 §7.3); 47321 if OGS wants the exact registered URI
 const FILE: &str = "ogs.json";
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
@@ -463,5 +463,17 @@ mod tests {
         assert!(req.starts_with("POST /oauth2/revoke_token/ HTTP/1.1"));
         assert_eq!(body(&req), HashMap::from([("token".into(), "r1".into()), ("client_id".into(), CLIENT_ID.into())]));
         assert_eq!(token(&http(), &base, &d, &cache).await.unwrap_err().code, "ogs_login_required");
+    }
+
+    /// Real sign-in in the default browser, by hand: OGS_DIR=<dir> cargo test live_login -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn live_login() {
+        let d = PathBuf::from(std::env::var("OGS_DIR").expect("OGS_DIR"));
+        let (c, cache) = (crate::networks::client(), Mutex::new(None));
+        login(&c, BASE, &d, &cache, crate::open_url).await.unwrap();
+        let a = token(&c, BASE, &d, &cache).await.unwrap();
+        let v: serde_json::Value = c.get(format!("{BASE}/api/v1/ui/config")).bearer_auth(a).send().await.unwrap().json().await.unwrap();
+        println!("user: {} · jwt: {}", v["user"]["username"], v["user_jwt"].as_str().is_some_and(|j| !j.is_empty()));
     }
 }
