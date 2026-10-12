@@ -25,7 +25,6 @@ const BOT_VISITS = 60, TERRITORY_VISITS = 150, FINAL_VISITS = 300
 const BOT_ATTEMPTS = 3 // a failed query (engine restarting on another net, crash) is retried after 1 s, then 2 s
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const random = rng(Date.now())
-const hourNow = () => { const d = new Date(); return d.getHours() + d.getMinutes() / 60 }
 
 type Renderer = '3d' | '2d'
 const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
@@ -167,11 +166,10 @@ export function App() {
   const [botRetry, retryBot] = useReducer((x: number) => x + 1, 0)
   const [session2d, setSession2d] = useState(false) // 2D after a WebGL context loss, for this session only
   const renderer: Renderer = session2d ? '2d' : settings.renderer
-  // the card's skin follows the scene's light; set before paint so a change never flashes the other skin
-  const [hour, setHour] = useState(hourNow)
-  useEffect(() => { const id = setInterval(() => setHour(hourNow()), 60_000); return () => clearInterval(id) }, [])
-  const skin = cardSkin(renderer, settings.light, settings.decor, hour)
+  // the card's skin follows the scene's backdrop; set before paint, and crossfaded only once the first frame is shown
+  const skin = cardSkin(renderer, settings.camera, settings.decor)
   useLayoutEffect(() => { document.documentElement.dataset.skin = skin }, [skin])
+  useEffect(() => { requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '' })) }, [])
   // counting phase after two passes: which stones are dead (suggested by KataGo, toggled by the player)
   const [counting, setCounting] = useState<{ game: Game; dead: Dead } | null>(null)
 
@@ -179,6 +177,12 @@ export function App() {
   const [nets, setNets] = useState<NetState | null>(null)
   const [progress, setProgress] = useState<Record<string, Progress>>({})
   const [sheet, setSheet] = useState<'game' | 'settings' | 'view' | 'nets' | null>(null) // 'view': Settings, at Display
+  // the control a sheet returns focus to (WebKit doesn't focus clicked buttons), kept when one sheet opens another
+  const opener = useRef<HTMLElement | null>(null), netsFromSettings = useRef(false)
+  const openSheet = (s: NonNullable<typeof sheet>) => (e: React.MouseEvent<HTMLElement>) => {
+    if (!e.currentTarget.closest('.sheet')) { opener.current = e.currentTarget; netsFromSettings.current = false }
+    setSheet(s)
+  }
   const [own, setOwn] = useState<{ game: Game; data: number[] | null; score: number } | null>(null)
   // game review: null = off; moments null while reading; branch = the lesson's variation (null while reading or clean)
   const [review, setReview] = useState<{ side: Sign | 0; pct: number; error: unknown; moments: Moment[] | null; k: number; step: Step
@@ -581,19 +585,30 @@ export function App() {
   const playing = review ? !!review.branch : !game.ended && !result // whose turn it is means something
   const floor = review?.branch ? from : 0
   const re = result ? game.info.result ?? '' : '' // "B+R", "W+4.5", "0"
-  const stateOf = (s: Sign) => final ? t.points((s === 1 ? final.black : final.white).total)
-    : re ? re[0] === (s === 1 ? 'B' : 'W') ? t.wins : re.endsWith('+R') ? t.resigned : ''
+  const resignation = re.endsWith('+R'), countingOpen = !!final && !result
+  // the count, shown while counting and, once validated, at every cursor position (scored on the final board)
+  const end = game.boards.at(-1)!
+  const count = counting?.game === game && (countingOpen || (!!re && !resignation))
+    ? score(end.signMap, counting.dead, { black: end.getCaptures(1), white: end.getCaptures(-1) }, komi) : null
+  const sideOf = (s: Sign) => count ? s === 1 ? count.black : count.white : null
+  const tallyOf = (s: Sign) => { const c = sideOf(s)!; return t.tally(c.territory, c.prisoners, s === -1 ? komi : undefined) }
+  // counting: points over the tally; counted: "wins" over points and tally; a draw: the points alone
+  const subOf = (s: Sign) => !count || re === '0' ? null : countingOpen ? tallyOf(s) : `${t.points(sideOf(s)!.total)} · ${tallyOf(s)}`
+  const stateOf = (s: Sign) => count && (countingOpen || re === '0') ? t.points(sideOf(s)!.total)
+    : re ? re[0] === (s === 1 ? 'B' : 'W') ? t.wins : resignation ? t.resigned : ''
     : last && !last.vertex && last.sign === s ? t.passed
     : !playing ? ''
     : toPlay === s ? bot?.sign === s ? thinking ? t.thinking : t.waiting : t.yourMove
     : t.waiting
   const alert = upd.s === 'available' ? t.updateAvailable(upd.version) : engine.state === 'error' ? failureText(engine.error) : null
   const closeSheet = () => setSheet(null)
+  // Networks opened from Settings closes back to Settings, on its link
+  const closeNets = () => setSheet(netsFromSettings.current ? 'settings' : null)
   useEffect(() => { if (sheet === 'view') document.getElementById('display')?.scrollIntoView({ block: 'start' }) }, [sheet])
   const cta = settings.opponent === 'ai' && !canPlayAI && (
     <div className="cta">
       <p>{!inTauri() ? t.aiOnlyInApp : t.aiNeeds(humanNet?.complete ? null : t.mb(HUMAN_BYTES), !canAnalyze)}</p>
-      {inTauri() && <button className="btn" onClick={() => setSheet('nets')}>{t.openNetworks}</button>}
+      {inTauri() && <button className="btn" onClick={openSheet('nets')}>{t.openNetworks}</button>}
     </div>
   )
 
@@ -631,8 +646,8 @@ export function App() {
             {!settings.panelHidden && <>
               <span className="seal" aria-hidden="true">柾</span>
               <h1>Masame</h1>
-              <button className="icon" onClick={() => setSheet('game')} aria-label={t.game} title={t.game}><Icon name="plus" /></button>
-              <button className="icon" onClick={() => setSheet('settings')} aria-label={alert ? `${t.settings} · ${alert}` : t.settings}
+              <button className="icon" onClick={openSheet('game')} aria-label={t.game} title={t.game}><Icon name="plus" /></button>
+              <button className="icon" onClick={openSheet('settings')} aria-label={alert ? `${t.settings} · ${alert}` : t.settings}
                 title={alert ? `${t.settings} · ${alert}` : t.settings}><Icon name="adjustments" />{alert && <i className="dot" />}</button>
             </>}
             {/* hidden card: only whose turn it is (breathing while the bot thinks), next to the toggle */}
@@ -650,7 +665,7 @@ export function App() {
               <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
                 <Icon name={sound ? 'volume' : 'volume-off'} />
               </button>
-              <button className="icon sm" onClick={() => setSheet('view')} aria-label={t.display} title={t.display}><Icon name="view" /></button>
+              <button className="icon sm" onClick={openSheet('view')} aria-label={t.display} title={t.display}><Icon name="view" /></button>
               <button className="icon sm" aria-pressed={renderer === '3d'} onClick={() => { setSession2d(false); set('renderer', renderer === '3d' ? '2d' : '3d') }}
                 aria-label={t.render3d} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
             </div>
@@ -680,15 +695,15 @@ export function App() {
                   </>}
                 </section>
               ) : ([1, -1] as const).map(c => {
-                const n = board.getCaptures(c), side = final && (c === 1 ? final.black : final.white)
+                const n = board.getCaptures(c), sub = subOf(c)
                 const rank = bot && (c === bot.sign ? bot.rank : settings.myRank)
                 return (
                   <div key={c} role="group" aria-label={t.color(c)}
                     className={`pc ${c === 1 ? 'b' : 'w'}${toPlay === c && playing ? ' on' : ''}${thinking && bot?.sign === c ? ' thinking' : ''}`}>
                     <div className="lbl">{bot ? c === bot.sign ? t.ai : t.you : (c === 1 ? playerBlack : playerWhite) || t.color(c)}{rank && <span className="rk">{rank}</span>}</div>
-                    <div aria-live={final ? 'polite' : undefined}>
+                    <div aria-live={countingOpen ? 'polite' : undefined}>
                       <div className="state">{stateOf(c)}</div>
-                      {side && <div className="sub">{t.tally(side.territory, side.prisoners, c === -1 ? komi : undefined)}</div>}
+                      {sub && <div className="sub">{sub}</div>}
                     </div>
                     <span className="cap" role="img" aria-label={t.captures(n)}>{n}</span>
                     <span className="wm" aria-hidden="true">{c === 1 ? '黒' : '白'}</span>
@@ -726,7 +741,7 @@ export function App() {
       </main>
 
       {sheet === 'game' && (
-        <Sheet title={t.game} onClose={closeSheet}>
+        <Sheet title={t.game} onClose={closeSheet} opener={opener.current}>
           <section>
             <div className="lab"><span>{t.newGame}</span><span /></div>
             <div className="opts">
@@ -753,7 +768,7 @@ export function App() {
       )}
 
       {(sheet === 'settings' || sheet === 'view') && (
-        <Sheet title={t.settings} onClose={closeSheet}>
+        <Sheet title={t.settings} onClose={closeSheet} opener={opener.current} focus={netsFromSettings.current ? '[data-nets]' : undefined}>
           <section>
             <div className="lab"><span>{t.boardSection}</span><span /></div>
             <Switch label={t.coords} k="C" on={coords} toggle={() => setCoords(v => !v)} />
@@ -792,7 +807,7 @@ export function App() {
             </div>
             <div className="row" style={{ cursor: 'default' }}>
               <span>{t.engine}</span>
-              <button className="link" onClick={() => setSheet('nets')}>{t.networksBtn}</button>
+              <button className="link" data-nets onClick={() => { netsFromSettings.current = true; setSheet('nets') }}>{t.networksBtn}</button>
             </div>
             <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}</p>
             {inTauri() && <>
@@ -816,7 +831,7 @@ export function App() {
         </Sheet>
       )}
 
-      {sheet === 'nets' && <Networks nets={nets} progress={progress} onClose={closeSheet} onChanged={refreshNets} />}
+      {sheet === 'nets' && <Networks nets={nets} progress={progress} onClose={closeNets} onChanged={refreshNets} opener={opener.current} />}
     </>
   )
 }

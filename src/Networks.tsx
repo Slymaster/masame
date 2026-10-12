@@ -3,11 +3,11 @@ import { call, inTauri, type NetEntry, type NetState, type Progress } from './ka
 import { failureText, pick, t } from './i18n'
 import { Sheet } from './Sheet'
 
-interface Props { nets: NetState | null; progress: Record<string, Progress>; onClose: () => void; onChanged: () => void }
+interface Props { nets: NetState | null; progress: Record<string, Progress>; onClose: () => void; onChanged: () => void; opener: HTMLElement | null }
 
 const link = (which: string) => (e: React.MouseEvent) => { e.preventDefault(); void call('open_link', { which }) }
 
-export function Networks({ nets, progress, onClose, onChanged }: Props) {
+export function Networks({ nets, progress, onClose, onChanged, opener }: Props) {
   const [entries, setEntries] = useState<NetEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
@@ -18,7 +18,7 @@ export function Networks({ nets, progress, onClose, onChanged }: Props) {
   const top = Math.max(0, ...(entries ?? []).map(e => e.elo ?? 0))
 
   return (
-    <Sheet title={t.networks} onClose={onClose}>
+    <Sheet title={t.networks} onClose={onClose} opener={opener}>
       <p className="quiet">{t.humanRequired}</p>
       {error && <p className="note">{error}</p>}
       {!entries && !error && <p className="quiet">{t.loading}</p>}

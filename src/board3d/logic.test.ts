@@ -120,30 +120,13 @@ describe('time of day', () => {
 })
 
 describe('card skin', () => {
-  it('is Washi in 2D, Laque with the Lanterne or an evening light', () => {
-    expect(cardSkin('2d', 'evening', 'lanterne', 22)).toBe('washi')
-    expect(cardSkin('3d', 'morning', 'lanterne', 12)).toBe('laque')
-    expect(cardSkin('3d', 'evening', 'atelier', 12)).toBe('laque')
-    expect(cardSkin('3d', 'afternoon', 'atelier', 22)).toBe('washi')
-  })
-
-  it('follows the hour in "Auto", hinging at 17:45 and ≈07:13', () => {
-    expect(cardSkin('3d', 'auto', 'atelier', 12)).toBe('washi')
-    expect(cardSkin('3d', 'auto', 'atelier', 17.7)).toBe('washi')
-    expect(cardSkin('3d', 'auto', 'atelier', 17.8)).toBe('laque')
-    expect(cardSkin('3d', 'auto', 'atelier', 7)).toBe('laque')
-    expect(cardSkin('3d', 'auto', 'atelier', 7.15)).toBe('laque')
-    expect(cardSkin('3d', 'auto', 'atelier', 7.3)).toBe('washi')
-    expect(cardSkin('3d', 'auto', 'atelier', 8)).toBe('washi')
-  })
-
-  it('keeps its threshold tied to the TOD rooms', () => {
-    const { afternoon, evening } = TOD, saved = [afternoon.room, evening.room]
-    try {
-      afternoon.room = 0.9; evening.room = 0.1 // another tuning: the dusk hinge stays at the eased midpoint
-      expect(cardSkin('3d', 'auto', 'atelier', 17.7)).toBe('washi')
-      expect(cardSkin('3d', 'auto', 'atelier', 17.8)).toBe('laque')
-    } finally { [afternoon.room, evening.room] = saved }
+  it('is Laque on the dark backdrops only, Washi in 2D', () => {
+    const table = Object.fromEntries(DECORS.flatMap(d => (['study', 'contemplation'] as const).map(c => [`${d}/${c}`, cardSkin('3d', c, d)])))
+    expect(table).toEqual({
+      'atelier/study': 'washi', 'atelier/contemplation': 'laque', 'washitsu/study': 'washi', 'washitsu/contemplation': 'washi',
+      'lanterne/study': 'laque', 'lanterne/contemplation': 'laque', 'clair/study': 'washi', 'clair/contemplation': 'washi',
+    })
+    for (const d of DECORS) for (const c of ['study', 'contemplation'] as const) expect(cardSkin('2d', c, d)).toBe('washi')
   })
 })
 

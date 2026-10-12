@@ -25,8 +25,6 @@
   --pb-ink: #EFE6D6; --pb-muted: #A8957A; --pb-bar: #C9A063;
   --pw-ink: #2A2118; --pw-muted: #5C4D3D; --pw-bar: #8A2F22;
   --seal: #8A2F22; --seal-ink: #F9F4EB;
-  transition: --card .6s, --sheet .6s, --ink .6s, --muted .6s, --accent .6s, --accent-hover .6s, --rule .6s, --rule-2 .6s,
-    --hover .6s, --well .6s, --seg-on .6s, --pb .6s, --pw .6s, --shadow .6s, --scrim .6s;
   --f-title: 'Cormorant Garamond', Georgia, serif; --f-ui: 'Manrope', system-ui, sans-serif;
   --stone-b: radial-gradient(circle at 34% 30%, #6a6a70 0, #2c2c30 38%, #121214 80%);
   --stone-w: radial-gradient(circle at 34% 30%, #fffdf8 0, #f1ebdf 55%, #d7cdbb 100%);
@@ -38,6 +36,11 @@ html[data-skin="laque"] {
   --hover: rgba(201, 160, 99, .10); --well: rgba(255, 240, 215, .05); --seg-on: #3A3129;
   --pb: #110E0B; --pw: #D9CFBF; --shadow: rgba(0, 0, 0, .45); --scrim: rgba(0, 0, 0, .35);
   color-scheme: dark;
+}
+/* the skin crossfades with the scene, but not at load: the first frame already has the right one */
+:root[data-ready] {
+  transition: --card .6s, --sheet .6s, --ink .6s, --muted .6s, --accent .6s, --accent-hover .6s, --rule .6s, --rule-2 .6s,
+    --hover .6s, --well .6s, --seg-on .6s, --pb .6s, --pw .6s, --shadow .6s, --scrim .6s;
 }
 * { box-sizing: border-box; margin: 0; padding: 0 }
 html, body, #root { height: 100% }
@@ -55,7 +58,6 @@ kbd { font-family: var(--f-ui); font-size: 10.5px; line-height: 1; border: 1px s
 
 /* macOS overlay title bar: this strip is the drag handle and keeps content clear of the traffic lights. */
 .titlebar { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 10 }
-
 
 .stage { --pad: clamp(28px, 3.5vw, 56px); position: relative; height: 100%; display: flex; align-items: stretch; gap: clamp(28px, 4vw, 72px); padding: 44px var(--pad) 28px }
 .board-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; line-height: 0 }
@@ -104,10 +106,10 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .rk { margin-left: 8px; font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 15px; letter-spacing: 0; text-transform: none }
 .state { margin-top: 4px; min-height: 1.15em; font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 26px; line-height: 1.15 }
 .sub { font-size: 11.5px; color: var(--lbl, var(--muted)); font-variant-numeric: tabular-nums }
-.cap { position: absolute; top: 10px; right: 12px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; box-shadow: 1px 1.5px 2px rgba(0, 0, 0, .25) }
+.cap { position: absolute; z-index: 1; top: 10px; right: 12px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; box-shadow: 1px 1.5px 2px rgba(0, 0, 0, .25) }
 .pc.b .cap { background: var(--stone-w); color: var(--pw-ink) } /* the stones Black took */
 .pc.w .cap { background: var(--stone-b); color: var(--pb-ink) }
-.wm { position: absolute; right: 8px; bottom: -26px; font: 300 96px/1 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif CJK JP', serif; opacity: .08; pointer-events: none }
+.wm { position: absolute; right: 12px; bottom: 6px; font: 300 58px/1 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif CJK JP', serif; opacity: .08; pointer-events: none }
 .pc::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--pb-bar); opacity: 0; transition: opacity .3s }
 .pc.w::before { background: var(--pw-bar) }
 .pc.on::before { opacity: 1 }

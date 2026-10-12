@@ -184,11 +184,10 @@ export function todAt(hours: number): Tod {
   return TOD.evening
 }
 
-/** The UI card's skin follows the 3D scene: Laque once the room has dimmed past halfway from afternoon to evening (Auto: ≈17:45 to ≈07:13). */
-export function cardSkin(renderer: '2d' | '3d', light: TimeName | 'auto', decor: Decor, hour: number): 'washi' | 'laque' {
-  if (renderer === '2d') return 'washi'
-  const dim = light === 'auto' && todAt(hour).room < (TOD.afternoon.room + TOD.evening.room) / 2
-  return decor === 'lanterne' || light === 'evening' || dim ? 'laque' : 'washi'
+/** The UI card's skin follows the scene's backdrop: Laque on the dark rooms (the Lanterne, the Atelier seen in
+ *  Contemplation), Washi on light ones (Study's linen, Clair and Washitsu) and always in 2D. */
+export function cardSkin(renderer: '2d' | '3d', camera: 'study' | 'contemplation', decor: Decor): 'washi' | 'laque' {
+  return renderer === '3d' && (decor === 'lanterne' || (camera === 'contemplation' && decor === 'atelier')) ? 'laque' : 'washi'
 }
 
 /* ---------- décors ---------- */
