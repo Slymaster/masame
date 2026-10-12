@@ -27,17 +27,23 @@ export const hoshiStep = (N: number) => (N >= 19 ? 6 : N >= 13 ? 3 : N >= 9 ? 2 
 /* ---------- placement: jitter and relaxation ---------- */
 export interface Placed { x: number; y: number; R: number; jx: number; jz: number; tx: number; tz: number }
 
-/** Stable hand-placed look per (point, move number): an offset (±1.5 mm along, ±0.6 mm across, where the 22 mm spacing leaves no slack), random spin and material seed. */
-export function jitter(N: number, x: number, y: number, moveNo: number) {
+/** Jitter amplitudes (mm): across, where the 22 mm spacing leaves no slack, and along the 23.7 mm rows. */
+export const JIT_ACROSS = 0.8, JIT_ALONG = 2.2
+/** Smallest offset, as a fraction of the amplitude: no stone sits dead centre. */
+export const JIT_MIN = 0.4
+
+/** Stable hand-placed look per (point, move number): an elliptical offset, random spin and material seed. */
+export function jitter(N: number, x: number, y: number, moveNo: number, across = JIT_ACROSS, along = JIT_ALONG) {
   const r = rng(Math.floor(hash(x, y, moveNo * 7 + 3) * 4294967296))
-  const a = r() * Math.PI * 2, m = Math.sqrt(r()) * 1.5
-  return { jx: gx(N, x) + Math.cos(a) * m * 0.4, jz: gz(N, y) + Math.sin(a) * m, seed: r(), rotY: r() * Math.PI * 2 }
+  const a = r() * Math.PI * 2, m = JIT_MIN + (1 - JIT_MIN) * Math.sqrt(r())
+  return { jx: gx(N, x) + Math.cos(a) * m * across, jz: gz(N, y) + Math.sin(a) * m * along, seed: r(), rotY: r() * Math.PI * 2 }
 }
 
 /**
  * Stones never move once down, so a newcomer fits itself around the stones already there (22 mm spacing < 22.2 mm
  * slate diameter): a few passes pushing only it out of any overlap, from its jittered spot into tx/tz.
- * shortcut: squeezed between two neighbours that were themselves placed inwards, a sub-millimetre overlap can remain.
+ * shortcut: squeezed between two neighbours that were themselves placed inwards, an overlap of about 1 mm can remain
+ * (settle() limits the rest); upgrade only if stones may ever move once down.
  */
 export function fit(s: Placed, stones: Map<number, Placed>, N: number, iterations = 24) {
   s.tx = s.jx; s.tz = s.jz
@@ -54,6 +60,69 @@ export function fit(s: Placed, stones: Map<number, Placed>, N: number, iteration
     if (!mx && !mz) return
     s.tx += 0.6 * mx; s.tz += 0.6 * mz
   }
+}
+
+/** Overlap allowed after fitting (mm): centred slate stones already sit 0.2 mm into each other across the 22 mm spacing. */
+export const FIT_TOL = 0.3
+/**
+ * Room a stone leaves for each empty neighbouring point (mm): a stone of its own size centred there may overlap it by
+ * at most this. Stones never move, so this is what keeps a later newcomer from being squeezed; it limits a lone stone
+ * only across (22 mm spacing), and only slate: to ≈0.6 mm.
+ */
+export const FIT_ROOM = 0.8
+/** Hard cap on a placed stone's distance from its grid point (mm). */
+export const FIT_REACH = 4.5
+
+/** Smallest gap (mm, negative = overlap) between a stone and its 8 neighbours, and that neighbour. */
+function nearest(s: Placed, stones: Map<number, Placed>, N: number): [number, Placed | null] {
+  let w = Infinity, n: Placed | null = null
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const x2 = s.x + dx, y2 = s.y + dy, o = (dx || dy) && x2 >= 0 && y2 >= 0 && x2 < N && y2 < N ? stones.get(y2 * N + x2) : undefined
+    if (!o || o === s) continue
+    const g = Math.hypot(s.tx - o.tx, s.tz - o.tz) - s.R - o.R
+    if (g < w) { w = g; n = o }
+  }
+  return [w, n]
+}
+export const worstGap = (s: Placed, stones: Map<number, Placed>, N: number) => nearest(s, stones, N)[0]
+
+/** How far (mm) a stone at its current spot breaks FIT_TOL against its neighbours and FIT_ROOM towards empty points. */
+function excess(s: Placed, stones: Map<number, Placed>, N: number, cx: number, cz: number, sx: number, sz: number) {
+  let room = Infinity
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const x2 = s.x + dx, y2 = s.y + dy
+    if ((!dx && !dy) || x2 < 0 || y2 < 0 || x2 >= N || y2 >= N || stones.has(y2 * N + x2)) continue
+    room = Math.min(room, Math.hypot(s.tx - cx - dx * sx, s.tz - cz - dy * sz) - 2 * s.R)
+  }
+  return Math.max(0, -worstGap(s, stones, N) - FIT_TOL) + Math.max(0, -room - FIT_ROOM)
+}
+
+/**
+ * fit(), and when that leaves the newcomer overlapping by more than FIT_TOL, crowding an empty point (FIT_ROOM) or past
+ * FIT_REACH, it tries a few spots, like a stone pushed by its neighbours: its jitter scaled down (each fitted), and small
+ * steps from its grid point (cx, cz) away from the neighbour it hits most (raw and fitted). It keeps the spot with the
+ * least excess within FIT_REACH, then the one closest to its jitter. Stones already down never move.
+ * (sx, sz): grid spacing, for the empty points around it.
+ */
+export function settle(s: Placed, stones: Map<number, Placed>, N: number, cx: number, cz: number, sx = SX, sz = SZ) {
+  const ok = () => Math.hypot(s.tx - cx, s.tz - cz) <= FIT_REACH
+  fit(s, stones, N)
+  if (ok() && !excess(s, stones, N, cx, cz, sx, sz)) return
+  const o = nearest(s, stones, N)[1], jx = s.jx, jz = s.jz, cands: number[][] = []
+  for (const f of [1, 0.75, 0.5, 0.25, 0]) { s.jx = cx + (jx - cx) * f; s.jz = cz + (jz - cz) * f; fit(s, stones, N); cands.push([s.tx, s.tz]) }
+  const ux = o ? cx - o.tx : 0, uz = o ? cz - o.tz : 0, ul = Math.hypot(ux, uz) || 1
+  for (const d of [0, 0.5, 1, 1.5]) {
+    s.jx = cx + ux / ul * d; s.jz = cz + uz / ul * d
+    cands.push([s.jx, s.jz]); fit(s, stones, N); cands.push([s.tx, s.tz])
+  }
+  let best = Infinity, bx = cx, bz = cz
+  for (const [tx, tz] of cands) {
+    s.tx = tx; s.tz = tz
+    if (!ok()) continue
+    const score = excess(s, stones, N, cx, cz, sx, sz) * 1e3 + Math.hypot(tx - jx, tz - jz)
+    if (score < best) { best = score; bx = tx; bz = tz }
+  }
+  s.jx = jx; s.jz = jz; s.tx = bx; s.tz = bz
 }
 
 /* ---------- stones at rest in a bowl or on a lid ---------- */
@@ -95,11 +164,11 @@ export function bowlHeap(R: number, rMax: number, top: number, rnd: () => number
 /* ---------- time of day ---------- */
 export type TimeName = 'morning' | 'afternoon' | 'evening'
 /** room: brightness of the surroundings in Contemplation (the table and the dark around it). */
-export interface Tod { az: number; el: number; K: number; I: number; env: number; rot: number; exp: number; room: number }
+export interface Tod { az: number; el: number; K: number; I: number; env: number; exp: number; room: number }
 export const TOD: Record<TimeName, Tod> = {
-  morning: { az: 200, el: 27, K: 5500, I: 3.3, env: 0.62, rot: 0.4, exp: 0.95, room: 1 },
-  afternoon: { az: 232, el: 40, K: 4200, I: 3.5, env: 0.55, rot: 1.6, exp: 0.88, room: 0.8 },
-  evening: { az: 318, el: 14, K: 3000, I: 6.0, env: 0.4, rot: 3.0, exp: 1.12, room: 0.3 },
+  morning: { az: 200, el: 27, K: 5500, I: 3.3, env: 0.62, exp: 0.95, room: 1 },
+  afternoon: { az: 232, el: 40, K: 4200, I: 3.5, env: 0.55, exp: 0.88, room: 0.8 },
+  evening: { az: 318, el: 14, K: 3000, I: 6.0, env: 0.4, exp: 1.12, room: 0.3 },
 }
 export const mixTod = (a: Tod, b: Tod, t: number): Tod =>
   Object.fromEntries(Object.keys(a).map(k => [k, a[k as keyof Tod] + (b[k as keyof Tod] - a[k as keyof Tod]) * t])) as unknown as Tod
@@ -121,6 +190,8 @@ export type Ground = 'walnut' | 'tatami' | 'paper'
 export interface Look {
   /** Poly Haven HDRI in assets/board3d (`<sky>_1k.hdr`); null = three's procedural RoomEnvironment. */
   sky: string | null
+  /** Azimuth (rad, as atan2(z, x) in three's equirect mapping) of the sky's energy-weighted brightest side: turned to the key's bearing. */
+  skyAz: number
   /** null: follows the time of day. Otherwise the décor's own fixed light (Lanterne: a night with no window). */
   tod: Tod | null
   ground: Ground
@@ -137,13 +208,14 @@ export interface Look {
   /** Lanterne: a warm spot over the board, in units of 1e6 cd at 1 m (0 = none: the window key casts the shadows). */
   lamp: number
 }
-const NIGHT: Tod = { az: 215, el: 64, K: 2650, I: 0, env: 0.5, rot: 2.2, exp: 1, room: 0 }
+const NIGHT: Tod = { az: 215, el: 64, K: 2650, I: 0, env: 0.5, exp: 1, room: 0 }
 export const LOOKS: Record<Decor, Look> = {
-  atelier: { sky: 'studio_country_hall', tod: null, ground: 'walnut', tint: 1, rough: 0.72, fade: true, linen: true, key: 1, ibl: 1, exp: 1, soft: 1, shade: 1, lamp: 0 },
-  washitsu: { sky: 'empty_play_room', tod: null, ground: 'tatami', tint: 0.92, rough: 0.82, fade: false, linen: false, key: 0.92, ibl: 1.1, exp: 1, soft: 1.3, shade: 0.95, lamp: 0 },
+  atelier: { sky: 'studio_country_hall', skyAz: 0.52, tod: null, ground: 'walnut', tint: 1, rough: 0.72, fade: true, linen: true, key: 1, ibl: 1, exp: 1, soft: 1, shade: 1, lamp: 0 },
+  washitsu: { sky: 'empty_play_room', skyAz: 0.38, tod: null, ground: 'tatami', tint: 0.92, rough: 0.82, fade: false, linen: false, key: 0.92, ibl: 1.1, exp: 1, soft: 1.3, shade: 0.95, lamp: 0 },
   // time of day has no effect here: a lantern at night
-  lanterne: { sky: 'studio_country_hall', tod: NIGHT, ground: 'walnut', tint: 0.5, rough: 0.72, fade: true, linen: false, key: 0, ibl: 0.25, exp: 1.6, soft: 1, shade: 1, lamp: 3.6 },
-  clair: { sky: null, tod: null, ground: 'paper', tint: 1, rough: 0.94, fade: false, linen: false, key: 0.9, ibl: 0.9, exp: 0.82, soft: 2, shade: 0.8, lamp: 0 },
+  lanterne: { sky: 'studio_country_hall', skyAz: 0.52, tod: NIGHT, ground: 'walnut', tint: 0.5, rough: 0.72, fade: true, linen: false, key: 0, ibl: 0.25, exp: 1.6, soft: 1, shade: 1, lamp: 3.6 },
+  // skyAz: estimate from RoomEnvironment's layout (its two strong side panels at ±153°, the third at 92°), not measured on a render
+  clair: { sky: null, skyAz: 2.9, tod: null, ground: 'paper', tint: 1, rough: 0.94, fade: false, linen: false, key: 0.9, ibl: 0.9, exp: 0.82, soft: 2, shade: 0.8, lamp: 0 },
 }
 
 /* ---------- adaptive quality governor ---------- */

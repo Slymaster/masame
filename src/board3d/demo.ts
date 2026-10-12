@@ -1,7 +1,7 @@
 // Dev demo for Board3D (board3d.html): exercises the app contract without the app.
 import '@fontsource/cormorant-garamond/latin-500-italic.css'
-import '@fontsource/karla/latin-400.css'
-import '@fontsource/karla/latin-500.css'
+import '@fontsource/manrope/latin-400.css'
+import '@fontsource/manrope/latin-500.css'
 import GoBoard, { type Sign, type Vertex } from '@sabaki/go-board'
 import { Board3D, type Board3DOptions, type Board3DState } from './Board3D'
 import { DECORS } from './decors'
