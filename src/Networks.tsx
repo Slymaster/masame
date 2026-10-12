@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { call, inTauri, type NetEntry, type NetState, type Progress } from './katago'
 import { failureText, pick, t } from './i18n'
+import { Sheet } from './Sheet'
 
 interface Props { nets: NetState | null; progress: Record<string, Progress>; onClose: () => void; onChanged: () => void }
 
@@ -14,37 +15,26 @@ export function Networks({ nets, progress, onClose, onChanged }: Props) {
     call<{ entries: NetEntry[]; error: unknown }>('networks_catalog')
       .then(r => { setEntries(r.entries); setError(r.error ? failureText(r.error) : null) }, e => setError(failureText(e)))
   }, [])
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }
-    addEventListener('keydown', onKey, true)
-    return () => removeEventListener('keydown', onKey, true)
-  }, [onClose])
   const top = Math.max(0, ...(entries ?? []).map(e => e.elo ?? 0))
 
   return (
-    <div className="sheet-back" onClick={onClose}>
-      <aside className="sheet" role="dialog" aria-modal="true" aria-label={t.networks} onClick={e => e.stopPropagation()}>
-        <header>
-          <h2 className="title">{t.networks}</h2>
-          <button className="close" onClick={onClose} aria-label={t.close} title={t.closeHint}>×</button>
-        </header>
-        <p className="quiet">{t.humanRequired}</p>
-        {error && <p className="note">{error}</p>}
-        {!entries && !error && <p className="quiet">{t.loading}</p>}
-        {entries && (['recommended', 'current'] as const).map(id => {
-          const list = entries.filter(e => e.section === id)
-          return list.length > 0 && (
-            <section key={id}>
-              <div className="lab"><span>{t.sections[id]}</span><span /></div>
-              {list.map(e => <Row key={e.key} e={e} top={top} nets={nets} p={progress[e.name]} onChanged={onChanged} />)}
-            </section>
-          )
-        })}
-        <footer className="foot credits">
-          <a href="#" onClick={link('katago')}>{t.creditsKataGo}</a> {t.creditsMid} <a href="#" onClick={link('license')}>{t.creditsLicense}</a>
-        </footer>
-      </aside>
-    </div>
+    <Sheet title={t.networks} onClose={onClose}>
+      <p className="quiet">{t.humanRequired}</p>
+      {error && <p className="note">{error}</p>}
+      {!entries && !error && <p className="quiet">{t.loading}</p>}
+      {entries && (['recommended', 'current'] as const).map(id => {
+        const list = entries.filter(e => e.section === id)
+        return list.length > 0 && (
+          <section key={id}>
+            <div className="lab"><span>{t.sections[id]}</span><span /></div>
+            {list.map(e => <Row key={e.key} e={e} top={top} nets={nets} p={progress[e.name]} onChanged={onChanged} />)}
+          </section>
+        )
+      })}
+      <footer className="foot credits">
+        <a href="#" onClick={link('katago')}>{t.creditsKataGo}</a> {t.creditsMid} <a href="#" onClick={link('license')}>{t.creditsLicense}</a>
+      </footer>
+    </Sheet>
   )
 }
 

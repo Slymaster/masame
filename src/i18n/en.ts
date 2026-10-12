@@ -7,23 +7,27 @@ const tuningProgress = (step: number, done: number, total: number) => [step && `
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
 
 export const en = {
-  // panel
-  board: (n: number, komi: number) => `${n} × ${n} board · komi ${f.num(komi)}`,
+  // card
+  board: (n: number, komi: number) => `${n}×${n} · komi ${f.num(komi)} · Japanese rules`,
   boardLabel: (n: number) => `${n}×${n} Go board`,
   game: 'Game',
   moveOf: (i: number, n: number) => (i < n ? `Move ${i} / ${n}` : `Move ${n}`),
+  move: (i: number) => `Move ${i}`,
+  you: 'You', yourMove: 'Your move', thinking: 'thinking…', waiting: 'waiting', passed: 'passed', resigned: 'resigned', wins: 'wins',
+  points: (n: number) => f.plural(n, 'point', 'points'),
+  tally: (territory: number, prisoners: number, komi?: number) =>
+    `${f.num(territory)} territory · ${f.plural(prisoners, 'prisoner', 'prisoners')}${komi ? ` · komi ${f.num(komi)}` : ''}`,
+  settings: 'Settings', boardSection: 'Board', appSection: 'App', keyboard: 'Keyboard',
   color,
   captures: (n: number) => f.plural(n, 'capture', 'captures'),
   passes: (s: number) => `${color(s)} passes.`,
   botPasses: (s: number) => `${color(s)} passes. Your move.`,
   countingWait: 'Two passes in a row: the game is over. Counting…',
   countingHelp: 'Counting: click a group to mark it dead or alive, then accept the score.',
-  side: (s: number, total: number, territory: number, prisoners: number, komi?: number) =>
-    `${color(s)} ${f.num(total)}: ${f.num(territory)} territory, ${f.plural(prisoners, 'prisoner', 'prisoners')}${komi ? `, komi ${f.num(komi)}` : ''}`,
   validate: 'Accept score',
   score: (lead: number) => (lead === 0 ? 'Draw.' : `${color(lead > 0 ? 1 : -1)} wins by ${f.num(Math.abs(lead))}.`),
   refused: { ko: 'Ko: you can’t retake right away. Play elsewhere first.', suicide: 'Illegal move: it would be suicide.' },
-  history: 'History', start: 'First move', prev: 'Previous move', next: 'Next move', end: 'Last move',
+  history: 'History', prev: 'Previous move', next: 'Next move',
   pass: 'Pass', undo: 'Undo', open: 'Open…', save: 'Save…', resign: 'Resign',
   openFailed: (m: string) => `Couldn’t open this file: ${m}`,
   saved: 'Game saved.',
@@ -39,7 +43,7 @@ export const en = {
   aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
     `To play against the AI, install the Human network${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' and an analysis network' : ''}.`,
   openNetworks: 'Open networks',
-  display: 'Display', coords: 'Coordinates', sound: 'Sound', territory: 'Territory', language: 'Language',
+  display: 'Display', coords: 'Coordinates', sound: 'Sound', territory: 'Light and shadow', language: 'Language',
   rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
   view: 'View', study: 'Study', contemplation: 'Contemplation',
   light: 'Lighting', lights: { auto: 'Auto', morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' },
@@ -69,7 +73,7 @@ export const en = {
   updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
   updateInstalling: 'Installing the update…',
   autoUpdate: 'Check for updates automatically',
-  footer: { browse: 'browse', pass: 'pass', territory: 'territory', undo: 'undo', newGame: 'new game', panel: 'panel' },
+  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel' },
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
     about: 'About Masame', hide: 'Hide Masame', hideOthers: 'Hide Others', showAll: 'Show All', quit: 'Quit Masame',

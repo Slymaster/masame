@@ -45,8 +45,10 @@ describe('formatting', () => {
     expect(t.estimate(3.4)).toBe('Estimation : Noir +3,5')
     expect(t.estimate(-0.6)).toBe('Estimation : Blanc +0,5')
     expect([0, 1, 2].map(t.captures)).toEqual(['0 prise', '1 prise', '2 prises'])
-    expect(t.board(19, 6.5)).toBe('Goban 19 × 19 · komi 6,5')
-    expect(nb(t.side(-1, 81.5, 70, 5, 6.5))).toBe('Blanc 81,5 : 70 de territoire, 5 prisonniers, komi 6,5')
+    expect(t.board(19, 6.5)).toBe('19×19 · komi 6,5 · règles japonaises')
+    expect(t.points(81.5)).toBe('81,5 points')
+    expect(t.tally(70, 5, 6.5)).toBe('70 de territoire · 5 prisonniers · komi 6,5')
+    expect(t.tally(70, 1)).toBe('70 de territoire · 1 prisonnier')
     expect(t.mb(99_066_230)).toBe('99 Mo')
     expect(nb(t.games(12345))).toBe('12 345 parties')
     expect(nb(t.progress(42, '12 Mo', '99 Mo'))).toBe('42 % · 12 Mo / 99 Mo')
@@ -64,7 +66,9 @@ describe('formatting', () => {
     expect(t.engineTuning(3, 40, 120)).toBe('Réglage de KataGo pour cette carte graphique (premier lancement seulement, quelques minutes) · étape 3 · 40/120')
     expect(t.botPasses(-1)).toBe('Blanc passe. À toi de jouer.')
     expect(t.tuningProgress(3, 40, 120)).toBe('étape 3 · 40/120')
-    for (const s of [t.engineTuning(3, 40, 120), t.tuningCaption, t.botPasses(1)]) expect(s).not.toMatch(/ [:;!?]/) // French: nbsp before double punctuation
+    for (const s of [t.engineTuning(3, 40, 120), t.tuningCaption, t.botPasses(1), t.yourMove, t.thinking, t.passed, t.resigned, t.territory,
+      t.settings, t.tally(70, 5, 6.5)]) expect(s).not.toMatch(/ [:;!?]/) // French: nbsp before double punctuation
+    expect([t.yourMove, t.thinking, t.waiting, t.wins, t.territory]).toEqual(['À toi de jouer', 'réfléchit…', 'attend', 'gagne', 'Ombre et lumière'])
   })
   it('English: decimal point, plurals with 0 plural, MB', () => {
     setLang('en')
@@ -72,8 +76,11 @@ describe('formatting', () => {
     expect(t.score(0)).toBe('Draw.')
     expect(t.estimate(3.4)).toBe('Estimate: Black +3.5')
     expect([0, 1, 2].map(t.captures)).toEqual(['0 captures', '1 capture', '2 captures'])
-    expect(t.board(19, 6.5)).toBe('19 × 19 board · komi 6.5')
-    expect(t.side(1, 75, 70, 1)).toBe('Black 75: 70 territory, 1 prisoner')
+    expect(t.board(19, 6.5)).toBe('19×19 · komi 6.5 · Japanese rules')
+    expect(t.points(81.5)).toBe('81.5 points')
+    expect(t.tally(70, 5, 6.5)).toBe('70 territory · 5 prisoners · komi 6.5')
+    expect(t.tally(70, 1)).toBe('70 territory · 1 prisoner')
+    expect([t.yourMove, t.thinking, t.passed, t.resigned, t.wins, t.territory]).toEqual(['Your move', 'thinking…', 'passed', 'resigned', 'wins', 'Light and shadow'])
     expect(t.mb(99_066_230)).toBe('99 MB')
     expect(t.games(12345)).toBe('12,345 games')
     expect(t.progress(42, '12 MB', '99 MB')).toBe('42% · 12 MB / 99 MB')
