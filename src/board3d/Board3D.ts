@@ -15,7 +15,7 @@ import type { Sign, Vertex } from '@sabaki/go-board'
 import type { BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
-import { bowlHeap, BT, dims, dropStones, fit, Governor, gx, gz, hoshiStep, jitter, lens, LOOKS, qualityLadder, RB, RW, SH, SX, SZ, TOD, todAt, type Ground, type Placed, type Quality, type Rest, type TimeName, type Tod } from './logic'
+import { bowlHeap, BT, dims, dropStones, Governor, gx, gz, hoshiStep, jitter, lens, LOOKS, qualityLadder, RB, RW, settle, SH, SX, SZ, TOD, todAt, type Ground, type Placed, type Quality, type Rest, type TimeName, type Tod } from './logic'
 import { StoneSound } from './sound3d'
 
 export interface Board3DState extends BoardState {
@@ -1002,7 +1002,7 @@ export class Board3D {
     const N = this.N, x = p % N, y = (p / N) | 0, j = jitter(N, x, y, ++this.moveNo)
     const s: Stone = { p, x, y, c, R: c === 1 ? RB : RW, jx: j.jx, jz: j.jz, tx: j.jx, tz: j.jz, seed: j.seed, rotY: j.rotY, t0: -1e9, landed: true, captured: [] }
     this.stones.set(p, s)
-    fit(s, this.stones, N) // around the stones already down, which never move
+    settle(s, this.stones, N, gx(N, x), gz(N, y)) // around the stones already down, which never move
     return s
   }
 
@@ -1071,9 +1071,9 @@ export class Board3D {
         const mk = this.markers[s.c as 1 | -1]; mk.matrix.copy(_m); mk.visible = true
       }
       if (aoA > 0 && na < 420) {
-        const q = s.R * 2 * AO_K * aoS, w = s.c === 1
+        const q = s.R * 2 * AO_K * aoS, black = s.c === 1
         _m.compose(_v.set(s.tx, 0, s.tz), _q.identity(), _s.set(q, 1, q))
-        this.ao.setMatrixAt(na, _m); this.ao.instanceColor!.setXYZ(na++, aoA * (w ? AO_PEAK_BLACK : AO_PEAK_WHITE), aoA * (w ? AO_LINE_BLACK : AO_LINE_WHITE), 1)
+        this.ao.setMatrixAt(na, _m); this.ao.instanceColor!.setXYZ(na++, aoA * (black ? AO_PEAK_BLACK : AO_PEAK_WHITE), aoA * (black ? AO_LINE_BLACK : AO_LINE_WHITE), 1)
       }
     }
     for (const s of this.stones.values()) {
@@ -1223,10 +1223,11 @@ export class Board3D {
     fa.repeat.setScalar(fade ? 1 : 0.1); fa.offset.setScalar(fade ? 0 : 0.45)
     this.shadowFloor.visible = linen
     // Study on the linen: the floor rises so the board's shadow keeps the key's true direction yet never reaches the frame edge
-    const { BW, BD } = this.D, mx = this.ortho.right - BW / 2, mz = this.ortho.top - BD / 2, m = Math.min(mx, mz)
-    const fh = Math.min(BT, FLOOR_MARGIN * Math.tan(el) * Math.min(mx / Math.abs(Math.cos(az)), mz / Math.abs(Math.sin(az))))
-    this.ground.position.y = linen ? -fh : -BT
-    this.ground.getObjectByName('under')!.scale.set(linen ? BW + 1.6 * m : BW * 1.3, 1, linen ? BD + 1.6 * m : BD * 1.3)
+    // (a frame narrower than the board, m ≤ 0, keeps the default floor)
+    const { BW, BD } = this.D, mx = this.ortho.right - BW / 2, mz = this.ortho.top - BD / 2, m = Math.min(mx, mz), raise = linen && m > 0
+    const fh = !raise ? BT : Math.min(BT, FLOOR_MARGIN * Math.tan(el) * Math.min(mx / Math.abs(Math.cos(az)), mz / Math.abs(Math.sin(az))))
+    this.ground.position.y = -fh
+    this.ground.getObjectByName('under')!.scale.set(raise ? BW + 1.6 * m : BW * 1.3, 1, raise ? BD + 1.6 * m : BD * 1.3)
     // softer, lighter shadows in the room (a window, not a flash)
     for (const l of [this.key, this.lamp]) { l.shadow.radius = lerp(5, 9, c) * L.soft; l.shadow.intensity = lerp(CAST_STUDY, CAST_ROOM, c) * L.shade }
     this.hc.value = hc

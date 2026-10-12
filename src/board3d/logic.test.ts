@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bowlHeap, contrast, dims, dropStones, fit, Governor, gx, gz, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, panFor, qualityLadder, RB, RW, silhouette, TOD, todAt, type Placed } from './logic'
+import { bowlHeap, contrast, dims, dropStones, fit, FIT_TOL, Governor, gx, gz, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, panFor, qualityLadder, RB, RW, settle, silhouette, TOD, todAt, worstGap, type Placed } from './logic'
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -23,40 +23,46 @@ describe('jitter + fitting', () => {
     expect([JIT_ACROSS, JIT_ALONG]).toEqual([0.8, 2.2])
   })
 
-  it('fits the 2D board too: square 22 mm cells, 1.2 mm both ways', () => {
-    const N = 19, m = new Map<number, Placed>(), R = 0.482 * 22
-    for (let k = 0; k < N * N; k++) {
-      const p = (k * 7) % (N * N), x = p % N, y = (p / N) | 0, j = jitter(N, x, y, k, 1.2, 1.2)
-      const s: Placed = { x, y, R, jx: x * 22 + j.jx - gx(N, x), jz: y * 22 + j.jz - gz(N, y), tx: 0, tz: 0 }
-      m.set(p, s); fit(s, m, N)
+  // A full board filled in a random order: 3D (real spacing, slate and shell radii, default jitter) or the 2D view's
+  // square 22 mm cells (R 0.482 cell, 1.2 mm both ways). Returns the worst gap, moves of earlier stones and largest nudge.
+  const fill = (N: number, seed: number, flat: boolean) => {
+    const r = rng(seed), order = Array.from({ length: N * N }, (_, i) => i), m = new Map<number, Placed>()
+    for (let i = order.length - 1; i > 0; i--) { const k = Math.floor(r() * (i + 1)); [order[i], order[k]] = [order[k], order[i]] }
+    let moved = 0, nudge = 0
+    order.forEach((p, k) => {
+      const x = p % N, y = (p / N) | 0, cx = flat ? x * 22 : gx(N, x), cz = flat ? y * 22 : gz(N, y)
+      const j = flat ? jitter(N, x, y, k, 1.2, 1.2) : jitter(N, x, y, k), R = flat ? 0.482 * 22 : r() < 0.5 ? RB : RW
+      const before = [...m.values()].map(o => o.tx + o.tz * 1e3)
+      const s: Placed = { x, y, R, jx: cx + j.jx - gx(N, x), jz: cz + j.jz - gz(N, y), tx: 0, tz: 0 }
+      m.set(p, s); settle(s, m, N, cx, cz)
+      ;[...m.values()].slice(0, before.length).forEach((o, i) => { if (o.tx + o.tz * 1e3 !== before[i]) moved++ })
+      nudge = Math.max(nudge, Math.hypot(s.tx - cx, s.tz - cz))
+    })
+    return { worst: Math.min(...[...m.values()].map(s => worstGap(s, m, N))), moved, nudge }
+  }
+
+  it('fits each newcomer around the stones already down, which never move, in any order', () => {
+    for (const N of [9, 13, 19]) for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) for (const flat of [false, true]) {
+      const { worst, moved, nudge } = fill(N, seed * 101 + N, flat)
+      expect(moved).toBe(0)
+      expect(nudge).toBeLessThan(4) // nudged, never off its point
+      // Crowded stones give up their jitter (settle). Stones already down never move, so FIT_TOL can't be guaranteed in
+      // 3D: two slate stones two points apart, each jittered 0.8 mm towards the gap, leave a centred newcomer about 1 mm
+      // into each (22 mm spacing, 22.2 mm stones). Measured worst over these boards: 3D -1.13 mm, 2D -0.31 mm.
+      expect(worst).toBeGreaterThanOrEqual(flat ? -FIT_TOL - 0.05 : -1.2)
     }
-    let worst = Infinity
-    for (const s of m.values()) for (const [dx, dy] of [[1, 0], [0, 1]]) {
-      const o = m.get((s.y + dy) * N + s.x + dx)
-      if (o && s.x + dx < N) worst = Math.min(worst, Math.hypot(o.tx - s.tx, o.tz - s.tz) - 2 * R)
-    }
-    expect(worst).toBeGreaterThan(-0.45)
   })
 
-  it('fits each newcomer around the stones already down, which never move', () => {
+  it('keeps the full jitter for an isolated stone', () => {
     const N = 19, m = new Map<number, Placed>()
-    let worst = Infinity, moved = 0
-    for (let k = 0; k < N * N; k++) { // a full board, in a scattered order
-      const p = (k * 7) % (N * N), x = p % N, y = (p / N) | 0, R = (x + y) % 2 ? RB : RW, j = jitter(N, x, y, k)
-      const before = [...m.values()].map(o => [o.tx, o.tz])
-      const s: Placed = { x, y, R, jx: j.jx, jz: j.jz, tx: 0, tz: 0 }
-      m.set(p, s); fit(s, m, N)
-      ;[...m.values()].slice(0, before.length).forEach((o, i) => { if (o.tx !== before[i][0] || o.tz !== before[i][1]) moved++ })
-      expect(Math.hypot(s.tx - gx(N, x), s.tz - gz(N, y))).toBeLessThan(3) // nudged, never off its point
+    let ax = 0, az = 0
+    for (let k = 0; k < 2000; k++) {
+      const j = jitter(N, 9, 9, k), s: Placed = { x: 9, y: 9, R: RB, jx: j.jx, jz: j.jz, tx: 0, tz: 0 }
+      m.clear(); m.set(9 * N + 9, s); settle(s, m, N, gx(N, 9), gz(N, 9))
+      expect([s.tx, s.tz]).toEqual([j.jx, j.jz])
+      ax = Math.max(ax, Math.abs(s.tx - gx(N, 9))); az = Math.max(az, Math.abs(s.tz - gz(N, 9)))
     }
-    expect(moved).toBe(0)
-    for (const s of m.values()) for (const [dx, dy] of [[1, 0], [0, 1]]) {
-      const o = m.get((s.y + dy) * N + s.x + dx)
-      if (o && s.x + dx < N) worst = Math.min(worst, Math.hypot(o.tx - s.tx, o.tz - s.tz) - s.R - o.R)
-    }
-    // only when squeezed between two stones placed inwards: a hidden girdle overlap. The worst case is set by the 22 mm
-    // spacing against 22.2 mm slate stones (no room across), not by the jitter
-    expect(worst).toBeGreaterThan(-0.9)
+    expect(ax).toBeGreaterThan(0.95 * JIT_ACROSS); expect(az).toBeGreaterThan(0.95 * JIT_ALONG)
   })
 
   it('leaves no overlap around a lone newcomer', () => {

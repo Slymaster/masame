@@ -5,7 +5,7 @@
 import type { Sign, SignMap, Vertex } from '@sabaki/go-board'
 import { clamp01, easeOut, hash, n1, rng, sstep, stoneRng, TAU, vn2 } from './noise'
 import { playClack } from './sound'
-import { fit, gx, gz, jitter, type Placed } from '../board3d/logic'
+import { gx, gz, jitter, settle, type Placed } from '../board3d/logic'
 
 export interface BoardState {
   signMap: SignMap
@@ -347,7 +347,7 @@ export class BoardView {
   private place(N: number, p: number, c: Sign) {
     const x = p % N, y = (p / N) | 0, j = jitter(N, x, y, ++this.moveNo, J_AMP, J_AMP)
     const s = { x, y, c, R: J_R, jx: x * J_MM + j.jx - gx(N, x), jz: y * J_MM + j.jz - gz(N, y), tx: 0, tz: 0 }
-    this.placed.set(p, s); fit(s, this.placed, N) // around the stones already down
+    this.placed.set(p, s); settle(s, this.placed, N, x * J_MM, y * J_MM) // around the stones already down
     this.placedId++
   }
 
@@ -404,8 +404,16 @@ export class BoardView {
     if (!g) return null
     const rect = this.canvas.getBoundingClientRect(), mx = e.clientX - rect.left, my = e.clientY - rect.top
     const x = Math.round((mx - g.P[0]) / g.cell), y = Math.round((my - g.P[0]) / g.cell)
+    // a click on a drawn (jittered) stone picks that stone, even past the half-way line to the neighbour
+    const cx = Math.min(g.N - 1, Math.max(0, x)), cy = Math.min(g.N - 1, Math.max(0, y)), sm = this.state?.signMap
+    let hit: Vertex | null = null, best = g.r
+    for (let Y = cy - 1; Y <= cy + 1; Y++) for (let X = cx - 1; X <= cx + 1; X++) {
+      if (!sm?.[Y]?.[X]) continue
+      const [px, py] = this.at(X, Y), d = Math.hypot(mx - px, my - py)
+      if (d <= best) { best = d; hit = [X, Y] }
+    }
+    if (hit) return hit
     if (x < 0 || y < 0 || x >= g.N || y >= g.N) return null
-    // shortcut: picks by grid point, not drawn stone: a ≤1.2 px rim sliver of a jittered stone maps to the neighbour
     if (Math.hypot(mx - g.P[x], my - g.P[y]) > g.cell * 0.5) return null
     return [x, y]
   }
