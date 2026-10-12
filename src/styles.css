@@ -56,6 +56,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 /* one line, inside the stage's bottom padding, so it never covers the board; the full text is in the title */
 .board-wrap > .note .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis }
 .board-wrap > .note .link { flex: none }
+.board-wrap > .note:focus { outline: none } /* a resting place for focus after a caption link, not a control */
 .board-wrap > .note .link + .link { margin-left: .5em }
 .nav { display: flex; gap: 6px; margin-top: 4px }
 .nav button { flex: 1; height: 30px; border: 0; border-radius: 999px; background: rgba(43, 29, 14, .05); color: var(--ink); font-size: 14px; cursor: pointer; transition: background .25s, opacity .25s }

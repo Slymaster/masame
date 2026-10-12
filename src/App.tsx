@@ -246,6 +246,8 @@ export function App() {
   const m = review?.moments?.[review.k]
   const from = m ? fromOf(m, review!.step) : 0
   const reading = !!review && !review.moments
+  // ① takes only the punisher's moves (← may show the engine's turn); ② and ③ explore freely
+  const lessonPlayable = !!review?.branch && !thinking && !shown.ended && !review.error && (review.step !== 'try' || shown.toPlay === -m!.sign)
   const countingNow = !review && counting?.game === game && game.ended && atEnd ? counting : null
   const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result)
   const canReview = reviewShown && canAnalyze
@@ -256,7 +258,7 @@ export function App() {
       return false
     }
     if (review) {
-      if (!review.branch || thinking || !v || shown.ended || review.error) return false // after an error, only Try again goes on
+      if (!lessonPlayable || !v) return false // after an error, only Try again goes on
       const r = shown.play(v)
       if (r === 'ok') {
         const graded = shown.cursor === from + 1 // a new try from the lesson's start: graded again
@@ -457,13 +459,15 @@ export function App() {
     }).catch(e => live && setReview(x => x && { ...x, error: e })).finally(() => live && setThinking(false))
     return () => { live = false; setThinking(false) }
   }, [answering, ver, lesson, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
-  // a caption link remounts the caption (keyed by its text): right after one is activated, focus the new first link,
-  // except while reading, where the only link leaves the review
-  const refocus = useRef(false)
+  // a caption link remounts the caption (keyed by its text): right after one is activated, focus the link with the same
+  // action if it came back, else the caption itself, so a second Enter never changes step, moment or leaves the review
+  const refocus = useRef<string | null>(null)
   useEffect(() => {
-    if (!refocus.current) return
-    refocus.current = false
-    if (document.activeElement === document.body && !reading) document.querySelector<HTMLElement>('.note .link')?.focus()
+    const id = refocus.current
+    if (id === null) return
+    refocus.current = null
+    if (document.activeElement !== document.body) return
+    ;(document.querySelector<HTMLElement>(`.note .link[data-act="${id}"]`) ?? document.querySelector<HTMLElement>('.board-wrap > .note'))?.focus()
   })
 
   // ⌘/Ctrl commands, shared by the keyboard and the macOS menu bar (whose items emit "menu" with these ids)
@@ -528,13 +532,14 @@ export function App() {
     : review.step === 'punish' ? t.punishLine(p, gtp(m.punish[0]!, size), s, m.loss)
     : t.betterLine(s, gtp(m.better[0]!, size), m.loss)
   const lastMoment = !!review?.moments && review.k === review.moments.length - 1
-  const links: [string, () => void][] = review?.error ? [[t.retry, retryLesson]]
-    : botError && !result ? [[t.retry, retryBot]]
-    : !review ? result && canReview ? [[t.reviewGame, () => startReview(bot ? -bot.sign as Sign : 0)]] : []
-    : !m ? [[t.backToGame, leaveReview]]
-    : review.step === 'try' ? [...(graded ? [[t.retry, () => openMoment(review.k, 'try')] as [string, () => void]] : []), [t.seePunishment, () => openMoment(review.k, 'punish')]]
-    : review.step === 'punish' ? [[t.seeBetter, () => openMoment(review.k, 'better')]]
-    : lastMoment ? [[t.backToGame, leaveReview]] : [[t.nextMoment, () => openMoment(review.k + 1, 'try')]]
+  // [action id, label, action]: the id tells refocus whether the same action is still offered
+  const links: [string, string, () => void][] = review?.error ? [['retry', t.retry, retryLesson]]
+    : botError && !result ? [['retry', t.retry, retryBot]]
+    : !review ? result && canReview ? [['review', t.reviewGame, () => startReview(bot ? -bot.sign as Sign : 0)]] : []
+    : !m ? [['back', t.backToGame, leaveReview]]
+    : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as [string, string, () => void]] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
+    : review.step === 'punish' ? [['better', t.seeBetter, () => openMoment(review.k, 'better')]]
+    : lastMoment ? [['back', t.backToGame, leaveReview]] : [['next', t.nextMoment, () => openMoment(review.k + 1, 'try')]]
   const message = review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
     : result ? [result(t), note?.(t)].filter(Boolean).join(' ')
     : countingNow ? t.countingHelp
@@ -579,7 +584,7 @@ export function App() {
           onFallback={r => { if (r === 'context-lost' || (r === 'slow' && (engineBusy || reading))) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
           state={{
             signMap: board.signMap, last: last?.vertex ?? null, toPlay, coords, sound,
-            interactive: countingNow ? !result : review ? !!review.branch && !thinking && !shown.ended && !review.error : !game.ended && !locked && humanTurn,
+            interactive: countingNow ? !result : review ? lessonPlayable : !game.ended && !locked && humanTurn,
             // ② and ③: what changed hands, until the player explores
             ownership: countingNow ? null : review ? (m && !review.explored ? review.step === 'punish' ? m.lost : review.step === 'better' ? m.kept : null : null)
               : shownOwn?.data ?? null,
@@ -588,10 +593,10 @@ export function App() {
           }}
           onPlay={play}
         >
-          <p className="note" aria-live="polite">
+          <p className="note" aria-live="polite" tabIndex={-1}>
             {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message}>
               <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>
-              {links.map(([label, act]) => <button key={label} className="link" onClick={() => { refocus.current = true; act() }}>{label}</button>)}
+              {links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>{label}</button>)}
             </span>}
           </p>
         </Goban>
