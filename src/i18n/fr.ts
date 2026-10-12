@@ -8,23 +8,27 @@ const tuningProgress = (step: number, done: number, total: number) => [step && `
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
 
 export const fr: Dict = {
-  // panel
-  board: (n: number, komi: number) => `Goban ${n} × ${n} · komi ${f.num(komi)}`,
+  // card
+  board: (n: number, komi: number) => `${n}×${n} · komi ${f.num(komi)} · règles japonaises`,
   boardLabel: (n: number) => `Goban ${n}×${n}`,
   game: 'Partie',
   moveOf: (i: number, n: number) => (i < n ? `Coup ${i} / ${n}` : `Coup ${n}`),
+  move: (i: number) => `Coup ${i}`,
+  you: 'Toi', yourMove: 'À toi de jouer', thinking: 'réfléchit…', waiting: 'attend', passed: 'a passé', resigned: 'a abandonné', wins: 'gagne',
+  points: (n: number) => f.plural(n, 'point', 'points'),
+  tally: (territory: number, prisoners: number, komi?: number) =>
+    `${f.num(territory)} de territoire · ${f.plural(prisoners, 'prisonnier', 'prisonniers')}${komi ? ` · komi ${f.num(komi)}` : ''}`,
+  settings: 'Réglages', boardSection: 'Goban', appSection: 'Application', keyboard: 'Clavier',
   color,
   captures: (n: number) => f.plural(n, 'prise', 'prises'),
   passes: (s: number) => `${color(s)} passe.`,
   botPasses: (s: number) => `${color(s)} passe. À toi de jouer.`,
   countingWait: 'Deux passes consécutives : la partie est terminée. Comptage…',
   countingHelp: 'Comptage : clique sur un groupe pour le marquer mort ou vivant, puis valide le score.',
-  side: (s: number, total: number, territory: number, prisoners: number, komi?: number) =>
-    `${color(s)} ${f.num(total)} : ${f.num(territory)} de territoire, ${f.plural(prisoners, 'prisonnier', 'prisonniers')}${komi ? `, komi ${f.num(komi)}` : ''}`,
   validate: 'Valider le score',
   score: (lead: number) => (lead === 0 ? 'Égalité.' : `${color(lead > 0 ? 1 : -1)} gagne de ${f.num(Math.abs(lead))}.`),
   refused: { ko: 'Ko : la reprise immédiate est interdite. Joue ailleurs d’abord.', suicide: 'Coup interdit : ce serait un suicide.' },
-  history: 'Historique', start: 'Début', prev: 'Coup précédent', next: 'Coup suivant', end: 'Fin',
+  history: 'Historique', prev: 'Coup précédent', next: 'Coup suivant',
   pass: 'Passer', undo: 'Annuler', open: 'Ouvrir…', save: 'Enregistrer…', resign: 'Abandonner',
   openFailed: (m: string) => `Impossible d’ouvrir ce fichier : ${m}`,
   saved: 'Partie enregistrée.',
@@ -40,7 +44,7 @@ export const fr: Dict = {
   aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
     `Pour jouer contre l’IA, installe le réseau Humain${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' et un réseau d’analyse' : ''}.`,
   openNetworks: 'Ouvrir les réseaux',
-  display: 'Affichage', coords: 'Coordonnées', sound: 'Son', territory: 'Territoire', language: 'Langue',
+  display: 'Affichage', coords: 'Coordonnées', sound: 'Son', territory: 'Ombre et lumière', language: 'Langue',
   rendering: 'Rendu', render3d: 'Atelier vivant (3D)', render2d: 'Léger (2D)',
   view: 'Regard', study: 'Étude', contemplation: 'Contemplation',
   light: 'Lumière', lights: { auto: 'Auto', morning: 'Matin', afternoon: 'Après-midi', evening: 'Soir' },
@@ -70,7 +74,7 @@ export const fr: Dict = {
   updateDownloading: (p: number | null) => (p === null ? 'Téléchargement de la mise à jour…' : `Téléchargement de la mise à jour… ${f.pct(p)}`),
   updateInstalling: 'Installation de la mise à jour…',
   autoUpdate: 'Rechercher les mises à jour automatiquement',
-  footer: { browse: 'parcourir', pass: 'passer', territory: 'territoire', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau' },
+  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau' },
   // barre de menus macOS (src-tauri/src/menu.rs)
   menu: {
     about: 'À propos de Masame', hide: 'Masquer Masame', hideOthers: 'Masquer les autres', showAll: 'Tout afficher', quit: 'Quitter Masame',

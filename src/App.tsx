@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { BoardView } from './board/BoardView'
 import type { Board3D, Board3DOptions, Board3DState, FallbackReason, TimeMode } from './board3d/Board3D'
 import { rng } from './board/noise'
@@ -7,6 +7,9 @@ import { confirmDiscard, openSgfFile, saveSgfFile } from './files'
 import { Game, type Sign, type Vertex } from './game'
 import { analyze, call, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
+import { Sheet } from './Sheet'
+import { Icon } from './Icon'
+import { cardSkin } from './board3d/logic'
 import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
 import { loadSgf, resignResult, saveSgf, scoreResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
@@ -86,7 +89,8 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, child
         if (!live) return
         const b = three.current = new Board3D(canvas.current!, play, { options: latest.current.options, onFallback: r => latest.current.onFallback(r) })
         b.setThinking(latest.current.thinking)
-        mount(b, r => b.resize(r.width, r.height))
+        // full-bleed canvas (fixed, the whole window); the board stays framed in .board-wrap's rectangle
+        mount(b, () => b.resize(innerWidth, innerHeight, wrap.current!.getBoundingClientRect()))
       }, () => live && latest.current.onFallback('webgl2'))
     }
     return () => { live = false; ro?.disconnect(); v?.destroy(); view.current = three.current = null }
@@ -95,7 +99,7 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, child
   useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => three.current?.setThinking(thinking), [thinking])
   // a fresh canvas per renderer: one canvas can't hold both a 2D and a WebGL context
-  return <div className="board-wrap" ref={wrap}><canvas key={mode} ref={canvas} aria-label={t.boardLabel(state.signMap.length)} />{children}</div>
+  return <div className="board-wrap" ref={wrap}><canvas key={mode} ref={canvas} data-r={mode} aria-label={t.boardLabel(state.signMap.length)} />{children}</div>
 }
 
 /** State holding a Msg, rendered at display time (a bare function given to useState's setter would run as an updater). */
@@ -162,13 +166,23 @@ export function App() {
   const [botRetry, retryBot] = useReducer((x: number) => x + 1, 0)
   const [session2d, setSession2d] = useState(false) // 2D after a WebGL context loss, for this session only
   const renderer: Renderer = session2d ? '2d' : settings.renderer
+  // the card's skin follows the scene's backdrop; set before paint, and crossfaded only once the first frame is shown
+  const skin = cardSkin(renderer, settings.camera, settings.decor)
+  useLayoutEffect(() => { document.documentElement.dataset.skin = skin }, [skin])
+  useEffect(() => { requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '' })) }, [])
   // counting phase after two passes: which stones are dead (suggested by KataGo, toggled by the player)
   const [counting, setCounting] = useState<{ game: Game; dead: Dead } | null>(null)
 
   const [engine, setEngine] = useState<EngineStatus>({ state: 'stopped' })
   const [nets, setNets] = useState<NetState | null>(null)
   const [progress, setProgress] = useState<Record<string, Progress>>({})
-  const [showNets, setShowNets] = useState(false)
+  const [sheet, setSheet] = useState<'game' | 'settings' | 'view' | 'nets' | null>(null) // 'view': Settings, at Display
+  // the control a sheet returns focus to (WebKit doesn't focus clicked buttons), kept when one sheet opens another
+  const opener = useRef<HTMLElement | null>(null), netsFromSettings = useRef(false)
+  const openSheet = (s: NonNullable<typeof sheet>) => (e: React.MouseEvent<HTMLElement>) => {
+    if (!e.currentTarget.closest('.sheet')) { opener.current = e.currentTarget; netsFromSettings.current = false }
+    setSheet(s)
+  }
   const [own, setOwn] = useState<{ game: Game; data: number[] | null; score: number } | null>(null)
   // game review: null = off; moments null while reading; branch = the lesson's variation (null while reading or clean)
   const [review, setReview] = useState<{ side: Sign | 0; pct: number; error: unknown; moments: Moment[] | null; k: number; step: Step
@@ -473,7 +487,8 @@ export function App() {
   // ⌘/Ctrl commands, shared by the keyboard and the macOS menu bar (whose items emit "menu" with these ids)
   const togglePanel = () => set('panelHidden', !settings.panelHidden)
   const commands: Record<string, () => void> = { undo, new: () => newGame(), open, save, panel: togglePanel }
-  const blocked = (target: EventTarget | null) => target instanceof HTMLInputElement || showNets
+  // a focused range keeps the shortcuts: its arrows/Home/End go through goTo (preventDefault: no second native step)
+  const blocked = (target: EventTarget | null) => target instanceof HTMLInputElement && target.type !== 'range' || sheet !== null
   const onMenu = useRef((_: string) => {})
   onMenu.current = id => { if (!blocked(document.activeElement) && Object.hasOwn(commands, id)) commands[id]() }
   useEffect(() => {
@@ -516,7 +531,6 @@ export function App() {
   })
 
   const { size, komi, playerBlack, playerWhite } = game.info
-  const botName = bot ? t.botName(bot.rank) : '' // in the current language (the SGF gets the one at save time)
   const board = shown.board, total = shown.moves.length, toPlay = shown.toPlay, last = shown.lastMove
   const shownOwn = settings.territory && own?.game === game ? own : null
   const engineWait = engine.state === 'tuning' ? t.tuningCaption
@@ -570,11 +584,38 @@ export function App() {
 
   const playing = review ? !!review.branch : !game.ended && !result // whose turn it is means something
   const floor = review?.branch ? from : 0
+  const re = result ? game.info.result ?? '' : '' // "B+R", "W+4.5", "0"
+  const resignation = re.endsWith('+R'), countingOpen = !!final && !result
+  // the count, shown while counting and, once validated, at every cursor position (scored on the final board)
+  const end = game.boards.at(-1)!
+  const count = counting?.game === game && (countingOpen || (!!re && !resignation))
+    ? score(end.signMap, counting.dead, { black: end.getCaptures(1), white: end.getCaptures(-1) }, komi) : null
+  const sideOf = (s: Sign) => count ? s === 1 ? count.black : count.white : null
+  const tallyOf = (s: Sign) => { const c = sideOf(s)!; return t.tally(c.territory, c.prisoners, s === -1 ? komi : undefined) }
+  // counting: points over the tally; counted: "wins" over points and tally; a draw: the points alone
+  const subOf = (s: Sign) => !count || re === '0' ? null : countingOpen ? tallyOf(s) : `${t.points(sideOf(s)!.total)} · ${tallyOf(s)}`
+  const stateOf = (s: Sign) => count && (countingOpen || re === '0') ? t.points(sideOf(s)!.total)
+    : re ? re[0] === (s === 1 ? 'B' : 'W') ? t.wins : resignation ? t.resigned : ''
+    : last && !last.vertex && last.sign === s ? t.passed
+    : !playing ? ''
+    : toPlay === s ? bot?.sign === s ? thinking ? t.thinking : t.waiting : t.yourMove
+    : t.waiting
+  const alert = upd.s === 'available' ? t.updateAvailable(upd.version) : engine.state === 'error' ? failureText(engine.error) : null
+  const closeSheet = () => setSheet(null)
+  // Networks opened from Settings closes back to Settings, on its link
+  const closeNets = () => setSheet(netsFromSettings.current ? 'settings' : null)
+  useEffect(() => { if (sheet === 'view') document.getElementById('display')?.scrollIntoView({ block: 'start' }) }, [sheet])
+  const cta = settings.opponent === 'ai' && !canPlayAI && (
+    <div className="cta">
+      <p>{!inTauri() ? t.aiOnlyInApp : t.aiNeeds(humanNet?.complete ? null : t.mb(HUMAN_BYTES), !canAnalyze)}</p>
+      {inTauri() && <button className="btn" onClick={openSheet('nets')}>{t.openNetworks}</button>}
+    </div>
+  )
 
   return (
     <>
       {isMac && <div className="titlebar" data-tauri-drag-region />}
-      <main className="stage">
+      <main className="stage" inert={sheet !== null}>
         <Goban
           view={view}
           mode={renderer}
@@ -600,85 +641,107 @@ export function App() {
             </span>}
           </p>
         </Goban>
-        <button className="panel-toggle" onClick={togglePanel} aria-expanded={!settings.panelHidden} aria-controls="panel"
-          aria-label={settings.panelHidden ? t.showPanel : t.hidePanel} title={`${settings.panelHidden ? t.showPanel : t.hidePanel} (H)`}>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" /><path d="M10 2.5v11" /></svg>
-        </button>
-        {/* hidden panel: only whose turn it is (breathing while the bot thinks), next to the toggle */}
-        {settings.panelHidden && playing && (
-          <i className={`turn st ${toPlay === 1 ? 'b' : 'w'}${thinking ? ' thinking' : ''}`} role="img" aria-label={t.color(toPlay)} />
-        )}
-        <aside className="panel" id="panel" hidden={settings.panelHidden}>
-          <header>
-            <h1 className="title">Masame <span className="jp">柾目</span></h1>
-            <div className="sub">{t.board(size, komi)}</div>
-          </header>
-
-          <section>
-            <div className="lab">
-              <span>{t.game}</span>
-              <span>{t.moveOf(shown.cursor, total)}</span>
-            </div>
-            {([[1, bot?.sign === 1 ? botName : playerBlack], [-1, bot?.sign === -1 ? botName : playerWhite]] as const).map(([sign, name]) => (
-              <div key={sign} className={`pl${toPlay === sign && playing ? ' on' : ''}${thinking && (review ? toPlay === sign : bot?.sign === sign) ? ' thinking' : ''}`}>
-                <i className={`st ${sign === 1 ? 'b' : 'w'}`} />
-                <span className="nm">{name || t.color(sign)}{name && <em> · {t.color(sign)}</em>}</span>
-                <span className="cp">{t.captures(board.getCaptures(sign))}</span>
-              </div>
-            ))}
-            {final && (
-              <p className="estimate" aria-live="polite">
-                {t.side(1, final.black.total, final.black.territory, final.black.prisoners)}<br />
-                {t.side(-1, final.white.total, final.white.territory, final.white.prisoners, komi)}
-              </p>
+        <aside className={`card${settings.panelHidden ? ' off' : ''}`}>
+          <header className="brand">
+            {!settings.panelHidden && <>
+              <span className="seal" aria-hidden="true">柾</span>
+              <h1>Masame</h1>
+              <button className="icon" onClick={openSheet('game')} aria-label={t.game} title={t.game}><Icon name="plus" /></button>
+              <button className="icon" onClick={openSheet('settings')} aria-label={alert ? `${t.settings} · ${alert}` : t.settings}
+                title={alert ? `${t.settings} · ${alert}` : t.settings}><Icon name="adjustments" />{alert && <i className="dot" />}</button>
+            </>}
+            {/* hidden card: only whose turn it is (breathing while the bot thinks), next to the toggle */}
+            {settings.panelHidden && playing && (
+              <i className={`turn ${toPlay === 1 ? 'b' : 'w'}${thinking ? ' thinking' : ''}`} role="img" aria-label={t.color(toPlay)} />
             )}
-            <div className="nav" aria-label={t.history}>
-              <button onClick={() => goTo(0)} disabled={shown.cursor <= floor} aria-label={t.start} title={`${t.start} (Home)`}>⇤</button>
-              <button onClick={() => goTo(shown.cursor - 1)} disabled={shown.cursor <= floor} aria-label={t.prev} title={`${t.prev} (←)`}>←</button>
-              <button onClick={() => goTo(shown.cursor + 1)} disabled={shown.cursor === total} aria-label={t.next} title={`${t.next} (→)`}>→</button>
-              <button onClick={() => goTo(total)} disabled={shown.cursor === total} aria-label={t.end} title={`${t.end} (End)`}>⇥</button>
+            <button className="icon panel-toggle" onClick={togglePanel} aria-expanded={!settings.panelHidden} aria-controls="card"
+              aria-label={settings.panelHidden ? t.showPanel : t.hidePanel} title={`${settings.panelHidden ? t.showPanel : t.hidePanel} (H)`}>
+              <Icon name={settings.panelHidden ? 'eye' : 'eye-off'} />
+            </button>
+          </header>
+          <div className="card-in" id="card" hidden={settings.panelHidden}>
+            <div className="meta">
+              <span>{t.board(size, komi)}</span>
+              <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
+                <Icon name={sound ? 'volume' : 'volume-off'} />
+              </button>
+              <button className="icon sm" onClick={openSheet('view')} aria-label={t.display} title={t.display}><Icon name="view" /></button>
+              <button className="icon sm" aria-pressed={renderer === '3d'} onClick={() => { setSession2d(false); set('renderer', renderer === '3d' ? '2d' : '3d') }}
+                aria-label={t.render3d} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
             </div>
-          </section>
-
-          <div className="acts">
-            {final && !result
-              ? <button className="btn accent" onClick={validate}>{t.validate}</button>
-              : <button className="btn" onClick={() => play(null)} disabled={game.ended || locked || !humanTurn || !!review} title="P">{t.pass}</button>}
-            <button className="btn" onClick={undo} disabled={game.cursor === 0 || (!!bot && !!result) || !!review} title={shortcut('Z')}>{t.undo}</button>
-            <button className="btn" onClick={open} title={shortcut('O')}>{t.open}</button>
-            <button className="btn" onClick={save} title={shortcut('S')}>{t.save}</button>
-            {review ? <button key="back" className="btn" onClick={leaveReview} title="Esc">{t.backToGame}</button>
-              : reviewShown ? <button key="review" className={`btn${result ? ' accent' : ''}`} onClick={() => startReview(bot ? -bot.sign as Sign : 0)}
-                disabled={!canAnalyze} title={canAnalyze ? undefined : t.reviewNeedsNet}>{t.reviewGame}</button>
-              : bot && <button className="btn" onClick={resign} disabled={!!result}>{t.resign}</button>}
-          </div>
-
-          {review && (
-            <section>
-              <div className="lab"><span>{t.review}</span><span>{reading ? t.percent(review.pct) : ''}</span></div>
-              {!bot && (
-                <div className="field">
-                  <span>{t.reviewSide}</span>
-                  <Seg label={t.reviewSide} value={review.side} options={[[1, t.black], [-1, t.white], [0, t.both]]} set={v => v !== review.side && startReview(v)} />
-                </div>
+            <div className="body">
+              {review ? (
+                <section className="rv">
+                  <div className="lab"><span>{t.review}</span><span>{reading ? t.percent(review.pct) : ''}</span></div>
+                  {!bot && (
+                    <div className="field">
+                      <span>{t.reviewSide}</span>
+                      <Seg label={t.reviewSide} value={review.side} options={[[1, t.black], [-1, t.white], [0, t.both]]} set={v => v !== review.side && startReview(v)} />
+                    </div>
+                  )}
+                  {reading ? <>
+                    <p className="estimate">{review.error ? t.reviewFailed(failureText(review.error)) : t.readingHelp}</p>
+                    <div className="bar" role="progressbar" aria-label={t.reading} aria-valuenow={review.pct} aria-valuemin={0} aria-valuemax={100}>
+                      <i style={{ width: `${review.pct}%` }} />
+                    </div>
+                  </> : !m ? <p className="estimate">{t.noMoments(review.side)}</p> : <>
+                    <p className="state">{t.moment(review.k + 1, review.moments!.length, m.at + 1, m.loss)}</p>
+                    {review.moments!.length > 1 && (
+                      <Seg label={t.moments} value={review.k} options={review.moments!.map((_, i) => [i, String(i + 1)])} set={k => openMoment(k, 'try')} />
+                    )}
+                    <Seg label={t.lesson} value={review.step} options={[['try', t.steps.try], ['punish', t.steps.punish], ['better', t.steps.better]]}
+                      set={step => openMoment(review.k, step)} />
+                    <p className="quiet">{review.step === 'try' ? t.tryHelp(p, s, m.loss) : review.step === 'punish' ? t.punishHelp : t.betterHelp}</p>
+                  </>}
+                </section>
+              ) : ([1, -1] as const).map(c => {
+                const n = board.getCaptures(c), sub = subOf(c)
+                const rank = bot && (c === bot.sign ? bot.rank : settings.myRank)
+                return (
+                  <div key={c} role="group" aria-label={t.color(c)}
+                    className={`pc ${c === 1 ? 'b' : 'w'}${toPlay === c && playing ? ' on' : ''}${thinking && bot?.sign === c ? ' thinking' : ''}`}>
+                    <div className="lbl">{bot ? c === bot.sign ? t.ai : t.you : (c === 1 ? playerBlack : playerWhite) || t.color(c)}{rank && <span className="rk">{rank}</span>}</div>
+                    <div aria-live={countingOpen ? 'polite' : undefined}>
+                      <div className="state">{stateOf(c)}</div>
+                      {sub && <div className="sub">{sub}</div>}
+                    </div>
+                    <span className="cap" role="img" aria-label={t.captures(n)}>{n}</span>
+                    <span className="wm" aria-hidden="true">{c === 1 ? '黒' : '白'}</span>
+                  </div>
+                )
+              })}
+              {!review && cta}
+              <div className="tl">
+                <button className="chev" onClick={() => goTo(shown.cursor - 1)} disabled={shown.cursor <= floor} aria-label={t.prev} title={`${t.prev} (←)`}><Icon name="chevron-left" /></button>
+                <input type="range" min={floor} max={total} value={shown.cursor} onChange={e => goTo(+e.target.value)} aria-label={t.history}
+                  aria-valuetext={t.move(shown.cursor)} style={{ '--n': total - floor } as React.CSSProperties} />
+                <button className="chev" onClick={() => goTo(shown.cursor + 1)} disabled={shown.cursor === total} aria-label={t.next} title={`${t.next} (→)`}><Icon name="chevron-right" /></button>
+                <span className="mv">{t.moveOf(shown.cursor, total)}</span>
+              </div>
+              {settings.territory && !review && (
+                <p className="estimate" aria-live="polite">
+                  {!inTauri() || !canAnalyze ? t.territoryNeedsNet : shownOwn ? t.estimate(shownOwn.score) : t.estimating}
+                </p>
               )}
-              {reading ? <>
-                <p className="estimate">{review.error ? t.reviewFailed(failureText(review.error)) : t.readingHelp}</p>
-                <div className="bar" role="progressbar" aria-label={t.reading} aria-valuenow={review.pct} aria-valuemin={0} aria-valuemax={100}>
-                  <i style={{ width: `${review.pct}%` }} />
-                </div>
-              </> : !m ? <p className="estimate">{t.noMoments(review.side)}</p> : <>
-                <p className="estimate">{t.moment(review.k + 1, review.moments!.length, m.at + 1, m.loss)}</p>
-                {review.moments!.length > 1 && (
-                  <Seg label={t.moments} value={review.k} options={review.moments!.map((_, i) => [i, String(i + 1)])} set={k => openMoment(k, 'try')} />
-                )}
-                <Seg label={t.lesson} value={review.step} options={[['try', t.steps.try], ['punish', t.steps.punish], ['better', t.steps.better]]}
-                  set={step => openMoment(review.k, step)} />
-                <p className="quiet">{review.step === 'try' ? t.tryHelp(p, s, m.loss) : review.step === 'punish' ? t.punishHelp : t.betterHelp}</p>
+            </div>
+            <div className="acts">
+              {review ? <button className="act" onClick={leaveReview} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button> : <>
+                {final && !result
+                  ? <button className="act accent" onClick={validate}><Icon name="hand-stop" />{t.validate}</button>
+                  : <button className="act" onClick={() => play(null)} disabled={game.ended || locked || !humanTurn} title="P"><Icon name="hand-stop" />{t.pass}</button>}
+                <button className="act" onClick={undo} disabled={game.cursor === 0 || (!!bot && !!result)} title={shortcut('Z')}><Icon name="arrow-back-up" />{t.undo}</button>
+                <button className="act" aria-pressed={settings.territory} onClick={() => set('territory', !settings.territory)} title="T"><Icon name="sun-low" />{t.territory}</button>
+                {reviewShown ? <button key="review" className={`act${result ? ' accent' : ''}`} onClick={() => startReview(bot ? -bot.sign as Sign : 0)}
+                  disabled={!canAnalyze} title={canAnalyze ? undefined : t.reviewNeedsNet}><Icon name="review" />{t.reviewGame}</button>
+                  : bot && <button className="act" onClick={resign} disabled={!!result}><Icon name="flag" />{t.resign}</button>}
               </>}
-            </section>
-          )}
+            </div>
+          </div>
+        </aside>
+      </main>
 
+      {sheet === 'game' && (
+        <Sheet title={t.game} onClose={closeSheet} opener={opener.current}>
           <section>
             <div className="lab"><span>{t.newGame}</span><span /></div>
             <div className="opts">
@@ -693,21 +756,28 @@ export function App() {
                   <Switch label={t.autoAdjust} on={settings.autoAdjust} toggle={() => set('autoAdjust', !settings.autoAdjust)} />
                   <Switch label={t.thinkTime} on={settings.delay} toggle={() => set('delay', !settings.delay)} />
                 </details>
-              </> : (
-                <div className="cta">
-                  <p>{!inTauri() ? t.aiOnlyInApp : t.aiNeeds(humanNet?.complete ? null : t.mb(HUMAN_BYTES), !canAnalyze)}</p>
-                  {inTauri() && <button className="btn" onClick={() => setShowNets(true)}>{t.openNetworks}</button>}
-                </div>
-              ))}
-              <button className="btn accent" onClick={() => newGame()} title={shortcut('N')} disabled={settings.opponent === 'ai' && !canPlayAI}>{t.begin}</button>
+              </> : cta)}
+              <button className="btn accent" onClick={() => { closeSheet(); newGame() }} title={shortcut('N')} disabled={settings.opponent === 'ai' && !canPlayAI}>{t.begin}</button>
             </div>
           </section>
+          <section className="opts">
+            <button className="btn" onClick={() => { closeSheet(); open() }} title={shortcut('O')}>{t.open}</button>
+            <button className="btn" onClick={() => { closeSheet(); save() }} title={shortcut('S')}>{t.save}</button>
+          </section>
+        </Sheet>
+      )}
 
+      {(sheet === 'settings' || sheet === 'view') && (
+        <Sheet title={t.settings} onClose={closeSheet} opener={opener.current} focus={netsFromSettings.current ? '[data-nets]' : undefined}>
           <section>
-            <div className="lab"><span>{t.display}</span><span /></div>
+            <div className="lab"><span>{t.boardSection}</span><span /></div>
             <Switch label={t.coords} k="C" on={coords} toggle={() => setCoords(v => !v)} />
             <Switch label={t.sound} k="M" on={sound} toggle={() => setSound(v => !v)} />
             <Switch label={t.territory} k="T" on={settings.territory} toggle={() => set('territory', !settings.territory)} />
+          </section>
+
+          <section id="display">
+            <div className="lab"><span>{t.display}</span><span /></div>
             <div className="opts">
               <Seg label={t.rendering} value={renderer} options={[['3d', t.render3d], ['2d', t.render2d]]} set={v => { setSession2d(false); set('renderer', v) }} />
               {renderer === '3d' && <>
@@ -727,25 +797,21 @@ export function App() {
                 <Switch label={t.highContrast} on={settings.highContrast} toggle={() => set('highContrast', !settings.highContrast)} />
               </>}
             </div>
+          </section>
+
+          <section>
+            <div className="lab"><span>{t.appSection}</span><span /></div>
             <div className="row" style={{ cursor: 'default', gap: 16 }}>
               <span>{t.language}</span>
               <Seg label={t.language} value={settings.lang} options={[['fr', 'Français'], ['en', 'English']]} set={v => { setLang(v); setSettings(s => ({ ...s, lang: v, langChosen: true })) }} />
             </div>
-            {settings.territory && !review && (
-              <p className="estimate" aria-live="polite">
-                {!inTauri() || !canAnalyze ? t.territoryNeedsNet : shownOwn ? t.estimate(shownOwn.score) : t.estimating}
-              </p>
-            )}
-          </section>
-
-          <section>
-            <div className="lab"><span>{t.engine}</span><button className="link" onClick={() => setShowNets(true)}>{t.networksBtn}</button></div>
+            <div className="row" style={{ cursor: 'default' }}>
+              <span>{t.engine}</span>
+              <button className="link" data-nets onClick={() => { netsFromSettings.current = true; setSheet('nets') }}>{t.networksBtn}</button>
+            </div>
             <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}</p>
-          </section>
-
-          {inTauri() && (
-            <section>
-              <div className="lab"><span>{t.updates}</span><span /></div>
+            {inTauri() && <>
+              <div className="row" style={{ cursor: 'default' }}><span>{t.updates}</span></div>
               <p className={`engine${upd.s === 'error' ? ' err' : ''}`} aria-live="polite">
                 {updLine}{updActions.map(([label, act]) => <span key={label}> · <button className="link" onClick={act}>{label}</button></span>)}
               </p>
@@ -755,13 +821,17 @@ export function App() {
                 </div>
               )}
               <Switch label={t.autoUpdate} on={settings.autoUpdate} toggle={() => set('autoUpdate', !settings.autoUpdate)} />
-            </section>
-          )}
+            </>}
+          </section>
 
-          <footer className="foot"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel}</footer>
-        </aside>
-      </main>
-      {showNets && <Networks nets={nets} progress={progress} onClose={() => setShowNets(false)} onChanged={refreshNets} />}
+          <section>
+            <div className="lab"><span>{t.keyboard}</span><span /></div>
+            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel}</p>
+          </section>
+        </Sheet>
+      )}
+
+      {sheet === 'nets' && <Networks nets={nets} progress={progress} onClose={closeNets} onChanged={refreshNets} opener={opener.current} />}
     </>
   )
 }

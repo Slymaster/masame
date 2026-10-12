@@ -184,6 +184,12 @@ export function todAt(hours: number): Tod {
   return TOD.evening
 }
 
+/** The UI card's skin follows the scene's backdrop: Laque on the dark rooms (the Lanterne, the Atelier seen in
+ *  Contemplation), Washi on light ones (Study's linen, Clair and Washitsu) and always in 2D. */
+export function cardSkin(renderer: '2d' | '3d', camera: 'study' | 'contemplation', decor: Decor): 'washi' | 'laque' {
+  return renderer === '3d' && (decor === 'lanterne' || (camera === 'contemplation' && decor === 'atelier')) ? 'laque' : 'washi'
+}
+
 /* ---------- décors ---------- */
 export type Ground = 'walnut' | 'tatami' | 'paper'
 /** What a décor changes around the (identical) board, stones and bowls. Multipliers apply to the hour's light. */

@@ -1,10 +1,46 @@
+/* Skins: Washi (paper and ink) by default, Laque (lacquer and brass) under html[data-skin="laque"].
+   Registered so the 0.6 s crossfade interpolates them; --bg (the linen page) never changes. */
+@property --card { syntax: '<color>'; inherits: true; initial-value: rgba(241, 234, 221, .96) }
+@property --sheet { syntax: '<color>'; inherits: true; initial-value: #F1EADD }
+@property --ink { syntax: '<color>'; inherits: true; initial-value: #2A2118 }
+@property --muted { syntax: '<color>'; inherits: true; initial-value: #6E5F4D }
+@property --accent { syntax: '<color>'; inherits: true; initial-value: #8A2F22 }
+@property --accent-hover { syntax: '<color>'; inherits: true; initial-value: #6E2419 }
+@property --rule { syntax: '<color>'; inherits: true; initial-value: rgba(43, 29, 14, .13) }
+@property --rule-2 { syntax: '<color>'; inherits: true; initial-value: rgba(43, 29, 14, .28) }
+@property --hover { syntax: '<color>'; inherits: true; initial-value: rgba(138, 47, 34, .06) }
+@property --well { syntax: '<color>'; inherits: true; initial-value: rgba(43, 29, 14, .06) }
+@property --seg-on { syntax: '<color>'; inherits: true; initial-value: #F9F4EB }
+@property --pb { syntax: '<color>'; inherits: true; initial-value: #1F1B17 }
+@property --pw { syntax: '<color>'; inherits: true; initial-value: #F9F4EB }
+@property --shadow { syntax: '<color>'; inherits: true; initial-value: rgba(60, 40, 15, .16) }
+@property --scrim { syntax: '<color>'; inherits: true; initial-value: rgba(43, 29, 14, .18) }
 :root {
-  --bg: #ECE4D6; --ink: #2A2118; --muted: #857462; --rule: rgba(43, 29, 14, .13); --rule-2: rgba(43, 29, 14, .28);
-  --accent: #7A2E22; --hover: rgba(122, 46, 34, .06);
+  --bg: #ECE4D6;
+  --card: rgba(241, 234, 221, .96); --sheet: #F1EADD; --ink: #2A2118; --muted: #6E5F4D;
+  --accent: #8A2F22; --accent-hover: #6E2419; --rule: rgba(43, 29, 14, .13); --rule-2: rgba(43, 29, 14, .28);
+  --hover: rgba(138, 47, 34, .06); --well: rgba(43, 29, 14, .06); --seg-on: #F9F4EB;
+  --pb: #1F1B17; --pw: #F9F4EB; --shadow: rgba(60, 40, 15, .16); --scrim: rgba(43, 29, 14, .18);
+  /* the same in both skins: player-card text, the seal, the accent bar */
+  --pb-ink: #EFE6D6; --pb-muted: #A8957A; --pb-bar: #C9A063;
+  --pw-ink: #2A2118; --pw-muted: #5C4D3D; --pw-bar: #8A2F22;
+  --seal: #8A2F22; --seal-ink: #F9F4EB;
   --f-title: 'Cormorant Garamond', Georgia, serif; --f-ui: 'Manrope', system-ui, sans-serif;
   --stone-b: radial-gradient(circle at 34% 30%, #6a6a70 0, #2c2c30 38%, #121214 80%);
   --stone-w: radial-gradient(circle at 34% 30%, #fffdf8 0, #f1ebdf 55%, #d7cdbb 100%);
   color-scheme: light;
+}
+html[data-skin="laque"] {
+  --card: rgba(27, 22, 18, .95); --sheet: #1B1612; --ink: #EFE6D6; --muted: #A8957A;
+  --accent: #C9A063; --accent-hover: #E7CFA0; --rule: rgba(239, 230, 214, .14); --rule-2: rgba(239, 230, 214, .30);
+  --hover: rgba(201, 160, 99, .10); --well: rgba(255, 240, 215, .05); --seg-on: #3A3129;
+  --pb: #110E0B; --pw: #D9CFBF; --shadow: rgba(0, 0, 0, .45); --scrim: rgba(0, 0, 0, .35);
+  color-scheme: dark;
+}
+/* the skin crossfades with the scene, but not at load: the first frame already has the right one */
+:root[data-ready] {
+  transition: --card .6s, --sheet .6s, --ink .6s, --muted .6s, --accent .6s, --accent-hover .6s, --rule .6s, --rule-2 .6s,
+    --hover .6s, --well .6s, --seg-on .6s, --pb .6s, --pw .6s, --shadow .6s, --scrim .6s;
 }
 * { box-sizing: border-box; margin: 0; padding: 0 }
 html, body, #root { height: 100% }
@@ -23,54 +59,108 @@ kbd { font-family: var(--f-ui); font-size: 10.5px; line-height: 1; border: 1px s
 /* macOS overlay title bar: this strip is the drag handle and keeps content clear of the traffic lights. */
 .titlebar { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 10 }
 
-.stage { position: relative; height: 100%; display: flex; align-items: stretch; gap: clamp(28px, 4vw, 72px); padding: 44px clamp(28px, 3.5vw, 56px) 28px }
+.stage { --pad: clamp(28px, 3.5vw, 56px); position: relative; height: 100%; display: flex; align-items: stretch; gap: clamp(28px, 4vw, 72px); padding: 44px var(--pad) 28px }
 .board-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; line-height: 0 }
 canvas { display: block; -webkit-tap-highlight-color: transparent }
+.board-wrap > canvas[data-r="3d"] { position: fixed; inset: 0 } /* the 3D scene runs full-bleed under the UI */
 
-.panel[hidden] { display: none } /* hidden panel: the board takes the whole stage (ResizeObserver refits it) */
-.panel { width: 312px; flex: none; display: flex; flex-direction: column; gap: 26px; overflow-y: auto; padding: 8px 2px 8px 16px; margin-left: -16px }
-.panel > :first-child { margin-top: auto } /* centred when it fits, scrollable from the top when it doesn't */
-.panel > :last-child { margin-bottom: auto }
-.title { margin-top: 12px; font-family: var(--f-title); font-size: 50px; font-weight: 500; font-style: italic; line-height: 1; display: flex; align-items: baseline; gap: 14px }
-.title .jp { font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif; font-style: normal; font-weight: 300; font-size: .44em; color: var(--muted) }
-.sub { margin-top: 12px; font-size: 11.5px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--accent) }
+/* the floating card, top right: its own background, above the fixed 3D canvas; only the body scrolls */
+.card {
+  position: relative; z-index: 1; width: 336px; flex: none; align-self: flex-start; max-height: 100%; display: flex; flex-direction: column;
+  padding: 12px 14px 0; border-radius: 16px; background: var(--card); color: var(--ink); overflow: hidden;
+  box-shadow: 0 12px 36px var(--shadow), 0 0 0 1px var(--rule);
+}
+.card-in { display: flex; flex-direction: column; min-height: 0 }
+.card-in[hidden] { display: none }
+/* hidden: out of the flow (the board takes the whole stage), the toggle stays where it was, on a small chip */
+.card.off { position: absolute; top: 44px; right: var(--pad); width: auto; background: none; box-shadow: none; overflow: visible }
+.card.off .brand { min-height: 38px; margin: -3px; padding: 3px; border-radius: 999px; background: var(--card); box-shadow: 0 4px 14px var(--shadow), 0 0 0 1px var(--rule) }
+.brand { display: flex; align-items: center; gap: 4px; min-height: 32px }
+.seal {
+  flex: none; width: 30px; height: 30px; margin-right: 6px; display: grid; place-items: center; border-radius: 5px; transform: rotate(-4deg);
+  background: var(--seal); color: var(--seal-ink); font: 18px/1 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif CJK JP', serif;
+}
+.brand h1 { margin-right: auto; font-family: var(--f-title); font-size: 24px; font-weight: 500; font-style: italic; line-height: 1 }
+.icon { position: relative; flex: none; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; transition: color .25s, background .25s }
+.icon.sm { width: 26px; height: 26px }
+.icon.sm svg { width: 16px; height: 16px }
+.icon[aria-pressed=true] { color: var(--ink) }
+.dot { position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--card) }
+.turn { width: 12px; height: 12px; margin: 0 4px 0 6px; border-radius: 50%; box-shadow: 1px 1.5px 2px rgba(0, 0, 0, .22); animation: fade .25s ease-out }
+.turn.b { background: var(--stone-b) }
+.turn.w { background: var(--stone-w) }
+.turn.thinking { animation: breathe 1.8s ease-in-out infinite }
+:is(.icon, .act, .chev) svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round }
+:is(.icon, .act, .chev):hover:not(:disabled) { color: var(--accent); background: var(--hover) }
+:is(.icon, .act, .chev, .tl input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
 
-.lab { display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); padding-bottom: 11px; border-bottom: 1px solid var(--rule); margin-bottom: 10px }
-.lab span:last-child { letter-spacing: .06em; text-transform: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink) }
+.meta { display: flex; align-items: center; gap: 2px; margin: 4px 0 10px; font-size: 11.5px; color: var(--muted) }
+.meta > span { margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.body { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; margin: 0 -14px; padding: 0 14px 12px; scrollbar-width: thin; scrollbar-color: var(--rule-2) transparent }
 
-.pl { position: relative; display: grid; grid-template-columns: 18px 1fr auto; gap: 12px; align-items: center; padding: 8px 0; color: var(--muted); transition: color .3s }
-.pl .st { width: 16px; height: 16px; border-radius: 50%; box-shadow: 1px 1.5px 2px rgba(0, 0, 0, .22) }
-.pl .st.b { background: var(--stone-b) }
-.pl .st.w { background: var(--stone-w) }
-.pl .nm { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.pl .nm em { font-style: normal; color: var(--muted); font-size: 12.5px }
-.pl .cp { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted) }
-.pl.on { color: var(--ink) }
-.pl::before { content: ""; position: absolute; left: -13px; top: 50%; width: 5px; height: 5px; margin-top: -2.5px; border-radius: 50%; background: var(--accent); opacity: 0; transition: opacity .3s }
-.pl.on::before { opacity: 1 }
+/* player cards: Black on lacquer, White on paper, whatever the skin */
+.pc { position: relative; flex: none; overflow: hidden; padding: 12px 46px 12px 18px; border-radius: 12px; min-height: 86px }
+.pc.b { background: var(--pb); color: var(--pb-ink); --lbl: var(--pb-muted) }
+.pc.w { background: var(--pw); color: var(--pw-ink); --lbl: var(--pw-muted); box-shadow: inset 0 0 0 1px var(--rule) }
+.lbl { font-size: 10.5px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--lbl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.rk { margin-left: 8px; font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 15px; letter-spacing: 0; text-transform: none }
+.state { margin-top: 4px; min-height: 1.15em; font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 26px; line-height: 1.15 }
+.sub { font-size: 11.5px; color: var(--lbl, var(--muted)); font-variant-numeric: tabular-nums }
+.cap { position: absolute; z-index: 1; top: 10px; right: 12px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; box-shadow: 1px 1.5px 2px rgba(0, 0, 0, .25) }
+.pc.b .cap { background: var(--stone-w); color: var(--pw-ink) } /* the stones Black took */
+.pc.w .cap { background: var(--stone-b); color: var(--pb-ink) }
+.wm { position: absolute; right: 12px; bottom: 6px; font: 300 58px/1 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif CJK JP', serif; opacity: .08; pointer-events: none }
+.pc::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--pb-bar); opacity: 0; transition: opacity .3s }
+.pc.w::before { background: var(--pw-bar) }
+.pc.on::before { opacity: 1 }
+.pc.on.thinking::before { animation: breathe 1.8s ease-in-out infinite }
+@keyframes breathe { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
 
-.note { min-height: 2.9em; margin-top: 6px; font-family: var(--f-title); font-style: italic; font-size: 16px; line-height: 1.4; color: #6E5F4D }
-/* caption under the board, in the stage's bottom padding: visible with the panel hidden */
+.rv { display: flex; flex-direction: column; gap: 8px }
+.rv .lab { margin-bottom: 0 }
+.rv .state { margin: 0; font-size: 22px }
+
+/* timeline: a tick every 10 moves along the thumb's travel (--n: moves in range) */
+.tl { display: flex; align-items: center; gap: 4px; margin-top: 2px }
+.chev { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; transition: color .25s, background .25s, opacity .25s }
+.chev svg { width: 16px; height: 16px }
+.chev:disabled { opacity: .4; cursor: default }
+.tl input { flex: 1; min-width: 0; height: 24px; margin: 0; -webkit-appearance: none; appearance: none; background: none; cursor: pointer; border-radius: 4px }
+.tl input::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--rule-2) 1px, transparent 1px) 6px 0 / calc((100% - 12px) * 10 / max(var(--n), 1)) 100% repeat-x, var(--well);
+}
+.tl input::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--card) }
+.mv { flex: none; min-width: 4.6em; text-align: right; font-family: var(--f-title); font-style: italic; font-size: 15px; color: var(--muted); text-transform: lowercase; white-space: nowrap; font-variant-numeric: tabular-nums }
+
+/* action bar: icon over label, hairlines between */
+.acts { flex: none; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 0 -14px; border-top: 1px solid var(--rule) }
+.act { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px 11px; border: 0; background: none; color: var(--ink); font-size: 11px; line-height: 1.25; text-align: center; cursor: pointer; transition: color .25s, background .25s, opacity .25s }
+.act + .act { border-left: 1px solid var(--rule) }
+.act[aria-pressed=true], .act.accent { color: var(--accent) }
+.act:disabled { opacity: .4; cursor: default }
+.act:focus-visible { outline-offset: -2px }
+
+.note { min-height: 2.9em; margin-top: 6px; font-family: var(--f-title); font-style: italic; font-size: 16px; line-height: 1.4; color: var(--muted) }
+/* caption under the board, in the stage's bottom padding: visible with the card hidden */
 .board-wrap > .note { position: absolute; left: 0; right: 0; bottom: -26px; min-height: 0; margin: 0; text-align: center; pointer-events: none }
-.board-wrap > .note > span { display: inline-flex; gap: .3em; max-width: 100%; padding: 1px 14px; border-radius: 999px; background: var(--bg); white-space: nowrap; pointer-events: auto; animation: fade .3s ease-out }
+.board-wrap > .note > span { display: inline-flex; gap: .3em; max-width: 100%; padding: 1px 14px; border-radius: 999px; background: var(--card); white-space: nowrap; pointer-events: auto; animation: fade .3s ease-out }
 /* one line, inside the stage's bottom padding, so it never covers the board; the full text is in the title */
 .board-wrap > .note .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis }
 .board-wrap > .note .link { flex: none }
 .board-wrap > .note:focus { outline: none } /* a resting place for focus after a caption link, not a control */
 .board-wrap > .note .link + .link { margin-left: .5em }
-.nav { display: flex; gap: 6px; margin-top: 4px }
-.nav button { flex: 1; height: 30px; border: 0; border-radius: 999px; background: rgba(43, 29, 14, .05); color: var(--ink); font-size: 14px; cursor: pointer; transition: background .25s, opacity .25s }
-.nav button:hover:not(:disabled) { background: var(--hover) }
-.nav button:disabled { opacity: .35; cursor: default }
 
-.acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
+.lab { display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); padding-bottom: 11px; border-bottom: 1px solid var(--rule); margin-bottom: 10px }
+.lab span:last-child { letter-spacing: .06em; text-transform: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink) }
+
 .btn { padding: 11px 14px; font-size: 13.5px; letter-spacing: .02em; border: 1px solid var(--rule-2); background: transparent; border-radius: 999px; cursor: pointer; transition: background .25s, border-color .25s, opacity .25s; white-space: nowrap }
 .btn:hover:not(:disabled) { background: var(--hover); border-color: var(--accent) }
 .btn:disabled { opacity: .4; cursor: default }
 .btn.accent { border-color: var(--accent); color: var(--accent) }
 .seg button:disabled { opacity: .45; cursor: default }
 .seg button:disabled:hover { color: var(--muted) }
-:is(.btn, .nav button, .seg button, .switch):focus-visible { outline: 1px solid var(--accent); outline-offset: 2px }
+:is(.btn, .seg button, .switch):focus-visible { outline: 1px solid var(--accent); outline-offset: 2px }
 
 .opts { display: flex; flex-direction: column; gap: 8px }
 .opts > .btn.accent { margin-top: 6px }
@@ -80,46 +170,32 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .stepper .step button:hover { background: var(--hover); color: var(--accent) }
 .stepper output { min-width: 34px; text-align: center; font-size: 14px }
 .stepper { cursor: default }
-.cta { padding: 12px 14px; border-radius: 12px; background: rgba(43, 29, 14, .04); box-shadow: inset 0 0 0 1px var(--rule) }
-.cta p { font-family: var(--f-title); font-style: italic; font-size: 15.5px; line-height: 1.4; color: #6E5F4D; margin-bottom: 10px }
-.estimate, .engine { font-family: var(--f-title); font-style: italic; font-size: 16px; line-height: 1.4; color: #6E5F4D; padding: 4px 0 2px }
-.lab .link { letter-spacing: .02em; text-transform: none; font-size: 12px }
+.cta { padding: 12px 14px; border-radius: 12px; background: var(--well); box-shadow: inset 0 0 0 1px var(--rule) }
+.cta p { font-family: var(--f-title); font-style: italic; font-size: 15.5px; line-height: 1.4; color: var(--muted); margin-bottom: 10px }
+.estimate, .engine { font-family: var(--f-title); font-style: italic; font-size: 16px; line-height: 1.4; color: var(--muted); padding: 4px 0 2px }
 .more summary { list-style: none; cursor: pointer; font-size: 12.5px; color: var(--muted); padding: 4px 0; transition: color .25s }
 .more summary::-webkit-details-marker { display: none }
 .more summary::after { content: " ›"; display: inline-block; transition: transform .25s }
 .more[open] summary::after { transform: rotate(90deg) }
 .more summary:hover { color: var(--accent) }
 .more summary:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px }
-.panel { scrollbar-width: thin; scrollbar-color: var(--rule-2) transparent }
 .engine.err, .net-err { color: var(--accent) }
-.acts > :last-child:nth-child(odd) { grid-column: span 2 }
-.pl.thinking::before { animation: breathe 1.8s ease-in-out infinite }
-@keyframes breathe { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
 
-/* panel toggle, top right: above the macOS drag strip (a button there is not a drag handle) */
-.panel-toggle { position: fixed; top: 8px; right: 12px; z-index: 11; width: 28px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; opacity: .55; transition: opacity .25s, color .25s, background .25s }
-.panel-toggle:hover, .panel-toggle:focus-visible { opacity: 1; color: var(--accent); background: var(--hover) }
-.panel-toggle:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px }
-.panel-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.2 }
-.panel-toggle[aria-expanded=false] path { stroke-dasharray: 1.5 1.5 }
-.turn { position: fixed; top: 14px; right: 48px; z-index: 11; width: 12px; height: 12px; border-radius: 50%; box-shadow: 1px 1.5px 2px rgba(0, 0, 0, .22); pointer-events: none; animation: fade .25s ease-out }
-.turn.b { background: var(--stone-b) }
-.turn.w { background: var(--stone-w) }
-.turn.thinking { animation: breathe 1.8s ease-in-out infinite }
-
-/* networks sheet */
-.sheet-back { position: fixed; inset: 0; z-index: 20; background: rgba(42, 33, 24, .18); animation: fade .25s ease-out }
+/* sheets */
+.sheet-back { position: fixed; inset: 0; z-index: 20; background: var(--scrim); animation: fade .25s ease-out }
 .sheet {
   position: absolute; top: 0; right: 0; bottom: 0; width: min(460px, 100%); overflow-y: auto; padding: 52px 36px 28px;
-  display: flex; flex-direction: column; gap: 22px; background: var(--bg); box-shadow: -18px 0 48px rgba(60, 40, 15, .16);
+  display: flex; flex-direction: column; gap: 22px; background: var(--sheet); color: var(--ink); box-shadow: -18px 0 48px var(--shadow);
   animation: slide .32s cubic-bezier(.2, .8, .2, 1);
 }
+.sheet:focus { outline: none }
 .sheet::before { content: ""; position: fixed; inset: 0; pointer-events: none; mix-blend-mode: multiply; opacity: .9; background-image: var(--noise) }
 .sheet header { position: relative }
-.sheet .title { font-size: 40px }
+.sheet .title { font-family: var(--f-title); font-size: 40px; font-weight: 500; font-style: italic; line-height: 1 }
 .sheet .close { position: absolute; top: -8px; right: -8px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: none; font-size: 22px; color: var(--muted); cursor: pointer }
 .sheet .close:hover { background: var(--hover); color: var(--accent) }
 .quiet { font-size: 13px; line-height: 1.55; color: var(--muted) }
+.keys { font-size: 11.5px; line-height: 2.1; color: var(--muted); letter-spacing: .03em }
 .net { padding: 12px 0 14px; border-bottom: 1px solid var(--rule) }
 .net:last-child { border-bottom: 0 }
 .net-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px }
@@ -138,7 +214,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .net-acts { margin-top: 10px; display: flex; align-items: center; gap: 16px; font-size: 12.5px }
 .net-acts .use { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; margin-right: auto }
 .net-acts input[type=radio] { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--rule-2); margin: 0; cursor: pointer; transition: border .25s, box-shadow .25s }
-.net-acts input[type=radio]:checked { border-color: var(--accent); box-shadow: inset 0 0 0 3px var(--bg), inset 0 0 0 7px var(--accent) }
+.net-acts input[type=radio]:checked { border-color: var(--accent); box-shadow: inset 0 0 0 3px var(--sheet), inset 0 0 0 7px var(--accent) }
 .link { border: 0; background: none; padding: 0; font-size: 12.5px; color: var(--muted); cursor: pointer; text-decoration: underline; text-decoration-color: var(--rule-2); text-underline-offset: 3px; transition: color .25s }
 .link:hover:not(:disabled) { color: var(--accent) }
 .link.accent, .net-acts .link:only-child { margin-left: auto }
@@ -150,10 +226,10 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 :is(.link, .close, .stepper button, .net-acts input):focus-visible { outline: 1px solid var(--accent); outline-offset: 2px }
 @keyframes slide { from { transform: translateX(40px); opacity: 0 } }
 @keyframes fade { from { opacity: 0 } }
-.seg { flex: 1; display: flex; padding: 3px; border-radius: 999px; background: rgba(43, 29, 14, .05); box-shadow: inset 0 0 0 1px var(--rule) }
+.seg { flex: 1; display: flex; padding: 3px; border-radius: 999px; background: var(--well); box-shadow: inset 0 0 0 1px var(--rule) }
 .seg button { flex: 1; border: 0; background: none; font-size: 12.5px; color: var(--muted); padding: 8px 0; border-radius: 999px; cursor: pointer; font-variant-numeric: tabular-nums; transition: color .3s, background .3s, box-shadow .3s }
 .seg button:hover { color: var(--ink) }
-.seg button[aria-checked=true] { color: var(--ink); background: #F7F2E8; box-shadow: 0 1px 2px rgba(60, 40, 15, .14), 0 0 0 1px rgba(60, 40, 15, .06) }
+.seg button[aria-checked=true] { color: var(--ink); background: var(--seg-on); box-shadow: 0 1px 2px var(--shadow), 0 0 0 1px var(--rule) }
 
 .row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 14px; cursor: pointer }
 .switch { position: relative; width: 38px; height: 22px; border-radius: 999px; border: 0; background: var(--rule-2); cursor: pointer; transition: background .3s; flex: none }
@@ -163,13 +239,4 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 
 .foot { font-size: 11px; color: var(--muted); letter-spacing: .03em; line-height: 2; padding-top: 12px; border-top: 1px solid var(--rule) }
 
-@media (max-height: 780px) {
-  .panel { gap: 16px }
-  .title { margin-top: 0; font-size: 40px }
-  .foot { display: none }
-  .pl { padding: 5px 0 }
-  .btn { padding: 8px 12px }
-  .seg button { padding: 6px 0 }
-  .lab { padding-bottom: 8px; margin-bottom: 6px }
-}
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }

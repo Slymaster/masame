@@ -94,7 +94,7 @@ Les réseaux sont publiés par le projet KataGo sous la [KataGo Neural Network L
 
 - Aucune télémétrie, aucune mesure d'audience, aucun compte.
 - Les requêtes réseau vont à katagotraining.org (le catalogue des réseaux et leur téléchargement) et à GitHub pour les mises à jour (github.com et ses serveurs de fichiers).
-- Au plus une fois par jour, Masame demande à GitHub si une nouvelle version existe (tu peux le désactiver dans le panneau). Une mise à jour n'est téléchargée que si tu cliques sur Installer, et elle est vérifiée avec la clé de signature de Masame avant d'être installée.
+- Au plus une fois par jour, Masame demande à GitHub si une nouvelle version existe (tu peux le désactiver dans les Réglages). Une mise à jour n'est téléchargée que si tu cliques sur Installer, et elle est vérifiée avec la clé de signature de Masame avant d'être installée.
 - Tes parties restent sur ta machine ; les fichiers SGF sont enregistrés là où tu le choisis.
 
 ## Feuille de route
