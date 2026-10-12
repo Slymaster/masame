@@ -62,6 +62,13 @@ export const fr: Dict = {
   tuningCaption: 'Réglage de KataGo pour ta carte graphique (premier lancement)',
   tuningProgress,
   engineReady: 'Moteur prêt', engineIdle: 'Moteur en veille', noAnalysisNet: 'Aucun réseau d’analyse installé.',
+  updates: 'Mises à jour', checkUpdates: 'Rechercher les mises à jour', checking: 'Recherche…',
+  upToDate: (app: string) => `${app} est à jour`,
+  updateAvailable: (v: string) => `Masame ${v} est disponible`,
+  install: 'Installer',
+  updateDownloading: (p: number | null) => (p === null ? 'Téléchargement de la mise à jour…' : `Téléchargement de la mise à jour… ${f.pct(p)}`),
+  updateInstalling: 'Installation de la mise à jour…',
+  autoUpdate: 'Rechercher les mises à jour automatiquement',
   footer: { browse: 'parcourir', pass: 'passer', territory: 'territoire', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau' },
   // barre de menus macOS (src-tauri/src/menu.rs)
   menu: {
@@ -142,5 +149,7 @@ export const fr: Dict = {
     open_failed: 'Impossible d’ouvrir le navigateur.',
     cpu_unsupported: 'KataGo n’a pas pu utiliser la carte graphique, et ce processeur ne gère pas AVX2 pour la version CPU.',
     menu_failed: 'Impossible de mettre à jour la barre de menus.',
+    update_check: 'Impossible de rechercher les mises à jour.',
+    update_failed: 'Impossible d’installer la mise à jour.',
   },
 }

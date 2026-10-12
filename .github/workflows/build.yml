@@ -3,6 +3,8 @@
 # On a v* tag push only, the packages are uploaded as workflow artifacts and the release job turns them into a draft
 # GitHub release (with SHA256SUMS.txt) for the maintainer to review and publish by hand. Actions are pinned to commit
 # SHAs (tag in the comment); pnpm's exact version comes from package.json's packageManager field.
+# Tag builds also sign the updater packages with the key held by the `release` environment (restricted to v* tags) and
+# the release job publishes latest.json, which the app's updater reads; other builds neither need nor see the key.
 name: Build
 
 on:
@@ -29,6 +31,8 @@ jobs:
           - os: ubuntu-22.04
             bundles: appimage,deb,rpm
     runs-on: ${{ matrix.os }}
+    # The updater signing key lives in this environment's secrets; no environment (empty name) for other refs.
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -89,10 +93,14 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
+      # Tags only: updater packages (.app.tar.gz, setup.exe, AppImage) signed with the key; without it the build fails.
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: pnpm tauri
-          args: --bundles ${{ matrix.bundles }}
+          args: --bundles ${{ matrix.bundles }}${{ startsWith(github.ref, 'refs/tags/v') && ' --config ''{"bundle":{"createUpdaterArtifacts":true}}''' || '' }}
           # off: binaries leave CI only through the explicit tag-only upload below
           uploadWorkflowArtifacts: false
 
@@ -104,12 +112,15 @@ jobs:
           [ ${#appimages[@]} -eq 1 ] || { echo "::error::expected one AppImage, found ${#appimages[@]}"; exit 1; }
           scripts/linux-appimage-libraries.sh "${appimages[0]}" src-tauri/target/release/bundle/appimage/linux-appimage-libraries.txt
 
-      - name: Upload the DMG (tags only)
+      - name: Upload the DMG and the updater package (tags only)
         if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'macOS'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: masame-macos
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
           retention-days: 7
       - name: Upload the installer (tags only)
@@ -117,7 +128,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: masame-windows
-          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/nsis/*-setup.exe.sig
           if-no-files-found: error
           retention-days: 7
       - name: Upload the Linux packages (tags only)
@@ -128,6 +141,7 @@ jobs:
           # Several folders: the artifact keeps them under bundle/ (appimage/, deb/, rpm/); the release job flattens.
           path: |
             src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.AppImage.sig
             src-tauri/target/release/bundle/appimage/linux-appimage-libraries.txt
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm
@@ -160,12 +174,52 @@ jobs:
           path: dist-release
           merge-multiple: true
 
+      - name: Flatten the artifacts
+        working-directory: dist-release
+        run: |
+          # Artifacts with several folders arrive as subfolders: move every file to the top, refusing duplicates.
+          find . -mindepth 2 -type f -exec mv -n -t . {} +
+          find . -mindepth 1 -type d -delete
+
+      - name: Install minisign
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
+
+      # Each updater package must verify against the public key the app ships (tauri.conf.json) and be signed for this
+      # version (the signature's trusted comment, which the app also checks). Tauri stores the minisign public key and
+      # each .sig as base64 of the whole minisign file; latest.json carries the .sig content as is.
+      - name: Verify the updater signatures and write latest.json
+        working-directory: dist-release
+        run: |
+          shopt -s nullglob
+          jq -r .plugins.updater.pubkey ../src-tauri/tauri.conf.json | base64 -d > "$RUNNER_TEMP/updater.pub"
+          platforms='{}'
+          for entry in 'darwin-aarch64 *.app.tar.gz' 'windows-x86_64 *-setup.exe' 'linux-x86_64 *.AppImage'; do
+            target=${entry%% *}
+            # shellcheck disable=SC2206 # the glob is the point
+            files=(${entry#* })
+            if [ ${#files[@]} -ne 1 ] || [ ! -f "${files[0]}.sig" ]; then
+              echo "::error::$target: expected one ${entry#* } with its .sig, found ${#files[@]} package(s)"
+              exit 1
+            fi
+            file=${files[0]}
+            base64 -d "$file.sig" > "$RUNNER_TEMP/$file.minisig"
+            comment=$(minisign -V -Q -p "$RUNNER_TEMP/updater.pub" -m "$file" -x "$RUNNER_TEMP/$file.minisig")
+            if ! tr '\t' '\n' <<< "$comment" | grep -qxF "version:$VERSION"; then
+              echo "::error::$file is not signed for version $VERSION (trusted comment: $comment)"
+              exit 1
+            fi
+            platforms=$(jq -c --arg t "$target" --arg sig "$(cat "$file.sig")" \
+              --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$file" \
+              '.[$t] = {signature: $sig, url: $url}' <<< "$platforms")
+          done
+          jq -n --arg version "$VERSION" --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson platforms "$platforms" \
+            --arg notes "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: $platforms}' > latest.json
+          cat latest.json
+
       - name: Write checksums
         working-directory: dist-release
         run: |
-          # Artifacts with several folders (Linux) arrive as subfolders: move every file to the top, refusing duplicates.
-          find . -mindepth 2 -type f -exec mv -n -t . {} +
-          find . -mindepth 1 -type d -delete
           sha256sum -- * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 

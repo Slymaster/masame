@@ -61,6 +61,13 @@ export const en = {
   tuningCaption: 'Tuning KataGo for your graphics card (first launch only)', // the short form, under the board
   tuningProgress,
   engineReady: 'Engine ready', engineIdle: 'Engine idle', noAnalysisNet: 'No analysis network installed.',
+  updates: 'Updates', checkUpdates: 'Check for updates', checking: 'Checking…',
+  upToDate: (app: string) => `${app} is up to date`,
+  updateAvailable: (v: string) => `Masame ${v} is available`,
+  install: 'Install',
+  updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
+  updateInstalling: 'Installing the update…',
+  autoUpdate: 'Check for updates automatically',
   footer: { browse: 'browse', pass: 'pass', territory: 'territory', undo: 'undo', newGame: 'new game', panel: 'panel' },
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
@@ -141,6 +148,8 @@ export const en = {
     open_failed: 'Couldn’t open the browser.',
     cpu_unsupported: 'KataGo couldn’t run on the graphics card, and this processor lacks AVX2 for the CPU version.',
     menu_failed: 'Couldn’t update the menu bar.',
+    update_check: 'Couldn’t check for updates.',
+    update_failed: 'Couldn’t install the update.',
   },
 }
 

@@ -14,6 +14,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-updater = { version = "~2.13", default-features = false, features = ["rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "stream"] }
@@ -28,3 +29,7 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Threading",
   "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging",
 ] }
+
+# The mock runtime, for the (ignored) TLS test that runs the updater next to our own client.
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
