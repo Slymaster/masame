@@ -11,7 +11,7 @@
 //   } })); location.reload()
 //
 // Unlisted commands reject with { code: 'unmocked', detail: <command> }. From the console:
-// window.__badukMock.emit('network-progress', {...}) fires an event (update-progress: { received, total });
+// window.__badukMock.emit('network-progress', {...}) fires an event (update-progress: { received, total }, then update-installing);
 // window.__badukMock.calls lists every invoke.
 
 type Reply = { ok?: unknown; err?: { code: string; detail?: string }; delay?: number }

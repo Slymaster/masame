@@ -13,7 +13,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
@@ -310,11 +310,23 @@ fn installable() -> bool {
     !cfg!(target_os = "linux") || matches!(tauri::utils::platform::bundle_type(), Some(tauri::utils::config::BundleType::AppImage))
 }
 
-/// Asks the fixed endpoint (tauri.conf.json) whether a newer release exists, and keeps it for update_install.
+/// The updater for the fixed endpoint in tauri.conf.json.
+fn updater<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
+    // Only the local end-to-end test build allows plain http (an override config, never committed).
+    let https = app.config().plugins.0.get("updater").and_then(|u| u.get("dangerousInsecureTransportProtocol")).and_then(Value::as_bool) != Some(true);
+    app.updater_builder()
+        .timeout(Duration::from_secs(30)) // the check only; the Update gets no overall timeout
+        // Copied into the Update, so it also covers the download: a stalled transfer fails instead of hanging, and an
+        // https -> http redirect (GitHub sends the files from its download hosts) is refused rather than followed.
+        .configure_client(move |c| c.read_timeout(Duration::from_secs(30)).https_only(https))
+        .build()
+}
+
+/// Asks the fixed endpoint whether a newer release exists, and keeps it for update_install.
 #[tauri::command]
 async fn update_check(app: AppHandle, s: State<'_, App>) -> Res<Option<Value>> {
     let fail = |e: tauri_plugin_updater::Error| Failure::with("update_check", e);
-    let update = app.updater_builder().timeout(std::time::Duration::from_secs(30)).build().map_err(fail)?.check().await.map_err(fail)?;
+    let update = updater(&app).map_err(fail)?.check().await.map_err(fail)?;
     let reply = update.as_ref().map(|u| json!({ "version": u.version, "install": installable() }));
     *s.update.lock().unwrap() = update;
     Ok(reply)
@@ -336,6 +348,7 @@ async fn update_install(app: AppHandle, s: State<'_, App>) -> Res<()> {
                 let _ = app.emit("update-progress", json!({ "received": got, "total": total }));
             }
         }, || {}).await.map_err(|e| e.to_string())?;
+        let _ = app.emit("update-installing", ()); // downloaded and verified (also when the size was unknown)
         s.engine.stop();
         let u = update.clone();
         tauri::async_runtime::spawn_blocking(move || u.install(bytes)).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())
@@ -437,8 +450,8 @@ mod tests {
         let app = tauri::test::mock_builder().plugin(tauri_plugin_updater::Builder::new().build()).build(ctx).unwrap();
         tauri::async_runtime::block_on(async {
             assert!(!networks::fetch_nets(&networks::client()).await.expect("catalogue over TLS").is_empty());
-            // Until a release carries latest.json, GitHub answers 404: ReleaseNotFound means the handshake worked.
-            let r = app.updater().unwrap().check().await;
+            // Until a release carries latest.json, GitHub redirects to a 404: ReleaseNotFound means TLS worked.
+            let r = updater(app.handle()).unwrap().check().await; // the same client settings as update_check
             eprintln!("updater check: {:?}", r.as_ref().map(|u| u.as_ref().map(|u| u.version.clone())));
             match r {
                 Ok(_) | Err(tauri_plugin_updater::Error::ReleaseNotFound) => {}

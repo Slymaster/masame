@@ -201,7 +201,7 @@ export function App() {
   // Updates: a silent check at launch (at most daily, unless turned off), a manual one, install on click only.
   const [version, setVersion] = useState('')
   const [upd, setUpd] = useState<{ s: 'idle' | 'checking' | 'latest' } | ({ s: 'available' | 'installing' } & UpdateInfo)
-    | ({ s: 'downloading'; pct: number | null } & UpdateInfo) | { s: 'error'; error: unknown }>({ s: 'idle' })
+    | ({ s: 'downloading'; pct: number | null } & UpdateInfo) | { s: 'error'; error: unknown; retry?: UpdateInfo }>({ s: 'idle' })
   const checkUpdate = (silent: boolean) => {
     if (!silent) setUpd({ s: 'checking' })
     call<UpdateInfo | null>('update_check').then(
@@ -217,16 +217,19 @@ export function App() {
     if (settings.autoUpdate && checkDue(now, settings.updateChecked)) { set('updateChecked', now); checkUpdate(true) }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const off = on<{ received: number; total: number | null }>('update-progress', p => setUpd(u => u.s !== 'downloading' ? u
-      : p.total && p.received >= p.total ? { ...u, s: 'installing' } : { ...u, pct: p.total ? Math.floor(p.received / p.total * 100) : null }))
-    return () => { off.then(f => f()) }
+    const subs = [
+      on<{ received: number; total: number | null }>('update-progress', p => setUpd(u => u.s !== 'downloading' ? u
+        : { ...u, pct: p.total ? Math.min(100, Math.floor(p.received / p.total * 100)) : null })),
+      on('update-installing', () => setUpd(u => u.s === 'downloading' ? { ...u, s: 'installing' } : u)),
+    ]
+    return () => { subs.forEach(s => s.then(off => off())) }
   }, [])
-  const installUpdate = async () => {
-    if (upd.s !== 'available') return
-    if (!upd.install) return void call('open_link', { which: 'releases' }).catch(() => {})
+  const installUpdate = async ({ version, install }: UpdateInfo) => {
+    if (!install) return void call('open_link', { which: 'releases' }).catch(() => {})
     if (dirty && !(await confirmDiscard())) return
-    setUpd({ ...upd, s: 'downloading', pct: null })
-    call('update_install').catch(e => setUpd({ s: 'error', error: e })) // on success the app restarts
+    setUpd({ s: 'downloading', version, install, pct: null })
+    // on success the app restarts; on failure Rust keeps the update, so it can be installed again
+    call('update_install').catch(e => setUpd({ s: 'error', error: e, retry: { version, install } }))
   }
 
   const changed = () => { setNote(null); setBotError(null); rerender() }
@@ -445,13 +448,14 @@ export function App() {
     : `${engine.state === 'ready' ? t.engineReady : t.engineIdle} · ${pick(t.labels, nets?.activeKey ?? '') ?? nets?.active}`
   const app = version ? `Masame ${version}` : 'Masame'
   const releases = () => { call('open_link', { which: 'releases' }).catch(() => {}) }
-  const [updLine, updAction]: [string, [string, () => void] | null] = upd.s === 'checking' ? [`${app} · ${t.checking}`, null]
-    : upd.s === 'latest' ? [t.upToDate(app), null]
-    : upd.s === 'available' ? [t.updateAvailable(upd.version), [upd.install ? t.install : t.download, installUpdate]]
-    : upd.s === 'downloading' ? [t.updateDownloading(upd.pct), null]
-    : upd.s === 'installing' ? [t.updateInstalling, null]
-    : upd.s === 'error' ? [failureText(upd.error), [t.download, releases]]
-    : [app, [t.checkUpdates, () => checkUpdate(false)]]
+  const retry = upd.s === 'error' ? upd.retry : undefined // a failed install: Rust kept the update
+  const [updLine, updActions]: [string, [string, () => void][]] = upd.s === 'checking' ? [`${app} · ${t.checking}`, []]
+    : upd.s === 'latest' ? [t.upToDate(app), []]
+    : upd.s === 'available' ? [t.updateAvailable(upd.version), [[upd.install ? t.install : t.download, () => installUpdate(upd)]]]
+    : upd.s === 'downloading' ? [t.updateDownloading(upd.pct), []]
+    : upd.s === 'installing' ? [t.updateInstalling, []]
+    : upd.s === 'error' ? [failureText(upd.error), retry ? [[t.install, () => installUpdate(retry)], [t.download, releases]] : [[t.download, releases]]]
+    : [app, [[t.checkUpdates, () => checkUpdate(false)]]]
 
   return (
     <>
@@ -598,7 +602,7 @@ export function App() {
             <section>
               <div className="lab"><span>{t.updates}</span><span /></div>
               <p className={`engine${upd.s === 'error' ? ' err' : ''}`} aria-live="polite">
-                {updLine}{updAction && <> · <button className="link" onClick={updAction[1]}>{updAction[0]}</button></>}
+                {updLine}{updActions.map(([label, act]) => <span key={label}> · <button className="link" onClick={act}>{label}</button></span>)}
               </p>
               {upd.s === 'downloading' && (
                 <div className="bar" role="progressbar" aria-label={t.updateDownloading(null)} aria-valuenow={upd.pct ?? undefined} aria-valuemin={0} aria-valuemax={100}>

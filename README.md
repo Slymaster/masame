@@ -92,8 +92,8 @@ The networks are published by the KataGo project under the [KataGo Neural Networ
 ## Privacy
 
 - No telemetry, no analytics, no account.
-- Network requests go to katagotraining.org (the network catalogue and the network downloads) and to github.com.
-- At most once a day, Masame asks github.com whether a new version exists (you can turn this off in the panel). An update is downloaded only when you click Install, and is checked against Masame's signing key before it is installed.
+- Network requests go to katagotraining.org (the network catalogue and the network downloads) and to GitHub for updates (github.com and its file servers).
+- At most once a day, Masame asks GitHub whether a new version exists (you can turn this off in the panel). An update is downloaded only when you click Install, and is checked against Masame's signing key before it is installed.
 - Your games stay on your machine; SGF files are saved where you choose.
 
 ## Roadmap
