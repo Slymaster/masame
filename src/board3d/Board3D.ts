@@ -429,6 +429,9 @@ export class Board3D {
   /** The quiet "stones stirred in the bowl" loop while the AI thinks. */
   setThinking(on: boolean) { this.sound.setThinking(on) }
 
+  /** The bot passed: a soft tap from its bowl, nothing moves. */
+  pass(c: Sign) { this.sound.tap(c) }
+
   /** Animates and sounds a stone landing (the player's click, or the bot's move). */
   drop(v: Vertex, c: Sign) {
     if (this.dead) return

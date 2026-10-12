@@ -41,6 +41,15 @@ function tone(c: AudioContext, t0: number, f0: number, f1: number, decay: number
   o.stop(t0 + decay + 0.02)
 }
 
+/** A soft high tap (the bot passing): a short bright noise burst over a faint sine. */
+export function playTap() {
+  let c: AudioContext
+  try { c = context() } catch { return }
+  const t = c.currentTime + 0.005
+  burst(c, t, 3600, 4, 0.03, 0.3)
+  tone(c, t, 3600, 3400, 0.03, 0.1)
+}
+
 export function playClack() {
   let c: AudioContext
   try { c = context() } catch { return } // no audio device: stay silent

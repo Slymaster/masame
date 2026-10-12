@@ -125,6 +125,12 @@ export class StoneSound {
     }
   }
 
+  /** A pass: one soft click from the passer's bowl (Black's to the right, White's to the left). */
+  tap(c: number) {
+    if (!this.live()) return
+    this.voice(this.clicks!, Math.floor(Math.random() * this.clicks!.starts.length), this.ac!.currentTime + 0.003, { gain: 0.3, pan: c === 1 ? 0.45 : -0.45, dur: 0.15 })
+  }
+
   /** Quiet stones stirred in the bowl while the AI thinks. */
   setThinking(on: boolean) {
     this.thinking = on

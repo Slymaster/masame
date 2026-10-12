@@ -14,6 +14,7 @@ export const fr: Dict = {
   color,
   captures: (n: number) => f.plural(n, 'prise', 'prises'),
   passes: (s: number) => `${color(s)} passe.`,
+  botPasses: (s: number) => `${color(s)} passe. À toi de jouer.`,
   countingWait: 'Deux passes consécutives : la partie est terminée. Comptage…',
   countingHelp: 'Comptage : clique sur un groupe pour le marquer mort ou vivant, puis valide le score.',
   side: (s: number, total: number, territory: number, prisoners: number, komi?: number) =>
@@ -55,7 +56,8 @@ export const fr: Dict = {
   engineInAppOnly: 'Le moteur est disponible dans l’application.',
   engineStarting: 'Préparation du moteur… La première fois, cela peut prendre quelques minutes.',
   engineWarming: 'Préparation du moteur…',
-  engineTuning: 'Accordage du moteur…',
+  engineTuning: (step: number, done: number, total: number) =>
+    `Réglage de KataGo pour cette carte graphique (premier lancement seulement, quelques minutes)${step ? ` · étape ${step}` : ''}${total ? ` · ${done}/${total}` : ''}`,
   engineReady: 'Moteur prêt', engineIdle: 'Moteur en veille', noAnalysisNet: 'Aucun réseau d’analyse installé.',
   footer: { browse: 'parcourir', pass: 'passer', territory: 'territoire', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau' },
   // barre de menus macOS (src-tauri/src/menu.rs)

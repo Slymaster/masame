@@ -4,7 +4,7 @@
 
 import type { Sign, SignMap, Vertex } from '@sabaki/go-board'
 import { clamp01, easeOut, hash, n1, rng, sstep, stoneRng, TAU, vn2 } from './noise'
-import { playClack } from './sound'
+import { playClack, playTap } from './sound'
 import { gx, gz, jitter, settle, type Placed } from '../board3d/logic'
 
 export interface BoardState {
@@ -333,6 +333,9 @@ export class BoardView {
   }
 
   destroy() { this.cleanup() }
+
+  /** The bot passed: a soft tap, nothing drawn. */
+  pass() { if (this.state?.sound) playTap() }
 
   /** Animates and sounds a stone landing (the player's click, or the bot's move). */
   drop(v: Vertex, c: Sign) {
