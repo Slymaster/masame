@@ -1,5 +1,7 @@
 // "Atelier vivant": the real-time 3D goban (three.js, WebGL2). Same contract as the Canvas2D BoardView
 // (constructor(canvas, onPlay), update(state), drop(v, c), resize(size), destroy()), so the app can swap renderers.
+// resize(width, height, frame) may also give the board's frame inside the canvas: the scene runs full-bleed, the board
+// is framed in that rectangle (a view offset on both cameras).
 // Units are millimetres. Only MeshPhysicalMaterial / MeshBasicMaterial / ShadowMaterial + PMREM, so a WebGPURenderer
 // port stays possible; the onBeforeCompile GLSL snippets (grid ink, shell stripes, slate micro-roughness, AO alpha) are
 // the parts that would need a TSL rewrite.
@@ -377,6 +379,7 @@ export class Board3D {
   private noGrid = false // measurements only: the ink lines would pass for stone edges
 
   private W = 1; private H = 1
+  private fr = { x: 0, y: 0, w: 1, h: 1 } // the board's frame in the canvas, CSS px
   private raf = 0
   private lastFrame = 0
   private ready = false
@@ -472,20 +475,28 @@ export class Board3D {
     this.invalidate()
   }
 
-  /** Canvas size in CSS pixels; height defaults to width (the 2D view's square contract). */
-  resize(width: number, height = width) {
+  /** Canvas size in CSS pixels; height defaults to width (the 2D view's square contract). `frame` (canvas CSS px,
+   *  default the whole canvas) is where the board is framed; a frame-only change re-frames without re-measuring quality. */
+  resize(width: number, height = width, frame?: { left: number; top: number; width: number; height: number }) {
     if (this.dead) return
     const W = Math.max(200, Math.floor(width)), H = Math.max(200, Math.floor(height))
-    if (W === this.W && H === this.H) return
-    this.W = W; this.H = H
-    this.canvas.style.width = `${W}px`; this.canvas.style.height = `${H}px`
-    this.renderer.setSize(W, H, false)
-    this.composer.setSize(W, H)
+    const f = frame ?? { left: 0, top: 0, width: W, height: H }
+    const fr = { x: Math.round(f.left), y: Math.round(f.top), w: Math.max(1, Math.round(f.width)), h: Math.max(1, Math.round(f.height)) }
+    const sized = W !== this.W || H !== this.H, o = this.fr
+    if (!sized && fr.x === o.x && fr.y === o.y && fr.w === o.w && fr.h === o.h) return
+    this.fr = fr
+    if (sized) {
+      this.W = W; this.H = H
+      this.canvas.style.width = `${W}px`; this.canvas.style.height = `${H}px`
+      this.renderer.setSize(W, H, false)
+      this.composer.setSize(W, H)
+      // quality is re-decided once the size settles (steps down only)
+      clearTimeout(this.resizeTimer)
+      this.resizeTimer = window.setTimeout(() => { if (this.ready && !this.dead) { this.applyPendingQuality(); this.warmUp(); this.invalidate() } }, 300)
+    }
+    for (const c of [this.ortho, this.persp]) c.setViewOffset(fr.w, fr.h, -fr.x, -fr.y, W, H)
     this.endFade()
     if (this.ready) this.frame(performance.now()) // synchronous: no blank frame while the window is being dragged
-    // quality is re-decided once the size settles (steps down only)
-    clearTimeout(this.resizeTimer)
-    this.resizeTimer = window.setTimeout(() => { if (this.ready && !this.dead) { this.applyPendingQuality(); this.warmUp(); this.invalidate() } }, 300)
   }
 
   destroy() {
@@ -1149,18 +1160,18 @@ export class Board3D {
   /* ---------- cameras ---------- */
 
   private frameHeight(mode: 0 | 1) {
-    const { BW, BD } = this.D, aspect = Math.max(0.4, this.W / this.H)
+    const { BW, BD } = this.D, aspect = Math.max(0.4, this.fr.w / this.fr.h)
     if (mode === 0) return Math.max(BD * 1.1, (BW * 1.1) / aspect)
     return Math.max(BD * 1.22, ((BW + 2 * 190) * 1.04) / aspect)
   }
 
-  /** Both cameras are fixed: they depend only on the board and canvas sizes. */
+  /** Both cameras are fixed: they depend only on the board and frame sizes (the view offset places the frame in the canvas). */
   private placeCameras() {
-    const { W, H } = this, hs = this.frameHeight(0), o = this.ortho
-    o.top = hs / 2; o.bottom = -hs / 2; o.left = (-hs / 2) * W / H; o.right = (hs / 2) * W / H; o.updateProjectionMatrix()
+    const a = this.fr.w / this.fr.h, hs = this.frameHeight(0), o = this.ortho
+    o.top = hs / 2; o.bottom = -hs / 2; o.left = (-hs / 2) * a; o.right = (hs / 2) * a; o.updateProjectionMatrix()
     const p = this.persp, hc = this.frameHeight(1), fov = 28, dist = hc / 2 / Math.tan(THREE.MathUtils.degToRad(fov) / 2)
     const tgt = this._v.set(0, -6, 14)
-    p.fov = fov; p.aspect = W / H
+    p.fov = fov; p.aspect = a
     p.position.set(tgt.x, tgt.y + dist * Math.cos(TILT), tgt.z + dist * Math.sin(TILT))
     p.near = Math.max(5, dist - 1200); p.far = dist + 2500
     p.lookAt(tgt); p.updateProjectionMatrix()
@@ -1306,7 +1317,7 @@ export class Board3D {
         const p = (self.camOverride ??= new THREE.PerspectiveCamera()), t = THREE.MathUtils.degToRad(tilt)
         p.up.set(0, 0, -1)
         self.updateScene(performance.now() + 1e5)
-        p.fov = 24; p.aspect = self.W / self.H
+        p.fov = 24; p.aspect = self.fr.w / self.fr.h; p.setViewOffset(self.fr.w, self.fr.h, -self.fr.x, -self.fr.y, self.W, self.H)
         p.position.set(at[0] - 40, dist * Math.cos(t), at[1] + dist * Math.sin(t)); p.near = 5; p.far = 3000
         p.lookAt(at[0], 0, at[1]); p.updateProjectionMatrix()
         self.render(p)

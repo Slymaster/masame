@@ -26,9 +26,10 @@ kbd { font-family: var(--f-ui); font-size: 10.5px; line-height: 1; border: 1px s
 .stage { position: relative; height: 100%; display: flex; align-items: stretch; gap: clamp(28px, 4vw, 72px); padding: 44px clamp(28px, 3.5vw, 56px) 28px }
 .board-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; line-height: 0 }
 canvas { display: block; -webkit-tap-highlight-color: transparent }
+.board-wrap > canvas[data-r="3d"] { position: fixed; inset: 0 } /* the 3D scene runs full-bleed under the UI */
 
 .panel[hidden] { display: none } /* hidden panel: the board takes the whole stage (ResizeObserver refits it) */
-.panel { width: 312px; flex: none; display: flex; flex-direction: column; gap: 26px; overflow-y: auto; padding: 8px 2px 8px 16px; margin-left: -16px }
+.panel { position: relative; z-index: 1; width: 312px; flex: none; display: flex; flex-direction: column; gap: 26px; overflow-y: auto; padding: 8px 2px 8px 16px; margin-left: -16px }
 .panel > :first-child { margin-top: auto } /* centred when it fits, scrollable from the top when it doesn't */
 .panel > :last-child { margin-bottom: auto }
 .title { margin-top: 12px; font-family: var(--f-title); font-size: 50px; font-weight: 500; font-style: italic; line-height: 1; display: flex; align-items: baseline; gap: 14px }

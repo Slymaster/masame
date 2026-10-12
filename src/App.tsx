@@ -86,7 +86,8 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, child
         if (!live) return
         const b = three.current = new Board3D(canvas.current!, play, { options: latest.current.options, onFallback: r => latest.current.onFallback(r) })
         b.setThinking(latest.current.thinking)
-        mount(b, r => b.resize(r.width, r.height))
+        // full-bleed canvas (fixed, the whole window); the board stays framed in .board-wrap's rectangle
+        mount(b, () => b.resize(innerWidth, innerHeight, wrap.current!.getBoundingClientRect()))
       }, () => live && latest.current.onFallback('webgl2'))
     }
     return () => { live = false; ro?.disconnect(); v?.destroy(); view.current = three.current = null }
@@ -95,7 +96,7 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, child
   useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => three.current?.setThinking(thinking), [thinking])
   // a fresh canvas per renderer: one canvas can't hold both a 2D and a WebGL context
-  return <div className="board-wrap" ref={wrap}><canvas key={mode} ref={canvas} aria-label={t.boardLabel(state.signMap.length)} />{children}</div>
+  return <div className="board-wrap" ref={wrap}><canvas key={mode} ref={canvas} data-r={mode} aria-label={t.boardLabel(state.signMap.length)} />{children}</div>
 }
 
 /** State holding a Msg, rendered at display time (a bare function given to useState's setter would run as an updater). */
