@@ -96,8 +96,7 @@ describe('clockOf', () => {
     expect(clockOf(fischer, -1, fischer.last_move + 60_000, 0)!.main).toBe(0)
   })
   it('freezes while paused and counts down to expiration in start mode', () => {
-    const paused = { ...fischer, paused_since: fischer.last_move + 1000 }
-    expect(clockOf(paused, -1, fischer.last_move + 9000, 0)).toEqual({ main: white - 1000, running: false })
+    expect(clockOf(fischer, -1, fischer.last_move + 9000, 0, fischer.last_move + 1000)).toEqual({ main: white - 1000, running: false })
     expect(clockOf({ ...fischer, start_mode: true }, -1, fischer.expiration - 7000, 0)).toEqual({ main: 7000, running: true })
   })
   it('spends byo-yomi periods once main time is gone', () => {
@@ -124,6 +123,11 @@ describe('resultOf', () => {
     expect(resultOf({ winner: 'black', outcome: '4.5 points' })).toMatchObject({ re: 'B+4.5', points: 4.5 })
     expect(resultOf({ winner: 'black', outcome: 'Disconnection' })).toEqual({ re: 'B+F', winner: 1, how: 'forfeit' })
     expect(resultOf({ winner: 2, outcome: 'Cancellation', players })).toEqual({ re: 'Void', winner: 0, how: 'cancel' })
+  })
+  it('does not invent a winner', () => {
+    expect(resultOf({ outcome: 'Resignation' })).toEqual({ re: '?', winner: 0, how: 'resign' })
+    expect(resultOf({ outcome: '3.5 points' })).toEqual({ re: '?', winner: 0, how: 'score', points: 3.5 })
+    expect(resultOf({ winner: 'tie', outcome: '0 points' })).toEqual({ re: '0', winner: 0, how: 'score', points: 0 })
   })
 })
 
@@ -172,6 +176,31 @@ describe('apply', () => {
     expect(s.offset).toBe(3)
     expect(apply(s, ['move', { move_number: 71, move: [7, 3, 5750.5] }])!.game.moves).toHaveLength(68)
   })
+  it('decides "paused" from pause_control, not from a stale paused_since', () => {
+    // seen live: pause_control {} with an old paused_since once the pause is over
+    const stale = { ...clone(live), pause_control: {}, paused_since: live.clock.last_move - 3600_000 }
+    stale.clock.paused_since = stale.paused_since
+    let s = start(stale)
+    expect(s.pausedSince).toBeUndefined()
+    const now = live.clock.last_move + 2000
+    expect(clockOf(s.clock!, -1, now, 0, s.pausedSince)).toMatchObject({ running: true, main: (live.clock.white_time as { thinking_time: number }).thinking_time * 1000 - 2000 })
+    const since = live.clock.last_move + 500
+    s = apply(s, ['clock', { ...live.clock, pause: { paused: true, paused_since: since, pause_control: { paused: { pausing_player_id: 1001, pauses_left: 4 } } } }])!
+    expect(s.pausedSince).toBe(since)
+    expect(clockOf(s.clock!, -1, now, 0, s.pausedSince)!.running).toBe(false)
+    s = apply(s, ['clock', { ...live.clock }])! // no pause field: unchanged
+    expect(s.pausedSince).toBe(since)
+    s = apply(s, ['clock', { ...live.clock, pause: { paused: false } }])!
+    expect(s.pausedSince).toBeUndefined()
+    expect(start(fixture.finished).pausedSince).toBe(fixture.finished.paused_since) // stone removal pauses the clock
+  })
+  it('asks for the game again after an undo, or a finish without its outcome', () => {
+    const s = start()
+    expect(apply(s, ['undo_accepted', 116])!.reload).toBe(true)
+    expect(apply(s, ['phase', 'finished'])!.reload).toBe(true)
+    expect(apply(s, ['phase', 'stone removal'])!.reload).toBeUndefined()
+    expect(apply(start(fixture.finished), ['phase', 'finished'])!.reload).toBeUndefined()
+  })
   it('follows stone removal to the result', () => {
     let s = start()
     s = apply(s, ['phase', 'stone removal'])!
@@ -208,15 +237,17 @@ const last = () => FakeSocket.all[FakeSocket.all.length - 1]
 
 describe('session', () => {
   const fetches: string[] = []
+  let lost = false
   beforeEach(() => {
     FakeSocket.all = []
     fetches.length = 0
+    lost = false
     vi.useFakeTimers()
     vi.stubGlobal('WebSocket', FakeSocket)
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: { headers: Record<string, string> }) => {
       fetches.push(`${url} ${init.headers.Authorization}`)
       const body = url.endsWith('/ui/config') ? { user_jwt: 'jwt-1', user: { id: 1002, username: 'me', ranking: 30.2 } }
-        : { results: [{ id: 9, width: 19, players: { black: { id: 1001, username: 'them', ranking: 27.5 }, white: { id: 1002, username: 'me' } }, outcome: 'Resignation', black_lost: true, white_lost: false, started: '2026-10-12T22:20:00Z', ended: '2026-10-12T22:42:02Z' }] }
+        : { results: [{ id: 9, width: 19, players: { black: { id: 1001, username: 'them', ranking: 27.5 }, white: { id: 1002, username: 'me' } }, outcome: 'Resignation', black_lost: true, white_lost: lost, started: '2026-10-12T22:20:00Z', ended: '2026-10-12T22:42:02Z' }] }
       return new Response(JSON.stringify(body))
     }))
   })
@@ -276,7 +307,30 @@ describe('session', () => {
     ogs.follow(1, () => {})
     last().receive(['game/1/gamedata', live])
     last().receive(['game/1/move', { game_id: 1, move_number: 200, move: [0, 0, 1] }])
-    expect(last().commands()).toEqual(['authenticate', 'game/connect', 'game/connect'])
+    for (let i = 0; i < 3; i++) last().receive(['game/1/clock', live.clock])
+    expect(last().commands()).toEqual(['authenticate', 'game/connect', 'game/connect']) // once per reload
+    last().receive(['game/1/gamedata', live])
+    last().receive(['game/1/undo_accepted', 116])
+    expect(last().commands()).toHaveLength(4)
+  })
+
+  it('lets disconnect win over a connect still in progress', async () => {
+    const pending = ogs.connect()
+    ogs.disconnect()
+    await expect(pending).rejects.toThrow('ogs_offline')
+    expect(ogs.me).toBe(null)
+    expect(ogs.getStatus()).toBe('offline')
+    expect(FakeSocket.all).toHaveLength(0)
+    await ogs.connect()
+    expect(FakeSocket.all).toHaveLength(1)
+  })
+
+  it('turns network failures and unreadable bodies into codes', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    await expect(ogs.connect()).rejects.toMatchObject({ code: 'ogs_network' })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>')))
+    await expect(ogs.connect()).rejects.toMatchObject({ code: 'ogs_http' })
+    expect(ogs.getStatus()).toBe('offline')
   })
 
   it('resolves an automatch with the started game', async () => {
@@ -298,5 +352,7 @@ describe('session', () => {
       id: 9, size: 19, color: -1, opponent: { id: 1001, username: 'them', rank: '3k' }, result: 'W+R', date: Date.parse('2026-10-12T22:42:02Z'),
     }])
     expect(fetches[1]).toBe('https://online-go.com/api/v1/me/games/?ended__isnull=false&ordering=-ended&page_size=10 Bearer token')
+    lost = true // both sides marked lost: no winner to show
+    expect((await ogs.finishedGames())[0].result).toBe('?')
   })
 })

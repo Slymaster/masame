@@ -53,14 +53,17 @@ export interface Clock {
   running: boolean
 }
 
-/** One side's clock now (local ms) given the server clock and GobanSocket.clock_drift; null without time control. */
-export function clockOf(c: protocol.GameClock, color: Sign, now: number, drift: number): Clock | null {
+/**
+ * One side's clock now (local ms) given the server clock and GobanSocket.clock_drift; null without time control.
+ * `pausedSince`: Followed.pausedSince, not clock.paused_since, which OGS leaves behind after a pause ends.
+ */
+export function clockOf(c: protocol.GameClock, color: Sign, now: number, drift: number, pausedSince?: number): Clock | null {
   const t = color === 1 ? c.black_time : c.white_time
   if (t === undefined) return null
   const server = now - drift, moving = c.current_player === (color === 1 ? c.black_player_id : c.white_player_id)
-  const running = moving && !c.paused_since
+  const running = moving && !pausedSince
   if (moving && c.start_mode) return { main: Math.max(0, c.expiration - server), running }
-  const elapsed = !moving ? 0 : c.paused_since ? Math.max(c.paused_since, c.last_move) - c.last_move : Math.max(0, server - c.last_move)
+  const elapsed = !moving ? 0 : pausedSince ? Math.max(pausedSince, c.last_move) - c.last_move : Math.max(0, server - c.last_move)
   if (typeof t === 'number') return { main: Math.max(0, t * 1000 - elapsed), running } // simple: per-move time
   const left = t.thinking_time * 1000 - elapsed, main = Math.max(0, left), over = Math.max(0, -left)
   if ('periods' in t) {
@@ -73,7 +76,7 @@ export function clockOf(c: protocol.GameClock, color: Sign, now: number, drift: 
 }
 
 export interface Result {
-  re: string // SGF RE: "B+R", "W+T", "B+4.5", "W+F", "Void", "0"
+  re: string // SGF RE: "B+R", "W+T", "B+4.5", "W+F", "Void", "0", "?" (winner unknown)
   winner: Sign | 0
   how: 'resign' | 'time' | 'score' | 'forfeit' | 'cancel'
   points?: number
@@ -86,12 +89,19 @@ export function resultOf(d: { winner?: number | string; outcome?: string; player
     : w === 'white' || (w !== undefined && w === d.players?.white.id) ? -1 : 0
   if (/cancel/i.test(o)) return { re: 'Void', winner: 0, how: 'cancel' }
   const pts = /^([\d.]+) points?$/.exec(o)
-  if (pts) return { re: scoreResult(winner * +pts[1]), winner, how: 'score', points: +pts[1] }
-  const side = winner === 1 ? 'B' : 'W'
-  if (/resign/i.test(o)) return { re: `${side}+R`, winner, how: 'resign' }
-  if (/timeout/i.test(o)) return { re: `${side}+T`, winner, how: 'time' }
-  return { re: `${side}+F`, winner, how: 'forfeit' } // disconnection, abandonment, disqualification, moderator decision
+  if (pts) {
+    const points = +pts[1]
+    return { re: winner || !points ? scoreResult(winner * points) : '?', winner, how: 'score', points }
+  }
+  // anything else: disconnection, abandonment, disqualification, moderator decision
+  const [how, tag] = /resign/i.test(o) ? ['resign', 'R'] as const : /timeout/i.test(o) ? ['time', 'T'] as const : ['forfeit', 'F'] as const
+  return { re: winner ? `${winner === 1 ? 'B' : 'W'}+${tag}` : '?', winner, how }
 }
+
+// Paused as goban decides it (src/Goban/OGSConnectivity.ts, setGameClock): the gamedata's pause_control, replaced by
+// clock.pause whenever a clock carries one; paused while that control has any key.
+const pauseOf = (control: object | undefined, since: number | undefined) =>
+  control && Object.keys(control).length && since ? (since < 2e9 ? since * 1000 : since) : undefined // old records: seconds
 
 export type BoardSize = 9 | 13 | 19
 export type Speed = 'blitz' | 'rapid' | 'live'
@@ -117,6 +127,7 @@ export interface Followed {
   removed: Vertex[]
   result?: Result
   offset: number // OGS move numbers count free handicap stones, which game holds as setup
+  pausedSince?: number // server ms while the game is paused: pass to clockOf
   reload?: boolean // out of sync: ask the server for the whole game again
 }
 /** [event, data]: the part of `game/<id>/<event>` after the id. */
@@ -135,6 +146,7 @@ export function apply(s: Followed | null, [event, data]: GameEvent, myId?: numbe
       id: +d.game_id!, game, players, phase: d.phase ?? 'play', clock: d.clock, tc: d.time_control, result, offset: freeStones(d),
       me: myId === undefined ? 0 : myId === players.black.id ? 1 : myId === players.white.id ? -1 : 0,
       removed: typeof d.removed === 'string' ? stonesOf(d.removed) : [],
+      pausedSince: pauseOf(d.pause_control, d.paused_since ?? d.clock?.paused_since),
     }
   }
   if (!s) return s
@@ -147,8 +159,16 @@ export function apply(s: Followed | null, [event, data]: GameEvent, myId?: numbe
       // a refusal includes play resuming after stone removal (two passes "end" a Game): the full gamedata replays it
       return g.play(v) === 'ok' ? { ...s } : { ...s, reload: true }
     }
-    case 'clock': return { ...s, clock: data }
-    case 'phase': return { ...s, phase: data, removed: data === 'play' ? [] : s.removed }
+    case 'clock': {
+      const p = (data as protocol.GameClock).pause
+      return { ...s, clock: data, pausedSince: p ? (p.paused ? pauseOf(p.pause_control, p.paused_since) : undefined) : s.pausedSince }
+    }
+    // a resignation or timeout may only change the phase: fetch the game for its outcome
+    case 'phase': {
+      const n = { ...s, phase: data, removed: data === 'play' ? [] : s.removed }
+      return data === 'finished' && !s.result ? { ...n, reload: true } : n
+    }
+    case 'undo_accepted': return { ...s, reload: true }
     case 'removed_stones': return 'all_removed' in data ? { ...s, removed: stonesOf(data.all_removed) } : s
     case 'removed_stones_accepted': {
       if (data.phase !== 'finished') return s
@@ -186,20 +206,28 @@ function deviceId(): string {
 }
 
 async function rest(path: string): Promise<Response> {
-  const r = await fetch(SITE + path, { headers: { Authorization: `Bearer ${await call<string>('ogs_token')}` } })
+  const headers = { Authorization: `Bearer ${await call<string>('ogs_token')}` }
+  const r = await fetch(SITE + path, { headers }).catch(e => { throw fail('ogs_network', String(e)) })
   if (!r.ok) throw fail('ogs_http', String(r.status))
   return r
 }
+const json = async <T>(path: string) => (await rest(path)).json().catch(() => { throw fail('ogs_http', 'unreadable body') }) as Promise<T>
+
+let generation = 0 // bumped by disconnect(): a connect() still awaiting gives up
 
 /** Logs in with the stored OGS token and opens the socket; later calls return the same session. */
 export function connect(): Promise<Player> {
-  return session ??= (async () => {
-    setStatus('connecting')
-    const cfg = await (await rest('/api/v1/ui/config')).json() as { user_jwt: string; user: { id: number; username: string; ranking: number } }
+  if (session) return session
+  const gen = generation
+  setStatus('connecting')
+  return session = (async () => {
+    const cfg = await json<{ user_jwt: string; user: { id: number; username: string; ranking: number } }>('/api/v1/ui/config')
+    const version = await (await import('@tauri-apps/api/app')).getVersion()
+    if (gen !== generation) throw fail('ogs_offline')
     me = { id: cfg.user.id, username: cfg.user.username, rank: rankLabel(cfg.user.ranking) }
     const auth = {
       jwt: cfg.user_jwt, device_id: deviceId(), user_agent: navigator.userAgent, language: navigator.language,
-      client: 'masame', client_version: await (await import('@tauri-apps/api/app')).getVersion(),
+      client: 'masame', client_version: version,
     }
     const s = socket = new GobanSocket(SITE, { quiet: true })
     s.on('connect', () => {
@@ -212,11 +240,15 @@ export function connect(): Promise<Player> {
     s.on('unrecoverable_error', () => setStatus('offline'))
     s.on('user/jwt', jwt => { auth.jwt = jwt })
     return me
-  })().catch(e => { session = null; setStatus('offline'); throw e })
+  })().catch(e => {
+    if (gen === generation) { session = null; setStatus('offline') }
+    throw e
+  })
 }
 
 export function disconnect() {
   const s = socket
+  generation++
   socket = null; session = null; me = null
   followed.clear()
   s?.disconnect()
@@ -233,7 +265,7 @@ function live(): GobanSocket {
   return socket
 }
 
-const EVENTS = ['gamedata', 'move', 'clock', 'phase', 'removed_stones', 'removed_stones_accepted', 'error']
+const EVENTS = ['gamedata', 'move', 'clock', 'phase', 'removed_stones', 'removed_stones_accepted', 'undo_accepted', 'error']
 
 /**
  * Follows a game: `onEvent` gets each event with the state it leads to (null until the first usable gamedata).
@@ -241,13 +273,14 @@ const EVENTS = ['gamedata', 'move', 'clock', 'phase', 'removed_stones', 'removed
  */
 export function follow(id: number, onEvent: (ev: GameEvent, state: Followed | null) => void): () => void {
   const s = live(), ee = s as unknown as Loose
-  let state: Followed | null = null
+  let state: Followed | null = null, asked = false // a reload is requested once, until the gamedata answers it
   const join = () => s.send('game/connect', { game_id: id, chat: false })
   const handlers = EVENTS.map(name => [`game/${id}/${name}`, (data: unknown) => {
     let ev: GameEvent = [name, data]
     try { state = apply(state, ev, me?.id) } catch (e) { state = null; ev = ['error', (e as { code?: string }).code ?? String(e)] }
     // without a state, a move means handicap placement went on: fetch the game again until it is complete
-    if (state?.reload || (!state && name === 'move')) join()
+    if (name === 'gamedata') asked = false
+    else if (!asked && (state?.reload || (!state && name === 'move'))) { asked = true; join() }
     onEvent(ev, state)
   }] as const)
   for (const [e, h] of handlers) ee.on(e, h)
@@ -304,7 +337,7 @@ const FINISHED = '/api/v1/me/games/?ended__isnull=false&ordering=-ended&page_siz
 async function games(ended: boolean): Promise<GameRow[]> {
   const { id: myId } = await connect()
   type Row = { id: number; width: number; players: { black: RestPlayer; white: RestPlayer }; outcome: string; black_lost: boolean; white_lost: boolean; started: string; ended: string | null }
-  const { results } = await (await rest(ended ? FINISHED : ONGOING)).json() as { results: Row[] }
+  const { results } = await json<{ results: Row[] }>(ended ? FINISHED : ONGOING)
   return results.map(g => ({
     id: g.id, size: g.width, ...side(g.players.black, g.players.white, myId), date: Date.parse(g.ended ?? g.started),
     result: g.ended ? resultOf({ outcome: g.outcome, winner: g.white_lost && !g.black_lost ? 'black' : g.black_lost && !g.white_lost ? 'white' : undefined }).re : undefined,
