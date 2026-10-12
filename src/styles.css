@@ -1,10 +1,43 @@
+/* Skins: Washi (paper and ink) by default, Laque (lacquer and brass) under html[data-skin="laque"].
+   Registered so the 0.6 s crossfade interpolates them; --bg (the linen page) never changes. */
+@property --card { syntax: '<color>'; inherits: true; initial-value: rgba(241, 234, 221, .96) }
+@property --sheet { syntax: '<color>'; inherits: true; initial-value: #F1EADD }
+@property --ink { syntax: '<color>'; inherits: true; initial-value: #2A2118 }
+@property --muted { syntax: '<color>'; inherits: true; initial-value: #6E5F4D }
+@property --accent { syntax: '<color>'; inherits: true; initial-value: #8A2F22 }
+@property --accent-hover { syntax: '<color>'; inherits: true; initial-value: #6E2419 }
+@property --rule { syntax: '<color>'; inherits: true; initial-value: rgba(43, 29, 14, .13) }
+@property --rule-2 { syntax: '<color>'; inherits: true; initial-value: rgba(43, 29, 14, .28) }
+@property --hover { syntax: '<color>'; inherits: true; initial-value: rgba(138, 47, 34, .06) }
+@property --well { syntax: '<color>'; inherits: true; initial-value: rgba(43, 29, 14, .06) }
+@property --seg-on { syntax: '<color>'; inherits: true; initial-value: #F9F4EB }
+@property --pb { syntax: '<color>'; inherits: true; initial-value: #1F1B17 }
+@property --pw { syntax: '<color>'; inherits: true; initial-value: #F9F4EB }
+@property --shadow { syntax: '<color>'; inherits: true; initial-value: rgba(60, 40, 15, .16) }
+@property --scrim { syntax: '<color>'; inherits: true; initial-value: rgba(43, 29, 14, .18) }
 :root {
-  --bg: #ECE4D6; --ink: #2A2118; --muted: #857462; --rule: rgba(43, 29, 14, .13); --rule-2: rgba(43, 29, 14, .28);
-  --accent: #7A2E22; --hover: rgba(122, 46, 34, .06);
+  --bg: #ECE4D6;
+  --card: rgba(241, 234, 221, .96); --sheet: #F1EADD; --ink: #2A2118; --muted: #6E5F4D;
+  --accent: #8A2F22; --accent-hover: #6E2419; --rule: rgba(43, 29, 14, .13); --rule-2: rgba(43, 29, 14, .28);
+  --hover: rgba(138, 47, 34, .06); --well: rgba(43, 29, 14, .06); --seg-on: #F9F4EB;
+  --pb: #1F1B17; --pw: #F9F4EB; --shadow: rgba(60, 40, 15, .16); --scrim: rgba(43, 29, 14, .18);
+  /* the same in both skins: player-card text, the seal, the accent bar */
+  --pb-ink: #EFE6D6; --pb-muted: #A8957A; --pb-bar: #C9A063;
+  --pw-ink: #2A2118; --pw-muted: #5C4D3D; --pw-bar: #8A2F22;
+  --seal: #8A2F22; --seal-ink: #F9F4EB;
+  transition: --card .6s, --sheet .6s, --ink .6s, --muted .6s, --accent .6s, --accent-hover .6s, --rule .6s, --rule-2 .6s,
+    --hover .6s, --well .6s, --seg-on .6s, --pb .6s, --pw .6s, --shadow .6s, --scrim .6s;
   --f-title: 'Cormorant Garamond', Georgia, serif; --f-ui: 'Manrope', system-ui, sans-serif;
   --stone-b: radial-gradient(circle at 34% 30%, #6a6a70 0, #2c2c30 38%, #121214 80%);
   --stone-w: radial-gradient(circle at 34% 30%, #fffdf8 0, #f1ebdf 55%, #d7cdbb 100%);
   color-scheme: light;
+}
+html[data-skin="laque"] {
+  --card: rgba(27, 22, 18, .95); --sheet: #1B1612; --ink: #EFE6D6; --muted: #A8957A;
+  --accent: #C9A063; --accent-hover: #E7CFA0; --rule: rgba(239, 230, 214, .14); --rule-2: rgba(239, 230, 214, .30);
+  --hover: rgba(201, 160, 99, .10); --well: rgba(255, 240, 215, .05); --seg-on: #3A3129;
+  --pb: #110E0B; --pw: #D9CFBF; --shadow: rgba(0, 0, 0, .45); --scrim: rgba(0, 0, 0, .35);
+  color-scheme: dark;
 }
 * { box-sizing: border-box; margin: 0; padding: 0 }
 html, body, #root { height: 100% }

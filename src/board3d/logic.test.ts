@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bowlHeap, contrast, dims, dropStones, fit, FIT_REACH, Governor, gx, gz, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, panFor, qualityLadder, RB, RW, settle, silhouette, TOD, todAt, worstGap, type Placed } from './logic'
+import { bowlHeap, cardSkin, contrast, dims, dropStones, fit, FIT_REACH, Governor, gx, gz, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, panFor, qualityLadder, RB, RW, settle, silhouette, TOD, todAt, worstGap, type Placed } from './logic'
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -116,6 +116,34 @@ describe('time of day', () => {
     expect(el).toBeLessThan(0.2)
     expect(K).toBeLessThan(15)
     expect(exp).toBeLessThan(0.003)
+  })
+})
+
+describe('card skin', () => {
+  it('is Washi in 2D, Laque with the Lanterne or an evening light', () => {
+    expect(cardSkin('2d', 'evening', 'lanterne', 22)).toBe('washi')
+    expect(cardSkin('3d', 'morning', 'lanterne', 12)).toBe('laque')
+    expect(cardSkin('3d', 'evening', 'atelier', 12)).toBe('laque')
+    expect(cardSkin('3d', 'afternoon', 'atelier', 22)).toBe('washi')
+  })
+
+  it('follows the hour in "Auto", hinging at 17:45 and ≈07:13', () => {
+    expect(cardSkin('3d', 'auto', 'atelier', 12)).toBe('washi')
+    expect(cardSkin('3d', 'auto', 'atelier', 17.7)).toBe('washi')
+    expect(cardSkin('3d', 'auto', 'atelier', 17.8)).toBe('laque')
+    expect(cardSkin('3d', 'auto', 'atelier', 7)).toBe('laque')
+    expect(cardSkin('3d', 'auto', 'atelier', 7.15)).toBe('laque')
+    expect(cardSkin('3d', 'auto', 'atelier', 7.3)).toBe('washi')
+    expect(cardSkin('3d', 'auto', 'atelier', 8)).toBe('washi')
+  })
+
+  it('keeps its threshold tied to the TOD rooms', () => {
+    const { afternoon, evening } = TOD, saved = [afternoon.room, evening.room]
+    try {
+      afternoon.room = 0.9; evening.room = 0.1 // another tuning: the dusk hinge stays at the eased midpoint
+      expect(cardSkin('3d', 'auto', 'atelier', 17.7)).toBe('washi')
+      expect(cardSkin('3d', 'auto', 'atelier', 17.8)).toBe('laque')
+    } finally { [afternoon.room, evening.room] = saved }
   })
 })
 

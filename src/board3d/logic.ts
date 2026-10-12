@@ -184,6 +184,13 @@ export function todAt(hours: number): Tod {
   return TOD.evening
 }
 
+/** The UI card's skin follows the 3D scene: Laque once the room has dimmed past halfway from afternoon to evening (Auto: ≈17:45 to ≈07:13). */
+export function cardSkin(renderer: '2d' | '3d', light: TimeName | 'auto', decor: Decor, hour: number): 'washi' | 'laque' {
+  if (renderer === '2d') return 'washi'
+  const dim = light === 'auto' && todAt(hour).room < (TOD.afternoon.room + TOD.evening.room) / 2
+  return decor === 'lanterne' || light === 'evening' || dim ? 'laque' : 'washi'
+}
+
 /* ---------- décors ---------- */
 export type Ground = 'walnut' | 'tatami' | 'paper'
 /** What a décor changes around the (identical) board, stones and bowls. Multipliers apply to the hour's light. */
