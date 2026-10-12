@@ -4,6 +4,7 @@ import { fmt } from './format'
 const f = fmt('en-US')
 const color = (s: number): string => (s === 1 ? 'Black' : 'White')
 const tuningProgress = (step: number, done: number, total: number) => [step && `step ${step}`, total && `${done}/${total}`].filter(Boolean).join(' · ')
+const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
 
 export const en = {
   // panel
@@ -84,6 +85,31 @@ export const en = {
   rankAdjusted: (r: string) => `AI level adjusted to ${r} for the next game.`,
   humanSilent: 'The Human network isn’t responding. Check that it’s installed.',
   badAnswer: 'Unreadable answer from KataGo.',
+  // game review (p: the colour that punishes, s: the colour that made the mistake)
+  review: 'Review', reviewGame: 'Review the game', backToGame: 'Back to the game',
+  reviewNeedsNet: 'Install an analysis network to review a game.',
+  reviewSide: 'Mistakes by', both: 'Both',
+  reading: 'Reading the game…',
+  readingHelp: 'Looking for the moves that cost the most points. About a minute.',
+  percent: (p: number) => f.pct(p),
+  reviewFailed: (m: string) => `The review stopped. ${m}`,
+  noMoments: (s: number) => `No move${s ? ` by ${color(s)}` : ''} lost 2 points or more.`,
+  moment: (k: number, n: number, mv: number, loss: number) => `Moment ${k}/${n} · move ${mv} · −${pts(loss)}`,
+  moments: 'Key moments', lesson: 'Lesson',
+  steps: { try: 'Your try', punish: 'The punishment', better: 'Better move' },
+  tryAsk: (p: number, mv: number) => `Play ${color(p)}: how do you punish move ${mv}?`,
+  tryHelp: (p: number, s: number, loss: number) =>
+    `${color(s)}’s move costs ${pts(loss)} only if ${color(p)} finds the reply. Look for it as ${color(p)}: ${color(s)} answers each try, and ← takes it back.`,
+  found: 'Found it: that punishes the mistake.',
+  shortOf: (gap: number) => `${pts(gap)} from the best punishment.`,
+  missed: (s: number, gap: number) => `${color(s)} gets away with it: ${pts(gap)} from the best punishment.`,
+  seePunishment: 'See the punishment',
+  punishLine: (p: number, v: string, s: number, loss: number) => `${color(p)} ${v} punishes it: ${color(s)} loses ${pts(loss)}.`,
+  punishHelp: '→ follows the line, and the light shows what changed hands. Play anywhere to explore: each move gets an answer.',
+  seeBetter: 'See the better move',
+  betterLine: (s: number, v: string, loss: number) => `Better: ${color(s)} ${v}, which keeps those ${pts(loss)}.`,
+  betterHelp: '→ follows the line. Compare its light with the punishment’s. Play anywhere to explore: each move gets an answer.',
+  nextMoment: 'Next moment',
   // files
   sgfFilter: 'SGF game',
   openTitle: 'Open a game', saveTitle: 'Save the game',

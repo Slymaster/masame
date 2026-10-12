@@ -5,7 +5,7 @@ import { rng } from './board/noise'
 import { adjustRank, clampRank, decide, DEFAULT_RANK, humanProfile, stepRank } from './bot'
 import { confirmDiscard, openSgfFile, saveSgfFile } from './files'
 import { Game, type Sign, type Vertex } from './game'
-import { analyze, call, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
+import { analyze, call, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
 import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
 import { loadSgf, resignResult, saveSgf, scoreResult } from './sgf'
@@ -14,6 +14,7 @@ import { DECORS, type Decor } from './board3d/decors'
 import { isMac, shortcut } from './platform'
 import { getVersion } from '@tauri-apps/api/app'
 import { checkDue, updateSettings, type UpdateInfo } from './update'
+import { fromOf, gradeTry, lessonBoard, readGame, REPLY, verdict, type Moment, type Step } from './review'
 
 const SIZES = [9, 13, 19]
 const HUMAN_BYTES = 99_066_230
@@ -169,6 +170,11 @@ export function App() {
   const [progress, setProgress] = useState<Record<string, Progress>>({})
   const [showNets, setShowNets] = useState(false)
   const [own, setOwn] = useState<{ game: Game; data: number[] | null; score: number } | null>(null)
+  // game review: null = off; moments null while reading; branch = the lesson's variation (null while reading or clean)
+  const [review, setReview] = useState<{ side: Sign | 0; pct: number; error: unknown; moments: Moment[] | null; k: number; step: Step
+    branch: Game | null; ask: boolean; gap: number | null; explored: boolean } | null>(null)
+  const [reviewTry, retryReview] = useReducer((x: number) => x + 1, 0)
+  const scan = useRef<{ last: Game['board']; leads: (number | undefined)[] } | null>(null) // scan leads of the record ending on `last`
 
   const refreshNets = useCallback(() => { if (inTauri()) call<NetState>('networks_state').then(setNets, () => {}) }, [])
   useEffect(() => {
@@ -235,12 +241,28 @@ export function App() {
   const changed = () => { setNote(null); setBotError(null); rerender() }
   const humanTurn = !bot || game.toPlay !== bot.sign
   const atEnd = game.cursor === game.moves.length
-  const countingNow = counting?.game === game && game.ended && atEnd ? counting : null
+  const shown = review?.branch ?? game
+  const m = review?.moments?.[review.k]
+  const from = m ? fromOf(m, review!.step) : 0
+  const reading = !!review && !review.moments
+  const countingNow = !review && counting?.game === game && game.ended && atEnd ? counting : null
+  const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result)
+  const canReview = reviewShown && canAnalyze
   const locked = !!result && (!!bot || atEnd) // two players may branch off a validated game from an earlier move
   const play = (v: Vertex | null) => {
     if (countingNow) {
       if (v && !result) setCounting({ game, dead: toggleDead(game.board.signMap, countingNow.dead, v) })
       return false
+    }
+    if (review) {
+      if (!review.branch || thinking || !v || shown.ended) return false
+      const r = shown.play(v)
+      if (r === 'ok') {
+        const graded = shown.cursor === from + 1 // a new try from the lesson's start: graded again
+        setReview(x => x && { ...x, ask: true, explored: x.explored || x.step !== 'try', gap: graded ? null : x.gap })
+        changed()
+      } else if (pick(t.refused, r)) setNote(d => pick(d.refused, r)!)
+      return r === 'ok'
     }
     if (locked || !humanTurn) return false
     const r = game.play(v)
@@ -249,16 +271,22 @@ export function App() {
     return r === 'ok'
   }
   const undo = () => {
-    if (bot && result) return
+    if (review || bot && result) return
     let undone = false
     // against the bot, take back to the player's last move
     while (game.undo()) { undone = true; if (!bot || game.cursor === 0 || game.toPlay !== bot.sign) break }
     if (undone) { winrates.current = winrates.current.slice(0, Math.ceil(game.cursor / 2)); setDirty(true); setCounting(null); changed() }
     if (undone && !bot) setResult(null) // two players: counted again if the game ends again (Game.undo dropped the RE)
   }
-  const goTo = (i: number) => { if (i !== game.cursor) { game.goTo(i); changed() } }
+  const goTo = (i: number) => {
+    i = Math.max(review?.branch ? from : 0, Math.min(shown.moves.length, i))
+    if (i === shown.cursor) return
+    shown.goTo(i)
+    if (review) setReview(x => x && { ...x, ask: false })
+    changed()
+  }
   const start = (g: Game, b: typeof bot) => {
-    setGame(g); setBot(b); setResult(null); setNote(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); winrates.current = []
+    setGame(g); setBot(b); setResult(null); setNote(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); winrates.current = []
   }
   const newGame = async (size = nextSize) => {
     if (dirty && !(await confirmDiscard())) return
@@ -309,6 +337,21 @@ export function App() {
     if (!final || result) return
     finish(d => d.score(final.lead), bot && final.lead !== 0 ? (final.lead > 0) === (bot.sign === 1) : null, scoreResult(final.lead))
   }
+
+  // Game review: reading (scan + deep checks), then lessons on the branch boards
+  const startReview = (side: Sign | 0) => {
+    const last = game.boards.at(-1)!
+    if (scan.current?.last !== last) scan.current = { last, leads: [] }
+    setReview({ side, pct: 0, error: null, moments: null, k: 0, step: 'try', branch: null, ask: false, gap: null, explored: false })
+    changed()
+  }
+  const openMoment = (k: number, step: Step, moments = review!.moments!) => {
+    const branch = moments[k] ? lessonBoard(game, moments[k], step) : null
+    setReview(x => x && { ...x, moments, k, step, branch, ask: false, gap: null, explored: false, error: null })
+    changed()
+  }
+  const leaveReview = () => { setReview(null); changed() }
+  const retryLesson = () => { setReview(x => x && { ...x, error: null }); retryReview() }
 
   // The bot's turn: ask KataGo (human policy at the bot's rank + a small search), then play after a human-like pause.
   // A failed query is retried (the Rust side restarts a crashed engine and waits until it is warm); after the last
@@ -371,14 +414,45 @@ export function App() {
 
   // "Ombre et lumière": ownership of the displayed position, debounced, kept until the next estimate arrives.
   useEffect(() => {
-    if (!settings.territory || !canAnalyze) return
+    if (!settings.territory || !canAnalyze || review) return
     let live = true
     const t = setTimeout(() => {
       analyze(game, { maxVisits: TERRITORY_VISITS, includeOwnership: true })
         .then(a => live && setOwn({ game, data: a.ownership, score: a.scoreLead }), e => live && setNote(d => failureText(e, d)))
     }, 250)
     return () => { live = false; clearTimeout(t) }
-  }, [settings.territory, ver, game, canAnalyze])
+  }, [settings.territory, ver, game, canAnalyze, !!review]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reading: resumes from the scan cache after an error ("Try again") or a colour change.
+  useEffect(() => {
+    if (!reading || !review || !scan.current) return
+    let live = true
+    readGame(game, review.side, scan.current.leads, (at, q) => analyze(game.branch(at), q as Record<string, unknown>), () => live,
+      pct => live && setReview(x => x && { ...x, pct }))
+      .then(ms => { if (live) openMoment(0, 'try', ms) }, e => live && setReview(x => x && { ...x, error: e }))
+    return () => { live = false }
+  }, [reading, review?.side, game, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // In a lesson, the engine answers each move played on the branch; a try from the lesson's start is graded.
+  const lesson = review?.branch
+  const answering = !!lesson && !!review?.ask && lesson.cursor === lesson.moves.length && !lesson.ended
+  useEffect(() => {
+    if (!answering || !lesson || !m) return
+    let live = true
+    const graded = review!.step === 'try' && lesson.cursor === from + 1, tried = lesson.lastMove!.vertex
+    setThinking(true)
+    analyze(lesson, REPLY).then(a => {
+      if (!live) return
+      const v = a.pv[0], sign = lesson.toPlay
+      if (v === undefined) throw new LocalizedError(d => d.badAnswer)
+      if (lesson.play(v) !== 'ok') lesson.play(null)
+      if (v && lesson.lastMove?.vertex) view.current?.drop(v, sign)
+      else view.current?.pass?.(sign)
+      setReview(x => x && { ...x, ask: false, gap: graded ? gradeTry(m, tried, a.scoreLead) : x.gap })
+      changed()
+    }).catch(e => live && setReview(x => x && { ...x, error: e })).finally(() => live && setThinking(false))
+    return () => { live = false; setThinking(false) }
+  }, [answering, ver, lesson, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ⌘/Ctrl commands, shared by the keyboard and the macOS menu bar (whose items emit "menu" with these ids)
   const togglePanel = () => set('panelHidden', !settings.panelHidden)
@@ -405,8 +479,9 @@ export function App() {
         ? menuKeys ? undefined : commands[({ z: 'undo', n: 'new', o: 'open', s: 'save', '\\': 'panel' } as Record<string, string>)[k]]
         : e.altKey || e.metaKey || e.ctrlKey ? undefined
         : ({
-            arrowleft: () => goTo(game.cursor - 1), arrowright: () => goTo(game.cursor + 1),
-            home: () => goTo(0), end: () => goTo(game.moves.length),
+            arrowleft: () => goTo(shown.cursor - 1), arrowright: () => goTo(shown.cursor + 1),
+            home: () => goTo(0), end: () => goTo(shown.moves.length),
+            ...(review && { escape: leaveReview }),
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
             t: () => set('territory', !settings.territory), h: togglePanel,
             ...(renderer === '3d' && {
@@ -426,18 +501,37 @@ export function App() {
 
   const { size, komi, playerBlack, playerWhite } = game.info
   const botName = bot ? t.botName(bot.rank) : '' // in the current language (the SGF gets the one at save time)
-  const board = game.board, total = game.moves.length, toPlay = game.toPlay, last = game.lastMove
+  const board = shown.board, total = shown.moves.length, toPlay = shown.toPlay, last = shown.lastMove
   const shownOwn = settings.territory && own?.game === game ? own : null
   const engineWait = engine.state === 'tuning' ? t.tuningCaption
-    : thinking && engine.state === 'starting' ? t.engineStarting
-    : thinking && engine.state === 'warming' ? t.engineWarming : null
-  const message = result ? [result(t), note?.(t)].filter(Boolean).join(' ')
+    : (thinking || reading) && engine.state === 'starting' ? t.engineStarting
+    : (thinking || reading) && engine.state === 'warming' ? t.engineWarming : null
+  // the review's caption and its links (p: the colour that punishes, s: the one that made the mistake)
+  const p = m ? -m.sign : 0, s = m?.sign ?? 0
+  const graded = m && review?.step === 'try' && review.gap !== null ? verdict(m, review.gap) : null
+  const lessonLine = !review ? null
+    : reading ? t.reading
+    : !m ? t.noMoments(review.side)
+    : review.step === 'try' ? graded === 'found' ? t.found : graded === 'short' ? t.shortOf(review.gap!) : graded ? t.missed(s, review.gap!) : t.tryAsk(p, m.at + 1)
+    : review.step === 'punish' ? t.punishLine(p, gtp(m.punish[0]!, size), s, m.loss)
+    : t.betterLine(s, gtp(m.better[0]!, size), m.loss)
+  const lastMoment = !!review?.moments && review.k === review.moments.length - 1
+  const links: [string, () => void][] = review?.error ? [[t.retry, retryLesson]]
+    : botError && !result ? [[t.retry, retryBot]]
+    : !review ? result && canReview ? [[t.reviewGame, () => startReview(bot ? -bot.sign as Sign : 0)]] : []
+    : !m ? [[t.backToGame, leaveReview]]
+    : review.step === 'try' ? [...(graded ? [[t.retry, () => openMoment(review.k, 'try')] as [string, () => void]] : []), [t.seePunishment, () => openMoment(review.k, 'punish')]]
+    : review.step === 'punish' ? [[t.seeBetter, () => openMoment(review.k, 'better')]]
+    : lastMoment ? [[t.backToGame, leaveReview]] : [[t.nextMoment, () => openMoment(review.k + 1, 'try')]]
+  const message = review ? (review.error ? t.reviewFailed(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
+    : result ? [result(t), note?.(t)].filter(Boolean).join(' ')
     : countingNow ? t.countingHelp
     : game.ended ? t.countingWait
     : (botError ?? note)?.(t) ?? engineWait
       ?? (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null)
   // tuning progress: outside the key (no re-fade per update) and aria-hidden (announced once)
-  const tuned = message === t.tuningCaption && engine.state === 'tuning' ? t.tuningProgress(engine.step, engine.done, engine.total) : ''
+  const tuned = message === t.tuningCaption && engine.state === 'tuning' ? t.tuningProgress(engine.step, engine.done, engine.total)
+    : review && message === t.reading ? t.percent(review.pct) : ''
   const humanNet = nets?.installed.find(i => i.name === nets.human)
   const engineLine = !inTauri() ? t.engineInAppOnly
     : engine.state === 'error' ? failureText(engine.error)
@@ -457,6 +551,9 @@ export function App() {
     : upd.s === 'error' ? [failureText(upd.error), retry ? [[t.install, () => installUpdate(retry)], [t.download, releases]] : [[t.download, releases]]]
     : [app, [[t.checkUpdates, () => checkUpdate(false)]]]
 
+  const playing = review ? !!review.branch : !game.ended && !result // whose turn it is means something
+  const floor = review?.branch ? from : 0
+
   return (
     <>
       {isMac && <div className="titlebar" data-tauri-drag-region />}
@@ -470,8 +567,10 @@ export function App() {
           onFallback={r => { if (r === 'context-lost' || (r === 'slow' && engineBusy)) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
           state={{
             signMap: board.signMap, last: last?.vertex ?? null, toPlay, coords, sound,
-            interactive: countingNow ? !result : !game.ended && !locked && humanTurn,
-            ownership: countingNow ? null : shownOwn?.data ?? null,
+            interactive: countingNow ? !result : review ? !!review.branch && !thinking && !shown.ended : !game.ended && !locked && humanTurn,
+            // ② and ③: what changed hands, until the player explores
+            ownership: countingNow ? null : review ? (m && !review.explored ? review.step === 'punish' ? m.lost : review.step === 'better' ? m.kept : null : null)
+              : shownOwn?.data ?? null,
             counting: final ? { dead: countingNow!.dead, territory: final.territory } : null,
             captures: { black: board.getCaptures(1), white: board.getCaptures(-1) }, // the 3D lids: prisoners taken by each
           }}
@@ -480,7 +579,7 @@ export function App() {
           <p className="note" aria-live="polite">
             {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message}>
               <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>
-              {botError && !result && <button className="link" onClick={retryBot}>{t.retry}</button>}
+              {links.map(([label, act]) => <button key={label} className="link" onClick={act}>{label}</button>)}
             </span>}
           </p>
         </Goban>
@@ -489,7 +588,7 @@ export function App() {
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" /><path d="M10 2.5v11" /></svg>
         </button>
         {/* hidden panel: only whose turn it is (breathing while the bot thinks), next to the toggle */}
-        {settings.panelHidden && !game.ended && !result && (
+        {settings.panelHidden && playing && (
           <i className={`turn st ${toPlay === 1 ? 'b' : 'w'}${thinking ? ' thinking' : ''}`} role="img" aria-label={t.color(toPlay)} />
         )}
         <aside className="panel" id="panel" hidden={settings.panelHidden}>
@@ -501,10 +600,10 @@ export function App() {
           <section>
             <div className="lab">
               <span>{t.game}</span>
-              <span>{t.moveOf(game.cursor, total)}</span>
+              <span>{t.moveOf(shown.cursor, total)}</span>
             </div>
             {([[1, bot?.sign === 1 ? botName : playerBlack], [-1, bot?.sign === -1 ? botName : playerWhite]] as const).map(([sign, name]) => (
-              <div key={sign} className={`pl${toPlay === sign && !game.ended && !result ? ' on' : ''}${thinking && bot?.sign === sign ? ' thinking' : ''}`}>
+              <div key={sign} className={`pl${toPlay === sign && playing ? ' on' : ''}${thinking && (review ? toPlay === sign : bot?.sign === sign) ? ' thinking' : ''}`}>
                 <i className={`st ${sign === 1 ? 'b' : 'w'}`} />
                 <span className="nm">{name || t.color(sign)}{name && <em> · {t.color(sign)}</em>}</span>
                 <span className="cp">{t.captures(board.getCaptures(sign))}</span>
@@ -517,22 +616,51 @@ export function App() {
               </p>
             )}
             <div className="nav" aria-label={t.history}>
-              <button onClick={() => goTo(0)} disabled={game.cursor === 0} aria-label={t.start} title={`${t.start} (Home)`}>⇤</button>
-              <button onClick={() => goTo(game.cursor - 1)} disabled={game.cursor === 0} aria-label={t.prev} title={`${t.prev} (←)`}>←</button>
-              <button onClick={() => goTo(game.cursor + 1)} disabled={game.cursor === total} aria-label={t.next} title={`${t.next} (→)`}>→</button>
-              <button onClick={() => goTo(total)} disabled={game.cursor === total} aria-label={t.end} title={`${t.end} (End)`}>⇥</button>
+              <button onClick={() => goTo(0)} disabled={shown.cursor <= floor} aria-label={t.start} title={`${t.start} (Home)`}>⇤</button>
+              <button onClick={() => goTo(shown.cursor - 1)} disabled={shown.cursor <= floor} aria-label={t.prev} title={`${t.prev} (←)`}>←</button>
+              <button onClick={() => goTo(shown.cursor + 1)} disabled={shown.cursor === total} aria-label={t.next} title={`${t.next} (→)`}>→</button>
+              <button onClick={() => goTo(total)} disabled={shown.cursor === total} aria-label={t.end} title={`${t.end} (End)`}>⇥</button>
             </div>
           </section>
 
           <div className="acts">
             {final && !result
               ? <button className="btn accent" onClick={validate}>{t.validate}</button>
-              : <button className="btn" onClick={() => play(null)} disabled={game.ended || locked || !humanTurn} title="P">{t.pass}</button>}
-            <button className="btn" onClick={undo} disabled={game.cursor === 0 || (!!bot && !!result)} title={shortcut('Z')}>{t.undo}</button>
+              : <button className="btn" onClick={() => play(null)} disabled={game.ended || locked || !humanTurn || !!review} title="P">{t.pass}</button>}
+            <button className="btn" onClick={undo} disabled={game.cursor === 0 || (!!bot && !!result) || !!review} title={shortcut('Z')}>{t.undo}</button>
             <button className="btn" onClick={open} title={shortcut('O')}>{t.open}</button>
             <button className="btn" onClick={save} title={shortcut('S')}>{t.save}</button>
-            {bot && <button className="btn" onClick={resign} disabled={!!result}>{t.resign}</button>}
+            {review ? <button className="btn" onClick={leaveReview} title="Esc">{t.backToGame}</button>
+              : reviewShown ? <button className={`btn${result ? ' accent' : ''}`} onClick={() => startReview(bot ? -bot.sign as Sign : 0)}
+                disabled={!canAnalyze} title={canAnalyze ? undefined : t.reviewNeedsNet}>{t.reviewGame}</button>
+              : bot && <button className="btn" onClick={resign} disabled={!!result}>{t.resign}</button>}
           </div>
+
+          {review && (
+            <section>
+              <div className="lab"><span>{t.review}</span><span>{reading ? t.percent(review.pct) : ''}</span></div>
+              {!bot && (
+                <div className="field">
+                  <span>{t.reviewSide}</span>
+                  <Seg label={t.reviewSide} value={review.side} options={[[1, t.black], [-1, t.white], [0, t.both]]} set={v => v !== review.side && startReview(v)} />
+                </div>
+              )}
+              {reading ? <>
+                <p className="estimate">{review.error ? t.reviewFailed(failureText(review.error)) : t.readingHelp}</p>
+                <div className="bar" role="progressbar" aria-label={t.reading} aria-valuenow={review.pct} aria-valuemin={0} aria-valuemax={100}>
+                  <i style={{ width: `${review.pct}%` }} />
+                </div>
+              </> : !m ? <p className="estimate">{t.noMoments(review.side)}</p> : <>
+                <p className="estimate" aria-live="polite">{t.moment(review.k + 1, review.moments!.length, m.at + 1, m.loss)}</p>
+                {review.moments!.length > 1 && (
+                  <Seg label={t.moments} value={review.k} options={review.moments!.map((_, i) => [i, String(i + 1)])} set={k => openMoment(k, 'try')} />
+                )}
+                <Seg label={t.lesson} value={review.step} options={[['try', t.steps.try], ['punish', t.steps.punish], ['better', t.steps.better]]}
+                  set={step => openMoment(review.k, step)} />
+                <p className="quiet">{review.step === 'try' ? t.tryHelp(p, s, m.loss) : review.step === 'punish' ? t.punishHelp : t.betterHelp}</p>
+              </>}
+            </section>
+          )}
 
           <section>
             <div className="lab"><span>{t.newGame}</span><span /></div>
@@ -586,7 +714,7 @@ export function App() {
               <span>{t.language}</span>
               <Seg label={t.language} value={settings.lang} options={[['fr', 'Français'], ['en', 'English']]} set={v => { setLang(v); setSettings(s => ({ ...s, lang: v, langChosen: true })) }} />
             </div>
-            {settings.territory && (
+            {settings.territory && !review && (
               <p className="estimate" aria-live="polite">
                 {!inTauri() || !canAnalyze ? t.territoryNeedsNet : shownOwn ? t.estimate(shownOwn.score) : t.estimating}
               </p>

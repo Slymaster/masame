@@ -93,6 +93,24 @@ describe('formatting', () => {
   })
 })
 
+describe('game review', () => {
+  afterEach(() => setLang('fr'))
+  it('formats points, moves and colours in both languages', () => {
+    setLang('en')
+    expect(t.moment(1, 3, 47, 6.54)).toBe('Moment 1/3 · move 47 · −6.5 points')
+    expect([t.shortOf(1.23), t.shortOf(1)]).toEqual(['1.2 points from the best punishment.', '1 point from the best punishment.'])
+    expect(t.tryAsk(-1, 47)).toBe('Play White: how do you punish move 47?')
+    expect(t.noMoments(1)).toBe('No move by Black lost 2 points or more.')
+    setLang('fr')
+    expect(t.moment(1, 3, 47, 6.54)).toBe('Moment 1/3 · coup 47 · −6,5 points')
+    expect([t.shortOf(1.23), t.shortOf(1)]).toEqual(['À 1,2 point de la meilleure punition.', 'À 1 point de la meilleure punition.'])
+    expect(nb(t.tryAsk(-1, 47))).toBe('Joue Blanc : comment punir le coup 47 ?')
+    expect(t.noMoments(0)).toBe('Aucun coup n’a perdu 2 points ou plus.')
+    for (const s of [t.tryAsk(-1, 47), t.found, t.missed(1, 6.1), t.punishLine(-1, 'R14', 1, 6.5), t.betterLine(1, 'R13', 6.5),
+      t.tryHelp(-1, 1, 6.5), t.punishHelp, t.betterHelp]) expect(s).not.toMatch(/ [:;!?]/)
+  })
+})
+
 describe('stored messages', () => {
   afterEach(() => setLang('fr'))
   const caught = (f: () => unknown) => { try { f() } catch (e) { return e } }

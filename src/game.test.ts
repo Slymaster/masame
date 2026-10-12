@@ -122,3 +122,19 @@ describe('sgf robustness', () => {
     expect(scoreResult(-0.04)).toBe('0')
   })
 })
+
+describe('branch', () => {
+  it('shares the record up to a position, and playing on it truncates only the branch', () => {
+    const g = new Game({ size: 9 })
+    playAll(g, [[0, 0], [1, 1], [2, 2], [3, 3]])
+    g.info.result = 'W+R'
+    const b = g.branch(2, [[5, 5], [0, 0], [6, 6]]) // [0,0] is occupied: the line stops there
+    expect(b.boards.slice(0, 3)).toEqual(g.boards.slice(0, 3))
+    expect(b.boards[2]).toBe(g.boards[2])
+    expect([b.cursor, b.moves.map(m => m.vertex)]).toEqual([3, [[0, 0], [1, 1], [5, 5]]])
+    b.goTo(1)
+    expect(b.play([7, 7])).toBe('ok')
+    expect(b.moves.length).toBe(2)
+    expect([g.moves.length, g.cursor, g.info.result, g.board.get([7, 7])]).toEqual([4, 4, 'W+R', 0])
+  })
+})

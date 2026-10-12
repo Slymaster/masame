@@ -103,6 +103,14 @@ export class Game {
 
   goTo(i: number) { this.cursor = Math.max(0, Math.min(this.moves.length, i)) }
 
+  /** A variation sharing this record up to position `at` (boards are immutable), then `line` until its first refused move. */
+  branch(at: number, line: (Vertex | null)[] = []): Game {
+    const g = new Game(this.info) // the constructor copies info: play() clearing result stays on the branch
+    g.moves = this.moves.slice(0, at); g.boards = this.boards.slice(0, at + 1); g.cursor = at
+    for (const v of line) if (g.play(v) !== 'ok') break
+    return g
+  }
+
   /** Replays moves from a file without rule checks, so a slightly irregular SGF still loads. */
   static fromRecord(info: Partial<GameInfo> & { size: number }, moves: Move[]): Game {
     const g = new Game(info)
