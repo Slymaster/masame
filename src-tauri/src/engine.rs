@@ -445,7 +445,14 @@ mod tests {
         std::fs::write(&p, format!("#!/bin/sh\n[ -n \"$BADUK_FAKE_WARM\" ] && exit 0\n{body}\n")).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         // macOS scans a new executable on its first exec (~0.5 s, seconds under load): pay it here, not in the start timeout.
-        std::process::Command::new(&p).env("BADUK_FAKE_WARM", "1").status().unwrap();
+        // On Linux a test forking in another thread may still hold our write fd until its own exec ("Text file busy"):
+        // wait it out here, so the engine's spawn never sees it.
+        for i in 0.. {
+            match std::process::Command::new(&p).env("BADUK_FAKE_WARM", "1").status() {
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && i < 100 => std::thread::sleep(Duration::from_millis(20)),
+                r => { r.unwrap(); break }
+            }
+        }
         Spec { bin: p.clone(), config: p.clone(), model: p, human: None, cwd: std::env::temp_dir(), overrides: vec![] }
     }
 
