@@ -237,6 +237,23 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .switch[aria-checked=true] { background: var(--accent) }
 .switch[aria-checked=true]::after { transform: translateX(16px) }
 
+.quiet.err { color: var(--accent) }
+.quiet .rk { margin-left: 6px; color: var(--ink) }
+/* OGS: my games, one button per row */
+.ogs-games { display: flex; flex-direction: column; gap: 14px; margin-top: 14px }
+.ogs-games .lab { margin-bottom: 0 }
+.games-title { font-size: 12.5px; color: var(--muted); margin-bottom: 2px }
+.game-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 10px; margin: 0 -10px; width: calc(100% + 20px); border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer; transition: background .25s }
+.game-row:hover { background: var(--hover) }
+.game-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px }
+.game-row .who { font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.game-row .rk { font-size: 14px }
+.game-row .dim { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+.clock { font-variant-numeric: tabular-nums }
+.clock.low { color: var(--accent); font-weight: 600 }
+.pc.b .clock.low { color: var(--pb-bar) } /* the cards keep their colours in both skins */
+.pc.w .clock.low { color: var(--pw-bar) }
+
 .foot { font-size: 11px; color: var(--muted); letter-spacing: .03em; line-height: 2; padding-top: 12px; border-top: 1px solid var(--rule) }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }

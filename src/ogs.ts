@@ -1,9 +1,11 @@
 // OGS (online-go.com) client: protocol helpers (pure, tested) and one shared socket session.
 // OGS forbids engine help in ongoing games: nothing here talks to KataGo.
 
-import { char2num, encodeMove, GobanEngine, GobanSocket, type AdHocPackedMove, type GobanEngineConfig, type GobanEnginePhase, type JGOFTimeControl, type protocol } from 'goban-engine'
+import { char2num, encodeMove, GobanEngine, GobanSocket, type AdHocPackedMove, type GobanEngineConfig, type GobanEnginePhase, type GobanEngineRules, type JGOFTimeControl, type protocol } from 'goban-engine'
 import { Game, type Sign, type Vertex } from './game'
+import { getVersion } from '@tauri-apps/api/app'
 import { call } from './katago'
+import { noDead, toggleDead, type Dead } from './scoring'
 import { scoreResult } from './sgf'
 
 const SITE = 'https://online-go.com'
@@ -123,6 +125,7 @@ export interface Followed {
   phase: Phase
   clock?: protocol.GameClock
   tc?: JGOFTimeControl
+  rules: GobanEngineRules
   players: { black: Player; white: Player }
   removed: Vertex[]
   result?: Result
@@ -143,7 +146,7 @@ export function apply(s: Followed | null, [event, data]: GameEvent, myId?: numbe
     const game = gameFrom(d), result = d.phase === 'finished' ? resultOf(d) : undefined
     if (result) game.info.result = result.re
     return {
-      id: +d.game_id!, game, players, phase: d.phase ?? 'play', clock: d.clock, tc: d.time_control, result, offset: freeStones(d),
+      id: +d.game_id!, game, players, phase: d.phase ?? 'play', clock: d.clock, tc: d.time_control, rules: d.rules ?? 'japanese', result, offset: freeStones(d),
       me: myId === undefined ? 0 : myId === players.black.id ? 1 : myId === players.white.id ? -1 : 0,
       removed: typeof d.removed === 'string' ? stonesOf(d.removed) : [],
       pausedSince: pauseOf(d.pause_control, d.paused_since ?? d.clock?.paused_since),
@@ -180,6 +183,20 @@ export function apply(s: Followed | null, [event, data]: GameEvent, myId?: numbe
   }
 }
 
+/** Removed stones as the board's dead-stone marks (empty points dropped). */
+export function deadOf(m: Game['board']['signMap'], removed: Vertex[]): Dead {
+  const dead = noDead(m)
+  for (const [x, y] of removed) if (m[y]?.[x]) dead[y][x] = true
+  return dead
+}
+/** A click during stone removal: the chain at v and whether it becomes removed; null on an empty point. */
+export function removalToggle(m: Game['board']['signMap'], removed: Vertex[], v: Vertex): { stones: Vertex[]; removed: boolean } | null {
+  const dead = deadOf(m, removed), next = toggleDead(m, dead, v)
+  if (next === dead) return null
+  const stones = m.flatMap((row, y) => row.flatMap((_, x) => (next[y][x] !== dead[y][x] ? [[x, y] as Vertex] : [])))
+  return { stones, removed: next[v[1]][v[0]] }
+}
+
 // --- Session: one socket for the whole app, authenticated on every (re)connect.
 
 export type Status = 'connecting' | 'online' | 'offline'
@@ -192,6 +209,8 @@ export const onStatus = (w: () => void) => { watchers.add(w); return () => { wat
 
 export let me: Player | null = null
 let socket: GobanSocket | null = null
+/** Local minus server time (ms), for clockOf. */
+export const drift = () => socket?.clock_drift ?? 0
 let session: Promise<Player> | null = null
 const followed = new Set<number>()
 // game/<id>/<event> names are template-literal keys in goban-engine's types: subscribe through a plain signature
@@ -222,7 +241,7 @@ export function connect(): Promise<Player> {
   setStatus('connecting')
   return session = (async () => {
     const cfg = await json<{ user_jwt: string; user: { id: number; username: string; ranking: number } }>('/api/v1/ui/config')
-    const version = await (await import('@tauri-apps/api/app')).getVersion()
+    const version = await getVersion()
     if (gen !== generation) throw fail('ogs_offline')
     me = { id: cfg.user.id, username: cfg.user.username, rank: rankLabel(cfg.user.ranking) }
     const auth = {

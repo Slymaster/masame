@@ -215,6 +215,21 @@ describe('apply', () => {
   })
 })
 
+describe('stone removal', () => {
+  // . X X
+  // . O .
+  // . . .
+  const m = [[0, 1, 1], [0, -1, 0], [0, 0, 0]] as (0 | 1 | -1)[][]
+  it('flips a whole chain and reports only what changed', () => {
+    expect(ogs.removalToggle(m, [], [1, 0])).toEqual({ stones: [[1, 0], [2, 0]], removed: true })
+    expect(ogs.removalToggle(m, [[2, 0], [1, 1]], [2, 0])).toEqual({ stones: [[2, 0]], removed: false }) // a half-marked chain: only the marked stone changes
+    expect(ogs.removalToggle(m, [], [0, 0])).toBe(null)
+  })
+  it('marks removed stones dead, empty points dropped', () => {
+    expect(ogs.deadOf(m, [[1, 1], [0, 0]])).toEqual([[false, false, false], [false, true, false], [false, false, false]])
+  })
+})
+
 // --- Session, against a fake WebSocket.
 
 class FakeSocket {

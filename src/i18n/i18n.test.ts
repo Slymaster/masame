@@ -118,6 +118,25 @@ describe('game review', () => {
   })
 })
 
+describe('OGS', () => {
+  afterEach(() => setLang('fr'))
+  it('words results, searches and clocks in both languages', () => {
+    setLang('en')
+    expect([t.ogsResult(-1, 'resign'), t.ogsResult(1, 'time'), t.ogsResult(-1, 'score', 4.5), t.ogsResult(1, 'forfeit'), t.ogsResult(0, 'cancel')])
+      .toEqual(['White wins by resignation.', 'Black wins on time.', 'White wins by 4.5 points.', 'Black wins by forfeit.', 'Game cancelled.'])
+    expect(t.ogsSearching(9, t.paces.blitz)).toBe('Looking for a 9×9 blitz opponent…')
+    expect(t.ogsBoard(19, 6.5, t.rules.chinese)).toBe('19×19 · komi 6.5 · Chinese rules · OGS')
+    setLang('fr')
+    expect([t.ogsResult(-1, 'resign'), t.ogsResult(1, 'time'), t.ogsResult(-1, 'score', 4.5), t.ogsResult(1, 'forfeit'), t.ogsResult(0, 'cancel')])
+      .toEqual(['Blanc gagne par abandon.', 'Noir gagne au temps.', 'Blanc gagne de 4,5 points.', 'Noir gagne par forfait.', 'Partie annulée.'])
+    expect(t.ogsSearching(9, t.paces.blitz)).toBe('Recherche d’un adversaire 9×9 blitz…')
+    expect(nb(t.days(2, 4))).toBe('2 j 4 h')
+    for (const s of [t.ogsSignInHelp, t.ogsSignedIn('x'), t.ogsLeaveAsk, t.ogsResignAsk, t.failures.ogs_port_busy, t.periods(3, 30)])
+      expect(s).not.toMatch(/ [:;!?]| s$/) // nbsp, also inside "3×30 s"
+    for (const s of [t.ogsSignInHelp, t.ogsSignIn, t.ogsFind, t.ogsSearching(9, 'Live'), t.ogsReconnecting, t.ogsLeaveAsk]) expect(s).not.toMatch(/\bIA\b/)
+  })
+})
+
 describe('stored messages', () => {
   afterEach(() => setLang('fr'))
   const caught = (f: () => unknown) => { try { f() } catch (e) { return e } }
