@@ -3,6 +3,7 @@ mod engine;
 mod failure;
 mod menu;
 mod networks;
+mod ogs;
 
 use engine::{Engine, Spec, Status};
 use failure::{Failure, Res};
@@ -24,6 +25,7 @@ struct App {
     catalog: Mutex<Vec<Entry>>,
     downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
     update: Mutex<Option<Update>>, // the newer release update_check found, for update_install
+    ogs: ogs::Ogs,
     #[cfg(any(windows, target_os = "linux"))]
     failed_variants: Mutex<Vec<&'static str>>, // engine builds that failed to start in this session
 }
@@ -408,7 +410,7 @@ pub fn run() {
             };
             if let Err(e) = install_config(app.handle()) { eprintln!("[katago] config not installed: {e:?}") }
             app.manage(App {
-                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), update: Default::default(),
+                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), update: Default::default(), ogs: Default::default(),
                 #[cfg(any(windows, target_os = "linux"))]
                 failed_variants: Default::default(),
             });
@@ -418,7 +420,8 @@ pub fn run() {
         .on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); })
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
-            engine_status, engine_start, engine_stop, engine_analyze, open_link, set_language, update_check, update_install
+            engine_status, engine_start, engine_stop, engine_analyze, open_link, set_language, update_check, update_install,
+            ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

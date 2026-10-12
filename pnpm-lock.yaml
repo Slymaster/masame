@@ -29,6 +29,9 @@ importers:
       '@tauri-apps/plugin-fs':
         specifier: ^2.7.0
         version: 2.7.0
+      goban-engine:
+        specifier: 8.3.226
+        version: 8.3.226
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -350,6 +353,9 @@ packages:
   estree-walker@3.0.3:
     resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
 
+  eventemitter3@5.0.4:
+    resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
+
   expect-type@1.4.0:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
     engines: {node: '>=12.0.0'}
@@ -370,6 +376,9 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  goban-engine@8.3.226:
+    resolution: {integrity: sha512-KINA9jC5/0wsTvk6EDnvHjWi15zANCzJHzygGUEuN+am4j9+r/ZNku8U7ge/rzGEmIOlH+5/BkGt6mZQuDSmrg==}
 
   iconv-lite@0.4.24:
     resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
@@ -807,6 +816,8 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.9
 
+  eventemitter3@5.0.4: {}
+
   expect-type@1.4.0: {}
 
   fdir@6.5.0(picomatch@4.0.7):
@@ -817,6 +828,10 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  goban-engine@8.3.226:
+    dependencies:
+      eventemitter3: 5.0.4
 
   iconv-lite@0.4.24:
     dependencies:

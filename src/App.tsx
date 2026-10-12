@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { BoardView } from './board/BoardView'
 import type { Board3D, Board3DOptions, Board3DState, FallbackReason, TimeMode } from './board3d/Board3D'
 import { rng } from './board/noise'
 import { adjustRank, clampRank, decide, DEFAULT_RANK, humanProfile, stepRank } from './bot'
-import { confirmDiscard, openSgfFile, saveSgfFile } from './files'
+import { askFirst, confirmDiscard, openSgfFile, saveSgfFile } from './files'
 import { Game, type Sign, type Vertex } from './game'
 import { analyze, call, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
+import { OgsSection } from './OgsSection'
+import { Clock } from './Clock'
+import { Seg } from './Seg'
+import * as ogs from './ogs'
 import { Sheet } from './Sheet'
 import { Icon } from './Icon'
 import { cardSkin } from './board3d/logic'
@@ -29,14 +33,14 @@ const random = rng(Date.now())
 type Renderer = '3d' | '2d'
 const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
 interface Settings {
-  lang: Lang; opponent: 'human' | 'ai'; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; delay: boolean; territory: boolean
+  lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; delay: boolean; territory: boolean
   renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor
   langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number
 }
 const SETTINGS_KEY = 'baduk.settings'
 function loadSettings(): Settings {
   const d: Settings = {
-    lang: 'en', opponent: 'ai', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, delay: true, territory: false,
+    lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, delay: true, territory: false,
     renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', langChosen: false, panelHidden: false,
     autoUpdate: true, updateChecked: 0,
   }
@@ -44,7 +48,9 @@ function loadSettings(): Settings {
   try { j = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') ?? {} } catch { /* private mode or garbage: defaults */ }
   const s = { ...d, ...j }
   return {
-    ...s, lang: storedLang(j), langChosen: j.langChosen === true, myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
+    ...s, lang: storedLang(j), langChosen: j.langChosen === true,
+    opponent: (['human', 'ai', 'ogs'] as const).includes(s.opponent) ? s.opponent : 'ai',
+    ogsSpeed: (['blitz', 'rapid', 'live'] as const).includes(s.ogsSpeed) ? s.ogsSpeed : 'rapid', myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: DECORS.includes(s.decor) ? s.decor : 'atelier', panelHidden: s.panelHidden === true, ...updateSettings(j),
@@ -108,21 +114,11 @@ function useMsg() {
   return [m, useCallback((v: Msg | null) => set(() => v), [])] as const
 }
 
-function Switch({ label, k, on, toggle }: { label: string; k?: string; on: boolean; toggle: () => void }) {
+function Switch({ label, k, on, toggle, disabled, title }: { label: string; k?: string; on: boolean; toggle: () => void; disabled?: boolean; title?: string }) {
   return (
-    <div className="row" onClick={toggle}>
+    <div className="row" onClick={disabled ? undefined : toggle} title={title}>
       <span>{label} {k && <kbd>{k}</kbd>}</span>
-      <button className="switch" role="switch" aria-checked={on} aria-label={label} onClick={e => { e.stopPropagation(); toggle() }} />
-    </div>
-  )
-}
-
-function Seg<T extends string | number>({ label, value, options, set, disabled, title }: {
-  label: string; value: T; options: [T, string, string?][]; set: (v: T) => void; disabled?: boolean; title?: string
-}) {
-  return (
-    <div className="seg" role="radiogroup" aria-label={label} aria-disabled={disabled || undefined} title={title}>
-      {options.map(([v, l, tip]) => <button key={v} role="radio" aria-checked={value === v} disabled={disabled} title={tip} onClick={() => set(v)}>{l}</button>)}
+      <button className="switch" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={e => { e.stopPropagation(); toggle() }} />
     </div>
   )
 }
@@ -164,6 +160,13 @@ export function App() {
   const scored = useRef<Game | null>(null)
   const [botError, setBotError] = useMsg()
   const [botRetry, retryBot] = useReducer((x: number) => x + 1, 0)
+  // the followed OGS game (its leave() in a ref), an automatch search, the socket's state
+  const [online, setOnline] = useState<ogs.Followed | null>(null)
+  const leaveOnline = useRef<(() => void) | null>(null)
+  const [search, setSearch] = useState<{ size: number; speed: ogs.Speed } | null>(null)
+  const [joining, setJoining] = useState(false) // followed, its first gamedata not here yet
+  const searching = useRef<(() => void) | null>(null) // cancels the pending automatch
+  const ogsStatus = useSyncExternalStore(ogs.onStatus, ogs.getStatus)
   const [session2d, setSession2d] = useState(false) // 2D after a WebGL context loss, for this session only
   const renderer: Renderer = session2d ? '2d' : settings.renderer
   // the card's skin follows the scene's backdrop; set before paint, and crossfaded only once the first frame is shown
@@ -247,15 +250,19 @@ export function App() {
   }, [])
   const installUpdate = async ({ version, install }: UpdateInfo) => {
     if (!install) return void call('open_link', { which: 'releases' }).catch(() => {})
-    if (dirty && !(await confirmDiscard())) return
+    if (!(await canLeave())) return
     setUpd({ s: 'downloading', version, install, pct: null })
     // on success the app restarts; on failure Rust keeps the update, so it can be installed again
     call('update_install').catch(e => setUpd({ s: 'error', error: e, retry: { version, install } }))
   }
 
   const changed = () => { setNote(null); setBotError(null); rerender() }
-  const humanTurn = !bot || game.toPlay !== bot.sign
   const atEnd = game.cursor === game.moves.length
+  // OGS forbids engine help in an ongoing game: no KataGo query of any kind until it is finished
+  const ongoing = !!online && online.phase !== 'finished'
+  const removal = online?.phase === 'stone removal' && atEnd ? online : null
+  const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && game.toPlay === online.me : !bot || game.toPlay !== bot.sign
+  const mine: Sign | 0 = bot ? -bot.sign as Sign : online?.me ?? 0 // the side a review looks at
   const shown = review?.branch ?? game
   const m = review?.moments?.[review.k]
   const from = m ? fromOf(m, review!.step) : 0
@@ -263,7 +270,7 @@ export function App() {
   // ① takes only the punisher's moves (← may show the engine's turn); ② and ③ explore freely
   const lessonPlayable = !!review?.branch && !thinking && !shown.ended && !review.error && (review.step !== 'try' || shown.toPlay === -m!.sign)
   const countingNow = !review && counting?.game === game && game.ended && atEnd ? counting : null
-  const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result)
+  const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result) && !ongoing
   const canReview = reviewShown && canAnalyze
   const locked = !!result && (!!bot || atEnd) // two players may branch off a validated game from an earlier move
   const play = (v: Vertex | null) => {
@@ -281,14 +288,20 @@ export function App() {
       } else if (pick(t.refused, r)) setNote(d => pick(d.refused, r)!)
       return r === 'ok'
     }
+    if (removal) {
+      const r = v && ogs.removalToggle(game.board.signMap, removal.removed, v)
+      if (r) send(() => ogs.setRemoved(removal.id, r.stones, r.removed))
+      return false
+    }
     if (locked || !humanTurn) return false
     const r = game.play(v)
-    if (r === 'ok') { setDirty(true); setCounting(null); if (!bot) setResult(null); changed() }
+    if (r === 'ok' && online) { changed(); if (!send(() => ogs.move(online.id, v))) game.undo() } // optimistic: OGS echoes it back
+    else if (r === 'ok') { setDirty(true); setCounting(null); if (!bot) setResult(null); changed() }
     else if (pick(t.refused, r)) setNote(d => pick(d.refused, r)!)
     return r === 'ok'
   }
   const undo = () => {
-    if (review || bot && result) return
+    if (review || bot && result || online) return
     let undone = false
     // against the bot, take back to the player's last move
     while (game.undo()) { undone = true; if (!bot || game.cursor === 0 || game.toPlay !== bot.sign) break }
@@ -301,11 +314,20 @@ export function App() {
     shown.goTo(i) // in a lesson, an owed answer (ask) waits until the cursor is back at the branch end
     changed()
   }
-  const start = (g: Game, b: typeof bot) => {
+  // online is cleared only here, and only with the board replaced: an unfinished OGS position never becomes a local
+  // game open to KataGo (a finished one may stay, see signOut)
+  const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null); setJoining(false) }
+  const start = (g: Game, b: typeof bot) => { cancelSearch(); stopOnline(); show(g, b) }
+  const show = (g: Game, b: typeof bot) => {
     setGame(g); setBot(b); setResult(null); setNote(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); winrates.current = []
   }
+  /** Leaving the shown game: an unfinished OGS game goes on without us; unsaved moves are lost. */
+  const canLeave = async () => ongoing ? askFirst(t.ogsLeaveAsk, t.ogsLeave) : !dirty || confirmDiscard()
+  // an action that may replace the game cancels a pending search before any picker, download or dialog: a match
+  // starting meanwhile would be abandoned without the leave question; backing out leaves the search cancelled
   const newGame = async (size = nextSize) => {
-    if (dirty && !(await confirmDiscard())) return
+    cancelSearch()
+    if (!(await canLeave())) return
     setNextSize(size)
     if (settings.opponent === 'ai' && canPlayAI) {
       const me: Sign = settings.color === 'b' ? 1 : settings.color === 'w' ? -1 : random() < 0.5 ? 1 : -1
@@ -313,12 +335,13 @@ export function App() {
       start(new Game({ size, playerBlack: me === 1 ? '' : name, playerWhite: me === 1 ? name : '' }), { sign: -me as Sign, rank })
     } else start(new Game({ size }), null)
   }
-  const open = async () => {
+  const open = async (read: () => Promise<string | null> = openSgfFile, asked = false) => {
+    cancelSearch()
     try {
-      const text = await openSgfFile()
+      const text = await read()
       if (text === null) return
       const g = loadSgf(text)
-      if (dirty && !(await confirmDiscard())) return
+      if (!asked && !(await canLeave())) return
       start(g, null); setNextSize(SIZES.includes(g.info.size) ? g.info.size : nextSize)
     } catch (e) {
       setNote(d => d.openFailed(failureText(e, d)))
@@ -333,6 +356,52 @@ export function App() {
     }
   }
 
+  // OGS: a socket send fails only when signed out
+  const send = (f: () => void) => { try { f(); return true } catch (e) { setNote(d => failureText(e, d)); return false } }
+  const follow = (id: number) => {
+    start(new Game({ size: game.info.size }), null); setJoining(true) // an empty board, not playable, until the gamedata
+    let shownGame: Game | null = null, len = 0, error: Msg | null = null
+    try {
+      leaveOnline.current = ogs.follow(id, (ev, s) => {
+        if (ev[0] === 'error') setNote(error = d => failureText(typeof ev[1] === 'string' ? { code: ev[1] } : ev[1], d))
+        if (s) setJoining(false)
+        if (!s) return
+        if (s.game !== shownGame) { // first gamedata or a reload, which an error asks for: the error stays shown
+          shownGame = s.game; show(s.game, null)
+          if (error) setNote(error)
+          error = null
+        } else if (ev[0] === 'move' && s.game.moves.length > len) {
+          const m = s.game.lastMove!
+          if (m.sign !== s.me) { if (m.vertex) view.current?.drop(m.vertex, m.sign); else view.current?.pass?.(m.sign) }
+          changed()
+        }
+        len = s.game.moves.length
+        const r = s.result
+        setOnline(s); setResult(r ? d => d.ogsResult(r.winner, r.how, r.points) : null)
+      })
+    } catch (e) { setNote(d => failureText(e, d)) }
+  }
+  const resume = async (id: number) => { if (online?.id === id) return; cancelSearch(); if (await canLeave()) follow(id) }
+  const importGame = async (id: number) => { cancelSearch(); if (await canLeave()) open(() => ogs.sgf(id), true) }
+  const find = async () => {
+    if (!(await canLeave())) return // the shown game is left once a match starts
+    cancelSearch()
+    try {
+      const size = nextSize as ogs.BoardSize, speed = settings.ogsSpeed, m = ogs.findMatch(size, speed)
+      searching.current = m.cancel
+      setSearch({ size, speed })
+      m.started.then(id => { searching.current = null; follow(id) })
+    } catch (e) { setNote(d => failureText(e, d)) }
+  }
+  const cancelSearch = () => { searching.current?.(); searching.current = null; setSearch(null) }
+  /** Before signing out: an unfinished OGS game is left (asked first) and its board replaced; a finished one stays. */
+  const signOut = async () => {
+    if (ongoing && !(await askFirst(t.ogsLeaveAsk, t.ogsLeave))) return false
+    if (ongoing) start(new Game({ size: game.info.size }), null)
+    else { cancelSearch(); stopOnline() }
+    return true
+  }
+
   /** End of a game: record the result (and, against the bot, nudge its rank toward a 50 % win rate, once). */
   const finish = (text: Msg, botWon: boolean | null, re: string) => {
     setResult(text)
@@ -344,7 +413,8 @@ export function App() {
       if (next !== bot.rank) { set('aiRank', next); setNote(d => d.rankAdjusted(next)) }
     }
   }
-  const resign = () => {
+  const resign = async () => {
+    if (online) { if (!result && await askFirst(t.ogsResignAsk, t.resign)) send(() => ogs.resign(online.id)); return }
     if (!bot || result) return
     finish(d => d.resigns(-bot.sign), true, resignResult(bot.sign))
   }
@@ -418,7 +488,7 @@ export function App() {
   // Two passes: counting. KataGo's ownership suggests the dead stones (without an engine, none are suggested);
   // the player corrects them, then validates a Japanese count (territory + prisoners + komi).
   useEffect(() => {
-    if (!game.ended || !atEnd || result || counting) return
+    if (!game.ended || !atEnd || result || counting || online) return // OGS counts its own games
     let live = true
     const enter = (own: number[] | null) => {
       if (live) setCounting({ game, dead: own ? suggestDead(game.board.signMap, own) : noDead(game.board.signMap) })
@@ -426,18 +496,18 @@ export function App() {
     if (!canAnalyze) enter(null)
     else analyze(game, { maxVisits: FINAL_VISITS, includeOwnership: true }).then(a => enter(a.ownership), () => enter(null))
     return () => { live = false }
-  }, [game.ended, atEnd, ver, game, canAnalyze, counting, result])
+  }, [game.ended, atEnd, ver, game, canAnalyze, counting, result, online])
 
   // "Ombre et lumière": ownership of the displayed position, debounced, kept until the next estimate arrives.
   useEffect(() => {
-    if (!settings.territory || !canAnalyze || review) return
+    if (!settings.territory || !canAnalyze || review || ongoing) return
     let live = true
     const t = setTimeout(() => {
       analyze(game, { maxVisits: TERRITORY_VISITS, includeOwnership: true })
         .then(a => live && setOwn({ game, data: a.ownership, score: a.scoreLead }), e => live && setNote(d => failureText(e, d)))
     }, 250)
     return () => { live = false; clearTimeout(t) }
-  }, [settings.territory, ver, game, canAnalyze, !!review]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [settings.territory, ver, game, canAnalyze, !!review, ongoing]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reading: resumes from the scan cache after an error ("Try again") or a colour change.
   useEffect(() => {
@@ -486,7 +556,9 @@ export function App() {
 
   // ⌘/Ctrl commands, shared by the keyboard and the macOS menu bar (whose items emit "menu" with these ids)
   const togglePanel = () => set('panelHidden', !settings.panelHidden)
-  const commands: Record<string, () => void> = { undo, new: () => newGame(), open, save, panel: togglePanel }
+  // ⌘N with OGS as the opponent: the Game sheet, where an OGS game starts
+  const newCommand = () => { if (settings.opponent !== 'ogs') return void newGame(); opener.current = document.activeElement as HTMLElement | null; setSheet('game') }
+  const commands: Record<string, () => void> = { undo, new: newCommand, open, save, panel: togglePanel }
   // a focused range keeps the shortcuts: its arrows/Home/End go through goTo (preventDefault: no second native step)
   const blocked = (target: EventTarget | null) => target instanceof HTMLInputElement && target.type !== 'range' || sheet !== null
   const onMenu = useRef((_: string) => {})
@@ -514,7 +586,7 @@ export function App() {
             home: () => goTo(0), end: () => goTo(shown.moves.length),
             ...(review && { escape: leaveReview }),
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
-            t: () => set('territory', !settings.territory), h: togglePanel,
+            t: ongoing ? undefined : () => set('territory', !settings.territory), h: togglePanel,
             ...(renderer === '3d' && {
               v: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
             }),
@@ -532,7 +604,7 @@ export function App() {
 
   const { size, komi, playerBlack, playerWhite } = game.info
   const board = shown.board, total = shown.moves.length, toPlay = shown.toPlay, last = shown.lastMove
-  const shownOwn = settings.territory && own?.game === game ? own : null
+  const shownOwn = settings.territory && own?.game === game && !ongoing ? own : null
   const engineWait = engine.state === 'tuning' ? t.tuningCaption
     : (thinking || reading) && engine.state === 'starting' ? t.engineStarting
     : (thinking || reading) && engine.state === 'warming' ? t.engineWarming : null
@@ -549,14 +621,16 @@ export function App() {
   // [action id, label, action]: the id tells refocus whether the same action is still offered
   const links: [string, string, () => void][] = review?.error ? [['retry', t.retry, retryLesson]]
     : botError && !result ? [['retry', t.retry, retryBot]]
-    : !review ? result && canReview ? [['review', t.reviewGame, () => startReview(bot ? -bot.sign as Sign : 0)]] : []
+    : !review ? search ? [['cancel', t.cancel, cancelSearch]] : result && canReview ? [['review', t.reviewGame, () => startReview(mine)]] : []
     : !m ? [['back', t.backToGame, leaveReview]]
     : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as [string, string, () => void]] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
     : review.step === 'punish' ? [['better', t.seeBetter, () => openMoment(review.k, 'better')]]
     : lastMoment ? [['back', t.backToGame, leaveReview]] : [['next', t.nextMoment, () => openMoment(review.k + 1, 'try')]]
   const message = review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
+    : search ? note?.(t) ?? t.ogsSearching(search.size, t.paces[search.speed])
+    : ongoing && ogsStatus !== 'online' ? t.ogsReconnecting
     : result ? [result(t), note?.(t)].filter(Boolean).join(' ')
-    : countingNow ? t.countingHelp
+    : countingNow || removal ? t.countingHelp
     : game.ended ? t.countingWait
     : (botError ?? note)?.(t) ?? engineWait
       ?? (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null)
@@ -582,7 +656,7 @@ export function App() {
     : upd.s === 'error' ? [failureText(upd.error), retry ? [[t.install, () => installUpdate(retry)], [t.download, releases]] : [[t.download, releases]]]
     : [app, [[t.checkUpdates, () => checkUpdate(false)]]]
 
-  const playing = review ? !!review.branch : !game.ended && !result // whose turn it is means something
+  const playing = review ? !!review.branch : !game.ended && !result && (!online || online.phase === 'play') // whose turn it is means something
   const floor = review?.branch ? from : 0
   const re = result ? game.info.result ?? '' : '' // "B+R", "W+4.5", "0"
   const resignation = re.endsWith('+R'), countingOpen = !!final && !result
@@ -598,7 +672,7 @@ export function App() {
     : re ? re[0] === (s === 1 ? 'B' : 'W') ? t.wins : resignation ? t.resigned : ''
     : last && !last.vertex && last.sign === s ? t.passed
     : !playing ? ''
-    : toPlay === s ? bot?.sign === s ? thinking ? t.thinking : t.waiting : t.yourMove
+    : toPlay === s ? bot?.sign === s ? thinking ? t.thinking : t.waiting : online && online.me !== s ? t.thinking : t.yourMove
     : t.waiting
   const alert = upd.s === 'available' ? t.updateAvailable(upd.version) : engine.state === 'error' ? failureText(engine.error) : null
   const closeSheet = () => setSheet(null)
@@ -625,11 +699,12 @@ export function App() {
           onFallback={r => { if (r === 'context-lost' || (r === 'slow' && (engineBusy || reading))) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
           state={{
             signMap: board.signMap, last: last?.vertex ?? null, toPlay, coords, sound,
-            interactive: countingNow ? !result : review ? lessonPlayable : !game.ended && !locked && humanTurn,
+            interactive: removal ? true : countingNow ? !result : review ? lessonPlayable : !game.ended && !locked && humanTurn,
             // ② and ③: what changed hands, until the player explores
             ownership: countingNow ? null : review ? (m && !review.explored ? review.step === 'punish' ? m.lost : review.step === 'better' ? m.kept : null : null)
               : shownOwn?.data ?? null,
-            counting: final ? { dead: countingNow!.dead, territory: final.territory } : null,
+            counting: final ? { dead: countingNow!.dead, territory: final.territory }
+              : removal ? { dead: ogs.deadOf(board.signMap, removal.removed), territory: board.signMap.map(r => r.map(() => 0 as Sign)) } : null, // OGS scores
             captures: { black: board.getCaptures(1), white: board.getCaptures(-1) }, // the 3D lids: prisoners taken by each
           }}
           onPlay={play}
@@ -661,7 +736,7 @@ export function App() {
           </header>
           <div className="card-in" id="card" hidden={settings.panelHidden}>
             <div className="meta">
-              <span>{t.board(size, komi)}</span>
+              <span>{online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : t.board(size, komi)}</span>
               <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
                 <Icon name={sound ? 'volume' : 'volume-off'} />
               </button>
@@ -696,14 +771,14 @@ export function App() {
                 </section>
               ) : ([1, -1] as const).map(c => {
                 const n = board.getCaptures(c), sub = subOf(c)
-                const rank = bot && (c === bot.sign ? bot.rank : settings.myRank)
+                const rank = online ? online.players[c === 1 ? 'black' : 'white'].rank : bot && (c === bot.sign ? bot.rank : settings.myRank)
                 return (
                   <div key={c} role="group" aria-label={t.color(c)}
                     className={`pc ${c === 1 ? 'b' : 'w'}${toPlay === c && playing ? ' on' : ''}${thinking && bot?.sign === c ? ' thinking' : ''}`}>
-                    <div className="lbl">{bot ? c === bot.sign ? t.ai : t.you : (c === 1 ? playerBlack : playerWhite) || t.color(c)}{rank && <span className="rk">{rank}</span>}</div>
+                    <div className="lbl"><span className="nm">{bot ? c === bot.sign ? t.ai : t.you : (c === 1 ? playerBlack : playerWhite) || t.color(c)}</span>{rank && <span className="rk">{rank}</span>}</div>
                     <div aria-live={countingOpen ? 'polite' : undefined}>
-                      <div className="state">{stateOf(c)}</div>
-                      {sub && <div className="sub">{sub}</div>}
+                      <div className="state" aria-live={online ? 'polite' : undefined}>{stateOf(c)}</div>
+                      {online?.clock && !result ? <div className="sub"><Clock clock={online.clock} tc={online.tc} color={c} pausedSince={online.pausedSince} /></div> : sub && <div className="sub">{sub}</div>}
                     </div>
                     <span className="cap" role="img" aria-label={t.captures(n)}>{n}</span>
                     <span className="wm" aria-hidden="true">{c === 1 ? '黒' : '白'}</span>
@@ -718,7 +793,7 @@ export function App() {
                 <button className="chev" onClick={() => goTo(shown.cursor + 1)} disabled={shown.cursor === total} aria-label={t.next} title={`${t.next} (→)`}><Icon name="chevron-right" /></button>
                 <span className="mv">{t.moveOf(shown.cursor, total)}</span>
               </div>
-              {settings.territory && !review && (
+              {settings.territory && !review && !ongoing && (
                 <p className="estimate" aria-live="polite">
                   {!inTauri() || !canAnalyze ? t.territoryNeedsNet : shownOwn ? t.estimate(shownOwn.score) : t.estimating}
                 </p>
@@ -726,14 +801,15 @@ export function App() {
             </div>
             <div className="acts">
               {review ? <button className="act" onClick={leaveReview} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button> : <>
-                {final && !result
-                  ? <button className="act accent" onClick={validate}><Icon name="hand-stop" />{t.validate}</button>
+                {(final || removal) && !result
+                  ? <button className="act accent" onClick={removal ? () => send(() => ogs.acceptRemoved(removal.id, removal.removed)) : validate}><Icon name="hand-stop" />{t.validate}</button>
                   : <button className="act" onClick={() => play(null)} disabled={game.ended || locked || !humanTurn} title="P"><Icon name="hand-stop" />{t.pass}</button>}
-                <button className="act" onClick={undo} disabled={game.cursor === 0 || (!!bot && !!result)} title={shortcut('Z')}><Icon name="arrow-back-up" />{t.undo}</button>
-                <button className="act" aria-pressed={settings.territory} onClick={() => set('territory', !settings.territory)} title="T"><Icon name="sun-low" />{t.territory}</button>
-                {reviewShown ? <button key="review" className={`act${result ? ' accent' : ''}`} onClick={() => startReview(bot ? -bot.sign as Sign : 0)}
+                <button className="act" onClick={undo} disabled={game.cursor === 0 || (!!bot && !!result) || !!online} title={ongoing ? t.ogsUnavailable : shortcut('Z')}><Icon name="arrow-back-up" />{t.undo}</button>
+                <button className="act" aria-pressed={settings.territory} onClick={() => set('territory', !settings.territory)} disabled={ongoing}
+                  title={ongoing ? t.ogsUnavailable : 'T'}><Icon name="sun-low" />{t.territory}</button>
+                {reviewShown ? <button key="review" className={`act${result ? ' accent' : ''}`} onClick={() => startReview(mine)}
                   disabled={!canAnalyze} title={canAnalyze ? undefined : t.reviewNeedsNet}><Icon name="review" />{t.reviewGame}</button>
-                  : bot && <button className="act" onClick={resign} disabled={!!result}><Icon name="flag" />{t.resign}</button>}
+                  : (bot || online) && <button className="act" onClick={resign} disabled={!!result}><Icon name="flag" />{t.resign}</button>}
               </>}
             </div>
           </div>
@@ -746,7 +822,11 @@ export function App() {
             <div className="lab"><span>{t.newGame}</span><span /></div>
             <div className="opts">
               <Seg label={t.size} value={nextSize} options={SIZES.map(n => [n, `${n}×${n}`])} set={setNextSize} />
-              <Seg label={t.opponent} value={settings.opponent} options={[['human', t.twoPlayers], ['ai', t.ai]]} set={v => set('opponent', v)} />
+              <Seg label={t.opponent} value={settings.opponent} options={[['human', t.twoPlayers], ['ai', t.ai], ['ogs', 'OGS']]} set={v => set('opponent', v)} />
+              {settings.opponent === 'ogs' ? (
+                <OgsSection speed={settings.ogsSpeed} setSpeed={v => set('ogsSpeed', v)} onFind={() => { closeSheet(); find() }}
+                  onResume={id => { closeSheet(); resume(id) }} onImport={id => { closeSheet(); importGame(id) }} onSignOut={signOut} />
+              ) : <>
               {settings.opponent === 'ai' && (canPlayAI ? <>
                 <Seg label={t.yourColor} value={settings.color} options={[['b', t.black], ['w', t.white], ['r', t.random]]} set={v => set('color', v)} />
                 <Stepper label={t.aiLevel} value={settings.aiRank} set={v => set('aiRank', v)} />
@@ -758,6 +838,7 @@ export function App() {
                 </details>
               </> : cta)}
               <button className="btn accent" onClick={() => { closeSheet(); newGame() }} title={shortcut('N')} disabled={settings.opponent === 'ai' && !canPlayAI}>{t.begin}</button>
+              </>}
             </div>
           </section>
           <section className="opts">
@@ -773,7 +854,8 @@ export function App() {
             <div className="lab"><span>{t.boardSection}</span><span /></div>
             <Switch label={t.coords} k="C" on={coords} toggle={() => setCoords(v => !v)} />
             <Switch label={t.sound} k="M" on={sound} toggle={() => setSound(v => !v)} />
-            <Switch label={t.territory} k="T" on={settings.territory} toggle={() => set('territory', !settings.territory)} />
+            <Switch label={t.territory} k="T" on={settings.territory} toggle={() => set('territory', !settings.territory)}
+              disabled={ongoing} title={ongoing ? t.ogsUnavailable : undefined} />
           </section>
 
           <section id="display">

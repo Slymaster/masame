@@ -20,7 +20,9 @@ serde_json = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "stream"] }
 futures-util = { version = "0.3", default-features = false }
 sha2 = "0.10"
-tokio = { version = "1", features = ["process", "io-util", "sync", "fs", "macros", "rt-multi-thread", "time"] }
+getrandom = "0.4" # PKCE verifier and OAuth state
+base64 = "0.23"
+tokio = { version = "1", features = ["process", "io-util", "sync", "fs", "macros", "rt-multi-thread", "time", "net"] }
 
 # Engine process (job object, error mode, OpenCL.dll check) and opening the credit links; already in the dependency tree via tauri.
 [target.'cfg(windows)'.dependencies]

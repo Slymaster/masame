@@ -44,6 +44,7 @@
 - **Ombre et lumière.** L'estimation de propriété de KataGo affichée en vraie lumière et ombre sur le goban.
 - **Comptage.** Le moteur propose les pierres mortes ; tu les corriges d'un clic.
 - **Revue de partie.** Jusqu'à trois moments où un coup a coûté le plus de points, chacun une courte leçon : trouve toi-même la punition, vois-la, puis vois le bon coup. Après une partie contre l'IA, ou à tout moment dans une partie à deux joueurs ou un SGF. Elle tourne en local, en une minute environ.
+- **Jouer en ligne sur OGS.** Des parties classées sur [online-go.com](https://online-go.com) contre des joueurs, sur le goban de Masame, avec pendules ; tes parties OGS terminées s'ouvrent pour la revue.
 - **Règles et parties.** Captures, ko, suicide, passe, annulation, navigation dans les coups, ouverture et enregistrement SGF.
 - **Deux langues.** Entièrement en français et en anglais ; suit la langue du système et se change dans l'app.
 - **Un mode léger 2D.** Un goban Canvas, utilisé automatiquement quand le rendu 3D n'est pas disponible.
@@ -90,16 +91,26 @@ Masame n'embarque aucun réseau de neurones. À la première utilisation, le ges
 
 Les réseaux sont publiés par le projet KataGo sous la [KataGo Neural Network License](https://katagotraining.org/network_license/).
 
+## OGS
+
+Masame est un client OGS. Choisis OGS comme adversaire dans le panneau Partie et connecte-toi : la connexion se fait dans ton navigateur, et Masame ne voit jamais ton mot de passe. Ensuite :
+
+- **Cherche un adversaire** pour une partie classée en 9×9, 13×13 ou 19×19, en cadence blitz, rapide ou live (appariement automatique, comme sur le site).
+- **Reprends** tes parties en cours depuis *Mes parties OGS* ; en quitter une ne l'arrête pas, et ta pendule continue de tourner sur OGS.
+- **Importe** une partie terminée d'un clic, puis passe-la en revue comme les autres.
+
+OGS n'autorise aucune aide d'un moteur pendant une partie : tant qu'une partie OGS est en cours, Ombre et lumière, les suggestions de comptage du moteur et la revue sont coupées. Elles reviennent dès la fin de la partie.
+
 ## Vie privée
 
-- Aucune télémétrie, aucune mesure d'audience, aucun compte.
-- Les requêtes réseau vont à katagotraining.org (le catalogue des réseaux et leur téléchargement) et à GitHub pour les mises à jour (github.com et ses serveurs de fichiers).
+- Aucune télémétrie, aucune mesure d'audience, aucun compte Masame.
+- Les requêtes réseau vont à katagotraining.org (le catalogue des réseaux et leur téléchargement) et à GitHub pour les mises à jour (github.com et ses serveurs de fichiers). Si tu te connectes à OGS, Masame échange avec online-go.com.
 - Au plus une fois par jour, Masame demande à GitHub si une nouvelle version existe (tu peux le désactiver dans les Réglages). Une mise à jour n'est téléchargée que si tu cliques sur Installer, et elle est vérifiée avec la clé de signature de Masame avant d'être installée.
 - Tes parties restent sur ta machine ; les fichiers SGF sont enregistrés là où tu le choisis.
 
 ## Feuille de route
 
-Les fondations, l'Atelier vivant en 3D et la première partie du professeur sont en place : une revue locale de tes parties, les trois moments qui les ont décidées, « devine, puis découvre ». Viennent ensuite un client OGS, puis un entraînement quotidien construit à partir de tes propres parties. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
+Les fondations, l'Atelier vivant en 3D et la première partie du professeur sont en place : une revue locale de tes parties, les trois moments qui les ont décidées, « devine, puis découvre ». Le client OGS est là aussi : parties classées, reprise, import et revue. Vient ensuite un entraînement quotidien construit à partir de tes propres parties. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
 
 ## Remerciements
 

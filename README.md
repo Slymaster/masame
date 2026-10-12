@@ -44,6 +44,7 @@
 - **Light and Shadow.** KataGo's ownership estimate shown as real light and shade on the board.
 - **Counting.** The engine proposes the dead stones; you correct them with a click.
 - **Game review.** Up to three moments where a move cost the most points, each a short lesson: find the punishment yourself, see it, then see the better move. After a game against the AI, or at any time in a two-player or SGF game. It runs locally, in about a minute.
+- **Online play on OGS.** Ranked games on [online-go.com](https://online-go.com) against people, on Masame's board, with clocks; your finished OGS games open for review.
 - **Rules and records.** Captures, ko, suicide, pass, undo, move navigation, SGF open and save.
 - **Two languages.** Entirely in French and English, following the system language, switchable in the app.
 - **A 2D light mode.** A Canvas board, used automatically when the 3D renderer is unavailable.
@@ -90,16 +91,26 @@ Masame ships no neural network. On first use, the network manager reads the cata
 
 The networks are published by the KataGo project under the [KataGo Neural Network License](https://katagotraining.org/network_license/).
 
+## OGS
+
+Masame is an OGS client. Choose OGS as the opponent in the Game sheet and sign in: sign-in happens in your browser, and Masame never sees your password. Then:
+
+- **Find an opponent** for a ranked game at 9×9, 13×13 or 19×19, in blitz, rapid or live pace (automatch, as on the site).
+- **Resume** your ongoing games from *My OGS games*; leaving one doesn't stop it, and your clock keeps running at OGS.
+- **Import** a finished game with one click, then review it like any other.
+
+OGS doesn't allow engine help during a game, so while an OGS game is going on, Light and Shadow, the engine's counting suggestions and the review are off. They come back as soon as the game is over.
+
 ## Privacy
 
-- No telemetry, no analytics, no account.
-- Network requests go to katagotraining.org (the network catalogue and the network downloads) and to GitHub for updates (github.com and its file servers).
+- No telemetry, no analytics, no Masame account.
+- Network requests go to katagotraining.org (the network catalogue and the network downloads) and to GitHub for updates (github.com and its file servers). If you sign in to OGS, Masame talks to online-go.com.
 - At most once a day, Masame asks GitHub whether a new version exists (you can turn this off in Settings). An update is downloaded only when you click Install, and is checked against Masame's signing key before it is installed.
 - Your games stay on your machine; SGF files are saved where you choose.
 
 ## Roadmap
 
-The foundations, the 3D Living Atelier and the teacher's first part are in place: a local review of your games, the three moments that decided them, "guess, then reveal". Next comes an OGS client, then daily training built from your own games. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
+The foundations, the 3D Living Atelier and the teacher's first part are in place: a local review of your games, the three moments that decided them, "guess, then reveal". The OGS client is here too: ranked games, resume, import and review. Next comes daily training built from your own games. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
 
 ## Credits
 
