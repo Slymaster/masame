@@ -27,11 +27,16 @@ export const hoshiStep = (N: number) => (N >= 19 ? 6 : N >= 13 ? 3 : N >= 9 ? 2 
 /* ---------- placement: jitter and relaxation ---------- */
 export interface Placed { x: number; y: number; R: number; jx: number; jz: number; tx: number; tz: number }
 
-/** Stable hand-placed look per (point, move number): an offset (±1.5 mm along, ±0.6 mm across, where the 22 mm spacing leaves no slack), random spin and material seed. */
-export function jitter(N: number, x: number, y: number, moveNo: number) {
+/** Jitter amplitudes (mm): across, where the 22 mm spacing leaves no slack, and along the 23.7 mm rows. */
+export const JIT_ACROSS = 0.8, JIT_ALONG = 2.2
+/** Smallest offset, as a fraction of the amplitude: no stone sits dead centre. */
+export const JIT_MIN = 0.4
+
+/** Stable hand-placed look per (point, move number): an elliptical offset, random spin and material seed. */
+export function jitter(N: number, x: number, y: number, moveNo: number, across = JIT_ACROSS, along = JIT_ALONG) {
   const r = rng(Math.floor(hash(x, y, moveNo * 7 + 3) * 4294967296))
-  const a = r() * Math.PI * 2, m = Math.sqrt(r()) * 1.5
-  return { jx: gx(N, x) + Math.cos(a) * m * 0.4, jz: gz(N, y) + Math.sin(a) * m, seed: r(), rotY: r() * Math.PI * 2 }
+  const a = r() * Math.PI * 2, m = JIT_MIN + (1 - JIT_MIN) * Math.sqrt(r())
+  return { jx: gx(N, x) + Math.cos(a) * m * across, jz: gz(N, y) + Math.sin(a) * m * along, seed: r(), rotY: r() * Math.PI * 2 }
 }
 
 /**
@@ -95,11 +100,11 @@ export function bowlHeap(R: number, rMax: number, top: number, rnd: () => number
 /* ---------- time of day ---------- */
 export type TimeName = 'morning' | 'afternoon' | 'evening'
 /** room: brightness of the surroundings in Contemplation (the table and the dark around it). */
-export interface Tod { az: number; el: number; K: number; I: number; env: number; rot: number; exp: number; room: number }
+export interface Tod { az: number; el: number; K: number; I: number; env: number; exp: number; room: number }
 export const TOD: Record<TimeName, Tod> = {
-  morning: { az: 200, el: 27, K: 5500, I: 3.3, env: 0.62, rot: 0.4, exp: 0.95, room: 1 },
-  afternoon: { az: 232, el: 40, K: 4200, I: 3.5, env: 0.55, rot: 1.6, exp: 0.88, room: 0.8 },
-  evening: { az: 318, el: 14, K: 3000, I: 6.0, env: 0.4, rot: 3.0, exp: 1.12, room: 0.3 },
+  morning: { az: 200, el: 27, K: 5500, I: 3.3, env: 0.62, exp: 0.95, room: 1 },
+  afternoon: { az: 232, el: 40, K: 4200, I: 3.5, env: 0.55, exp: 0.88, room: 0.8 },
+  evening: { az: 318, el: 14, K: 3000, I: 6.0, env: 0.4, exp: 1.12, room: 0.3 },
 }
 export const mixTod = (a: Tod, b: Tod, t: number): Tod =>
   Object.fromEntries(Object.keys(a).map(k => [k, a[k as keyof Tod] + (b[k as keyof Tod] - a[k as keyof Tod]) * t])) as unknown as Tod
@@ -121,6 +126,8 @@ export type Ground = 'walnut' | 'tatami' | 'paper'
 export interface Look {
   /** Poly Haven HDRI in assets/board3d (`<sky>_1k.hdr`); null = three's procedural RoomEnvironment. */
   sky: string | null
+  /** Azimuth (rad, as atan2(z, x) in three's equirect mapping) of the sky's energy-weighted brightest side: turned to the key's bearing. */
+  skyAz: number
   /** null: follows the time of day. Otherwise the décor's own fixed light (Lanterne: a night with no window). */
   tod: Tod | null
   ground: Ground
@@ -137,13 +144,14 @@ export interface Look {
   /** Lanterne: a warm spot over the board, in units of 1e6 cd at 1 m (0 = none: the window key casts the shadows). */
   lamp: number
 }
-const NIGHT: Tod = { az: 215, el: 64, K: 2650, I: 0, env: 0.5, rot: 2.2, exp: 1, room: 0 }
+const NIGHT: Tod = { az: 215, el: 64, K: 2650, I: 0, env: 0.5, exp: 1, room: 0 }
 export const LOOKS: Record<Decor, Look> = {
-  atelier: { sky: 'studio_country_hall', tod: null, ground: 'walnut', tint: 1, rough: 0.72, fade: true, linen: true, key: 1, ibl: 1, exp: 1, soft: 1, shade: 1, lamp: 0 },
-  washitsu: { sky: 'empty_play_room', tod: null, ground: 'tatami', tint: 0.92, rough: 0.82, fade: false, linen: false, key: 0.92, ibl: 1.1, exp: 1, soft: 1.3, shade: 0.95, lamp: 0 },
+  atelier: { sky: 'studio_country_hall', skyAz: 0.52, tod: null, ground: 'walnut', tint: 1, rough: 0.72, fade: true, linen: true, key: 1, ibl: 1, exp: 1, soft: 1, shade: 1, lamp: 0 },
+  washitsu: { sky: 'empty_play_room', skyAz: 0.38, tod: null, ground: 'tatami', tint: 0.92, rough: 0.82, fade: false, linen: false, key: 0.92, ibl: 1.1, exp: 1, soft: 1.3, shade: 0.95, lamp: 0 },
   // time of day has no effect here: a lantern at night
-  lanterne: { sky: 'studio_country_hall', tod: NIGHT, ground: 'walnut', tint: 0.5, rough: 0.72, fade: true, linen: false, key: 0, ibl: 0.25, exp: 1.6, soft: 1, shade: 1, lamp: 3.6 },
-  clair: { sky: null, tod: null, ground: 'paper', tint: 1, rough: 0.94, fade: false, linen: false, key: 0.9, ibl: 0.9, exp: 0.82, soft: 2, shade: 0.8, lamp: 0 },
+  lanterne: { sky: 'studio_country_hall', skyAz: 0.52, tod: NIGHT, ground: 'walnut', tint: 0.5, rough: 0.72, fade: true, linen: false, key: 0, ibl: 0.25, exp: 1.6, soft: 1, shade: 1, lamp: 3.6 },
+  // skyAz: estimate from RoomEnvironment's layout (its two strong side panels at ±153°, the third at 92°), not measured on a render
+  clair: { sky: null, skyAz: 2.9, tod: null, ground: 'paper', tint: 1, rough: 0.94, fade: false, linen: false, key: 0.9, ibl: 0.9, exp: 0.82, soft: 2, shade: 0.8, lamp: 0 },
 }
 
 /* ---------- adaptive quality governor ---------- */

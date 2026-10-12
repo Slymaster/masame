@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bowlHeap, contrast, dims, dropStones, fit, Governor, gx, gz, jitter, lens, LOOKS, panFor, qualityLadder, RB, RW, silhouette, TOD, todAt, type Placed } from './logic'
+import { bowlHeap, contrast, dims, dropStones, fit, Governor, gx, gz, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, panFor, qualityLadder, RB, RW, silhouette, TOD, todAt, type Placed } from './logic'
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -13,10 +13,29 @@ describe('dimensions', () => {
 })
 
 describe('jitter + fitting', () => {
-  it('is stable per point and move, and within 1.5 mm', () => {
-    const a = jitter(19, 3, 4, 10), b = jitter(19, 3, 4, 10)
-    expect(a).toEqual(b)
-    expect(Math.hypot(a.jx - gx(19, 3), a.jz - gz(19, 4))).toBeLessThanOrEqual(1.5)
+  it('is stable per point and move, within its amplitudes and never dead centre', () => {
+    expect(jitter(19, 3, 4, 10)).toEqual(jitter(19, 3, 4, 10))
+    for (let k = 0; k < 2000; k++) {
+      const x = k % 19, y = (k * 7) % 19, j = jitter(19, x, y, k), dx = j.jx - gx(19, x), dz = j.jz - gz(19, y)
+      expect(Math.abs(dx)).toBeLessThanOrEqual(JIT_ACROSS); expect(Math.abs(dz)).toBeLessThanOrEqual(JIT_ALONG)
+      expect(Math.hypot(dx / JIT_ACROSS, dz / JIT_ALONG)).toBeGreaterThanOrEqual(0.4 - 1e-9)
+    }
+    expect([JIT_ACROSS, JIT_ALONG]).toEqual([0.8, 2.2])
+  })
+
+  it('fits the 2D board too: square 22 mm cells, 1.2 mm both ways', () => {
+    const N = 19, m = new Map<number, Placed>(), R = 0.482 * 22
+    for (let k = 0; k < N * N; k++) {
+      const p = (k * 7) % (N * N), x = p % N, y = (p / N) | 0, j = jitter(N, x, y, k, 1.2, 1.2)
+      const s: Placed = { x, y, R, jx: x * 22 + j.jx - gx(N, x), jz: y * 22 + j.jz - gz(N, y), tx: 0, tz: 0 }
+      m.set(p, s); fit(s, m, N)
+    }
+    let worst = Infinity
+    for (const s of m.values()) for (const [dx, dy] of [[1, 0], [0, 1]]) {
+      const o = m.get((s.y + dy) * N + s.x + dx)
+      if (o && s.x + dx < N) worst = Math.min(worst, Math.hypot(o.tx - s.tx, o.tz - s.tz) - 2 * R)
+    }
+    expect(worst).toBeGreaterThan(-0.45)
   })
 
   it('fits each newcomer around the stones already down, which never move', () => {
@@ -35,7 +54,9 @@ describe('jitter + fitting', () => {
       const o = m.get((s.y + dy) * N + s.x + dx)
       if (o && s.x + dx < N) worst = Math.min(worst, Math.hypot(o.tx - s.tx, o.tz - s.tz) - s.R - o.R)
     }
-    expect(worst).toBeGreaterThan(-0.6) // only when squeezed between two stones placed inwards: a hidden girdle overlap
+    // only when squeezed between two stones placed inwards: a hidden girdle overlap. The worst case is set by the 22 mm
+    // spacing against 22.2 mm slate stones (no room across), not by the jitter
+    expect(worst).toBeGreaterThan(-0.9)
   })
 
   it('leaves no overlap around a lone newcomer', () => {
