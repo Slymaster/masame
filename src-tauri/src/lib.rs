@@ -16,12 +16,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 struct App {
     engine: Arc<Engine>,
     http: reqwest::Client,
     catalog: Mutex<Vec<Entry>>,
     downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    update: Mutex<Option<Update>>, // the newer release update_check found, for update_install
     #[cfg(any(windows, target_os = "linux"))]
     failed_variants: Mutex<Vec<&'static str>>, // engine builds that failed to start in this session
 }
@@ -296,9 +298,52 @@ fn open_link(which: String) -> Res<()> {
     let url = match which.as_str() {
         "katago" => "https://github.com/lightvector/KataGo",
         "license" => "https://katagotraining.org/network_license/",
+        "releases" => "https://github.com/Slymaster/masame/releases/latest",
         _ => return Err(Failure::new("unknown_link")),
     };
     open_url(url)
+}
+
+/// Whether this build can replace itself: everywhere but Linux, where only the AppImage can (a .deb or .rpm belongs to
+/// the package manager). The bundle type is the marker Tauri's bundler patches into the binary, not the environment.
+fn installable() -> bool {
+    !cfg!(target_os = "linux") || matches!(tauri::utils::platform::bundle_type(), Some(tauri::utils::config::BundleType::AppImage))
+}
+
+/// Asks the fixed endpoint (tauri.conf.json) whether a newer release exists, and keeps it for update_install.
+#[tauri::command]
+async fn update_check(app: AppHandle, s: State<'_, App>) -> Res<Option<Value>> {
+    let fail = |e: tauri_plugin_updater::Error| Failure::with("update_check", e);
+    let update = app.updater_builder().timeout(std::time::Duration::from_secs(30)).build().map_err(fail)?.check().await.map_err(fail)?;
+    let reply = update.as_ref().map(|u| json!({ "version": u.version, "install": installable() }));
+    *s.update.lock().unwrap() = update;
+    Ok(reply)
+}
+
+/// Downloads the checked update (verified against the public key in tauri.conf.json), stops KataGo (on Windows the
+/// installer replaces katago.exe and its DLLs), installs and restarts. On Windows `install` exits the app itself.
+#[tauri::command]
+async fn update_install(app: AppHandle, s: State<'_, App>) -> Res<()> {
+    if !installable() { return Err(Failure::with("update_failed", "not installable")) }
+    // Taken out while it runs, so a second click finds nothing; put back if it fails, for another try.
+    let update = s.update.lock().unwrap().take().ok_or(Failure::with("update_failed", "no update checked"))?;
+    let r: Result<(), String> = async {
+        let (mut got, mut last) = (0u64, Instant::now());
+        let bytes = update.download(|n, total| {
+            got += n as u64;
+            if Some(got) == total || last.elapsed().as_millis() >= 120 {
+                last = Instant::now();
+                let _ = app.emit("update-progress", json!({ "received": got, "total": total }));
+            }
+        }, || {}).await.map_err(|e| e.to_string())?;
+        s.engine.stop();
+        let u = update.clone();
+        tauri::async_runtime::spawn_blocking(move || u.install(bytes)).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())
+    }.await;
+    match r {
+        Ok(()) => { app.request_restart(); Ok(()) }
+        Err(e) => { *s.update.lock().unwrap() = Some(update); Err(Failure::with("update_failed", e)) }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -339,6 +384,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let h = app.handle().clone();
             let engine = Engine::new(move |ev, payload| { let _ = h.emit(ev, payload); });
@@ -349,7 +395,7 @@ pub fn run() {
             };
             if let Err(e) = install_config(app.handle()) { eprintln!("[katago] config not installed: {e:?}") }
             app.manage(App {
-                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(),
+                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), update: Default::default(),
                 #[cfg(any(windows, target_os = "linux"))]
                 failed_variants: Default::default(),
             });
@@ -359,7 +405,7 @@ pub fn run() {
         .on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); })
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
-            engine_status, engine_start, engine_stop, engine_analyze, open_link, set_language
+            engine_status, engine_start, engine_stop, engine_analyze, open_link, set_language, update_check, update_install
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -378,5 +424,27 @@ mod tests {
             v["activeNetwork"] = json!("n"); // would panic on an array, number or string
             assert_eq!(v, json!({"activeNetwork": "n"}));
         }
+    }
+
+    /// Our catalogue client and the updater plugin's own reqwest clients in one process: both must complete a TLS
+    /// handshake. Network: `cargo test -- --ignored tls_`.
+    #[test]
+    #[ignore = "network: katagotraining.org and github.com"]
+    fn tls_catalog_and_updater_in_one_process() {
+        let mut ctx = tauri::test::mock_context(tauri::test::noop_assets());
+        let conf: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        ctx.config_mut().plugins.0.insert("updater".into(), conf["plugins"]["updater"].clone());
+        let app = tauri::test::mock_builder().plugin(tauri_plugin_updater::Builder::new().build()).build(ctx).unwrap();
+        tauri::async_runtime::block_on(async {
+            assert!(!networks::fetch_nets(&networks::client()).await.expect("catalogue over TLS").is_empty());
+            // Until a release carries latest.json, GitHub answers 404: ReleaseNotFound means the handshake worked.
+            let r = app.updater().unwrap().check().await;
+            eprintln!("updater check: {:?}", r.as_ref().map(|u| u.as_ref().map(|u| u.version.clone())));
+            match r {
+                Ok(_) | Err(tauri_plugin_updater::Error::ReleaseNotFound) => {}
+                Err(e) => panic!("updater check: {e:?}"),
+            }
+            assert!(!networks::fetch_nets(&networks::client()).await.expect("catalogue after the updater ran").is_empty());
+        });
     }
 }

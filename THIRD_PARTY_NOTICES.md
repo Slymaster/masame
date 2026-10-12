@@ -70,7 +70,7 @@ The licence page lists exceptions. Older `g170` networks are CC0. The "zhizi" ne
 ## 3. Application framework and Rust crates (bundled)
 
 ### Tauri 2
-- https://github.com/tauri-apps/tauri. Licence: MIT OR Apache-2.0 (`tauri`, `tauri-plugin-dialog`, `tauri-plugin-fs`, `wry`; `tao` is Apache-2.0).
+- https://github.com/tauri-apps/tauri. Licence: MIT OR Apache-2.0 (`tauri`, `tauri-plugin-dialog`, `tauri-plugin-fs`, `tauri-plugin-updater`, `wry`; `tao` is Apache-2.0).
 
 ### Rust dependencies
 About 300 crates are resolved for the macOS build (`src-tauri/Cargo.lock`). Direct dependencies:
@@ -78,6 +78,7 @@ About 300 crates are resolved for the macOS build (`src-tauri/Cargo.lock`). Dire
 | Crate | Licence |
 |---|---|
 | tauri, tauri-plugin-dialog, tauri-plugin-fs | Apache-2.0 OR MIT |
+| tauri-plugin-updater | Apache-2.0 OR MIT |
 | serde, serde_json | MIT OR Apache-2.0 |
 | reqwest | MIT OR Apache-2.0 |
 | futures-util | MIT OR Apache-2.0 |

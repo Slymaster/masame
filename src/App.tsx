@@ -12,6 +12,8 @@ import { loadSgf, resignResult, saveSgf, scoreResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import { DECORS, type Decor } from './board3d/decors'
 import { isMac, shortcut } from './platform'
+import { getVersion } from '@tauri-apps/api/app'
+import { checkDue, updateSettings, type UpdateInfo } from './update'
 
 const SIZES = [9, 13, 19]
 const HUMAN_BYTES = 99_066_230
@@ -25,13 +27,14 @@ const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
 interface Settings {
   lang: Lang; opponent: 'human' | 'ai'; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; delay: boolean; territory: boolean
   renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor
-  langChosen: boolean; panelHidden: boolean
+  langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number
 }
 const SETTINGS_KEY = 'baduk.settings'
 function loadSettings(): Settings {
   const d: Settings = {
     lang: 'en', opponent: 'ai', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, delay: true, territory: false,
     renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', langChosen: false, panelHidden: false,
+    autoUpdate: true, updateChecked: 0,
   }
   let j: Partial<Settings> = {}
   try { j = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') ?? {} } catch { /* private mode or garbage: defaults */ }
@@ -40,7 +43,7 @@ function loadSettings(): Settings {
     ...s, lang: storedLang(j), langChosen: j.langChosen === true, myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
-    decor: DECORS.includes(s.decor) ? s.decor : 'atelier', panelHidden: s.panelHidden === true,
+    decor: DECORS.includes(s.decor) ? s.decor : 'atelier', panelHidden: s.panelHidden === true, ...updateSettings(j),
   }
 }
 
@@ -194,6 +197,37 @@ export function App() {
     const id = setTimeout(() => { earlyStart.current = true; call('engine_start').catch(() => {}) }, 5000) // errors arrive as engine-status
     return () => clearTimeout(id)
   }, [settings.opponent, canPlayAI])
+
+  // Updates: a silent check at launch (at most daily, unless turned off), a manual one, install on click only.
+  const [version, setVersion] = useState('')
+  const [upd, setUpd] = useState<{ s: 'idle' | 'checking' | 'latest' } | ({ s: 'available' | 'installing' } & UpdateInfo)
+    | ({ s: 'downloading'; pct: number | null } & UpdateInfo) | { s: 'error'; error: unknown }>({ s: 'idle' })
+  const checkUpdate = (silent: boolean) => {
+    if (!silent) setUpd({ s: 'checking' })
+    call<UpdateInfo | null>('update_check').then(
+      u => { if (u) setUpd({ s: 'available', ...u }); else if (!silent) setUpd({ s: 'latest' }) },
+      e => { if (!silent) setUpd({ s: 'error', error: e }) })
+  }
+  const launchCheck = useRef(false)
+  useEffect(() => {
+    if (!inTauri() || launchCheck.current) return
+    launchCheck.current = true
+    getVersion().then(setVersion, () => {})
+    const now = Date.now()
+    if (settings.autoUpdate && checkDue(now, settings.updateChecked)) { set('updateChecked', now); checkUpdate(true) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const off = on<{ received: number; total: number | null }>('update-progress', p => setUpd(u => u.s !== 'downloading' ? u
+      : p.total && p.received >= p.total ? { ...u, s: 'installing' } : { ...u, pct: p.total ? Math.floor(p.received / p.total * 100) : null }))
+    return () => { off.then(f => f()) }
+  }, [])
+  const installUpdate = async () => {
+    if (upd.s !== 'available') return
+    if (!upd.install) return void call('open_link', { which: 'releases' }).catch(() => {})
+    if (dirty && !(await confirmDiscard())) return
+    setUpd({ ...upd, s: 'downloading', pct: null })
+    call('update_install').catch(e => setUpd({ s: 'error', error: e })) // on success the app restarts
+  }
 
   const changed = () => { setNote(null); setBotError(null); rerender() }
   const humanTurn = !bot || game.toPlay !== bot.sign
@@ -409,6 +443,15 @@ export function App() {
     : engine.state === 'warming' ? t.engineWarming
     : !canAnalyze ? t.noAnalysisNet
     : `${engine.state === 'ready' ? t.engineReady : t.engineIdle} · ${pick(t.labels, nets?.activeKey ?? '') ?? nets?.active}`
+  const app = version ? `Masame ${version}` : 'Masame'
+  const releases = () => { call('open_link', { which: 'releases' }).catch(() => {}) }
+  const [updLine, updAction]: [string, [string, () => void] | null] = upd.s === 'checking' ? [`${app} · ${t.checking}`, null]
+    : upd.s === 'latest' ? [t.upToDate(app), null]
+    : upd.s === 'available' ? [t.updateAvailable(upd.version), [upd.install ? t.install : t.download, installUpdate]]
+    : upd.s === 'downloading' ? [t.updateDownloading(upd.pct), null]
+    : upd.s === 'installing' ? [t.updateInstalling, null]
+    : upd.s === 'error' ? [failureText(upd.error), [t.download, releases]]
+    : [app, [t.checkUpdates, () => checkUpdate(false)]]
 
   return (
     <>
@@ -550,6 +593,21 @@ export function App() {
             <div className="lab"><span>{t.engine}</span><button className="link" onClick={() => setShowNets(true)}>{t.networksBtn}</button></div>
             <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}</p>
           </section>
+
+          {inTauri() && (
+            <section>
+              <div className="lab"><span>{t.updates}</span><span /></div>
+              <p className={`engine${upd.s === 'error' ? ' err' : ''}`} aria-live="polite">
+                {updLine}{updAction && <> · <button className="link" onClick={updAction[1]}>{updAction[0]}</button></>}
+              </p>
+              {upd.s === 'downloading' && (
+                <div className="bar" role="progressbar" aria-label={t.updateDownloading(null)} aria-valuenow={upd.pct ?? undefined} aria-valuemin={0} aria-valuemax={100}>
+                  <i style={{ width: `${upd.pct ?? 0}%` }} />
+                </div>
+              )}
+              <Switch label={t.autoUpdate} on={settings.autoUpdate} toggle={() => set('autoUpdate', !settings.autoUpdate)} />
+            </section>
+          )}
 
           <footer className="foot"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel}</footer>
         </aside>

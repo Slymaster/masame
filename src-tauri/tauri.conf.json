@@ -54,5 +54,14 @@
         "installMode": "currentUser"
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJBMkY2NkUyRTBGQTIzMEIKUldRTEkvcmc0bVl2dWlGOW5qaU5WcGFFRzJVeWJtQWxpUXJ1emJLRnFSVnZTU0xhOXdvVllzUlgK",
+      "endpoints": [
+        "https://github.com/Slymaster/masame/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true
+    }
   }
 }
