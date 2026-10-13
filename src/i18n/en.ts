@@ -67,6 +67,7 @@ export const en = {
   tuningProgress,
   engineReady: 'Engine ready', engineIdle: 'Engine idle', noAnalysisNet: 'No analysis network installed.',
   copyDiagnostics: 'Copy diagnostics', diagnosticsCopied: 'Copied: paste them into your bug report',
+  diagnosticsFailed: 'Could not copy the diagnostics',
   updates: 'Updates', checkUpdates: 'Check for updates', checking: 'Checking…',
   upToDate: (app: string) => `${app} is up to date`,
   updateAvailable: (v: string) => `Masame ${v} is available`,

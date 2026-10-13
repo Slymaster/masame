@@ -412,20 +412,25 @@ impl Engine {
         }
         let gen = self.gen.load(Ordering::SeqCst);
         let r = self.request(id, query).await;
-        if matches!(&r, Err(e) if e.code == "engine_timeout") { self.recover(gen) }
+        match &r {
+            Ok(_) => self.timeouts.store(0, Ordering::SeqCst), // only hangs in a row count
+            Err(e) if e.code == "engine_timeout" => self.recover(gen),
+            Err(_) => {}
+        }
         r
     }
 
     /// A query of generation `gen` timed out, so KataGo is likely stuck: the first time it is restarted as is, the
-    /// second time the fallback may switch builds (GPU to CPU); otherwise, or if it refuses, it is stopped with the
-    /// error (the next query starts it again). Later queries wait for Ready; concurrent timeouts restart it once.
+    /// second time (with no answer in between) an OpenCL build may hand over to the fallback's CPU build; otherwise,
+    /// or if it refuses, it is stopped with the error (the next query starts it again). Later queries wait for Ready; concurrent timeouts restart it once.
     fn recover(self: &Arc<Self>, gen: u64) {
         let mut guard = self.proc();
         let Some(spec) = guard.as_ref().filter(|_| self.gen.load(Ordering::SeqCst) == gen).map(|p| p.spec.clone()) else { return };
         let n = self.timeouts.fetch_add(1, Ordering::SeqCst);
         let error = Failure::with("engine_timeout", "query");
         self.log(format_args!("query timeout #{} ({:?})", n + 1, self.query_timeout));
-        match if n == 0 { Ok(spec) } else if n == 1 { self.fall_back(&spec, error.clone()) } else { Err(error) } {
+        let gpu = crate::backend::variant_of(&spec.bin) == Some(crate::backend::OPENCL);
+        match if n == 0 { Ok(spec) } else if n == 1 && gpu { self.fall_back(&spec, error.clone()) } else { Err(error) } {
             Ok(next) => { self.log("restart"); let _ = self.launch(&mut guard, next); }
             Err(e) => { drop(guard); self.report(gen, e, true) }
         }
@@ -544,7 +549,8 @@ mod tests {
     #[cfg(unix)]
     fn fake(name: &str, body: &str) -> Spec {
         use std::os::unix::fs::PermissionsExt;
-        let p = std::env::temp_dir().join(format!("baduk-fake-{name}-{}.sh", std::process::id()));
+        let p = std::env::temp_dir().join(format!("baduk-fake-{}", std::process::id())).join(format!("{name}.sh")); // name may hold a folder
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(&p, format!("#!/bin/sh\n[ -n \"$BADUK_FAKE_WARM\" ] && exit 0\n{body}\n")).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         // macOS scans a new executable on its first exec (~0.5 s, seconds under load): pay it here, not in the start timeout.
@@ -603,27 +609,43 @@ read l; id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{{\"id\":\"$id
         e.analyze(json!({"moves": []})).await.unwrap();
         assert_eq!(*statuses.lock().unwrap(), ["starting", "warming", "ready", "starting", "warming", "ready"]);
         let _ = std::fs::remove_file(&marker);
-        // Always hangs after the warm-up: restart, then the fallback's build, which works.
-        let hung = fake("hung", &format!(r#"echo "Started, ready to begin handling requests" >&2
-read l; id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{{\"id\":\"$id\"}}"; {HANG}"#));
+        // Hangs on any query asking for it, from an OpenCL or a CPU build folder.
+        let body = format!(r#"echo "Started, ready to begin handling requests" >&2
+while read l; do case "$l" in *hang*) {HANG};; esac; id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{{\"id\":\"$id\"}}"; done"#);
+        let (gpu, cpu) = (fake("opencl/katago", &body), fake("eigenavx2/katago", &body));
+        let (hang, ok) = (json!({"moves": [], "hang": true}), json!({"moves": []}));
         let good = fake("cpu", SERVE);
-        let g2 = good.clone();
-        let e = quiet(Engine::new(|_, _| {}).with_fallback(move |s, f| { assert_eq!(f.code, "engine_timeout"); if s.bin == g2.bin { Err(f) } else { Ok(g2.clone()) } }));
-        e.ensure(hung.clone()).unwrap();
-        assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), timeout);
-        assert_eq!(e.running_spec().unwrap().bin, hung.bin, "first timeout: same build");
-        assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), timeout);
-        assert_eq!(e.running_spec().unwrap().bin, good.bin, "second timeout: the fallback's build");
-        e.analyze(json!({"moves": []})).await.unwrap();
-        // No fallback: the second timeout stops the engine with the error; ensure then relaunches it.
-        let e = quiet(Engine::new(|_, _| {}));
-        e.ensure(hung.clone()).unwrap();
-        for _ in 0..2 { assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), timeout) }
+        let (g2, calls) = (good.clone(), Arc::new(AtomicU64::new(0)));
+        let c2 = calls.clone();
+        let e = quiet(Engine::new(|_, _| {}).with_fallback(move |s, f| {
+            c2.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(f.code, "engine_timeout");
+            if s.bin == g2.bin { Err(f) } else { Ok(g2.clone()) }
+        }));
+        e.ensure(gpu.clone()).unwrap();
+        assert_eq!(e.analyze(hang.clone()).await.unwrap_err(), timeout);
+        assert_eq!(e.running_spec().unwrap().bin, gpu.bin, "first timeout: same build");
+        e.analyze(ok.clone()).await.unwrap();
+        assert_eq!(e.analyze(hang.clone()).await.unwrap_err(), timeout);
+        assert_eq!(e.running_spec().unwrap().bin, gpu.bin, "an answer in between: a first timeout again");
+        assert_eq!(e.analyze(hang.clone()).await.unwrap_err(), timeout);
+        assert_eq!(e.running_spec().unwrap().bin, good.bin, "second timeout in a row: the fallback's build");
+        e.analyze(ok.clone()).await.unwrap();
+        // A CPU build is never switched to OpenCL: its second timeout stops it with the error.
+        e.ensure(cpu.clone()).unwrap();
+        for _ in 0..2 { assert_eq!(e.analyze(hang.clone()).await.unwrap_err(), timeout) }
         assert_eq!(e.status(), Status::Error { error: timeout.clone() });
         assert!(e.running_spec().is_none());
-        e.ensure(hung).unwrap();
-        assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), timeout);
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "only the OpenCL build fell back");
+        // Without a fallback too; ensure then relaunches it, with a fresh restart.
+        let e = quiet(Engine::new(|_, _| {}));
+        e.ensure(gpu.clone()).unwrap();
+        for _ in 0..2 { assert_eq!(e.analyze(hang.clone()).await.unwrap_err(), timeout) }
+        assert_eq!(e.status(), Status::Error { error: timeout.clone() });
+        e.ensure(gpu).unwrap();
+        assert_eq!(e.analyze(hang).await.unwrap_err(), timeout);
         assert!(e.running_spec().is_some(), "a fresh launch gets its own restart");
+        e.analyze(ok).await.unwrap();
     }
 
     /// Non-UTF-8 stderr and lots of it (more than any pipe buffer) must not stall the engine; it all lands in the log,

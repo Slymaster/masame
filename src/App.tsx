@@ -647,6 +647,16 @@ export function App() {
     : !canAnalyze ? t.noAnalysisNet
     : `${engine.state === 'ready' ? t.engineReady : t.engineIdle} · ${pick(t.labels, nets?.activeKey ?? '') ?? nets?.active}`
   const app = version ? `Masame ${version}` : 'Masame'
+  // A promised ClipboardItem first: WebKit refuses a clipboard write made after an await, outside the click; older
+  // WebKitGTK lacks it, and may accept the plain write.
+  const copyDiagnostics = async () => {
+    const text = call<string>('engine_log_tail')
+    try {
+      try { await navigator.clipboard.write([new ClipboardItem({ 'text/plain': text.then(s => new Blob([s], { type: 'text/plain' })) })]) }
+      catch { await navigator.clipboard.writeText(await text) }
+      setDiag(d => d.diagnosticsCopied)
+    } catch { setDiag(d => d.diagnosticsFailed) }
+  }
   const releases = () => { call('open_link', { which: 'releases' }).catch(() => {}) }
   const retry = upd.s === 'error' ? upd.retry : undefined // a failed install: Rust kept the update
   const [updLine, updActions]: [string, [string, () => void][]] = upd.s === 'checking' ? [`${app} · ${t.checking}`, []]
@@ -894,9 +904,7 @@ export function App() {
             </div>
             <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}</p>
             {inTauri() && <p className="engine" aria-live="polite">
-              {/* a promised ClipboardItem: WebKit refuses a clipboard write made after an await, outside the click */}
-              <button className="link" onClick={() => navigator.clipboard.write([new ClipboardItem({ 'text/plain': call<string>('engine_log_tail').then(s => new Blob([s], { type: 'text/plain' })) })])
-                .then(() => setDiag(d => d.diagnosticsCopied), e => setDiag(d => failureText(e, d)))}>{t.copyDiagnostics}</button>
+              <button className="link" onClick={copyDiagnostics}>{t.copyDiagnostics}</button>
               {diag && <> · {diag(t)}</>}
             </p>}
             {inTauri() && <>

@@ -68,6 +68,7 @@ export const fr: Dict = {
   tuningProgress,
   engineReady: 'Moteur prêt', engineIdle: 'Moteur en veille', noAnalysisNet: 'Aucun réseau d’analyse installé.',
   copyDiagnostics: 'Copier le diagnostic', diagnosticsCopied: 'Copié : colle-le dans ton signalement',
+  diagnosticsFailed: 'Impossible de copier le diagnostic',
   updates: 'Mises à jour', checkUpdates: 'Rechercher les mises à jour', checking: 'Recherche…',
   upToDate: (app: string) => `${app} est à jour`,
   updateAvailable: (v: string) => `Masame ${v} est disponible`,
