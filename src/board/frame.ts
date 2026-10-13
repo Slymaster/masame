@@ -5,4 +5,4 @@
  * never past the frame's right edge maxRight (the gap to the card stays), never leftwards (a narrow window keeps today's place).
  */
 export const centreShift = (left: number, right: number, maxRight: number, cx: number) =>
-  Math.round(Math.max(0, Math.min(cx - (left + right) / 2, maxRight - right)))
+  Math.floor(Math.max(0, Math.min(cx - (left + right) / 2, maxRight - right))) // floor: no shift for a sub-pixel offset, never past the edge

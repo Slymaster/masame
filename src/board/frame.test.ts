@@ -15,5 +15,9 @@ describe('centreShift', () => {
   })
   it('changes nothing when the frame is already centred (card hidden)', () => {
     expect(centreShift(560, 1360, 1864, 960)).toBe(0)
+    expect(centreShift(559.5, 1359.5, 1864, 960)).toBe(0) // a rounded frame half a pixel left of the window centre
+  })
+  it('rounds down, so it never passes the edge', () => {
+    expect(centreShift(456, 1056, 1066.6, 960)).toBe(10)
   })
 })
