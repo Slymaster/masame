@@ -23,6 +23,7 @@ import { isMac, shortcut } from './platform'
 import { getVersion } from '@tauri-apps/api/app'
 import { checkDue, updateSettings, type UpdateInfo } from './update'
 import { fromOf, gradeTry, lessonBoard, readGame, REPLY, verdict, type Moment, type Step } from './review'
+import { useJoseki } from './joseki/useJoseki'
 
 const SIZES = [9, 13, 19]
 const HUMAN_BYTES = 99_066_230
@@ -266,6 +267,8 @@ export function App() {
   const atEnd = game.cursor === game.moves.length
   // OGS forbids engine help in an ongoing game: no KataGo query of any kind until it is finished
   const ongoing = !!online && online.phase !== 'finished'
+  // the joseki trainer borrows the board and the card; the game waits underneath, untouched
+  const jt = useJoseki({ view, rank: settings.myRank, setRank: v => set('myRank', v), blocked: ongoing || !!review, playFrom: m => playFrom(m) })
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
   const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && game.toPlay === online.me : !bot || game.toPlay !== bot.sign
   const mine: Sign | 0 = bot ? -bot.sign as Sign : online?.me ?? 0 // the side a review looks at
@@ -278,9 +281,10 @@ export function App() {
   const countingNow = !review && counting?.game === game && game.ended && atEnd ? counting : null
   const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result) && !ongoing
   const canReview = reviewShown && canAnalyze
-  const live = ongoing || !!bot && !result // a game being played: no autoplay
+  const live = ongoing || !!bot && !result || jt.open // a game being played (or the trainer shown): no autoplay
   const locked = !!result && atEnd // a decided line: playing from an earlier move opens a variation
   const play = (v: Vertex | null) => {
+    if (jt.open) return jt.play(v)
     if (countingNow) {
       if (v && !result) setCounting({ ...countingNow, dead: toggleDead(game.board.signMap, countingNow.dead, v) })
       return false
@@ -308,7 +312,7 @@ export function App() {
     return r === 'ok'
   }
   const undo = async () => {
-    if (review || bot && result || online || game.cursor === 0) return
+    if (jt.open || review || bot && result || online || game.cursor === 0) return
     // what goes: the subtree from the first move taken back (against the bot, back to the player's last move)
     let to = game.cursor - 1, n = 0
     if (bot) while (to > 0 && -game.moves[to - 1].sign === bot.sign) to--
@@ -382,6 +386,14 @@ export function App() {
     } catch (e) {
       setNote(d => d.openFailed(failureText(e, d)))
     }
+  }
+  /** The trainer's "Play a game from here": the bot takes the other side when it can play, else two players. */
+  const playFrom = async (moves: Move[]) => {
+    cancelSearch()
+    if (!(await canLeave())) return false
+    const me = -moves.at(-1)!.sign as Sign, ai = settings.opponent === 'ai' && canPlayAI, name = t.botName(settings.aiRank)
+    start(Game.fromRecord({ size: 19, playerBlack: ai && me === -1 ? name : '', playerWhite: ai && me === 1 ? name : '' }, moves), ai ? { sign: -me as Sign, rank: settings.aiRank } : null)
+    return true
   }
   const save = async () => {
     try {
@@ -479,7 +491,7 @@ export function App() {
   // The bot's turn: ask KataGo (human policy at the bot's rank + a small search), then play after a human-like pause.
   // A failed query is retried (the Rust side restarts a crashed engine and waits until it is warm); after the last
   // attempt the note offers "Réessayer" — undo and new game stay available throughout.
-  const botTurn = !!bot && !result && !game.ended && atEnd && game.toPlay === bot.sign
+  const botTurn = !!bot && !result && !game.ended && atEnd && game.toPlay === bot.sign && !jt.open
   useEffect(() => {
     if (!botTurn || !bot) return
     let live = true
@@ -626,6 +638,7 @@ export function App() {
             ' ': e.target instanceof HTMLButtonElement ? undefined : toggleAuto,
             home: () => goTo(0), end: () => goTo(shown.moves.length),
             ...(review && { escape: leaveReview }),
+            j: jt.toggle, ...jt.keys,
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
             t: ongoing ? undefined : () => set('territory', !settings.territory), h: togglePanel,
             ...(renderer === '3d' && {
@@ -661,14 +674,14 @@ export function App() {
     : t.betterLine(s, gtp(m.better[0]!, size), m.loss)
   const lastMoment = !!review?.moments && review.k === review.moments.length - 1
   // [action id, label, action]: the id tells refocus whether the same action is still offered
-  const links: [string, string, () => void][] = review?.error ? [['retry', t.retry, retryLesson]]
+  const links: [string, string, () => void][] = jt.open ? jt.links : review?.error ? [['retry', t.retry, retryLesson]]
     : botError && !result ? [['retry', t.retry, retryBot]]
     : !review ? search ? [['cancel', t.cancel, cancelSearch]] : result && canReview ? [['review', t.reviewGame, () => startReview(mine)]] : []
     : !m ? [['back', t.backToGame, leaveReview]]
     : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as [string, string, () => void]] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
     : review.step === 'punish' ? [['better', t.seeBetter, () => openMoment(review.k, 'better')]]
     : lastMoment ? [['back', t.backToGame, leaveReview]] : [['next', t.nextMoment, () => openMoment(review.k + 1, 'try')]]
-  const message = review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
+  const message = jt.open ? jt.note : review ?(review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
     : search ? note?.(t) ?? t.ogsSearching(search.size, t.paces[search.speed])
     : ongoing && ogsStatus !== 'online' ? t.ogsReconnecting
     : result ? [result(t), note?.(t)].filter(Boolean).join(' ')
@@ -758,6 +771,7 @@ export function App() {
             counting: final ? { dead: countingNow!.dead, territory: final.territory }
               : removal ? { dead: ogs.deadOf(board.signMap, removal.removed), territory: board.signMap.map(r => r.map(() => 0 as Sign)) } : null, // OGS scores
             captures: { black: board.getCaptures(1), white: board.getCaptures(-1) }, // the 3D lids: prisoners taken by each
+            ...jt.board,
           }}
           onPlay={play}
         >
@@ -773,6 +787,7 @@ export function App() {
             {!settings.panelHidden && <>
               <span className="seal" aria-hidden="true">柾</span>
               <h1>Masame</h1>
+              {jt.button}
               <button className="icon" onClick={openSheet('game')} aria-label={t.game} title={t.game}><Icon name="plus" /></button>
               <button className="icon" onClick={openSheet('settings')} aria-label={alert ? `${t.settings} · ${alert}` : t.settings}
                 title={alert ? `${t.settings} · ${alert}` : t.settings}><Icon name="adjustments" />{alert && <i className="dot" />}</button>
@@ -797,7 +812,7 @@ export function App() {
                 aria-label={t.render3d} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
             </div>
             <div className="body">
-              {review ? (
+              {jt.body ?? <>{review ? (
                 <section className="rv">
                   <div className="lab"><span>{t.review}</span><span>{reading ? t.percent(review.pct) : ''}</span></div>
                   {!bot && (
@@ -843,10 +858,10 @@ export function App() {
                 <p className="estimate" aria-live="polite">
                   {!inTauri() || !canAnalyze ? t.territoryNeedsNet : shownOwn ? t.estimate(shownOwn.score) : t.estimating}
                 </p>
-              )}
+              )}</>}
             </div>
             <div className="acts">
-              {review ? <button className="act" onClick={leaveReview} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button> : <>
+              {jt.acts ?? (review ? <button className="act" onClick={leaveReview} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button> : <>
                 {(final || removal) && !result
                   ? <button className="act accent" onClick={removal ? () => send(() => ogs.acceptRemoved(removal.id, removal.removed)) : validate}><Icon name="hand-stop" />{t.validate}</button>
                   : <button className="act" onClick={() => play(null)} disabled={game.ended || locked || !humanTurn} title="P"><Icon name="hand-stop" />{t.pass}</button>}
@@ -856,7 +871,7 @@ export function App() {
                 {reviewShown ? <button key="review" className={`act${result ? ' accent' : ''}`} onClick={() => startReview(mine)}
                   disabled={!canAnalyze} title={canAnalyze ? undefined : t.reviewNeedsNet}><Icon name="review" />{t.reviewGame}</button>
                   : (bot || online) && <button className="act" onClick={resign} disabled={!!result}><Icon name="flag" />{t.resign}</button>}
-              </>}
+              </>)}
             </div>
           </div>
         </aside>
@@ -962,7 +977,7 @@ export function App() {
 
           <section>
             <div className="lab"><span>{t.keyboard}</span><span /></div>
-            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}</p>
+            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}</p>
           </section>
         </Sheet>
       )}

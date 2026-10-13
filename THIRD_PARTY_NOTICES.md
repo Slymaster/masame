@@ -118,6 +118,12 @@ The `goban-engine` package ships no licence file: `THIRD_PARTY_LICENSES.txt` giv
 
 `@sabaki/sgf` depends on `doken` (MIT, bundled). Its optional dependencies `iconv-lite` (MIT) and `jschardet` (LGPL-2.1+) are replaced by an empty module in `vite.config.ts` and are not bundled; keep it that way, or comply with the LGPL if `jschardet` is ever bundled. The same generated `THIRD_PARTY_LICENSES.txt` lists every bundled package with its licence text (from `pnpm licenses list --prod`).
 
+### FSRS-4.5 (algorithm and default weights)
+- Source: https://github.com/open-spaced-repetition/awesome-fsrs/wiki/The-Algorithm and https://github.com/open-spaced-repetition/fsrs4anki (the v4.5.0 scheduler)
+- Licence: MIT
+- Copyright (c) 2022 Open Spaced Repetition
+- `src/joseki/fsrs.ts` reimplements the FSRS-4.5 formulas and copies its 17 default weights for the joseki trainer's spaced repetition. No package is bundled.
+
 ### Fonts (bundled via Fontsource)
 | Font | Licence | Copyright |
 |---|---|---|

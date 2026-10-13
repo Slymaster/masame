@@ -5,6 +5,7 @@ const f = fmt('en-US')
 const color = (s: number): string => (s === 1 ? 'Black' : 'White')
 const tuningProgress = (step: number, done: number, total: number) => [step && `step ${step}`, total && `${done}/${total}`].filter(Boolean).join(' · ')
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
+const lost = (x: number) => Math.round(x * 10) ? `−${pts(x)}` : '±0' // never "−0 points"
 
 export const en = {
   // card
@@ -79,7 +80,7 @@ export const en = {
   updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
   updateInstalling: 'Installing the update…',
   autoUpdate: 'Check for updates automatically',
-  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', recentre: 'recentre the 3D view' },
+  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', recentre: 'recentre the 3D view' },
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
     about: 'About Masame', hide: 'Hide Masame', hideOthers: 'Hide Others', showAll: 'Show All', quit: 'Quit Masame',
@@ -121,6 +122,37 @@ export const en = {
   betterLine: (s: number, v: string, loss: number) => `Better: ${color(s)} ${v}, which keeps those ${pts(loss)}.`,
   betterHelp: '→ follows the line. Compare its light with the punishment’s. Play anywhere to explore: each move gets an answer. ↑ ↓ compare your tries.',
   nextMoment: 'Next moment',
+  // joseki trainer
+  joseki: 'Joseki', jLoading: 'Loading the joseki…', jFailed: (m: string) => `Couldn’t load the joseki: ${m}`,
+  jTabs: { explore: 'Explore', practise: 'Practise', programme: 'Programme' },
+  jCorner: 'Corner', jBack: 'Back', jFrequent: 'Most played at your level', jMoves: 'Moves',
+  jBest: 'best', jLoss: (x: number) => lost(x), jAt: (pct: string, rank: string) => `${pct} at ${rank}`,
+  jTags: { classic: 'classic', pro: 'pro', ai: 'AI', verified: 'verified by KataGo', contested: 'contested' },
+  jTenuki: 'Tenuki', jTenukiHelp: 'Play elsewhere', jTenukiFine: (x: number) => `Tenuki is fine here (${lost(x)}).`,
+  jComplete: 'Joseki complete: tenuki is fine.',
+  jLens: 'Rank lens', jShowLine: 'Show KataGo’s line', jHideLine: 'Hide KataGo’s line',
+  jKataLine: (moves: string) => `KataGo continues: ${moves}.`,
+  jExploreNote: (n: number) => `Joseki · move ${n}. A letter follows a move: A loses least.`,
+  jNotInBook: 'Not in the book: pick a lettered move.',
+  jPractiseHere: 'Practise from here', jPlayHere: 'Play a game from here',
+  jContext: 'Positions are judged in one fixed whole-board context: the neighbouring corners belong to the approaching side.',
+  jPractiseHelp: 'Each line is turned and recoloured at random and starts mid-sequence. Your opponent plays like a player of your level, mistakes included: punish them.',
+  jStart: 'Start practising', jNextLine: 'Next line', jContinuation: 'See KataGo’s continuation',
+  jProgress: (due: number, fresh: number) => `${f.plural(due, 'card', 'cards')} due · ${f.num(fresh)} new left today`,
+  jDone: 'Nothing left to practise today. Explore, or come back tomorrow.',
+  jAsk: (s: number) => `${color(s)} to play. Your move?`,
+  jAskPunish: (loss: number) => `Your opponent left the book (−${pts(loss)}). Punish it.`,
+  jGood: 'Right. ', jHard: 'Playable, not the best. ',
+  jWrong: 'Not the joseki: the lettered moves are.', jWrongTenuki: 'Not the joseki: tenuki loses here.',
+  jMissedPunish: 'That lets it go. See how KataGo punishes it.',
+  jLineEnd: 'Line complete.',
+  jElsewhere: 'The tenuki stone went to another part of the board. ',
+  jExport: 'Export progress', jReset: 'Reset progress', jResetAsk: 'Delete all your joseki progress?', jExported: 'Progress exported.',
+  jFileName: 'masame-joseki.json', exportTitle: 'Export joseki progress',
+  jReadOnly: 'This progress was saved by a newer Masame: practise here won’t be recorded.',
+  jProgrammeNote: 'Your programme: the corners worth learning first.',
+  jProgrammeHelp: (rank: string) => `Ordered by how often you meet each corner at ${rank} × the points it costs there.`,
+  jMet: (n: number) => `met about 1 corner in ${f.num(n)}`, jOpenFamily: (name: string) => `Explore ${name}`,
   // OGS (online-go.com)
   ogsBoard: (n: number, komi: number, rules: string) => `${n}×${n} · komi ${f.num(komi)} · ${rules} · OGS`,
   rules: { japanese: 'Japanese rules', chinese: 'Chinese rules', aga: 'AGA rules', korean: 'Korean rules', nz: 'New Zealand rules', ing: 'Ing rules' },

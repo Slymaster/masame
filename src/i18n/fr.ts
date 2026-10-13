@@ -6,6 +6,7 @@ const f = fmt('fr-FR')
 const color = (s: number): string => (s === 1 ? 'Noir' : 'Blanc')
 const tuningProgress = (step: number, done: number, total: number) => [step && `étape ${step}`, total && `${done}/${total}`].filter(Boolean).join(' · ')
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
+const lost = (x: number) => Math.round(x * 10) ? `−${pts(x)}` : '±0' // never "−0 points"
 
 export const fr: Dict = {
   // card
@@ -80,7 +81,7 @@ export const fr: Dict = {
   updateDownloading: (p: number | null) => (p === null ? 'Téléchargement de la mise à jour…' : `Téléchargement de la mise à jour… ${f.pct(p)}`),
   updateInstalling: 'Installation de la mise à jour…',
   autoUpdate: 'Rechercher les mises à jour automatiquement',
-  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', recentre: 'recentrer la vue 3D' },
+  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', recentre: 'recentrer la vue 3D' },
   // barre de menus macOS (src-tauri/src/menu.rs)
   menu: {
     about: 'À propos de Masame', hide: 'Masquer Masame', hideOthers: 'Masquer les autres', showAll: 'Tout afficher', quit: 'Quitter Masame',
@@ -122,6 +123,37 @@ export const fr: Dict = {
   betterLine: (s: number, v: string, loss: number) => `Mieux : ${color(s)} ${v}, qui garde ces ${pts(loss)}.`,
   betterHelp: '→ suit la ligne. Compare sa lumière avec celle de la punition. Joue où tu veux pour explorer : chaque coup reçoit une réponse. ↑ ↓ compare tes essais.',
   nextMoment: 'Moment suivant',
+  // entraîneur de joseki
+  joseki: 'Joseki', jLoading: 'Chargement des joseki…', jFailed: (m: string) => `Impossible de charger les joseki : ${m}`,
+  jTabs: { explore: 'Explorer', practise: 'S’entraîner', programme: 'Programme' },
+  jCorner: 'Coin', jBack: 'Retour', jFrequent: 'Le plus joué à ton niveau', jMoves: 'Coups',
+  jBest: 'meilleur', jLoss: (x: number) => lost(x), jAt: (pct: string, rank: string) => `${pct} en ${rank}`,
+  jTags: { classic: 'classique', pro: 'pro', ai: 'IA', verified: 'vérifié par KataGo', contested: 'contesté' },
+  jTenuki: 'Tenuki', jTenukiHelp: 'Jouer ailleurs', jTenukiFine: (x: number) => `Tenuki possible ici (${lost(x)}).`,
+  jComplete: 'Joseki terminé : tu peux jouer ailleurs.',
+  jLens: 'Lentille de rang', jShowLine: 'Voir la suite de KataGo', jHideLine: 'Masquer la suite de KataGo',
+  jKataLine: (moves: string) => `KataGo continue : ${moves}.`,
+  jExploreNote: (n: number) => `Joseki · coup ${n}. Une lettre suit un coup : A perd le moins.`,
+  jNotInBook: 'Hors joseki : choisis un coup marqué d’une lettre.',
+  jPractiseHere: 'M’entraîner à partir d’ici', jPlayHere: 'Jouer une partie à partir d’ici',
+  jContext: 'Les positions sont jugées dans un contexte fixe : les coins voisins appartiennent au camp qui approche.',
+  jPractiseHelp: 'Chaque séquence est tournée et recolorée au hasard, et commence en cours de route. Ton adversaire joue comme un joueur de ton niveau, erreurs comprises : punis-les.',
+  jStart: 'Commencer', jNextLine: 'Séquence suivante', jContinuation: 'Voir la suite de KataGo',
+  jProgress: (due: number, fresh: number) => `${f.plural(due, 'carte', 'cartes')} à revoir · encore ${f.num(fresh)} nouvelles aujourd’hui`,
+  jDone: 'Plus rien à revoir aujourd’hui. Explore, ou reviens demain.',
+  jAsk: (s: number) => `${color(s)} joue. À toi ?`,
+  jAskPunish: (loss: number) => `Ton adversaire sort du joseki (−${pts(loss)}). Punis-le.`,
+  jGood: 'Juste. ', jHard: 'Jouable, mais pas le meilleur. ',
+  jWrong: 'Ce n’est pas le joseki : ce sont les coups marqués d’une lettre.', jWrongTenuki: 'Ce n’est pas le joseki : tenuki perd ici.',
+  jMissedPunish: 'Tu le laisses s’en tirer. Regarde comment KataGo le punit.',
+  jLineEnd: 'Séquence terminée.',
+  jElsewhere: 'Le tenuki a été joué ailleurs sur le goban. ',
+  jExport: 'Exporter la progression', jReset: 'Remettre à zéro', jResetAsk: 'Effacer toute ta progression en joseki ?', jExported: 'Progression exportée.',
+  jFileName: 'masame-joseki.json', exportTitle: 'Exporter la progression en joseki',
+  jReadOnly: 'Cette progression vient d’une version plus récente de Masame : l’entraînement ici ne sera pas enregistré.',
+  jProgrammeNote: 'Ton programme : les coins à apprendre en premier.',
+  jProgrammeHelp: (rank: string) => `Classés selon la fréquence de chaque coin en ${rank} × les points qu’il y coûte.`,
+  jMet: (n: number) => `environ 1 coin sur ${f.num(n)}`, jOpenFamily: (name: string) => `Explorer ${name}`,
   // OGS (online-go.com)
   ogsBoard: (n: number, komi: number, rules: string) => `${n}×${n} · komi ${f.num(komi)} · ${rules} · OGS`,
   rules: { japanese: 'règles japonaises', chinese: 'règles chinoises', aga: 'règles AGA', korean: 'règles coréennes', nz: 'règles néo-zélandaises', ing: 'règles Ing' },
