@@ -271,10 +271,10 @@ function lastRing(c: CanvasRenderingContext2D, g: Geom, [cx, cy]: [number, numbe
 
 /** Veil and markers, also drawn into the 3D board's overlay texture: px / py map grid indices to canvas units. */
 export function paintMarks(c: CanvasRenderingContext2D, px: (i: number) => number, py: (i: number) => number, cell: number,
-  marks: Mark[] | null | undefined, focus: BoardState['focus'], w: number, h: number) {
+  marks: Mark[] | null | undefined, focus: BoardState['focus'], w: number, h: number, veil = 0.24) {
   if (focus) {
     const m = cell * 0.5, x0 = px(focus[0]) - m, y0 = py(focus[1]) - m
-    c.fillStyle = 'rgba(246,240,229,0.34)'
+    c.fillStyle = `rgba(246,240,229,${veil})`
     c.beginPath(); c.rect(0, 0, w, h); c.rect(x0, y0, px(focus[2]) + m - x0, py(focus[3]) + m - y0); c.fill('evenodd')
   }
   const r = cell * 0.34

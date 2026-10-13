@@ -184,7 +184,7 @@ export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
   const body = (
     <section className="rv jt" aria-label={t.joseki}>
       <div className="lab"><span>{t.joseki}</span><span>{lens}</span></div>
-      <Seg label={t.joseki} value={tab} options={[['explore', t.jTabs.explore], ['practise', t.jTabs.practise], ['programme', t.jTabs.programme]]} set={setTab} />
+      <Seg label={t.joseki} value={tab} options={[['explore', t.jTabs.explore], ['practise', t.jTabs.practise], ['programme', t.jTabs.programme]]} set={v => { setTab(v); setSay(null) }} />
       <div className="field">
         <span>{t.myLevel}</span>
         <Seg label={t.myLevel} value={LEVELS[nearestProfile(LEVELS, rank)]} options={LEVELS.map(r => [r, r])} set={setRank} />
@@ -223,10 +223,9 @@ export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
       {tab === 'practise' && <>
         <p className="quiet" aria-live="polite">{store.readOnly ? t.jReadOnly : t.jProgress(progress.due, progress.fresh)}</p>
         <div className="opts">
-          {line ? <button className="btn" onClick={answerTenuki} disabled={line.phase !== 'ask' || replaying} title={t.jTenukiHelp}>{t.jTenuki}</button>
-            : <button className="btn accent" onClick={newLine}>{t.jStart}</button>}
+          {line ? <button key="tenuki" className="btn" onClick={answerTenuki} disabled={line.phase !== 'ask' || replaying} title={t.jTenukiHelp}>{t.jTenuki}</button>
+            : <button key="start" className="btn accent" onClick={newLine}>{t.jStart}</button>}
         </div>
-        <p className="quiet">{t.jPractiseHelp}</p>
         <p className="quiet"><button className="link" onClick={exportProgress}>{t.jExport}</button> · <button className="link" onClick={resetProgress} disabled={store.readOnly}>{t.jReset}</button></p>
       </>}
       {tab === 'programme' && <>
@@ -251,9 +250,9 @@ export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
   return { open, toggle, close, play, board, note, links, body, acts, keys, button }
 }
 
-/** A family's corner (the top-right 9×9 of the explorer's frame), as a small SVG diagram. */
+/** A family's corner (the top-right 12×12 of the explorer's frame), as a small SVG diagram. */
 function Corner({ moves }: { moves: Move[] }) {
-  const b = position(moves), X0 = 10, n = 9, c = 10, o = c / 2
+  const b = position(moves), X0 = 7, n = 12, c = 10, o = c / 2
   const stones: ReactNode[] = []
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const s = b.get([X0 + x, y])
