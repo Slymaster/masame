@@ -146,11 +146,14 @@ jobs:
           (umask 077 && printf '%s\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY_PATH")
           unset APPLE_API_KEY_P8
           pnpm tauri build --bundles ${{ matrix.bundles }} ${{ matrix.config }} --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          retry() { # Apple's ticket service (api.apple-cloudkit.com) drops connections now and then on the Intel runners
+            local n; for n in 1 2 3 4 5 6; do "$@" && return; echo "::warning::attempt $n failed: $*"; sleep $((n * 10)); done; return 1
+          }
           dmgs=(src-tauri/target/release/bundle/dmg/*.dmg)
           [ ${#dmgs[@]} -eq 1 ] || { echo "::error::expected one DMG, found ${#dmgs[@]}"; exit 1; }
           xcrun notarytool submit "${dmgs[0]}" --wait \
             --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER"
-          xcrun stapler staple "${dmgs[0]}" # fails unless the DMG was accepted
+          retry xcrun stapler staple "${dmgs[0]}" # fails unless the DMG was accepted
 
       # No secrets here. Tauri ignores stapler's exit status, so check everything Gatekeeper will: the app, the
       # updater package's copy of it, KataGo inside it and the DMG.
@@ -161,10 +164,13 @@ jobs:
           team='anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists'
           team+=' and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "CN9TKA949C"'
           bundle=src-tauri/target/release/bundle
+          retry() { # Apple's ticket service (api.apple-cloudkit.com) drops connections now and then on the Intel runners
+            local n; for n in 1 2 3 4 5 6; do "$@" && return; echo "::warning::attempt $n failed: $*"; sleep $((n * 10)); done; return 1
+          }
           check_app() { # app -> Developer ID, hardened runtime, notarized and stapled, each KataGo signed the same way
             codesign --verify --deep --strict --verbose=2 -R="$team" "$1"
             spctl --assess --type execute -vv "$1" 2>&1 | tee /dev/stderr | grep -qxF 'source=Notarized Developer ID'
-            xcrun stapler validate "$1"
+            retry xcrun stapler validate "$1"
             engines=("$1"/Contents/MacOS/katago*) # katago (Apple Silicon); katago-opencl and katago-eigen (Intel)
             [ -f "${engines[0]}" ] || { echo "::error::$1: no KataGo"; exit 1; }
             for code in "$1" "${engines[@]}"; do
@@ -182,7 +188,7 @@ jobs:
             codesign --verify --strict --verbose=2 -R="$team" "$dmg"
             spctl --assess --type open --context context:primary-signature -vv "$dmg" 2>&1 | tee /dev/stderr \
               | grep -qxF 'source=Notarized Developer ID'
-            xcrun stapler validate "$dmg"
+            retry xcrun stapler validate "$dmg"
           done
           # Both Macs' updater packages are Masame.app.tar.gz: name them after the architecture, like the DMGs.
           for f in "${tarballs[0]}" "${tarballs[0]}.sig"; do
