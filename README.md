@@ -116,6 +116,7 @@ The foundations, the 3D Living Atelier and the teacher's first part are in place
 
 - [KataGo](https://github.com/lightvector/KataGo) by David J Wu ("lightvector") and contributors: the engine and its neural networks.
 - [@sabaki/go-board](https://github.com/SabakiHQ/go-board) and [@sabaki/sgf](https://github.com/SabakiHQ/sgf) by Yichuan Shen: board logic and SGF parsing.
+- [goban](https://github.com/online-go/goban) by Online-Go.com: the OGS client's connection and protocol (`goban-engine`, Apache-2.0).
 - [three.js](https://threejs.org/), [Tauri](https://tauri.app/) and [React](https://react.dev/).
 - Wood textures from [ambientCG](https://ambientcg.com/), lighting (HDRI) from [Poly Haven](https://polyhaven.com/), stone sounds from [Freesound](https://freesound.org/) by billhails2, Hongsungbock and MPooman — all CC0.
 - Typefaces: Cormorant Garamond and Manrope, under the SIL Open Font License.
