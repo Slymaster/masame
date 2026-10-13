@@ -17,7 +17,7 @@ import type { Sign, Vertex } from '@sabaki/go-board'
 import type { BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
-import { bowlHeap, BT, dims, dropStones, Governor, gx, gz, hoshiStep, jitter, lens, LOOKS, qualityLadder, RB, RW, settle, SH, SX, SZ, TOD, todAt, type Ground, type Placed, type Quality, type Rest, type TimeName, type Tod } from './logic'
+import { bowlHeap, BT, clampOrbit, dims, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, stepOrbit, SX, SZ, TGT_Y, TOD, todAt, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
 
 export interface Board3DState extends BoardState {
@@ -38,7 +38,6 @@ export interface Board3DInit {
 
 // Nothing moves but the stone being placed: view, décor and light changes crossfade (FADE_MS) instead of travelling
 const DROP_MS = 140, FADE_MS = 230, OMBRE_MS = 900, AUTO_MS = 15_000
-const TILT = THREE.MathUtils.degToRad(22)
 const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
 const AO_K = 1.4 // contact-shadow quad half size, in stone radii
 // contact shadow: darkest right at the silhouette (peak per colour), a gaussian gone (≈2 %) AO_REACH radii out on the
@@ -298,7 +297,7 @@ export class Board3D {
   private composer!: EffectComposer
   private scene = new THREE.Scene()
   private ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 100, 6000)
-  private persp = new THREE.PerspectiveCamera(28, 1, 10, 5000)
+  private persp = new THREE.PerspectiveCamera(FOV, 1, 10, 5000)
   private key = new THREE.DirectionalLight(0xffffff, 3)
   private spot = new THREE.SpotLight(0xffe2b8, 0, 0, Math.atan(430 / 1500), 0, 0)
   /** Lanterne: a warm lamp hanging over the board, soft-edged, pooling on the board and bowls. */
@@ -373,6 +372,10 @@ export class Board3D {
 
   private opts: Board3DOptions = { camera: 'study', time: 'afternoon', highContrast: false, decor: 'atelier' }
   private camE = 0 // 0 Study, 1 Contemplation
+  /** Contemplation's camera: shown (cur) and wanted (goal, what the mouse moves); seatH = its visible height at home. */
+  private orbit: Orbit = { ...HOME }
+  private orbitGoal: Orbit = { ...HOME }
+  private seatH = 1
   private tod: Tod = { ...TOD.afternoon }
   private ombreK = 0; private ombreFrom = 0; private ombreOn = false; private ombreT0 = -1e9
   private hcK = 0
@@ -431,6 +434,13 @@ export class Board3D {
   }
   get options(): Readonly<Board3DOptions> { return this.opts }
 
+  /** Contemplation: back to the seat (crossfade). */
+  resetCamera() {
+    const g = this.orbitGoal
+    if (this.camE && (Object.keys(HOME) as (keyof Orbit)[]).some(k => g[k] !== HOME[k])) void this.transition(() => this.homeCamera())
+  }
+  private homeCamera() { this.orbit = { ...HOME }; this.orbitGoal = { ...HOME } }
+
   /** The quiet "stones stirred in the bowl" loop while the AI thinks. */
   setThinking(on: boolean) { this.sound.setThinking(on) }
 
@@ -462,7 +472,7 @@ export class Board3D {
     if (N !== this.N || state.coords !== this.coords) {
       const sizeChanged = N !== this.N
       this.N = N; this.coords = state.coords; this.D = dims(N, state.coords)
-      if (sizeChanged) { this.stones.clear(); this.capCount = { 1: 0, [-1]: 0 } }
+      if (sizeChanged) { this.stones.clear(); this.capCount = { 1: 0, [-1]: 0 }; this.homeCamera() }
       this.buildBoard()
     }
     this.state = state
@@ -648,7 +658,24 @@ export class Board3D {
 
   private bind() {
     const c = this.canvas
+    // Contemplation's camera: right-drag turns, the wheel or a pinch zooms about the cursor, a trackpad swipe turns
+    let drag: { x: number; y: number } | null = null, wheelAt = 0, wheelWas: WheelIntent | null = null, gesture = 0
+    const turn = (dYaw: number, dTilt: number) => { const g = this.orbitGoal; this.orbitGoal = { ...g, yaw: g.yaw + dYaw, tilt: g.tilt + dTilt }; this.invalidate() }
+    const zoom = (e: MouseEvent, k: number) => { // about the cursor's point as the goal camera sees it
+      const g = this.orbitGoal, zMin = Math.min(1, ZOOM_MM / this.seatH)
+      k = Math.min(1, Math.max(zMin, g.zoom * k)) / g.zoom
+      this.placePersp(g)
+      const r = c.getBoundingClientRect(), ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
+      this.ray.setFromCamera(ndc, this.persp)
+      const P = this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -TGT_Y), new THREE.Vector3())
+      this.placePersp(this.orbit)
+      if (P) { this.orbitGoal = zoomAt(g, k, P.x, P.z); this.invalidate() }
+    }
     const move = (e: PointerEvent) => {
+      if (drag) {
+        if (e.buttons & 2) { turn(-(e.clientX - drag.x) * 0.005, -(e.clientY - drag.y) * 0.005); drag = { x: e.clientX, y: e.clientY } }
+        return
+      }
       const v = this.pick(e), s = this.state
       if (s?.counting) { // only stones are clickable while counting; no ghost stone
         c.style.cursor = v && s.interactive && s.signMap[v[1]][v[0]] ? 'pointer' : 'default'
@@ -661,7 +688,28 @@ export class Board3D {
       this.hover = nh; this.invalidate()
     }
     const leave = () => { this.hover = null; this.invalidate() }
-    const down = () => this.sound.prime()
+    const down = (e: PointerEvent) => {
+      this.sound.prime()
+      if (e.button !== 2 || !this.camE) return
+      c.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY }
+      if (this.hover) { this.hover = null; this.invalidate() }
+    }
+    const up = () => { drag = null }
+    const menu = (e: Event) => e.preventDefault()
+    const wheel = (e: WheelEvent) => {
+      if (e.ctrlKey) e.preventDefault() // a pinch must never zoom the UI
+      if (!this.camE || skipPinchWheel(e.ctrlKey, 'GestureEvent' in window)) return
+      e.preventDefault()
+      const now = performance.now(), how = wheelWas = wheelIntent(e, wheelWas, now - wheelAt), px = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1
+      wheelAt = now
+      if (how === 'orbit') turn(e.deltaX * 0.003, e.deltaY * 0.003)
+      // a pinch sends small steps; a wheel notch zooms at least as much as a 40 px one (macOS sends 4 px notches)
+      else zoom(e, Math.exp(e.ctrlKey ? e.deltaY * 0.01 : Math.sign(e.deltaY) * Math.min(200, Math.max(40, Math.abs(e.deltaY * px))) * 0.0015))
+    }
+    // WebKit (the macOS app): a pinch is a gesture event, e.scale since its start
+    const gStart = (e: Event) => { e.preventDefault(); gesture = 1 }
+    const gChange = (e: Event) => { e.preventDefault(); const sc = (e as Event & { scale: number }).scale; if (this.camE && sc > 0) zoom(e as MouseEvent, gesture / sc); gesture = sc }
+    const dbl = (e: MouseEvent) => { if (this.camE && !this.pick(e)) this.resetCamera() }
     const click = (e: MouseEvent) => {
       const v = this.pick(e), s = this.state
       if (!v || !s?.interactive) return
@@ -675,6 +723,13 @@ export class Board3D {
     c.addEventListener('pointerleave', leave)
     c.addEventListener('pointerdown', down)
     c.addEventListener('click', click)
+    c.addEventListener('pointerup', up)
+    c.addEventListener('lostpointercapture', up)
+    c.addEventListener('contextmenu', menu)
+    c.addEventListener('wheel', wheel, { passive: false })
+    c.addEventListener('gesturestart', gStart)
+    c.addEventListener('gesturechange', gChange)
+    c.addEventListener('dblclick', dbl)
     c.addEventListener('webglcontextlost', lost)
     this.reducedMotion.addEventListener('change', motion)
     // labels need the bundled font actually loaded
@@ -693,6 +748,13 @@ export class Board3D {
       c.removeEventListener('pointerleave', leave)
       c.removeEventListener('pointerdown', down)
       c.removeEventListener('click', click)
+      c.removeEventListener('pointerup', up)
+      c.removeEventListener('lostpointercapture', up)
+      c.removeEventListener('contextmenu', menu)
+      c.removeEventListener('wheel', wheel)
+      c.removeEventListener('gesturestart', gStart)
+      c.removeEventListener('gesturechange', gChange)
+      c.removeEventListener('dblclick', dbl)
       c.removeEventListener('webglcontextlost', lost)
       this.reducedMotion.removeEventListener('change', motion)
     }
@@ -762,7 +824,7 @@ export class Board3D {
 
   private applyOptions() {
     const cam = this.opts.camera === 'contemplation' ? 1 : 0
-    if (cam !== this.camE) { this.camE = cam; this.hover = null }
+    if (cam !== this.camE) { this.camE = cam; this.hover = null; this.homeCamera() }
     this.tod = this.todNow()
     clearInterval(this.autoTimer)
     // "Auto" follows the clock in steps too small to see (a fraction of a degree, a few kelvin), applied at once
@@ -1181,22 +1243,21 @@ export class Board3D {
 
   /* ---------- cameras ---------- */
 
-  private frameHeight(mode: 0 | 1) {
-    const { BW, BD } = this.D, aspect = Math.max(0.4, this.fr.w / this.fr.h)
-    if (mode === 0) return Math.max(BD * 1.1, (BW * 1.1) / aspect)
-    return Math.max(BD * 1.22, ((BW + 2 * 190) * 1.04) / aspect)
+  /** Study is fixed; Contemplation follows its orbit. Both depend on the board and frame sizes (the view offset places the frame in the canvas). */
+  private placeCameras() {
+    const { BW, BD } = this.D, a = this.fr.w / this.fr.h, hs = Math.max(BD * 1.1, (BW * 1.1) / Math.max(0.4, a)), o = this.ortho
+    o.top = hs / 2; o.bottom = -hs / 2; o.left = (-hs / 2) * a; o.right = (hs / 2) * a; o.updateProjectionMatrix()
+    this.seatH = seatHeight(BW, BD, a); this.persp.aspect = a
+    this.orbitGoal = clampOrbit(this.orbitGoal, this.seatH, BW, BD)
+    this.orbit = clampOrbit(this.orbit, this.seatH, BW, BD)
+    this.placePersp(this.orbit)
   }
 
-  /** Both cameras are fixed: they depend only on the board and frame sizes (the view offset places the frame in the canvas). */
-  private placeCameras() {
-    const a = this.fr.w / this.fr.h, hs = this.frameHeight(0), o = this.ortho
-    o.top = hs / 2; o.bottom = -hs / 2; o.left = (-hs / 2) * a; o.right = (hs / 2) * a; o.updateProjectionMatrix()
-    const p = this.persp, hc = this.frameHeight(1), fov = 28, dist = hc / 2 / Math.tan(THREE.MathUtils.degToRad(fov) / 2)
-    const tgt = this._v.set(0, -6, 14)
-    p.fov = fov; p.aspect = a
-    p.position.set(tgt.x, tgt.y + dist * Math.cos(TILT), tgt.z + dist * Math.sin(TILT))
+  private placePersp(o: Orbit) {
+    const p = this.persp, { eye, target, up, dist } = orbitEye(o, this.seatH)
+    p.position.fromArray(eye); p.up.fromArray(up)
     p.near = Math.max(5, dist - 1200); p.far = dist + 2500
-    p.lookAt(tgt); p.updateProjectionMatrix()
+    p.lookAt(target[0], target[1], target[2]); p.updateProjectionMatrix(); p.updateMatrixWorld() // picking reads it before the next render
   }
 
   private activeCam() { return this.camE ? this.persp : this.ortho }
@@ -1205,6 +1266,7 @@ export class Board3D {
     if (!this.ready || !this.N) return null
     const r = this.canvas.getBoundingClientRect(), ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
     this.ray.setFromCamera(ndc, this.activeCam())
+    if (this.camE) { const { origin: o, direction: d } = this.ray.ray; return pickPoint([o.x, o.y, o.z], [d.x, d.y, d.z], this.N, this.stones) }
     const hit = this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -SH), new THREE.Vector3())
     if (!hit) return null
     const N = this.N, i = Math.round(hit.x / SX + (N - 1) / 2), j = Math.round(hit.z / SZ + (N - 1) / 2)
@@ -1286,8 +1348,10 @@ export class Board3D {
   private frame(now: number) {
     cancelAnimationFrame(this.raf); this.raf = 0
     if (this.dead || !this.ready || this.holding) return
-    let busy = this.updateScene(now)
-    if (busy && this.lastFrame && !this.pendingQ) {
+    const moving = this.camE > 0 && stepOrbit(this.orbit, this.orbitGoal, this.lastFrame ? now - this.lastFrame : 16, this.instant())
+    let busy = this.updateScene(now) || moving
+    // camera frames are paced by the hand, not the GPU, and the governor never steps back up: they are not sampled
+    if (busy && !moving && this.lastFrame && !this.pendingQ) {
       const r = this.governor.sample(now - this.lastFrame)
       if (r === 'down') this.pendingQ = true // applied under the next crossfade, resize or new board
       else if (r === 'fallback') this.fallback('slow')
@@ -1331,6 +1395,10 @@ export class Board3D {
         const msPerFrame = self.benchMs(n), info = self.renderer.info
         return { msPerFrame, dpr: self.renderer.getPixelRatio(), size: [self.W, self.H], calls: info.render.calls, triangles: info.render.triangles, textures: info.memory.textures, geometries: info.memory.geometries }
       },
+      /** Contemplation's camera, at once (null: home). */
+      orbit(o: Partial<Orbit> | null) { self.orbitGoal = { ...HOME, ...o }; self.orbit = { ...self.orbitGoal }; self.placeCameras(); self.invalidate() },
+      /** The intersection a click at CSS (x, y) of the canvas would play. */
+      pickAt(x: number, y: number) { const r = self.canvas.getBoundingClientRect(); return self.pick({ clientX: r.left + x, clientY: r.top + y } as MouseEvent) },
       hideGrid(on: boolean) { self.noGrid = on; self.invalidate() },
       setQuality(level: number) { self.governor.level = level; self.applyQuality(self.ladder[level]) },
       /** Macro framing for material inspection (null restores the camera). */

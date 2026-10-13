@@ -293,3 +293,84 @@ export function silhouette(rays: number[][][], board: number[]) {
 /* ---------- sound ---------- */
 /** Stereo position of a stone: the board spans about ±0.55 of the field, like sitting at it. */
 export const panFor = (N: number, x: number) => (N > 1 ? (x / (N - 1)) * 2 - 1 : 0) * 0.55
+
+/* ---------- seated camera (Contemplation) ---------- */
+export const FOV = 28, TILT_HOME = (22 * Math.PI) / 180, TGT_Y = -6
+/** Visible height (mm) of the seated view: the whole board stays in frame, bowls partly out ("framing A", 1.33× v0.2). */
+export const seatHeight = (BW: number, BD: number, aspect: number) => Math.max(BD * 1.12, ((BW + 380) * 1.04) / 1.33 / Math.max(0.4, aspect))
+
+/** yaw/tilt in rad (tilt from vertical), zoom = share of the home distance, (tx, tz) the target on the plane y = TGT_Y. */
+export interface Orbit { yaw: number; tilt: number; zoom: number; tx: number; tz: number }
+export const HOME: Readonly<Orbit> = { yaw: 0, tilt: TILT_HOME, zoom: 1, tx: 0, tz: 14 }
+/** Closest zoom: this many mm in view. */
+export const ZOOM_MM = 140
+const YAW_MAX = Math.PI / 3, TILT_MIN = (5 * Math.PI) / 180, TILT_MAX = (58 * Math.PI) / 180
+const clampV = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
+
+/** Limits for a visible height hc: zoom 1 is exactly home; the target may leave home, up to the board's corners, only as far as the view is zoomed in. */
+export function clampOrbit(o: Orbit, hc: number, BW: number, BD: number): Orbit {
+  const zMin = Math.min(1, ZOOM_MM / hc), zoom = clampV(o.zoom, zMin, 1), s = zMin < 1 ? (1 - zoom) / (1 - zMin) : 0
+  const cx = HOME.tx * (1 - s), cz = HOME.tz * (1 - s), hx = (BW / 2) * s, hz = (BD / 2) * s
+  return { yaw: clampV(o.yaw, -YAW_MAX, YAW_MAX), tilt: clampV(o.tilt, TILT_MIN, TILT_MAX), zoom, tx: clampV(o.tx, cx - hx, cx + hx), tz: clampV(o.tz, cz - hz, cz + hz) }
+}
+
+/** Zoom by k about the point (px, TGT_Y, pz): the whole camera scales about it, so that point stays under the cursor. */
+export const zoomAt = (o: Orbit, k: number, px: number, pz: number): Orbit => ({ ...o, zoom: o.zoom * k, tx: px + k * (o.tx - px), tz: pz + k * (o.tz - pz) })
+
+/** Camera for an orbit at visible height hc: no roll (up stays horizontal, pointing away from the player). */
+export function orbitEye(o: Orbit, hc: number) {
+  const dist = (hc * o.zoom) / 2 / Math.tan((FOV * Math.PI) / 360), h = Math.sin(o.tilt) * dist
+  const sy = Math.sin(o.yaw), cy = Math.cos(o.yaw)
+  return { eye: [o.tx + h * sy, TGT_Y + dist * Math.cos(o.tilt), o.tz + h * cy], target: [o.tx, TGT_Y, o.tz], up: [-sy, 0, -cy], dist }
+}
+
+/** Moves cur towards goal (exponential follow, τ = 70 ms; at once under reduced motion). True while still moving. */
+export function stepOrbit(cur: Orbit, goal: Orbit, dt: number, instant = false): boolean {
+  const a = instant ? 1 : 1 - Math.exp(-dt / 70)
+  let moving = false
+  for (const k of ['yaw', 'tilt', 'zoom', 'tx', 'tz'] as const) {
+    const d = goal[k] - cur[k], eps = k === 'tx' || k === 'tz' ? 0.02 : 1e-4
+    if (Math.abs(d) * (1 - a) < eps) cur[k] = goal[k]
+    else { cur[k] += d * a; moving = true }
+  }
+  return moving
+}
+
+export type WheelIntent = 'zoom' | 'orbit'
+/**
+ * Mouse wheel or trackpad, from the wheel event alone: pinches arrive as ctrl+wheel (Chromium, WebView2, Firefox);
+ * a gesture keeps its first verdict through its momentum; line/page deltas and horizontal deltas tell a wheel from a
+ * trackpad; macOS mouse notches come as multiples of 4.000244 px, Windows notches as ≥ 40 px; anything else is a
+ * two-finger swipe.
+ */
+/** WebKit (WKWebView, Safari) sends a pinch both as gesture events and as ctrl+wheel: only the gesture events count there. */
+export const skipPinchWheel = (ctrlKey: boolean, gestureEvents: boolean) => ctrlKey && gestureEvents
+
+export function wheelIntent(e: { deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean }, prev: WheelIntent | null, gapMs: number): WheelIntent {
+  if (e.ctrlKey) return 'zoom'
+  if (prev && gapMs < 250) return prev
+  if (e.deltaMode !== 0) return 'zoom'
+  if (e.deltaX !== 0) return 'orbit'
+  const d = Math.abs(e.deltaY), n = Math.round(d / 4.000244)
+  return d >= 40 || (n > 0 && Math.abs(d - n * 4.000244) < 1e-4 * n) ? 'zoom' : 'orbit'
+}
+
+/**
+ * The point a ray points at in the seated view: the first stone it crosses (lens shape) between y = 2·SH and the board,
+ * otherwise the board surface at y = 0, rounded to the nearest intersection (null off the grid).
+ */
+export function pickPoint(o: number[], d: number[], N: number, stones: Map<number, Placed>): [number, number] | null {
+  if (d[1] >= 0) return null
+  const t0 = (2 * SH - o[1]) / d[1], t1 = -o[1] / d[1], n = Math.ceil(((t1 - t0) * Math.hypot(d[0], d[2])) / 0.5) + 1
+  for (let k = 0; k <= n; k++) {
+    const t = t0 + ((t1 - t0) * k) / n, x = o[0] + d[0] * t, y = o[1] + d[1] * t, z = o[2] + d[2] * t
+    const i = Math.round(x / SX + (N - 1) / 2), j = Math.round(z / SZ + (N - 1) / 2)
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const i2 = i + di, j2 = j + dj, s = i2 >= 0 && j2 >= 0 && i2 < N && j2 < N ? stones.get(j2 * N + i2) : undefined
+      if (s && Math.abs(y - SH) < lens(Math.hypot(x - s.tx, z - s.tz), s.R)) return [s.x, s.y]
+    }
+  }
+  const x = o[0] + d[0] * t1, z = o[2] + d[2] * t1, i = Math.round(x / SX + (N - 1) / 2), j = Math.round(z / SZ + (N - 1) / 2)
+  if (i < 0 || j < 0 || i >= N || j >= N || Math.abs(x - gx(N, i)) > SX * 0.5 || Math.abs(z - gz(N, j)) > SZ * 0.5) return null
+  return [i, j]
+}
