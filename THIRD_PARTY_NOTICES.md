@@ -110,6 +110,10 @@ The rest are MIT, Apache-2.0, BSD-3-Clause, Zlib, Unlicense or 0BSD, mostly dual
 | @sabaki/sgf | MIT | (c) 2018-2020 Yichuan Shen |
 | @tauri-apps/api, @tauri-apps/plugin-dialog, @tauri-apps/plugin-fs | MIT OR Apache-2.0 | (c) 2019-2025 The Tauri Programme in the Commons Conservancy |
 | three | MIT | (c) 2010-2026 three.js authors |
+| goban-engine (the OGS client's socket and protocol types) | Apache-2.0 | (c) Online-Go.com (Akita Noek and contributors) |
+| eventemitter3 (dependency of goban-engine) | MIT | (c) 2014 Arnout Kazemier |
+
+The `goban-engine` package ships no licence file: `THIRD_PARTY_LICENSES.txt` gives it the canonical Apache-2.0 text. Masame uses no code from the online-go.com site repository (AGPL).
 
 `@sabaki/sgf` depends on `doken` (MIT, bundled). Its optional dependencies `iconv-lite` (MIT) and `jschardet` (LGPL-2.1+) are replaced by an empty module in `vite.config.ts` and are not bundled; keep it that way, or comply with the LGPL if `jschardet` is ever bundled. The same generated `THIRD_PARTY_LICENSES.txt` lists every bundled package with its licence text (from `pnpm licenses list --prod`).
 

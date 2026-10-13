@@ -12,7 +12,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::failure::{Failure, Res};
 
-pub const USER_AGENT: &str = "Masame/0.1"; // Cloudflare rejects some default user agents
+pub const USER_AGENT: &str = "Masame/0.2"; // Cloudflare rejects some default user agents
 const API: &str = "https://katagotraining.org/api/networks/";
 const MEDIA_HOST: &str = "media.katagotraining.org";
 const PAGES: u32 = 3;

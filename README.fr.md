@@ -24,8 +24,8 @@
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/study-fr.jpg" alt="Vue Étude" width="100%"><br><sub><b>Étude.</b> Le goban vu d'en haut, la partie à côté.</sub></td>
-    <td width="50%"><img src="docs/images/contemplation-fr.jpg" alt="Vue Contemplation" width="100%"><br><sub><b>Contemplation.</b> Le goban posé sur la table, vu de ta place.</sub></td>
+    <td width="50%"><img src="docs/images/study-fr.jpg" alt="Vue Étude" width="100%"><br><sub><b>Étude.</b> Le goban vu d'en haut, la partie sur une carte flottante.</sub></td>
+    <td width="50%"><img src="docs/images/contemplation-fr.jpg" alt="Vue Contemplation" width="100%"><br><sub><b>Contemplation.</b> Le goban posé sur la table, vu de ta place, le soir.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/light-and-shadow.jpg" alt="Territoire « Ombre et lumière »" width="100%"><br><sub><b>Ombre et lumière.</b> Le territoire en lumière et en ombre sur le bois.</sub></td>
@@ -34,6 +34,10 @@
   <tr>
     <td width="50%"><img src="docs/images/networks-fr.jpg" alt="Gestionnaire de réseaux" width="100%"><br><sub><b>Réseaux.</b> Les réseaux officiels de KataGo, téléchargés et vérifiés dans l'app.</sub></td>
     <td width="50%"><img src="docs/images/light-2d-fr.jpg" alt="Mode léger 2D" width="100%"><br><sub><b>Mode léger.</b> Un goban 2D tout simple, et le repli quand la 3D n'est pas disponible.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/review-fr.jpg" alt="Revue de partie" width="100%"><br><sub><b>Revue.</b> Chaque coup coûteux devient une courte leçon, ici à l'étape de la punition.</sub></td>
+    <td width="50%"><img src="docs/images/ogs-fr.jpg" alt="Partie en ligne sur OGS" width="100%"><br><sub><b>En ligne.</b> Une partie en direct sur OGS, avec les pendules en byo-yomi sur les deux cartes.</sub></td>
   </tr>
 </table>
 
@@ -116,6 +120,7 @@ Les fondations, l'Atelier vivant en 3D et la première partie du professeur sont
 
 - [KataGo](https://github.com/lightvector/KataGo), de David J Wu (« lightvector ») et ses contributeurs : le moteur et ses réseaux de neurones.
 - [@sabaki/go-board](https://github.com/SabakiHQ/go-board) et [@sabaki/sgf](https://github.com/SabakiHQ/sgf), de Yichuan Shen : logique du goban et lecture des SGF.
+- [goban](https://github.com/online-go/goban), d'Online-Go.com : la connexion et le protocole du client OGS (`goban-engine`, Apache-2.0).
 - [three.js](https://threejs.org/), [Tauri](https://tauri.app/) et [React](https://react.dev/).
 - Textures de bois d'[ambientCG](https://ambientcg.com/), éclairage (HDRI) de [Poly Haven](https://polyhaven.com/), sons de pierres de [Freesound](https://freesound.org/) par billhails2, Hongsungbock et MPooman — tous en CC0.
 - Polices : Cormorant Garamond et Manrope, sous SIL Open Font License.
