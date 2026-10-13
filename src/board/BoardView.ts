@@ -414,16 +414,20 @@ export class BoardView {
 
   resize(size: number) {
     const S = Math.max(200, Math.floor(size)), dpr = window.devicePixelRatio || 1
-    if (S === this.S && dpr === this.dpr) return
+    if (S === this.S && dpr === this.dpr) return this.snap() // the layout may have moved the canvas all the same
     this.S = S; this.dpr = dpr
     this.canvas.style.width = this.canvas.style.height = `${S}px`
     this.canvas.width = this.canvas.height = Math.round(S * dpr)
-    // Centring can land on a half pixel, which smears 1px lines on 1× displays: nudge to the pixel grid.
+    this.snap()
+    this.syncGeom() // geometry follows the size synchronously, so pick() is never stale
+    this.frame(performance.now()) // synchronous: no blank frame while the window is being dragged
+  }
+
+  /** Centring can land on a half pixel, which smears 1px lines on 1× displays: nudge to the pixel grid. */
+  private snap() {
     this.canvas.style.transform = ''
     const r = this.canvas.getBoundingClientRect()
     this.canvas.style.transform = `translate(${Math.round(r.left) - r.left}px, ${Math.round(r.top) - r.top}px)`
-    this.syncGeom() // geometry follows the size synchronously, so pick() is never stale
-    this.frame(performance.now()) // synchronous: no blank frame while the window is being dragged
   }
 
   private req() { if (!this.raf) this.raf = requestAnimationFrame(t => this.frame(t)) }
