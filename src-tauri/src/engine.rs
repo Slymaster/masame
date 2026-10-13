@@ -147,14 +147,14 @@ impl Engine {
     }
 
     /// Installs the fallback; call right after `new`, before the engine is shared.
-    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))] // only Windows and Linux ship several builds
+    #[cfg_attr(not(engine_variants), allow(dead_code))] // only Windows, Linux and Intel Macs ship several builds
     pub fn with_fallback(mut self: Arc<Self>, f: impl Fn(&Spec, Failure) -> Res<Spec> + Send + Sync + 'static) -> Arc<Self> {
         Arc::get_mut(&mut self).expect("engine not shared yet").fallback = Some(Box::new(f));
         self
     }
 
     /// Called with the spec of each launch that reaches Ready (outside any engine lock); call right after `new`.
-    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
+    #[cfg_attr(not(engine_variants), allow(dead_code))]
     pub fn with_on_ready(mut self: Arc<Self>, f: impl Fn(&Spec) + Send + Sync + 'static) -> Arc<Self> {
         Arc::get_mut(&mut self).expect("engine not shared yet").on_ready = Some(Box::new(f));
         self

@@ -12,7 +12,7 @@ Legend:
 ## 1. Go engine
 
 ### KataGo (built, macOS and Linux; bundled, Windows)
-- Source: https://github.com/lightvector/KataGo (v1.18.2 on macOS, built by `scripts/build-katago.sh`; v1.18.2 on Linux, built by `scripts/build-katago-linux.sh`; official v1.18.1 release on Windows)
+- Source: https://github.com/lightvector/KataGo (v1.18.2 on macOS, built by `scripts/build-katago.sh` for Apple Silicon and `scripts/build-katago-macos-x86_64.sh` for Intel; v1.18.2 on Linux, built by `scripts/build-katago-linux.sh`; official v1.18.1 release on Windows)
 - Licence: MIT
 - Copyright 2025 David J Wu ("lightvector") and/or other authors of the content in the KataGo repository.
 - Requirement: include the copyright notice and permission text with every copy. The KataGo LICENSE file also names third-party code under `cpp/external/` with its own licences. The parts that can be compiled into the macOS Metal binary are:
@@ -29,7 +29,7 @@ Legend:
 | Swift CMake modules (`cpp/external/macos`) | Apache-2.0 with Runtime Library Exception | Apple Inc. and the Swift project authors |
 | `cpp/core/sha2.cpp` | licence embedded in the file | see file |
 
-The app ships KataGo's `LICENSE`, the licence files of `cpp/external/*` (and katagocoreml's `NOTICE`) and the licences of protobuf, Abseil, the Windows engine's DLLs and Eigen (Linux) in its `resources/licenses/` folder (macOS: `Masame.app/Contents/Resources/resources/licenses/`; Windows: `resources\licenses\` in the install folder; Linux: `/usr/lib/Masame/resources/licenses/` for the .deb and .rpm). Their copies are kept in [`src-tauri/resources/licenses/`](src-tauri/resources/licenses/).
+The app ships KataGo's `LICENSE`, the licence files of `cpp/external/*` (and katagocoreml's `NOTICE`) and the licences of protobuf, Abseil, the Windows engine's DLLs and Eigen (Linux, Intel Mac) in its `resources/licenses/` folder (macOS: `Masame.app/Contents/Resources/resources/licenses/`; Windows: `resources\licenses\` in the install folder; Linux: `/usr/lib/Masame/resources/licenses/` for the .deb and .rpm). Their copies are kept in [`src-tauri/resources/licenses/`](src-tauri/resources/licenses/).
 
 ### protobuf 29.3 (linked into the macOS engine)
 - Source: https://github.com/protocolbuffers/protobuf
@@ -189,3 +189,15 @@ The Linux version (x86_64; AppImage, .deb and .rpm, built on Ubuntu 22.04) ships
 glibc, libstdc++, libgcc, zlib and the OpenCL ICD loader (`libOpenCL.so.1`) are system libraries, linked dynamically and not shipped by us. Without an OpenCL driver, the app uses the CPU build.
 
 The AppImage also bundles libraries from Ubuntu 22.04 so that it runs on other distributions (WebKitGTK, GTK, GLib and their dependencies, many under the LGPL), unmodified. Each release publishes `linux-appimage-libraries.txt` next to the AppImage: every bundled file with its Ubuntu package and version, how to get the corresponding source, and each package's copyright file. The .deb and .rpm bundle none of these; they depend on the distribution's packages.
+
+---
+
+## 8. Intel Mac build
+
+The Intel Mac version ships KataGo v1.18.2 built from source by `scripts/build-katago-macos-x86_64.sh`, at the same pinned commit as the other builds, as two sidecars in `Masame.app/Contents/MacOS/`: `katago-opencl` (GPU, through the system's OpenCL.framework) and `katago-eigen` (CPU, without AVX2, so it also runs under Rosetta). The app starts the OpenCL build and falls back to the CPU build when it fails.
+
+| File(s) | Component | Licence | Requirement |
+|---|---|---|---|
+| `katago-eigen` | Eigen 3.4.0 (header-only, compiled in, from the pinned upstream tarball) | MPL-2.0 | unmodified, compiled with `EIGEN_MPL2_ONLY` so no LGPL part of Eigen is used; source available at https://gitlab.com/libeigen/eigen; licence text in `resources/licenses/linux-engine/` |
+
+Both link only macOS system libraries and frameworks (libc++, libSystem, zlib, OpenCL).

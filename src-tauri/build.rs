@@ -9,5 +9,10 @@ fn main() {
         println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
         attributes = attributes.windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest());
     }
+    // engine_variants: the platforms that bundle several KataGo builds and pick one at run time (src/backend.rs).
+    println!("cargo:rustc-check-cfg=cfg(engine_variants)");
+    let target = |k: &str| std::env::var(k).unwrap_or_default();
+    let (os, arch) = (target("CARGO_CFG_TARGET_OS"), target("CARGO_CFG_TARGET_ARCH"));
+    if os == "windows" || os == "linux" || os == "macos" && arch == "x86_64" { println!("cargo:rustc-cfg=engine_variants") }
     tauri_build::try_build(attributes).expect("tauri-build")
 }

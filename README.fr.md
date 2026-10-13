@@ -58,10 +58,11 @@
 Masame est jeune, et le dit franchement.
 
 - **macOS, Apple Silicon** marche aujourd'hui. Le moteur est un KataGo 1.18.2 (Metal) autonome, aux dépendances statiques ; il faut macOS 13 ou plus récent, et aucune bibliothèque Homebrew à l'exécution.
+- **macOS, Intel** est nouveau : la même application, avec KataGo 1.18.2 compilé pour OpenCL et repli automatique sur le processeur ; macOS 13 ou plus récent. En préversion.
 - **Windows** est écrit — le code, l'installeur NSIS et une compilation KataGo OpenCL avec repli automatique sur le processeur — et compilé par GitHub Actions. L'installeur est disponible en préversion, pas encore testé sur du vrai matériel.
 - **Linux, x86_64** est nouveau : une AppImage, un .deb et un .rpm, compilés sur Ubuntu 22.04 par GitHub Actions, avec KataGo 1.18.2 compilé depuis les sources (OpenCL, avec repli automatique sur le processeur). En préversion aussi.
 
-**Télécharge** la dernière version sur la [page des versions](https://github.com/Slymaster/masame/releases/latest) : un DMG pour macOS (Apple Silicon), un installeur pour Windows (x64), et une AppImage, un .deb et un .rpm pour Linux (x86_64). La version macOS est signée et notarisée par Apple : elle s'ouvre sans avertissement. La version Windows n'est pas encore signée : quand SmartScreen apparaît, clique sur **Informations complémentaires**, puis **Exécuter quand même**.
+**Télécharge** la dernière version sur la [page des versions](https://github.com/Slymaster/masame/releases/latest) : un DMG pour macOS (Apple Silicon, ou Intel : le DMG `x64`), un installeur pour Windows (x64), et une AppImage, un .deb et un .rpm pour Linux (x86_64). La version macOS est signée et notarisée par Apple : elle s'ouvre sans avertissement. La version Windows n'est pas encore signée : quand SmartScreen apparaît, clique sur **Informations complémentaires**, puis **Exécuter quand même**.
 
 Sous **Linux**, Masame demande glibc 2.35 ou plus récent (Ubuntu 22.04+, Debian 12, Fedora, Linux Mint 21+). Quelques points à savoir :
 
@@ -75,6 +76,8 @@ Sous **Linux**, Masame demande glibc 2.35 ou plus récent (Ubuntu 22.04+, Debian
 Il faut Node.js 22, [pnpm](https://pnpm.io/) 9, [Rust](https://www.rust-lang.org/tools/install) (stable) avec les [prérequis de Tauri 2](https://v2.tauri.app/start/prerequisites/), et sur macOS Xcode (pour AppleClang, Swift et Metal) ainsi que `cmake`, `ninja`, `pkg-config`, `curl` et `git`. Protobuf et abseil sont compilés depuis des sources épinglées ; voir l'en-tête de [`scripts/build-katago.sh`](scripts/build-katago.sh).
 
 Sous Linux (x86_64), compile plutôt le moteur avec `scripts/build-katago-linux.sh`, qui demande `g++`, `cmake`, `ninja`, `git` et les paquets de développement de zlib, Eigen 3 et OpenCL (sur Debian et Ubuntu : `ninja-build cmake zlib1g-dev libeigen3-dev ocl-icd-opencl-dev opencl-headers`). Il compile les moteurs OpenCL et CPU dans `src-tauri/resources/katago-linux/`.
+
+Pour les Mac Intel, `scripts/build-katago-macos-x86_64.sh` compile les moteurs OpenCL et CPU (sur un Mac Intel, ou en compilation croisée sur Apple Silicon) dans `src-tauri/binaries/` ; compile ensuite avec `pnpm tauri build --target x86_64-apple-darwin --config src-tauri/tauri.macos-x86_64.conf.json`.
 
 ```sh
 git clone https://github.com/Slymaster/masame.git
