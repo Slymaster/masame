@@ -98,6 +98,8 @@ Notable transitive dependencies:
 | cssparser, selectors, dtoa-short, option-ext | MPL-2.0 | file-level copyleft: source of these crates is available on crates.io; we do not modify them |
 | icu_*, zerovec, yoke, tinystr, litemap, writeable, zerofrom, zerotrie, potential_utf | Unicode-3.0 | |
 
+`keyring` brings `zeroize_derive` and, on Linux, `dbus-secret-service`, `dbus` and `libdbus-sys` (all MIT OR Apache-2.0); on macOS and Windows it reuses `security-framework` and `windows-sys`, already in the lock.
+
 The rest are MIT, Apache-2.0, BSD-3-Clause, Zlib, Unlicense or 0BSD, mostly dual-licensed. Each release build generates the complete list with its licence texts (`scripts/third-party-licenses.mjs`, from `cargo metadata`) and ships it as `THIRD_PARTY_LICENSES.txt` in the app's `resources/licenses/` folder.
 
 ---

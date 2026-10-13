@@ -181,7 +181,7 @@ A single codebase: Tauri 2 (Rust), React/TypeScript and three.js.
 | Shipped with the app | The Metal binary (≈ 11 MB) | The OpenCL (6 MB) and CPU AVX2 (5.9 MB) builds, `OpenCL.dll` comes from the GPU driver; if it is missing, the app falls back to the CPU engine automatically |
 | Downloaded on demand | — | **OpenVINO** for Intel chips (up to 20 times faster than OpenCL on Arc), **DirectML** as a last resort, **CUDA** only if the NVIDIA libraries are already present (otherwise 1.5 to 2 GB) |
 | Detection | — | List of graphics cards via DXGI (NVIDIA, AMD, Intel, video memory), automatic test and one-level fallback on failure |
-| Security | KataGo source pinned by commit, dependencies by sha256. Ad-hoc signed today; Apple signing and notarisation planned. | Official archives pinned by sha256 **in the build script**, extraction protected against booby-trapped paths, `%LOCALAPPDATA%` folder, process bound to the app (it stops with it). Signing planned. |
+| Security | KataGo source pinned by commit, dependencies by sha256. Signed with a Developer ID and notarised by Apple since v0.2.1. | Official archives pinned by sha256 **in the build script**, extraction protected against booby-trapped paths, `%LOCALAPPDATA%` folder, process bound to the app (it stops with it). Signing planned. |
 
 - **First launch, "Engine tuning" (Accordage du moteur).** The app measures the machine's real speed, tunes OpenCL and picks the default network (Light, Balanced or Maximum). Transformer networks are slow on Mac (≈ 130 positions/s for Balanced), and the variety of Windows graphics cards is huge: so we must measure, not guess.
 - **Mac engine**: self-contained (protobuf and abseil linked statically), macOS 13 or later, Apple Silicon. The KataGo source is pinned by commit.
@@ -193,7 +193,7 @@ A single codebase: Tauri 2 (Rust), React/TypeScript and three.js.
 - **Small graphics cards**: a governor adjusts resolution, shadows and anti-aliasing, then switches to light 2D mode if needed. Windows often uses the integrated graphics chip, so this case must be planned for.
 
 ### Build
-- GitHub Actions (`tauri-action` v1) on Mac and Windows machines, NSIS installer in French and English. Signed automatic updates are planned but not yet in place.
+- GitHub Actions (`tauri-action` v1) on Mac and Windows machines, NSIS installer in French and English. Signed automatic updates are in place since v0.2.0.
 - Building for Windows from a Mac is possible, but only as a last resort.
 
 ---

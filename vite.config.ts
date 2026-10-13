@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 const nullModule = new URL('./src/null-module.cjs', import.meta.url).pathname
@@ -9,5 +10,7 @@ export default defineConfig({
   // @sabaki/sgf only needs iconv-lite/jschardet to decode legacy-encoded Buffers; we parse strings, so keep ~800 kB out.
   resolve: { alias: { 'iconv-lite': nullModule, jschardet: nullModule } },
   clearScreen: false,
+  // Nested worktrees under .claude/ carry their own copies of the tests.
+  test: { exclude: [...configDefaults.exclude, '.claude/**'] },
   server: { port: 1420, strictPort: true, watch: { ignored: ['**/src-tauri/**'] } },
 })

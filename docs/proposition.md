@@ -181,7 +181,7 @@ Une seule base de code : Tauri 2 (Rust), React/TypeScript et three.js.
 | Livrée avec l'app | Le binaire Metal (≈ 11 Mo, autonome, macOS 13 et plus) | Les versions OpenCL (6 Mo) et CPU AVX2 (5,9 Mo). `OpenCL.dll` vient du pilote graphique ; s'il manque, l'app passe automatiquement sur le moteur CPU |
 | Téléchargée à la demande | — | **OpenVINO** pour les puces Intel (jusqu'à 20 fois plus rapide qu'OpenCL sur Arc), **DirectML** en dernier recours, **CUDA** seulement si les bibliothèques NVIDIA sont déjà présentes (sinon 1,5 à 2 Go) |
 | Détection | — | Liste des cartes graphiques via DXGI (NVIDIA, AMD, Intel, mémoire vidéo), test automatique et repli d'un niveau en cas d'échec |
-| Sécurité | Code source de KataGo épinglé par commit, dépendances par sha256. Binaire signé ad hoc aujourd'hui ; signature Apple et notarisation prévues. | Archives officielles épinglées par sha256 **dans le script de build**, extraction protégée contre les chemins piégés, dossier `%LOCALAPPDATA%`, processus rattaché à l'app (il s'arrête avec elle). Signature prévue. |
+| Sécurité | Code source de KataGo épinglé par commit, dépendances par sha256. Signé avec un Developer ID et notarisé par Apple depuis la v0.2.1. | Archives officielles épinglées par sha256 **dans le script de build**, extraction protégée contre les chemins piégés, dossier `%LOCALAPPDATA%`, processus rattaché à l'app (il s'arrête avec elle). Signature prévue. |
 
 - **Premier lancement, « Accordage du moteur ».** L'app mesure la vitesse réelle de la machine, règle OpenCL et choisit le réseau par défaut (Léger, Équilibré ou Maximum). Les réseaux transformer sont lents sur Mac (≈ 130 positions/s pour l'Équilibré), et la variété des cartes Windows est énorme : il faut donc mesurer, pas deviner.
 - **Moteur Mac** : autonome (protobuf et abseil liés en statique), macOS 13 ou plus, Apple Silicon. Le code source de KataGo est épinglé par commit.
@@ -193,7 +193,7 @@ Une seule base de code : Tauri 2 (Rust), React/TypeScript et three.js.
 - **Petites cartes graphiques** : un régulateur ajuste résolution, ombres et anticrénelage, puis bascule en mode léger 2D si besoin. Windows utilise souvent la puce graphique intégrée, il faut donc prévoir ce cas.
 
 ### Construction
-- GitHub Actions (`tauri-action` v1) sur des machines Mac et Windows, installeur NSIS en français et en anglais. Mises à jour automatiques signées prévues, mais pas encore en place.
+- GitHub Actions (`tauri-action` v1) sur des machines Mac et Windows, installeur NSIS en français et en anglais. Mises à jour automatiques signées en place depuis la v0.2.0.
 - La construction Windows depuis un Mac existe, mais en dernier recours seulement.
 
 ---
