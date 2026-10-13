@@ -11,6 +11,7 @@ export default defineConfig({
   resolve: { alias: { 'iconv-lite': nullModule, jschardet: nullModule } },
   clearScreen: false,
   // Nested worktrees under .claude/ carry their own copies of the tests.
-  test: { exclude: [...configDefaults.exclude, '.claude/**'] },
+  // Slow CI runners (Intel macOS) need more than vitest's default 5 s for the heavier tests.
+  test: { exclude: [...configDefaults.exclude, '.claude/**'], testTimeout: 30_000 },
   server: { port: 1420, strictPort: true, watch: { ignored: ['**/src-tauri/**'] } },
 })

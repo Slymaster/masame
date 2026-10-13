@@ -62,6 +62,10 @@ The app downloads networks from https://katagotraining.org (`media.katagotrainin
 - Earlier project notes recorded its licence as unconfirmed. As of 11 October 2026, the licence page above states that the KataGo Neural Network License also applies to networks on the "extra networks" page labelled as "KataGo" networks, "such as the KataGo Human SL Network".
 - We still download it from the official source rather than redistributing it.
 
+### Joseki database (generated, bundled)
+- `public/assets/joseki/joseki.v1.json` was generated for Masame with KataGo v1.18.2 by `scripts/joseki/generate.ts`, from the outputs of `kata1-tf3-b11c768-s11003M-d5973M-7gres` (judge, 800 visits per move) and `b18c384nbt-humanv0` (human move frequencies), both under the KataGo Neural Network License above.
+- It holds moves, score losses, frequencies and tags only; no network weights are bundled.
+
 ### Networks by other contributors
 The licence page lists exceptions. Older `g170` networks are CC0. The "zhizi" networks in the kata1 run (for example `kata1-zhizi-b28c512nbt-muonfd2`) are under an MIT-style licence, Copyright (c) 2026 hzyhhzy & zhizigo.com. The network manager's "strongest" and "newest" entries come from the live kata1 list and could therefore be a zhizi network; its licence then applies.
 
