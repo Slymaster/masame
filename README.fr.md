@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/hero.jpg" alt="Un goban en kaya, pierres d'ardoise et de coquillage dans leurs bols de bois, dans la lumière du soir" width="100%">
+  <img src="docs/images/hero.jpg" alt="Gros plan sur des pierres d'ardoise et de coquillage posées sur un goban en kaya, les stries des pierres blanches visibles, dans la lumière de l'après-midi" width="100%">
 </p>
 
 <h1 align="center">Masame <sub>柾目</sub></h1>
