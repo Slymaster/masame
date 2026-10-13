@@ -25,10 +25,10 @@ export const REPLY = { maxVisits: 200, overrideSettings: { maxTime: 1.5 } }
 
 /**
  * Positions the engine can read: up to the first SGF move fromRecord lets through but KataGo refuses or replays
- * differently: onto an occupied point, a single-stone suicide, or the same colour twice in a row.
+ * differently: onto an occupied point, a single-stone suicide, or the same colour twice in a row; or a setup or empty node.
  */
 export function reviewEnd(g: Game): number {
-  const i = g.moves.findIndex((m, i) => (i > 0 && m.sign === g.moves[i - 1].sign)
+  const i = g.moves.findIndex((m, i) => m.setup || g.nodes[i + 1].stones || (i > 0 && m.sign === g.moves[i - 1].sign)
     || !!m.vertex && (g.boards[i].get(m.vertex) !== 0 || g.boards[i + 1].get(m.vertex) === 0))
   return i < 0 ? g.moves.length : i
 }

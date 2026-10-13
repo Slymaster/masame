@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Vertex } from './game'
-import { gtp, parseAnalysis } from './katago'
+import { gtp, parseAnalysis, positionQuery } from './katago'
+import { loadSgf } from './sgf'
 
 const raw = (pv: unknown, move: unknown = 'D4') => ({ rootInfo: { winrate: 0.5, scoreLead: 1 }, moveInfos: [{ move: 'A1', order: 1 }, { move, order: 0, pv }] })
 
@@ -23,5 +24,15 @@ describe('parseAnalysis', () => {
     expect(parseAnalysis(raw([], 'PASS'), 19).topMove).toBe('pass')
     expect(parseAnalysis({ rootInfo: { winrate: 0.5, scoreLead: 1 } }, 19).topMove).toBe('')
     expect(() => parseAnalysis({}, 19)).toThrow()
+  })
+})
+
+describe('positionQuery', () => {
+  it('starts from the last setup position at or before the cursor', () => {
+    const g = loadSgf('(;SZ[9]AB[aa];W[ee];B[cc];AW[gg]AE[ee]PL[B];B[ii];W[];C[x];B[ab])')
+    const q = positionQuery(g)
+    expect([q.initialStones, q.initialPlayer, q.moves]).toEqual([[['B', 'A9'], ['B', 'C7'], ['W', 'G3']], 'B', [['B', 'J1'], ['W', 'pass'], ['B', 'A8']]])
+    g.goTo(2)
+    expect([positionQuery(g).initialStones, positionQuery(g).initialPlayer, positionQuery(g).moves]).toEqual([[['B', 'A9']], 'W', [['W', 'E5'], ['B', 'C7']]])
   })
 })

@@ -132,6 +132,11 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
   background: linear-gradient(90deg, var(--rule-2) 1px, transparent 1px) 6px 0 / calc((100% - 12px) * 10 / max(var(--n), 1)) 100% repeat-x, var(--well);
 }
 .tl input::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--card) }
+.track { flex: 1; min-width: 0; display: flex; position: relative }
+/* fork dots under the track, on the ticks' scale */
+.track i { position: absolute; top: 20px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--muted); pointer-events: none }
+.vars { display: flex; justify-content: center; gap: 14px; margin: 0 }
+.cmt { margin: 2px 0 0; max-height: 6.5em; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.45; color: var(--muted) }
 .mv { flex: none; min-width: 4.6em; text-align: right; font-family: var(--f-title); font-style: italic; font-size: 15px; color: var(--muted); text-transform: lowercase; white-space: nowrap; font-variant-numeric: tabular-nums }
 
 /* action bar: icon over label, hairlines between */

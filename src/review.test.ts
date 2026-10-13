@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Game, type Move, type Sign, type Vertex } from './game'
 import type { Analysis } from './katago'
+import { loadSgf } from './sgf'
 import { gradeTry, lessonBoard, MIN_LOSS, pickMoments, readGame, reviewEnd, scanQuery, shift, verdict, type Moment } from './review'
 
 /** Alternating moves from Black; null = pass. */
@@ -51,6 +52,10 @@ describe('reviewEnd', () => {
     expect(reviewEnd(suicide)).toBe(3)
     const twice = Game.fromRecord({ size: 9 }, [{ sign: 1, vertex: [2, 2] }, { sign: 1, vertex: [6, 6] }, { sign: -1, vertex: [4, 4] }])
     expect(reviewEnd(twice)).toBe(1)
+  })
+  it('stops at a setup or empty node', () => {
+    expect(reviewEnd(loadSgf('(;SZ[9];B[ee];W[cc];AB[aa];W[gg])'))).toBe(2)
+    expect(reviewEnd(loadSgf('(;SZ[9];B[ee];C[note];W[gg])'))).toBe(1)
   })
 })
 

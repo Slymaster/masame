@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Game, type Vertex } from './game'
+import { Game, type GameNode, type Vertex } from './game'
 import { loadSgf, resignResult, saveSgf, scoreResult } from './sgf'
 
 /** Plays alternating moves starting with Black; null = pass. */
@@ -33,13 +33,6 @@ describe('rules', () => {
     expect(g.play([1, 1])).toBe('ok')
   })
 
-  it('truncates the future when playing from history', () => {
-    const g = new Game({ size: 9 })
-    playAll(g, [[2, 2], [6, 6], [2, 6]])
-    g.goTo(1)
-    expect(g.play([4, 4])).toBe('ok')
-    expect(g.moves.map(m => m.vertex)).toEqual([[2, 2], [4, 4]])
-  })
 
   it('ends the game after two passes', () => {
     const g = new Game({ size: 9 })
@@ -106,10 +99,14 @@ describe('sgf robustness', () => {
     g.goTo(0); g.goTo(2)
     expect(saveSgf(g)).toContain('RE[B+R]')
     g.goTo(1)
-    expect(g.play([3, 3])).toBe('ok') // a different continuation
+    expect(g.play([3, 3])).toBe('ok') // a variation: the main line still ends as recorded
+    expect(g.info.result).toBe('B+R')
+    g.undo() // deleting the variation leaves it too
+    expect(g.info.result).toBe('B+R')
+    g.goTo(2); g.undo() // the main line changed
     expect(g.info.result).toBeUndefined()
     const h = loadSgf('(;SZ[9]RE[B+R];B[ee];W[cc])')
-    h.undo()
+    h.play(null) // the main line grew
     expect(h.info.result).toBeUndefined()
   })
   it('does not leak a loaded RE into an extended game', () => {
@@ -120,6 +117,63 @@ describe('sgf robustness', () => {
   it('rounds float noise out of the score margin', () => {
     expect(scoreResult(-7.299999999999997)).toBe('W+7.3')
     expect(scoreResult(-0.04)).toBe('0')
+  })
+})
+
+describe('variations', () => {
+  const line = (g: Game) => g.moves.map(m => m.vertex)
+  const forked = () => {
+    const g = new Game({ size: 9 })
+    playAll(g, [[2, 2], [6, 6], [2, 6], [6, 2]])
+    g.goTo(2)
+    playAll(g, [[4, 4]])
+    return g
+  }
+  it('plays from history into a new variation and keeps the future', () => {
+    const g = forked()
+    expect([line(g), g.cursor, g.onMain, g.fork]).toEqual([[[2, 2], [6, 6], [4, 4]], 3, false, { at: 3, k: 2, n: 2 }])
+    expect(g.root.children[0].children[0].children.length).toBe(2)
+  })
+  it('follows an existing child for the same move', () => {
+    const g = forked()
+    g.goTo(2)
+    expect(g.play([2, 6])).toBe('ok')
+    expect([line(g).length, g.cursor, g.onMain, g.fork?.k]).toEqual([4, 3, true, 1])
+    expect(g.root.children[0].children[0].children.length).toBe(2)
+  })
+  it('switches at the nearest fork, wrapping both ways', () => {
+    const g = forked()
+    g.switchVariation(1)
+    expect([line(g), g.cursor]).toEqual([[[2, 2], [6, 6], [2, 6], [6, 2]], 3])
+    g.goTo(4); g.switchVariation(-1) // the fork is behind the cursor
+    expect([line(g), g.cursor]).toEqual([[[2, 2], [6, 6], [4, 4]], 3])
+    g.goTo(1); g.switchVariation(1) // no fork at or before the cursor
+    expect(g.cursor).toBe(1)
+  })
+  it('goes back to the main line at the last shared position', () => {
+    const g = forked()
+    g.mainLine()
+    expect([line(g).length, g.cursor, g.onMain]).toEqual([4, 2, true])
+  })
+  it('undo deletes a variation and its subtree', () => {
+    const g = forked()
+    playAll(g, [[0, 0]])
+    g.goTo(3)
+    expect(g.undo()).toBe(true)
+    expect([line(g).length, g.cursor, g.onMain, g.fork]).toEqual([4, 2, true, null])
+  })
+  it('promotes the current line to the main line', () => {
+    const g = forked()
+    g.promote()
+    expect([g.onMain, g.fork?.k]).toEqual([true, 1])
+    g.mainLine()
+    expect(line(g)).toEqual([[2, 2], [6, 6], [4, 4]])
+  })
+  it('a branch never adds to the game', () => {
+    const g = forked(), before = saveSgf(g)
+    const b = g.branch(2, [[0, 0]])
+    b.goTo(2); playAll(b, [[8, 8]])
+    expect([b.fork, saveSgf(g)]).toEqual([{ at: 3, k: 2, n: 2 }, before])
   })
 })
 
@@ -136,5 +190,56 @@ describe('branch', () => {
     expect(b.play([7, 7])).toBe('ok')
     expect(b.moves.length).toBe(2)
     expect([g.moves.length, g.cursor, g.info.result, g.board.get([7, 7])]).toEqual([4, 4, 'W+R', 0])
+  })
+})
+
+describe('sgf tree', () => {
+  const rt = (t: string) => saveSgf(loadSgf(t))
+  it('round-trips variations, comments, marks and unknown properties', () => {
+    const text = '(;GM[1]SZ[9]DT[2026-10-01]C[Root note]XX[keep];B[ee]C[Main\\]idea]LB[cc:A];W[cc](;B[gg]N[Try];W[]TR[aa])(;B[tt]C[Pass branch]))'
+    const g = loadSgf(text)
+    expect([g.moves.length, g.root.data.DT, g.nodes[1].data.C]).toEqual([4, ['2026-10-01'], ['Main]idea']])
+    const once = saveSgf(g)
+    expect(once).toMatch(/DT\[2026-10-01\].*C\[Root note\]XX\[keep\]/s)
+    expect(once).toContain('LB[cc:A]')
+    expect(once).toContain('B[]C[Pass branch]') // B[tt] normalised
+    expect(once).toMatch(/AP\[Masame:\d+\.\d+\.\d+\]/)
+    expect(rt(once)).toBe(once)
+    const h = loadSgf(once)
+    h.goTo(2); h.switchVariation(1)
+    expect(h.fork).toBeNull() // the fork is after the cursor
+    h.goTo(3); h.switchVariation(1)
+    expect([h.moves.length, h.lastMove, h.nodes[3].data.C]).toEqual([3, { sign: 1, vertex: null }, ['Pass branch']])
+  })
+  it('reads setup stones and PL in the middle of the tree', () => {
+    const text = '(;SZ[9];B[ee];W[cc];AB[aa][ba]AW[ee]AE[cc]PL[W];W[gg])'
+    const g = loadSgf(text)
+    g.goTo(3)
+    expect([g.lastMove, g.ended, g.toPlay, g.board.get([0, 0]), g.board.get([4, 4]), g.board.get([2, 2])]).toEqual([null, false, -1, 1, -1, 0])
+    g.goTo(4)
+    expect([g.lastMove?.sign, g.board.get([6, 6])]).toEqual([-1, -1])
+    expect(rt(text).replace(/\s/g, '')).toContain(';AB[aa][ba]AW[ee]AE[cc]PL[W];W[gg]')
+    const e = loadSgf('(;SZ[9];B[ee];C[empty];W[gg])') // an empty node keeps the side to play
+    e.goTo(2)
+    expect([e.lastMove, e.toPlay]).toEqual([null, -1])
+    expect(loadSgf('(;SZ[9];B[ee];W[];C[x];B[])').ended).toBe(true)
+  })
+  it('moves a move in the root into a first child', () => {
+    const g = loadSgf('(;SZ[9]B[ee];W[cc])')
+    expect([g.moves.map(m => m.sign), g.root.data.B, g.info.firstSign]).toEqual([[1, -1], undefined, 1])
+    expect(saveSgf(g).replace(/\s/g, '')).toMatch(/^\(;SZ\[9\][^;]*;B\[ee\];W\[cc\]\)$/)
+  })
+  it('computes boards only on shown lines', () => {
+    const v = (i: number) => 'abcdefghijklmnopqrs'[i % 19] + 'abcdefghijklmnopqrs'[Math.floor(i / 19) % 19]
+    const run = (from: number) => Array.from({ length: 1000 }, (_, i) => `;${i % 2 ? 'W' : 'B'}[${v(from + i)}]`).join('')
+    const g = loadSgf(`(;SZ[19](${run(0)})(${run(7)}))`)
+    const boards = (n: GameNode | undefined) => { let k = 0; for (; n; n = n.children[0]) k += n.board ? 1 : 0; return k }
+    expect([g.moves.length, g.boards.length, boards(g.root.children[1])]).toEqual([1000, 1001, 0])
+    g.goTo(1); g.switchVariation(1)
+    expect([g.moves.length, boards(g.root.children[1])]).toEqual([1000, 1000])
+  })
+  it('rejects an off-board move or stone in a variation', () => {
+    expect(() => loadSgf('(;SZ[9];B[ee](;W[cc])(;W[zz]))')).toThrow()
+    expect(() => loadSgf('(;SZ[9];B[ee](;W[cc])(;AB[zz]))')).toThrow()
   })
 })
