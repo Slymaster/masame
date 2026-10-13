@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/hero.jpg" alt="A kaya goban with slate and shell stones in their wooden bowls, in evening light" width="100%">
+  <img src="docs/images/hero.jpg" alt="Close-up of slate and shell stones on a kaya goban, the white stones showing their clamshell grain, in afternoon light" width="100%">
 </p>
 
 <h1 align="center">Masame <sub>柾目</sub></h1>
