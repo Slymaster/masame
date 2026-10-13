@@ -17,7 +17,8 @@ import type { Sign, Vertex } from '@sabaki/go-board'
 import { paintMarks, type BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
-import { bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, todAt, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
+import { centreShift } from '../board/frame'
+import { bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, todAt, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
 
 export interface Board3DState extends BoardState {
@@ -34,6 +35,8 @@ export interface Board3DInit {
   options?: Partial<Board3DOptions>
   /** Where kaya_*.jpg, *.mp3 and the HDRI live (default: `${BASE_URL}assets/board3d/`). */
   assetBase?: string
+  /** The board moved right of its frame's centre by this many CSS px (centred on the window beside the card). */
+  onShift?: (px: number) => void
 }
 
 // Nothing moves but the stone being placed: view, décor and light changes crossfade (FADE_MS) instead of travelling
@@ -406,7 +409,9 @@ export class Board3D {
   private noGrid = false // measurements only: the ink lines would pass for stone edges
 
   private W = 1; private H = 1
-  private fr = { x: 0, y: 0, w: 1, h: 1 } // the board's frame in the canvas, CSS px
+  private box = { x: 0, y: 0, w: 1, h: 1 } // .board-wrap's rectangle in the canvas, CSS px
+  private fr = { ...this.box } // the board's frame: box, shifted right to centre the board on the window (placeFrame)
+  private shift = 0
   private raf = 0
   private lastFrame = 0
   private ready = false
@@ -422,11 +427,13 @@ export class Board3D {
   private autoTimer = 0
   private cleanup: () => void = () => {}
   private onFallback: (r: FallbackReason) => void
+  private onShift: (px: number) => void
   private fellBack = false
   private ray = new THREE.Raycaster()
 
   constructor(private canvas: HTMLCanvasElement, private onPlay: (v: Vertex) => boolean, init: Board3DInit = {}) {
     this.onFallback = init.onFallback ?? (() => {})
+    this.onShift = init.onShift ?? (() => {})
     const base = this.base = init.assetBase ?? `${import.meta.env.BASE_URL}assets/board3d/`
     this.sound = new StoneSound(base)
     Object.assign(this.opts, init.options)
@@ -497,6 +504,7 @@ export class Board3D {
       const sizeChanged = N !== this.N
       this.N = N; this.coords = state.coords; this.D = dims(N, state.coords)
       if (sizeChanged) { this.stones.clear(); this.capCount = { 1: 0, [-1]: 0 }; this.homeCamera() }
+      this.placeFrame()
       this.buildBoard()
     }
     this.state = state
@@ -518,10 +526,9 @@ export class Board3D {
     const W = Math.max(200, Math.floor(width)), H = Math.max(200, Math.floor(height))
     const f = frame ?? { left: 0, top: 0, width: W, height: H }
     const fr = { x: Math.round(f.left), y: Math.round(f.top), w: Math.max(1, Math.round(f.width)), h: Math.max(1, Math.round(f.height)) }
-    const sized = W !== this.W || H !== this.H, o = this.fr
+    const sized = W !== this.W || H !== this.H, o = this.box
     if (!sized && fr.x === o.x && fr.y === o.y && fr.w === o.w && fr.h === o.h) return
-    this.fr = fr
-    this.vigU.uVigC.value.set(((fr.x + fr.w / 2) / W) * 2 - 1, 1 - ((fr.y + fr.h / 2) / H) * 2); this.vigU.uVigS.value.set(fr.w / W, fr.h / H)
+    this.box = fr
     if (sized) {
       this.W = W; this.H = H
       this.canvas.style.width = `${W}px`; this.canvas.style.height = `${H}px`
@@ -536,7 +543,7 @@ export class Board3D {
         this.applyPendingQuality(); this.warmUp(); this.invalidate()
       }, 300)
     }
-    for (const c of [this.ortho, this.persp]) c.setViewOffset(fr.w, fr.h, -fr.x, -fr.y, W, H)
+    this.placeFrame()
     this.endFade()
     if (this.ready) this.frame(performance.now()) // synchronous: no blank frame while the window is being dragged
   }
@@ -711,22 +718,33 @@ export class Board3D {
 
   private bind() {
     const c = this.canvas
-    // Contemplation's camera: right-drag turns, the wheel or a pinch zooms about the cursor, a trackpad swipe turns
-    let drag: { x: number; y: number } | null = null, wheelAt = 0, wheelWas: WheelIntent | null = null, gesture = 0
+    // Contemplation's camera: right-drag turns, middle- or Shift+right-drag pans, the wheel or a pinch zooms about the
+    // cursor, a trackpad swipe turns (pans with Shift)
+    let drag: { x: number; y: number; pan: boolean } | null = null, wheelAt = 0, wheelWas: WheelIntent | null = null, gesture = 0
     const turn = (dYaw: number, dTilt: number) => { const g = this.orbitGoal; this.orbitGoal = { ...g, yaw: g.yaw + dYaw, tilt: g.tilt + dTilt }; this.invalidate() }
+    const planeAt = (x: number, y: number, o: Orbit) => { // the point of y = TGT_Y at client (x, y), as the camera o sees it
+      this.placePersp(o)
+      const r = c.getBoundingClientRect()
+      this.ray.setFromCamera(new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1), this.persp)
+      const P = this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -TGT_Y), new THREE.Vector3())
+      this.placePersp(this.orbit)
+      return P
+    }
     const zoom = (e: MouseEvent, k: number) => { // about the cursor's point as the goal camera sees it
       const g = this.orbitGoal, zMin = Math.min(1, ZOOM_MM / this.seatH)
       k = Math.min(1, Math.max(zMin, g.zoom * k)) / g.zoom
-      this.placePersp(g)
-      const r = c.getBoundingClientRect(), ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
-      this.ray.setFromCamera(ndc, this.persp)
-      const P = this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -TGT_Y), new THREE.Vector3())
-      this.placePersp(this.orbit)
+      const P = planeAt(e.clientX, e.clientY, g)
       if (P) { this.orbitGoal = zoomAt(g, k, P.x, P.z); this.invalidate() }
+    }
+    const pan = (x0: number, y0: number, x1: number, y1: number) => { // the board point at (x0, y0) moves to (x1, y1)
+      const g = this.orbitGoal, A = planeAt(x0, y0, g), B = planeAt(x1, y1, g)
+      if (A && B) { this.orbitGoal = panBy(g, A.x, A.z, B.x, B.z); this.invalidate() }
     }
     const move = (e: PointerEvent) => {
       if (drag) {
-        if (e.buttons & 2) { turn(-(e.clientX - drag.x) * 0.005, -(e.clientY - drag.y) * 0.005); drag = { x: e.clientX, y: e.clientY } }
+        if (drag.pan) pan(drag.x, drag.y, e.clientX, e.clientY)
+        else if (e.buttons & 2) turn(-(e.clientX - drag.x) * 0.005, -(e.clientY - drag.y) * 0.005)
+        drag.x = e.clientX; drag.y = e.clientY
         return
       }
       const v = this.pick(e), s = this.state
@@ -743,8 +761,9 @@ export class Board3D {
     const leave = () => { this.hover = null; this.invalidate() }
     const down = (e: PointerEvent) => {
       this.sound.prime()
-      if (e.button !== 2 || !this.camE) return
-      c.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY }
+      if ((e.button !== 2 && e.button !== 1) || !this.camE) return
+      e.preventDefault() // no middle-click autoscroll
+      c.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, pan: e.button === 1 || e.shiftKey }
       if (this.hover) { this.hover = null; this.invalidate() }
     }
     const up = () => { drag = null }
@@ -756,6 +775,7 @@ export class Board3D {
       const now = performance.now(), how = wheelWas = wheelIntent(e, wheelWas, now - wheelAt), px = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1
       wheelAt = now
       if (how === 'orbit') turn(e.deltaX * 0.003, e.deltaY * 0.003)
+      else if (how === 'pan') pan(e.clientX, e.clientY, e.clientX - e.deltaX * px, e.clientY - e.deltaY * px) // the board follows the fingers
       // a pinch sends small steps; a wheel notch zooms at least as much as a 40 px one (macOS sends 4 px notches)
       else zoom(e, Math.exp(e.ctrlKey ? e.deltaY * 0.01 : Math.sign(e.deltaY) * Math.min(200, Math.max(40, Math.abs(e.deltaY * px))) * 0.0015))
     }
@@ -877,7 +897,7 @@ export class Board3D {
 
   private applyOptions() {
     const cam = this.opts.camera === 'contemplation' ? 1 : 0
-    if (cam !== this.camE) { this.camE = cam; this.hover = null; this.homeCamera() }
+    if (cam !== this.camE) { this.camE = cam; this.hover = null; this.homeCamera(); this.placeFrame() }
     this.extrasOn()
     this.tod = this.todNow()
     clearInterval(this.autoTimer)
@@ -1349,6 +1369,26 @@ export class Board3D {
     this.orbitGoal = clampOrbit(this.orbitGoal, this.seatH, BW, BD)
     this.orbit = clampOrbit(this.orbit, this.seatH, BW, BD)
     this.placePersp(this.orbit)
+  }
+
+  /** Frames the board in the box, shifted right so that at the view's home framing it sits on the window's centre
+   *  (centreShift). On resize, view and board changes only: turning or zooming the seated camera keeps the frame. */
+  private placeFrame() {
+    const b = this.box, { BW, BD } = this.D, cam = this.activeCam(), v = new THREE.Vector3()
+    const offset = () => {
+      const fr = this.fr, W = this.W, H = this.H
+      for (const c of [this.ortho, this.persp]) c.setViewOffset(fr.w, fr.h, -fr.x, -fr.y, W, H)
+      this.vigU.uVigC.value.set(((fr.x + fr.w / 2) / W) * 2 - 1, 1 - ((fr.y + fr.h / 2) / H) * 2); this.vigU.uVigS.value.set(fr.w / W, fr.h / H)
+    }
+    this.fr = { ...b }; offset(); this.placeCameras(); this.placePersp(HOME); cam.updateMatrixWorld()
+    let l = Infinity, r = -Infinity // the goban's extent on screen (not the bowls)
+    for (const x of [-BW / 2, BW / 2]) for (const y of [0, -BT]) for (const z of [-BD / 2, BD / 2]) {
+      const px = ((v.set(x, y, z).project(cam).x + 1) / 2) * this.W
+      l = Math.min(l, px); r = Math.max(r, px)
+    }
+    const s = centreShift(l, r, b.x + b.w, this.W / 2)
+    this.fr.x = b.x + s; offset(); this.placePersp(this.orbit)
+    if (s !== this.shift) { this.shift = s; this.onShift(s) }
   }
 
   private placePersp(o: Orbit) {

@@ -317,12 +317,17 @@ export const ZOOM_MM = 140
 const YAW_MAX = Math.PI / 3, TILT_MIN = (5 * Math.PI) / 180, TILT_MAX = (58 * Math.PI) / 180
 const clampV = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 
-/** Limits for a visible height hc: zoom 1 is exactly home; the target may leave home, up to the board's corners, only as far as the view is zoomed in. */
+/** Limits for a visible height hc: zoom 1 is the home distance. The target may leave home by a quarter of the board at
+ *  zoom 1, and up to the corners as the view zooms in: the view's centre always shows the board, and zooming out of a
+ *  corner draws the board back into view. */
 export function clampOrbit(o: Orbit, hc: number, BW: number, BD: number): Orbit {
   const zMin = Math.min(1, ZOOM_MM / hc), zoom = clampV(o.zoom, zMin, 1), s = zMin < 1 ? (1 - zoom) / (1 - zMin) : 0
-  const cx = HOME.tx * (1 - s), cz = HOME.tz * (1 - s), hx = (BW / 2) * s, hz = (BD / 2) * s
+  const cx = HOME.tx * (1 - s), cz = HOME.tz * (1 - s), hx = (BW / 4) * (1 + s), hz = (BD / 4) * (1 + s)
   return { yaw: clampV(o.yaw, -YAW_MAX, YAW_MAX), tilt: clampV(o.tilt, TILT_MIN, TILT_MAX), zoom, tx: clampV(o.tx, cx - hx, cx + hx), tz: clampV(o.tz, cz - hz, cz + hz) }
 }
+
+/** Pan: the camera slides by a - b on the plane y = TGT_Y, so the point a (grabbed) shows where b (now under the cursor) was. */
+export const panBy = (o: Orbit, ax: number, az: number, bx: number, bz: number): Orbit => ({ ...o, tx: o.tx + ax - bx, tz: o.tz + az - bz })
 
 /** Zoom by k about the point (px, TGT_Y, pz): the whole camera scales about it, so that point stays under the cursor. */
 export const zoomAt = (o: Orbit, k: number, px: number, pz: number): Orbit => ({ ...o, zoom: o.zoom * k, tx: px + k * (o.tx - px), tz: pz + k * (o.tz - pz) })
@@ -346,23 +351,24 @@ export function stepOrbit(cur: Orbit, goal: Orbit, dt: number, instant = false):
   return moving
 }
 
-export type WheelIntent = 'zoom' | 'orbit'
+export type WheelIntent = 'zoom' | 'orbit' | 'pan'
 /**
  * Mouse wheel or trackpad, from the wheel event alone: pinches arrive as ctrl+wheel (Chromium, WebView2, Firefox);
  * a gesture keeps its first verdict through its momentum; line/page deltas and horizontal deltas tell a wheel from a
  * trackpad; macOS mouse notches come as multiples of 4.000244 px, Windows notches as ≥ 40 px; anything else is a
- * two-finger swipe.
+ * two-finger swipe (a pan with Shift).
  */
 /** WebKit (WKWebView, Safari) sends a pinch both as gesture events and as ctrl+wheel: only the gesture events count there. */
 export const skipPinchWheel = (ctrlKey: boolean, gestureEvents: boolean) => ctrlKey && gestureEvents
 
-export function wheelIntent(e: { deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean }, prev: WheelIntent | null, gapMs: number): WheelIntent {
+export function wheelIntent(e: { deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean; shiftKey?: boolean }, prev: WheelIntent | null, gapMs: number): WheelIntent {
   if (e.ctrlKey) return 'zoom'
   if (prev && gapMs < 250) return prev
   if (e.deltaMode !== 0) return 'zoom'
-  if (e.deltaX !== 0) return 'orbit'
+  const swipe = e.shiftKey ? 'pan' : 'orbit'
+  if (e.deltaX !== 0) return swipe
   const d = Math.abs(e.deltaY), n = Math.round(d / 4.000244)
-  return d >= 40 || (n > 0 && Math.abs(d - n * 4.000244) < 1e-4 * n) ? 'zoom' : 'orbit'
+  return d >= 40 || (n > 0 && Math.abs(d - n * 4.000244) < 1e-4 * n) ? 'zoom' : swipe
 }
 
 /**
