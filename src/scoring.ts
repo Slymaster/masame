@@ -1,7 +1,6 @@
 // End-of-game counting under Japanese rules: dead stones suggested from KataGo ownership, territory by flood fill,
 // score = territory + prisoners (captures + dead stones), komi to White. Pure logic, no engine, no DOM.
-// shortcut: no seki detection (seki eyes would count as territory); the player can still mark such groups alive and
-// the shared liberties stay neutral, but an eye fully inside one seki group would be counted — handle when it bites.
+// Seki: an empty region enclosed by one colour stays neutral when KataGo's mean |ownership| over it is below 0.3.
 
 import type { Sign, SignMap, Vertex } from '@sabaki/go-board'
 
@@ -61,8 +60,9 @@ export function toggleDead(m: SignMap, dead: Dead, v: Vertex): Dead {
 /** One decimal: komi like 7.3 must not leave float noise; `+ 0` turns -0 into 0. */
 export const round1 = (x: number) => Math.round(x * 10) / 10 + 0
 
-/** `captures`: stones each colour captured during play (Black's count = White stones taken). */
-export function score(m: SignMap, dead: Dead, captures: { black: number; white: number }, komi: number): Score {
+/** `captures`: stones each colour captured during play (Black's count = White stones taken).
+ *  `ownership` (row-major, as for suggestDead): without it, no seki is detected. */
+export function score(m: SignMap, dead: Dead, captures: { black: number; white: number }, komi: number, ownership?: number[] | null): Score {
   const n = m.length
   const alive = ([x, y]: Vertex) => (dead[y][x] ? 0 : m[y][x])
   const territory: Sign[][] = m.map(r => r.map(() => 0 as Sign)), seen = new Set<number>()
@@ -74,7 +74,8 @@ export function score(m: SignMap, dead: Dead, captures: { black: number; white: 
       seen.add(v[1] * n + v[0])
       for (const w of around(n, v)) if (alive(w)) borders.add(alive(w))
     }
-    if (borders.size === 1) { const [o] = borders as Set<Sign>; for (const [a, b] of r) territory[b][a] = o }
+    const seki = ownership && r.reduce((acc, [a, b]) => acc + Math.abs(ownership[b * n + a]), 0) / r.length < 0.3
+    if (borders.size === 1 && !seki) { const [o] = borders as Set<Sign>; for (const [a, b] of r) territory[b][a] = o }
   }))
   const count = (f: (x: number, y: number) => boolean) => m.reduce((acc, row, y) => acc + row.filter((_, x) => f(x, y)).length, 0)
   const side = (s: Sign, taken: number, extra: number): Side => {

@@ -174,7 +174,7 @@ export function App() {
   useLayoutEffect(() => { document.documentElement.dataset.skin = skin }, [skin])
   useEffect(() => { requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '' })) }, [])
   // counting phase after two passes: which stones are dead (suggested by KataGo, toggled by the player)
-  const [counting, setCounting] = useState<{ game: Game; dead: Dead } | null>(null)
+  const [counting, setCounting] = useState<{ game: Game; dead: Dead; own: number[] | null } | null>(null)
 
   const [engine, setEngine] = useState<EngineStatus>({ state: 'stopped' })
   const [nets, setNets] = useState<NetState | null>(null)
@@ -275,7 +275,7 @@ export function App() {
   const locked = !!result && (!!bot || atEnd) // two players may branch off a validated game from an earlier move
   const play = (v: Vertex | null) => {
     if (countingNow) {
-      if (v && !result) setCounting({ game, dead: toggleDead(game.board.signMap, countingNow.dead, v) })
+      if (v && !result) setCounting({ ...countingNow, dead: toggleDead(game.board.signMap, countingNow.dead, v) })
       return false
     }
     if (review) {
@@ -418,7 +418,7 @@ export function App() {
     if (!bot || result) return
     finish(d => d.resigns(-bot.sign), true, resignResult(bot.sign))
   }
-  const final = countingNow && score(game.board.signMap, countingNow.dead, { black: game.board.getCaptures(1), white: game.board.getCaptures(-1) }, game.info.komi)
+  const final = countingNow && score(game.board.signMap, countingNow.dead, { black: game.board.getCaptures(1), white: game.board.getCaptures(-1) }, game.info.komi, countingNow.own)
   const validate = () => {
     if (!final || result) return
     finish(d => d.score(final.lead), bot && final.lead !== 0 ? (final.lead > 0) === (bot.sign === 1) : null, scoreResult(final.lead))
@@ -491,7 +491,7 @@ export function App() {
     if (!game.ended || !atEnd || result || counting || online) return // OGS counts its own games
     let live = true
     const enter = (own: number[] | null) => {
-      if (live) setCounting({ game, dead: own ? suggestDead(game.board.signMap, own) : noDead(game.board.signMap) })
+      if (live) setCounting({ game, own, dead: own ? suggestDead(game.board.signMap, own) : noDead(game.board.signMap) })
     }
     if (!canAnalyze) enter(null)
     else analyze(game, { maxVisits: FINAL_VISITS, includeOwnership: true }).then(a => enter(a.ownership), () => enter(null))
@@ -663,7 +663,7 @@ export function App() {
   // the count, shown while counting and, once validated, at every cursor position (scored on the final board)
   const end = game.boards.at(-1)!
   const count = counting?.game === game && (countingOpen || (!!re && !resignation))
-    ? score(end.signMap, counting.dead, { black: end.getCaptures(1), white: end.getCaptures(-1) }, komi) : null
+    ? score(end.signMap, counting.dead, { black: end.getCaptures(1), white: end.getCaptures(-1) }, komi, counting.own) : null
   const sideOf = (s: Sign) => count ? s === 1 ? count.black : count.white : null
   const tallyOf = (s: Sign) => { const c = sideOf(s)!; return t.tally(c.territory, c.prisoners, s === -1 ? komi : undefined) }
   // counting: points over the tally; counted: "wins" over points and tally; a draw: the points alone
