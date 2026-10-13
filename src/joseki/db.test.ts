@@ -21,6 +21,8 @@ describe('joseki data', () => {
     expect(bad(d => { d.nodes[at].e[0][1] = at })).toThrow('forward')
     expect(bad(d => { d.nodes[at].e[0][3].pop() })).toThrow('edge')
     expect(bad(d => { d.roots[0].f.push(0) })).toThrow('root')
+    expect(bad(d => { d.nodes[1].k = d.nodes[0].k })).toThrow('duplicate')
+    expect(bad(d => { (d.nodes[at].e[0] as unknown[]).push(1, 0) })).toThrow('edge')
   })
   it('keeps the chance of reaching each ply at most 1', () => {
     const db = validate(copy()), r = reach(db)

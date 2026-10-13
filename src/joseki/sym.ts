@@ -42,13 +42,19 @@ export function canonical(signMap: number[][]) {
   const a = stones(signMap), b = stones(signMap, MIRROR)
   return b < a ? { s: b, mirrored: true } : { s: a, mirrored: false }
 }
-export function fnv(s: string) {
+function fnv32(s: string, reverse = false) {
   let h = 0x811c9dc5
-  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
-  return (h >>> 0).toString(16).padStart(8, '0')
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(reverse ? s.length - 1 - i : i), 0x01000193)
+  return h >>> 0
+}
+export const fnv = (s: string) => fnv32(s).toString(16).padStart(8, '0')
+/** 64 bits in base 36: FNV-1a forward and backward, so thousands of nodes stay far from a collision. */
+export const nodeKey = (ply: number, stones: string) => {
+  const t = `${ply}|${ply % 2 ? 'B' : 'W'}|${stones}`
+  return (BigInt(fnv32(t)) << 32n | BigInt(fnv32(t, true))).toString(36)
 }
 /**
  * Key of a position `ply` moves after the context (odd = Black to play); transpositions and mirror images share it.
  * shortcut: the ko ban is not part of the key, so a position with and without a pending ko merge; add it if ko-heavy lines ever matter.
  */
-export const positionKey = (signMap: number[][], ply: number) => fnv(`${ply}|${ply % 2 ? 'B' : 'W'}|${canonical(signMap).s}`)
+export const positionKey = (signMap: number[][], ply: number) => nodeKey(ply, canonical(signMap).s)

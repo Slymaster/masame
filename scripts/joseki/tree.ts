@@ -3,7 +3,7 @@
 
 import GoBoard from '@sabaki/go-board'
 import { TAG } from '../../src/joseki/db.ts'
-import { CONTEXT, MIRROR, N, REGION, canonical, code, fnv, point, stones, sym, type Pt } from '../../src/joseki/sym.ts'
+import { CONTEXT, MIRROR, N, REGION, canonical, code, nodeKey as outKey, point, stones, sym, type Pt } from '../../src/joseki/sym.ts'
 
 /** Human SL profiles queried per node; the first 7 are shipped, proyear_2010 only feeds the "classic" tag. */
 export const PROFILES = ['rank_20k', 'rank_15k', 'rank_10k', 'rank_5k', 'rank_1d', 'rank_5d', 'proyear_2023', 'proyear_2010']
@@ -22,7 +22,7 @@ export interface Opts {
 }
 
 interface Node {
-  s: string; ply: number; path: string[] // canonical stones; moves from the context on, in this node's (canonical) frame
+  s: string; ply: number; k: string; path: string[] // canonical stones; moves from the context on, in this node's (canonical) frame
   judge: Resp; lastTenuki: boolean; expandable: boolean
   edges?: Edge[]; settled?: boolean; reach: number[]
 }
@@ -51,7 +51,7 @@ export async function generate(opts: Opts, ask: Ask): Promise<string> {
   const { komi, visits, budget, maxPly = 30 } = opts
   const base = (path: string[]) => ({ rules: 'japanese', komi, boardXSize: N, boardYSize: N, moves: path.map((c, i) => [i % 2 ? 'W' : 'B', gtp(c)]) })
   const humans = (path: string[]) => Promise.all(PROFILES.map(p => ask({ ...base(path), maxVisits: 1, includePolicy: true, overrideSettings: { humanSLProfile: p, ignorePreRootHistory: false } })))
-  const nodes = new Map<string, Node>()
+  const nodes = new Map<string, Node>(), keys = new Set<string>()
   const judged = new Map<string, Promise<Resp>>()
   let used = 0
   const judge = (key: string, path: string[]) => {
@@ -61,7 +61,11 @@ export async function generate(opts: Opts, ask: Ask): Promise<string> {
   const nodeKey = (ply: number, s: string) => `${ply}|${s}`
   const node = (ply: number, c: { s: string; path: string[] }, judge: Resp, lastTenuki: boolean) => {
     const k = nodeKey(ply, c.s)
-    if (!nodes.has(k)) nodes.set(k, { s: c.s, ply, path: c.path, judge, lastTenuki, expandable: false, reach: [] })
+    if (!nodes.has(k)) {
+      const n: Node = { s: c.s, ply, path: c.path, judge, lastTenuki, expandable: false, reach: [], k: outKey(ply, c.s) }
+      if (keys.has(n.k)) throw new Error(`position key collision: ${n.k} at ply ${ply}`)
+      keys.add(n.k); nodes.set(k, n)
+    }
     return nodes.get(k)!
   }
   // human frequency of a move class: a mirror-symmetric position plays m and its mirror image to the same node
@@ -113,7 +117,7 @@ export async function generate(opts: Opts, ask: Ask): Promise<string> {
       tenuki = Array.from({ length: N * N }, (_, i) => code([i % N, Math.floor(i / N)])).filter(m => outside(m))
         .sort((a, b) => p[idx(b)] - p[idx(a)] || (a < b ? -1 : 1))[0]
     }
-    const away = pol.map(p => p.reduce((a, v, i) => a + (i === N * N || !REGION([i % N, Math.floor(i / N)]) ? Math.max(0, v) : 0), 0))
+    const away = pol.map(p => p.reduce((a, v, i) => a + (i < N * N && !REGION([i % N, Math.floor(i / N)]) ? Math.max(0, v) : 0), 0))
     const cands = [...main, ...kyus].map(m => ({ moves: cls(m), freq: reps.get(m)!, tenuki: false }))
     if (tenuki) cands.push({ moves: [tenuki], freq: away, tenuki: true })
     const V = await Promise.all(cands.map(c => { const r = legal.get(c.moves[0])!; return judge(nodeKey(P.ply + 1, r.s), r.path) }))
@@ -136,23 +140,21 @@ export async function generate(opts: Opts, ask: Ask): Promise<string> {
   }
 
   const byPly = () => [...nodes.values()].sort((a, b) => a.ply - b.ply)
-  const keyOf = (n: Node) => fnv(`${n.ply}|${n.ply % 2 ? 'B' : 'W'}|${n.s}`) // = positionKey
   for (;;) {
     // reach per profile: sum over paths of the products of move frequencies, from each root's own frequency
     for (const n of nodes.values()) n.reach = PROFILES.map(() => 0)
     for (const r of roots) r.node.reach = [...r.f]
     for (const n of byPly()) for (const e of n.edges ?? []) e.child.reach = e.child.reach.map((v, p) => v + n.reach[p] * e.freq[p])
     const frontier = [...nodes.values()].filter(n => n.expandable && !n.edges)
-      .map(n => ({ n, prio: Math.max(...n.reach), k: keyOf(n) })).sort((a, b) => b.prio - a.prio || (a.k < b.k ? -1 : 1))
+      .map(n => ({ n, prio: Math.max(...n.reach), k: n.k })).sort((a, b) => b.prio - a.prio || (a.k < b.k ? -1 : 1))
     const batch = frontier.slice(0, Math.max(0, Math.min(BATCH, Math.floor((budget - used) / PER_NODE)))).map(f => f.n)
     if (!batch.length) break
     for (const plan of await Promise.all(batch.map(expand))) integrate(plan)
   }
 
   // output: nodes by ply (edges point forward), one per line
-  const list = byPly().map(n => ({ n, k: keyOf(n) })).sort((a, b) => a.n.ply - b.n.ply || (a.k < b.k ? -1 : 1))
+  const list = byPly().map(n => ({ n, k: n.k })).sort((a, b) => a.n.ply - b.n.ply || (a.k < b.k ? -1 : 1))
   const at = new Map(list.map(({ n }, i) => [n, i]))
-  if (new Set(list.map(l => l.k)).size !== list.length) throw new Error('position key collision')
   const pct = (f: number[]) => f.slice(0, SHIPPED.length).map(v => Math.floor(v * 100))
   const pvOf = (n: Node) => {
     let pv = ''

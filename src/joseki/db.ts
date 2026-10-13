@@ -23,12 +23,13 @@ export function validate(raw: unknown): JosekiDb {
   if (!Array.isArray(d.profiles) || !d.profiles.every(p => typeof p === 'string')) fail('profiles')
   if (!Array.isArray(d.nodes) || !Array.isArray(d.roots)) fail('nodes or roots missing')
   const n = d.profiles.length, len = d.nodes.length
+  if (new Set(d.nodes.map(x => x?.k)).size !== len) fail('duplicate node keys')
   d.roots.forEach((r, i) => { if (typeof r?.name !== 'string' || !isMove(r.m) || !isInt(r.node, 0, len - 1) || !isPcts(r.f, n)) fail(`root ${i}`) })
   d.nodes.forEach((x, i) => {
     if (typeof x?.k !== 'string' || !Array.isArray(x.e) || (x.s !== undefined && x.s !== 1)
       || (x.pv !== undefined && !(typeof x.pv === 'string' && /^([a-s]{2})*$/.test(x.pv)))) fail(`node ${i}`)
     for (const e of x.e) {
-      if (!Array.isArray(e) || !isMove(e[0]) || !isInt(e[2], 0) || !isPcts(e[3], n) || !isInt(e[4], 0, 31) || (e.length > 5 && e[5] !== 1)) fail(`edge at node ${i}`)
+      if (!Array.isArray(e) || !isMove(e[0]) || !isInt(e[2], 0) || !isPcts(e[3], n) || !isInt(e[4], 0, 31) || e.length > 6 || (e.length > 5 && e[5] !== 1)) fail(`edge at node ${i}`)
       if (!isInt(e[1], i + 1, len - 1)) fail(`edge at node ${i} does not point forward`)
     }
   })
