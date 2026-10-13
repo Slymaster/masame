@@ -136,7 +136,7 @@ Licence: https://polyhaven.com/license (all assets CC0). Attribution is not requ
 ### ambientCG (CC0 1.0)
 Licence: https://ambientcg.com/license (all assets CC0).
 
-- Wood095, https://ambientcg.com/view?id=Wood095 (2K JPG: Color, NormalGL, Roughness; downloaded 2026-10-11). Derived files `public/assets/board3d/kaya_diff.jpg`, `kaya_nor.jpg` and `kaya_rough.jpg` (stacked strips of the scan, graded to golden kaya, roughness derived from the fibre detail). The bowls and the table reuse `kaya_diff.jpg`, tinted in the material.
+- Wood095, https://ambientcg.com/view?id=Wood095 (2K and 4K JPG: Color, NormalGL, Roughness; downloaded 2026-10-11 and 2026-10-13). Derived files `public/assets/board3d/kaya_diff.jpg`, `kaya_nor.jpg`, `kaya_rough.jpg` and their 4K versions `kaya_*_4k.jpg`, made by `scripts/kaya-textures.py` (stacked strips of the scan, graded to golden kaya, roughness derived from the fibre detail). The bowls and the table reuse `kaya_diff.jpg`, tinted in the material.
 
 ### Freesound (CC0 1.0)
 Licence of each sound: CC0 1.0, https://creativecommons.org/publicdomain/zero/1.0/

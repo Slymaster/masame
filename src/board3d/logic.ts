@@ -225,23 +225,23 @@ export const LOOKS: Record<Decor, Look> = {
 }
 
 /* ---------- adaptive quality governor ---------- */
-export interface Quality { dpr: number; shadow: number; msaa: number; bowlSegments: number }
-/** Quality ladder, best first. The pixel ratio is capped by the display's own. */
+export interface Quality { dpr: number; shadow: number; msaa: number; bowlSegments: number; kaya4k: boolean }
+/** Quality ladder, best first. The pixel ratio is capped by the display's own (and at 3); for d ≤ 2 the values are v0.2's. */
 export function qualityLadder(deviceDpr: number): Quality[] {
-  const d = Math.min(Math.max(deviceDpr, 1), 2)
+  const d = Math.min(Math.max(deviceDpr, 1), 3)
   return [
-    { dpr: d, shadow: 4096, msaa: 4, bowlSegments: 72 },
-    { dpr: d, shadow: 2048, msaa: 4, bowlSegments: 72 },
-    { dpr: Math.min(d, 1.5), shadow: 2048, msaa: 4, bowlSegments: 48 },
-    { dpr: Math.min(d, 1.25), shadow: 2048, msaa: 0, bowlSegments: 48 },
-    { dpr: 1, shadow: 1024, msaa: 0, bowlSegments: 32 },
+    { dpr: d, shadow: 4096, msaa: 4, bowlSegments: 72, kaya4k: true },
+    { dpr: d, shadow: 2048, msaa: 4, bowlSegments: 72, kaya4k: true },
+    { dpr: Math.min(d, Math.max(1.5, 0.75 * d)), shadow: 2048, msaa: 4, bowlSegments: 48, kaya4k: false },
+    { dpr: Math.min(d, Math.max(1.25, 0.625 * d)), shadow: 2048, msaa: 0, bowlSegments: 48, kaya4k: false },
+    { dpr: 1, shadow: 1024, msaa: 0, bowlSegments: 32, kaya4k: false },
   ]
 }
 
 /**
  * Quality is decided once: a short measured warm-up at startup and after a resize (`measured`), then only a step down
- * on sustained slowness (`sample`). It never steps back up, so a still board never shifts between levels; the view applies
- * a runtime step only at its next scene change. Render on demand: only animated frames are sampled.
+ * on sustained slowness (`sample`). It never steps back up during play (only `restart`, after a big shrink), so a still
+ * board never shifts between levels; the view applies a runtime step only at its next scene change. Render on demand: only animated frames are sampled.
  * A window averaging slower than 50 fps steps one level down; at the bottom, a window slower than 30 fps asks for the 2D fallback.
  */
 export class Governor {
@@ -253,6 +253,8 @@ export class Governor {
     if (this.level < this.levels - 1 && ms > this.budgetMs) { this.level++; this.dts = []; return true }
     return false
   }
+  /** Back to the top before a fresh warm-up (the canvas shrank a lot, so the old level may be too cautious). */
+  restart() { this.level = 0; this.dts = [] }
   /** dt = interval between two consecutive animated frames, ms. */
   sample(dt: number): 'down' | 'fallback' | null {
     if (dt <= 0 || dt > 100) { this.dts = []; return null } // hidden tab, first frame after idle, debugger
