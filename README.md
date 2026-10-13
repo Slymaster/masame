@@ -39,6 +39,10 @@
     <td width="50%"><img src="docs/images/review-en.jpg" alt="Game review" width="100%"><br><sub><b>Review.</b> Each costly move becomes a short lesson, here at the punishment.</sub></td>
     <td width="50%"><img src="docs/images/ogs-en.jpg" alt="Online game on OGS" width="100%"><br><sub><b>Online.</b> A live game on OGS, with byo-yomi clocks on both cards.</sub></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/joseki-en.jpg" alt="Joseki trainer" width="100%"><br><sub><b>Joseki.</b> Candidate moves lettered on the board, with the points each loses and how often players of your level choose it.</sub></td>
+    <td width="50%"><img src="docs/images/variations-en.jpg" alt="Game record with a variation" width="100%"><br><sub><b>Variations.</b> Play from an earlier move and the game keeps both lines; ↑ ↓ switch between them.</sub></td>
+  </tr>
 </table>
 
 ## Features

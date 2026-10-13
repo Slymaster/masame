@@ -39,6 +39,10 @@
     <td width="50%"><img src="docs/images/review-fr.jpg" alt="Revue de partie" width="100%"><br><sub><b>Revue.</b> Chaque coup coûteux devient une courte leçon, ici à l'étape de la punition.</sub></td>
     <td width="50%"><img src="docs/images/ogs-fr.jpg" alt="Partie en ligne sur OGS" width="100%"><br><sub><b>En ligne.</b> Une partie en direct sur OGS, avec les pendules en byo-yomi sur les deux cartes.</sub></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/joseki-fr.jpg" alt="Entraîneur de joseki" width="100%"><br><sub><b>Joseki.</b> Les coups candidats marqués d'une lettre sur le goban, avec les points que chacun perd et la fréquence à laquelle les joueurs de ton niveau le choisissent.</sub></td>
+    <td width="50%"><img src="docs/images/variations-fr.jpg" alt="Partie avec une variante" width="100%"><br><sub><b>Variantes.</b> Joue depuis un coup antérieur et la partie garde les deux suites ; ↑ ↓ passent de l'une à l'autre.</sub></td>
+  </tr>
 </table>
 
 ## Fonctions
