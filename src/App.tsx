@@ -20,6 +20,7 @@ import { loadSgf, resignResult, saveSgf, scoreResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import { DECORS, type Decor } from './board3d/decors'
 import { isMac, shortcut } from './platform'
+import { useFullscreen, useWindowTheme } from './window'
 import { getVersion } from '@tauri-apps/api/app'
 import { checkDue, updateSettings, type UpdateInfo } from './update'
 import { fromOf, gradeTry, lessonBoard, readGame, REPLY, verdict, type Moment, type Step } from './review'
@@ -179,6 +180,8 @@ export function App() {
   // the card's skin follows the scene's backdrop; set before paint, and crossfaded only once the first frame is shown
   const skin = cardSkin(renderer, settings.camera, settings.decor)
   useLayoutEffect(() => { document.documentElement.dataset.skin = skin }, [skin])
+  useWindowTheme(skin)
+  const [fullscreen, setFullscreen] = useFullscreen()
   useEffect(() => { requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '' })) }, [])
   // counting phase after two passes: which stones are dead (suggested by KataGo, toggled by the player)
   const [counting, setCounting] = useState<{ game: Game; dead: Dead; own: number[] | null } | null>(null)
@@ -637,6 +640,8 @@ export function App() {
             arrowup: () => relocate(g => g.switchVariation(-1)), arrowdown: () => relocate(g => g.switchVariation(1)),
             ' ': e.target instanceof HTMLButtonElement ? undefined : toggleAuto,
             home: () => goTo(0), end: () => goTo(shown.moves.length),
+            f11: () => setFullscreen(!fullscreen),
+            ...(fullscreen && { escape: () => setFullscreen(false) }), // after a sheet's Esc and before a review's
             ...(review && { escape: leaveReview }),
             j: jt.toggle, ...jt.keys,
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
@@ -948,6 +953,7 @@ export function App() {
 
           <section>
             <div className="lab"><span>{t.appSection}</span><span /></div>
+            {!isMac && inTauri() && <Switch label={t.fullscreen} k="F11" on={fullscreen} toggle={() => setFullscreen(!fullscreen)} />}
             <div className="row" style={{ cursor: 'default', gap: 16 }}>
               <span>{t.language}</span>
               <Seg label={t.language} value={settings.lang} options={[['fr', 'Français'], ['en', 'English']]} set={v => { setLang(v); setSettings(s => ({ ...s, lang: v, langChosen: true })) }} />
@@ -977,7 +983,7 @@ export function App() {
 
           <section>
             <div className="lab"><span>{t.keyboard}</span><span /></div>
-            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}</p>
+            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
           </section>
         </Sheet>
       )}

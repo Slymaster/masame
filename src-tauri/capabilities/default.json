@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: core defaults except menus (built in Rust), drag region, SGF open/save dialogs, reading/writing the chosen file only.",
+  "description": "Main window: core defaults except menus (built in Rust), drag region, full screen and window theme, SGF open/save dialogs, reading/writing the chosen file only.",
   "windows": ["main"],
   "permissions": [
     "core:app:default",
@@ -13,6 +13,9 @@
     "core:webview:default",
     "core:window:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-set-theme",
     "dialog:allow-open",
     "dialog:allow-save",
     "dialog:allow-ask",
