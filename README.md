@@ -58,10 +58,11 @@
 Masame is young, and honest about it.
 
 - **macOS, Apple Silicon** works today. The engine is a self-contained KataGo 1.18.2 (Metal) with static dependencies; it needs macOS 13 or later and no Homebrew libraries at run time.
+- **macOS, Intel** is new: the same app with KataGo 1.18.2 built for OpenCL, with automatic CPU fallback; macOS 13 or later. A preview.
 - **Windows** support is written — the code, the NSIS installer and a KataGo OpenCL build with automatic CPU fallback — and built by GitHub Actions. The installer is available as a preview, not yet tested on real hardware.
 - **Linux, x86_64** is new: an AppImage, a .deb and an .rpm, built on Ubuntu 22.04 by GitHub Actions, with KataGo 1.18.2 compiled from source (OpenCL, with automatic CPU fallback). Also a preview.
 
-**Download** the latest version from the [releases page](https://github.com/Slymaster/masame/releases/latest): a DMG for macOS (Apple Silicon), an installer for Windows (x64), and an AppImage, a .deb and an .rpm for Linux (x86_64). The macOS build is signed and notarized by Apple, so it opens without a warning. The Windows build is not signed yet: when SmartScreen appears, click **More info**, then **Run anyway**.
+**Download** the latest version from the [releases page](https://github.com/Slymaster/masame/releases/latest): a DMG for macOS (Apple Silicon, or Intel: the `x64` DMG), an installer for Windows (x64), and an AppImage, a .deb and an .rpm for Linux (x86_64). The macOS build is signed and notarized by Apple, so it opens without a warning. The Windows build is not signed yet: when SmartScreen appears, click **More info**, then **Run anyway**.
 
 On **Linux**, Masame needs glibc 2.35 or later (Ubuntu 22.04+, Debian 12, Fedora, Linux Mint 21+). A few things to know:
 
@@ -75,6 +76,8 @@ On **Linux**, Masame needs glibc 2.35 or later (Ubuntu 22.04+, Debian 12, Fedora
 You will need Node.js 22, [pnpm](https://pnpm.io/) 9, [Rust](https://www.rust-lang.org/tools/install) (stable) with the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/), and on macOS Xcode (for AppleClang, Swift and Metal) plus `cmake`, `ninja`, `pkg-config`, `curl` and `git`. Protobuf and abseil are built from pinned sources; see the header of [`scripts/build-katago.sh`](scripts/build-katago.sh).
 
 On Linux (x86_64), build the engine with `scripts/build-katago-linux.sh` instead, which needs `g++`, `cmake`, `ninja`, `git` and the development packages for zlib, Eigen 3 and OpenCL (on Debian and Ubuntu: `ninja-build cmake zlib1g-dev libeigen3-dev ocl-icd-opencl-dev opencl-headers`). It builds the OpenCL and CPU engines into `src-tauri/resources/katago-linux/`.
+
+For Intel Macs, `scripts/build-katago-macos-x86_64.sh` builds the OpenCL and CPU engines (on an Intel Mac, or cross-compiled on Apple Silicon) into `src-tauri/binaries/`; then build with `pnpm tauri build --target x86_64-apple-darwin --config src-tauri/tauri.macos-x86_64.conf.json`.
 
 ```sh
 git clone https://github.com/Slymaster/masame.git
