@@ -115,7 +115,7 @@ OGS doesn't allow engine help during a game, so while an OGS game is going on, L
 
 ## Roadmap
 
-The foundations, the 3D Living Atelier and the teacher's first part are in place: a local review of your games, the three moments that decided them, "guess, then reveal". The OGS client is here too: ranked games, resume, import and review. Version 0.3 adds the joseki trainer, variations and autoplay. Next comes Masame on mobile. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
+The foundations, the 3D Living Atelier and the teacher's first part are in place: a local review of your games, the three moments that decided them, "guess, then reveal". The OGS client is here too: ranked games, resume, import and review. Version 0.3 adds the joseki trainer, variations and autoplay. Next comes Masame on mobile, Android first. Later: practice problems taken from your own games, then other online servers after OGS. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
 
 ## Credits
 

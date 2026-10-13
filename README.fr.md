@@ -115,7 +115,7 @@ OGS n'autorise aucune aide d'un moteur pendant une partie : tant qu'une partie O
 
 ## Feuille de route
 
-Les fondations, l'Atelier vivant en 3D et la première partie du professeur sont en place : une revue locale de tes parties, les trois moments qui les ont décidées, « devine, puis découvre ». Le client OGS est là aussi : parties classées, reprise, import et revue. La version 0.3 ajoute l'entraîneur de joseki, les variantes et la lecture automatique. Vient ensuite Masame sur mobile. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
+Les fondations, l'Atelier vivant en 3D et la première partie du professeur sont en place : une revue locale de tes parties, les trois moments qui les ont décidées, « devine, puis découvre ». Le client OGS est là aussi : parties classées, reprise, import et revue. La version 0.3 ajoute l'entraîneur de joseki, les variantes et la lecture automatique. Vient ensuite Masame sur mobile, Android d'abord. Plus tard : des problèmes tirés de tes propres parties, puis d'autres serveurs en ligne après OGS. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
 
 ## Remerciements
 
