@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panFor, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SX, SZ, silhouette, stepOrbit, TOD, todAt, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
+import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, DROP_MS, dropPose, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panFor, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SX, SZ, silhouette, SLIDE_MS, stepOrbit, TOD, todAt, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -143,6 +143,20 @@ describe('décors', () => {
     expect(LOOKS.atelier.linen).toBe(true) // the app's own look in Study
     expect(LOOKS.lanterne.tod).not.toBeNull() // night: the time of day doesn't apply
     expect(LOOKS.lanterne.key).toBe(0)
+    for (const d of DECORS) expect(LOOKS[d].shoji > 0).toBe(d === 'washitsu') // the lattice is the Japanese room's
+    expect(LOOKS.washitsu.shoji).toBeLessThan(0.5) // the panes carry most of the window's light
+  })
+})
+
+describe('placing a stone', () => {
+  it('falls, touches at DROP_MS, then slides the last millimetre and stops', () => {
+    expect(dropPose(0)).toEqual({ y: 12, k: 0, slide: 1 })
+    expect(dropPose(DROP_MS / 2).y).toBeCloseTo(9)
+    expect(dropPose(DROP_MS)).toEqual({ y: 0, k: 1, slide: 1 }) // contact: the whole slide still to go
+    let prev = 1
+    for (let ms = DROP_MS + 10; ms <= DROP_MS + SLIDE_MS; ms += 10) { const s = dropPose(ms).slide; expect(s).toBeLessThan(prev); prev = s }
+    expect(dropPose(DROP_MS + SLIDE_MS).slide).toBe(0)
+    expect(dropPose(1e9)).toEqual({ y: 0, k: 1, slide: 0 }) // an interrupted drop (t0 = -1e9) is simply at rest
   })
 })
 

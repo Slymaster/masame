@@ -39,6 +39,14 @@ export function jitter(N: number, x: number, y: number, moveNo: number, across =
   return { jx: gx(N, x) + Math.cos(a) * m * across, jz: gz(N, y) + Math.sin(a) * m * along, seed: r(), rotY: r() * Math.PI * 2 }
 }
 
+/** Placing: the last 12 mm of the fall, then the fingers' last push, a SLIDE_MM slide into place once the stone touches. */
+export const DROP_MS = 140, SLIDE_MS = 90, SLIDE_MM = 1
+/** The new stone ms after release: height above rest (mm), the contact shadow's tightening k, and the share of the slide still to go. */
+export function dropPose(ms: number) {
+  const t = Math.min(1, Math.max(0, ms / DROP_MS)), u = Math.min(1, Math.max(0, (ms - DROP_MS) / SLIDE_MS))
+  return { y: 12 * (1 - t * t), k: t * t, slide: (1 - u) * (1 - u) } // eases out: friction stops it
+}
+
 /**
  * Stones never move once down, so a newcomer fits itself around the stones already there (22 mm spacing < 22.2 mm
  * slate diameter): a few passes pushing only it out of any overlap, from its jittered spot into tx/tz.
@@ -213,15 +221,17 @@ export interface Look {
   soft: number; shade: number
   /** Lanterne: a warm spot over the board, in units of 1e6 cd at 1 m (0 = none: the window key casts the shadows). */
   lamp: number
+  /** Contemplation: the share of the window's light that comes through a shoji, its lattice falling on the board (0 = an open window). */
+  shoji: number
 }
 const NIGHT: Tod = { az: 215, el: 64, K: 2650, I: 0, env: 0.5, exp: 1, room: 0 }
 export const LOOKS: Record<Decor, Look> = {
-  atelier: { sky: 'studio_country_hall', skyAz: 0.52, tod: null, ground: 'walnut', tint: 1, rough: 0.72, fade: true, linen: true, key: 1, ibl: 1, exp: 1, soft: 1, shade: 1, lamp: 0 },
-  washitsu: { sky: 'empty_play_room', skyAz: 0.38, tod: null, ground: 'tatami', tint: 0.92, rough: 0.82, fade: false, linen: false, key: 0.92, ibl: 1.1, exp: 1, soft: 1.3, shade: 0.95, lamp: 0 },
+  atelier: { sky: 'studio_country_hall', skyAz: 0.52, tod: null, ground: 'walnut', tint: 1, rough: 0.72, fade: true, linen: true, key: 1, ibl: 1, exp: 1, soft: 1, shade: 1, lamp: 0, shoji: 0 },
+  washitsu: { sky: 'empty_play_room', skyAz: 0.38, tod: null, ground: 'tatami', tint: 0.92, rough: 0.82, fade: false, linen: false, key: 0.92, ibl: 1.1, exp: 1, soft: 1.3, shade: 0.95, lamp: 0, shoji: 0.35 },
   // time of day has no effect here: a lantern at night
-  lanterne: { sky: 'studio_country_hall', skyAz: 0.52, tod: NIGHT, ground: 'walnut', tint: 0.5, rough: 0.72, fade: true, linen: false, key: 0, ibl: 0.25, exp: 1.6, soft: 1, shade: 1, lamp: 3.6 },
+  lanterne: { sky: 'studio_country_hall', skyAz: 0.52, tod: NIGHT, ground: 'walnut', tint: 0.5, rough: 0.72, fade: true, linen: false, key: 0, ibl: 0.25, exp: 1.6, soft: 1, shade: 1, lamp: 3.6, shoji: 0 },
   // skyAz: estimate from RoomEnvironment's layout (its two strong side panels at ±153°, the third at 92°), not measured on a render
-  clair: { sky: null, skyAz: 2.9, tod: null, ground: 'paper', tint: 1, rough: 0.94, fade: false, linen: false, key: 0.9, ibl: 0.9, exp: 0.82, soft: 2, shade: 0.8, lamp: 0 },
+  clair: { sky: null, skyAz: 2.9, tod: null, ground: 'paper', tint: 1, rough: 0.94, fade: false, linen: false, key: 0.9, ibl: 0.9, exp: 0.82, soft: 2, shade: 0.8, lamp: 0, shoji: 0 },
 }
 
 /* ---------- adaptive quality governor ---------- */
