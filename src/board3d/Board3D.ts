@@ -17,7 +17,7 @@ import type { Sign, Vertex } from '@sabaki/go-board'
 import type { BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
-import { bowlHeap, BT, clampOrbit, dims, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, stepOrbit, SX, SZ, TGT_Y, TOD, todAt, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM } from './logic'
+import { bowlHeap, BT, clampOrbit, dims, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, stepOrbit, SX, SZ, TGT_Y, TOD, todAt, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
 
 export interface Board3DState extends BoardState {
@@ -698,7 +698,7 @@ export class Board3D {
     const menu = (e: Event) => e.preventDefault()
     const wheel = (e: WheelEvent) => {
       if (e.ctrlKey) e.preventDefault() // a pinch must never zoom the UI
-      if (!this.camE || e.ctrlKey && gesture) return
+      if (!this.camE || skipPinchWheel(e.ctrlKey, 'GestureEvent' in window)) return
       e.preventDefault()
       const now = performance.now(), how = wheelWas = wheelIntent(e, wheelWas, now - wheelAt), px = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1
       wheelAt = now
@@ -709,7 +709,6 @@ export class Board3D {
     // WebKit (the macOS app): a pinch is a gesture event, e.scale since its start
     const gStart = (e: Event) => { e.preventDefault(); gesture = 1 }
     const gChange = (e: Event) => { e.preventDefault(); const sc = (e as Event & { scale: number }).scale; if (this.camE && sc > 0) zoom(e as MouseEvent, gesture / sc); gesture = sc }
-    const gEnd = () => { gesture = 0 }
     const dbl = (e: MouseEvent) => { if (this.camE && !this.pick(e)) this.resetCamera() }
     const click = (e: MouseEvent) => {
       const v = this.pick(e), s = this.state
@@ -730,7 +729,6 @@ export class Board3D {
     c.addEventListener('wheel', wheel, { passive: false })
     c.addEventListener('gesturestart', gStart)
     c.addEventListener('gesturechange', gChange)
-    c.addEventListener('gestureend', gEnd)
     c.addEventListener('dblclick', dbl)
     c.addEventListener('webglcontextlost', lost)
     this.reducedMotion.addEventListener('change', motion)
@@ -756,7 +754,6 @@ export class Board3D {
       c.removeEventListener('wheel', wheel)
       c.removeEventListener('gesturestart', gStart)
       c.removeEventListener('gesturechange', gChange)
-      c.removeEventListener('gestureend', gEnd)
       c.removeEventListener('dblclick', dbl)
       c.removeEventListener('webglcontextlost', lost)
       this.reducedMotion.removeEventListener('change', motion)

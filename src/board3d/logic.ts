@@ -343,6 +343,9 @@ export type WheelIntent = 'zoom' | 'orbit'
  * trackpad; macOS mouse notches come as multiples of 4.000244 px, Windows notches as ≥ 40 px; anything else is a
  * two-finger swipe.
  */
+/** WebKit (WKWebView, Safari) sends a pinch both as gesture events and as ctrl+wheel: only the gesture events count there. */
+export const skipPinchWheel = (ctrlKey: boolean, gestureEvents: boolean) => ctrlKey && gestureEvents
+
 export function wheelIntent(e: { deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean }, prev: WheelIntent | null, gapMs: number): WheelIntent {
   if (e.ctrlKey) return 'zoom'
   if (prev && gapMs < 250) return prev

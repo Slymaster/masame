@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bowlHeap, cardSkin, clampOrbit, contrast, dims, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panFor, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SX, SZ, silhouette, stepOrbit, TOD, todAt, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
+import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panFor, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SX, SZ, silhouette, stepOrbit, TOD, todAt, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -291,6 +291,8 @@ describe('seated camera', () => {
     expect(wheelIntent(w(80), 'orbit', 16)).toBe('orbit'); expect(wheelIntent(w(80), 'orbit', 400)).toBe('zoom')
     // pinch (Chromium, WebView2, Firefox): ctrl+wheel, small fractional deltas, wins over a gesture in progress
     for (const d of [0.5, -1.25, 3]) expect(wheelIntent(w(d, { ctrlKey: true }), 'orbit', 16)).toBe('zoom')
+    // WebKit pinches through gesture events only; Chromium, WebView2 and WebKitGTK through ctrl+wheel
+    expect([skipPinchWheel(true, true), skipPinchWheel(true, false), skipPinchWheel(false, true)]).toEqual([true, false, false])
   })
 
   it('picks the drawn intersection, or the stone on top of it', () => {
