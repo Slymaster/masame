@@ -24,8 +24,8 @@
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/study-en.jpg" alt="Study view" width="100%"><br><sub><b>Study.</b> The board seen from above, with the game beside it.</sub></td>
-    <td width="50%"><img src="docs/images/contemplation-en.jpg" alt="Contemplation view" width="100%"><br><sub><b>Contemplation.</b> The board as it sits on the table, seen from where you sit.</sub></td>
+    <td width="50%"><img src="docs/images/study-en.jpg" alt="Study view" width="100%"><br><sub><b>Study.</b> The board seen from above, the game on a floating card.</sub></td>
+    <td width="50%"><img src="docs/images/contemplation-en.jpg" alt="Contemplation view" width="100%"><br><sub><b>Contemplation.</b> The board as it sits on the table, seen from where you sit, in the evening.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/light-and-shadow.jpg" alt="Light and Shadow territory" width="100%"><br><sub><b>Light and Shadow.</b> Territory shown as light and shade falling on the wood.</sub></td>
@@ -34,6 +34,10 @@
   <tr>
     <td width="50%"><img src="docs/images/networks-en.jpg" alt="Network manager" width="100%"><br><sub><b>Networks.</b> Official KataGo networks, downloaded and verified in the app.</sub></td>
     <td width="50%"><img src="docs/images/light-2d-en.jpg" alt="2D light mode" width="100%"><br><sub><b>Light mode.</b> A quiet 2D board, and the fallback when 3D is unavailable.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/review-en.jpg" alt="Game review" width="100%"><br><sub><b>Review.</b> Each costly move becomes a short lesson, here at the punishment.</sub></td>
+    <td width="50%"><img src="docs/images/ogs-en.jpg" alt="Online game on OGS" width="100%"><br><sub><b>Online.</b> A live game on OGS, with byo-yomi clocks on both cards.</sub></td>
   </tr>
 </table>
 

@@ -24,8 +24,8 @@
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/study-fr.jpg" alt="Vue Étude" width="100%"><br><sub><b>Étude.</b> Le goban vu d'en haut, la partie à côté.</sub></td>
-    <td width="50%"><img src="docs/images/contemplation-fr.jpg" alt="Vue Contemplation" width="100%"><br><sub><b>Contemplation.</b> Le goban posé sur la table, vu de ta place.</sub></td>
+    <td width="50%"><img src="docs/images/study-fr.jpg" alt="Vue Étude" width="100%"><br><sub><b>Étude.</b> Le goban vu d'en haut, la partie sur une carte flottante.</sub></td>
+    <td width="50%"><img src="docs/images/contemplation-fr.jpg" alt="Vue Contemplation" width="100%"><br><sub><b>Contemplation.</b> Le goban posé sur la table, vu de ta place, le soir.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/light-and-shadow.jpg" alt="Territoire « Ombre et lumière »" width="100%"><br><sub><b>Ombre et lumière.</b> Le territoire en lumière et en ombre sur le bois.</sub></td>
@@ -34,6 +34,10 @@
   <tr>
     <td width="50%"><img src="docs/images/networks-fr.jpg" alt="Gestionnaire de réseaux" width="100%"><br><sub><b>Réseaux.</b> Les réseaux officiels de KataGo, téléchargés et vérifiés dans l'app.</sub></td>
     <td width="50%"><img src="docs/images/light-2d-fr.jpg" alt="Mode léger 2D" width="100%"><br><sub><b>Mode léger.</b> Un goban 2D tout simple, et le repli quand la 3D n'est pas disponible.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/review-fr.jpg" alt="Revue de partie" width="100%"><br><sub><b>Revue.</b> Chaque coup coûteux devient une courte leçon, ici à l'étape de la punition.</sub></td>
+    <td width="50%"><img src="docs/images/ogs-fr.jpg" alt="Partie en ligne sur OGS" width="100%"><br><sub><b>En ligne.</b> Une partie en direct sur OGS, avec les pendules en byo-yomi sur les deux cartes.</sub></td>
   </tr>
 </table>
 
