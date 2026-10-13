@@ -630,6 +630,8 @@ export function App() {
     // preventDefault, so handling them here as well would run them twice.
     const menuKeys = isMac && inTauri()
     const onKey = (e: KeyboardEvent) => {
+      // a window shortcut, so even over a sheet or a field; macOS keeps its menu's full screen only
+      if (e.key === 'F11' && !isMac) { e.preventDefault(); return setFullscreen(!fullscreen) }
       if (blocked(e.target)) return
       const cmd = isMac ? e.metaKey : e.ctrlKey, k = e.key.toLowerCase()
       const act = cmd
@@ -640,8 +642,7 @@ export function App() {
             arrowup: () => relocate(g => g.switchVariation(-1)), arrowdown: () => relocate(g => g.switchVariation(1)),
             ' ': e.target instanceof HTMLButtonElement ? undefined : toggleAuto,
             home: () => goTo(0), end: () => goTo(shown.moves.length),
-            f11: () => setFullscreen(!fullscreen),
-            ...(fullscreen && { escape: () => setFullscreen(false) }), // after a sheet's Esc and before a review's
+            ...(fullscreen && !isMac && { escape: () => setFullscreen(false) }), // after a sheet's Esc and before a review's
             ...(review && { escape: leaveReview }),
             j: jt.toggle, ...jt.keys,
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
