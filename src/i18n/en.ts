@@ -30,6 +30,7 @@ export const en = {
   history: 'History', prev: 'Previous move', next: 'Next move',
   autoplay: 'Autoplay', perMove: (s: number) => `${f.num(s)} s`, space: 'Space',
   variation: (k: number, n: number) => `Variation ${k}/${n}`, mainLine: 'Main line',
+  undoAsk: (n: number) => `Delete this move and the ${f.plural(n, 'move', 'moves')} after it?`,
   pass: 'Pass', undo: 'Undo', open: 'Open…', save: 'Save…', resign: 'Resign',
   openFailed: (m: string) => `Couldn’t open this file: ${m}`,
   saved: 'Game saved.',

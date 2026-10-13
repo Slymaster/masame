@@ -91,6 +91,8 @@ export class Game {
     for (let i = this.cursor - 1; i >= 0 && n < 2; i--) if (!this.moves[i].setup) { if (this.moves[i].vertex) return false; n++ }
     return n === 2
   }
+  /** Real moves (pseudo-moves aside) up to position i: the move number shown there. */
+  moveNumber(i = this.cursor): number { let n = 0; for (let j = 0; j < i; j++) if (!this.moves[j].setup) n++; return n }
   get leaf(): GameNode { return this.nodes[this.nodes.length - 1] }
   /** The current line is the main line (first children all the way). */
   get onMain(): boolean { return this.nodes.every((n, i) => !i || this.nodes[i - 1].children[0] === n) }

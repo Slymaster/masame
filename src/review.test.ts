@@ -53,9 +53,22 @@ describe('reviewEnd', () => {
     const twice = Game.fromRecord({ size: 9 }, [{ sign: 1, vertex: [2, 2] }, { sign: 1, vertex: [6, 6] }, { sign: -1, vertex: [4, 4] }])
     expect(reviewEnd(twice)).toBe(1)
   })
-  it('stops at a setup or empty node', () => {
+  it('stops at setup stones, skips empty and comment-only nodes', () => {
     expect(reviewEnd(loadSgf('(;SZ[9];B[ee];W[cc];AB[aa];W[gg])'))).toBe(2)
-    expect(reviewEnd(loadSgf('(;SZ[9];B[ee];C[note];W[gg])'))).toBe(1)
+    const empty = loadSgf('(;GM[1]SZ[19]KM[6.5];;B[pd];W[dp];B[pp];W[dd])')
+    expect([reviewEnd(empty), empty.moveNumber(), empty.moveNumber(1)]).toEqual([5, 4, 0])
+    const notes = loadSgf('(;SZ[19];B[pd]C[nice];W[dp];C[just a comment];B[pp];W[dd])')
+    expect([reviewEnd(notes), notes.moveNumber()]).toEqual([5, 4])
+  })
+  it('gives pseudo-moves no lesson and asks nothing for them', async () => {
+    const g = loadSgf('(;SZ[9];B[aa];W[ii];C[x];B[ba];W[hi])')
+    const asked: number[] = [], leads = [0, 0, 0, 0, -9, -9] // Black's B[ba] (index 3) loses 9
+    const ms = await readGame(g, 0, [], async (at, q) => {
+      if ((q as { maxVisits: number }).maxVisits === scanQuery(6).maxVisits) asked.push(at)
+      return { scoreLead: leads[at], pv: [[4, 4]], ownership: null } as unknown as Analysis
+    }, () => true, () => {})
+    expect([asked.sort(), ms.map(m => m.at)]).toEqual([[0, 1, 2, 4, 5], [3]])
+    expect(pickMoments([9, 9, 9, 0, 0], record([[0, 0], [1, 1], null, [2, 2]]).map((m, i) => (i === 2 ? { ...m, setup: true as const } : m)), 0, 3)).toEqual([])
   })
 })
 

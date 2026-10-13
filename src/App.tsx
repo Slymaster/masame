@@ -277,6 +277,7 @@ export function App() {
   const countingNow = !review && counting?.game === game && game.ended && atEnd ? counting : null
   const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result) && !ongoing
   const canReview = reviewShown && canAnalyze
+  const live = ongoing || !!bot && !result // a game being played: no autoplay
   const locked = !!result && atEnd // a decided line: playing from an earlier move opens a variation
   const play = (v: Vertex | null) => {
     if (countingNow) {
@@ -305,8 +306,13 @@ export function App() {
     else if (pick(t.refused, r)) setNote(d => pick(d.refused, r)!)
     return r === 'ok'
   }
-  const undo = () => {
-    if (review || bot && result || online) return
+  const undo = async () => {
+    if (review || bot && result || online || game.cursor === 0) return
+    // what goes: the subtree from the first move taken back (against the bot, back to the player's last move)
+    let to = game.cursor - 1, n = 0
+    if (bot) while (to > 0 && -game.moves[to - 1].sign === bot.sign) to--
+    for (const st = [game.nodes[to + 1]]; st.length; n++) st.push(...st.pop()!.children)
+    if (n > 2 && !(await askFirst(t.undoAsk(n - 1), t.undo))) return
     let undone = false
     // against the bot, take back to the player's last move
     while (game.undo()) { undone = true; if (!bot || game.cursor === 0 || game.toPlay !== bot.sign) break }
@@ -328,13 +334,13 @@ export function App() {
   const [auto, setAuto] = useState<Game | null>(null)
   const toggleAuto = () => {
     if (auto) return setAuto(null)
-    if (ongoing || shown.moves.length === floor) return
+    if (live || shown.moves.length === floor) return
     if (shown.cursor === shown.moves.length) { shown.goTo(floor); changed() } // from the start again (an opened file shows its end)
     setAuto(shown)
   }
   useEffect(() => {
     if (!auto) return
-    if (auto !== shown || ongoing || shown.cursor >= shown.moves.length) { setAuto(null); return }
+    if (auto !== shown || live || shown.cursor >= shown.moves.length) { setAuto(null); return }
     const id = setTimeout(() => {
       shown.goTo(shown.cursor + 1)
       const m = shown.lastMove
@@ -342,7 +348,7 @@ export function App() {
       changed()
     }, settings.autoplay * 1000)
     return () => clearTimeout(id)
-  }, [auto, shown, ver, ongoing, settings.autoplay]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auto, shown, ver, live, settings.autoplay]) // eslint-disable-line react-hooks/exhaustive-deps
   // online is cleared only here, and only with the board replaced: an unfinished OGS position never becomes a local
   // game open to KataGo (a finished one may stay, see signOut)
   const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null); setJoining(false) }
@@ -499,7 +505,7 @@ export function App() {
       const history = game.moves.slice(0, game.cursor).flatMap(m => winrates.current.get(m) ?? []) // the bot's moves on this line
       const m = decide({
         humanPolicy: a.humanPolicy, topMove: a.topMove, botWinrate, history, ownership: a.ownership,
-        signMap: game.board.signMap, opponentPassed: !!game.lastMove && !game.lastMove.vertex, moveNumber: game.cursor,
+        signMap: game.board.signMap, opponentPassed: !!game.lastMove && !game.lastMove.vertex, moveNumber: game.moveNumber(),
         legal: i => game.isLegal([i % n, Math.floor(i / n)]),
       }, random)
       if (m.kind === 'resign') return finish(d => d.resigns(bot.sign), false, resignResult(-bot.sign as Sign))
@@ -648,7 +654,7 @@ export function App() {
   const lessonLine = !review ? null
     : reading ? t.reading
     : !m ? t.noMoments(review.side)
-    : review.step === 'try' ? graded === 'found' ? t.found : graded === 'short' ? t.shortOf(review.gap!) : graded ? t.missed(s, review.gap!) : t.tryAsk(p, m.at + 1)
+    : review.step === 'try' ? graded === 'found' ? t.found : graded === 'short' ? t.shortOf(review.gap!) : graded ? t.missed(s, review.gap!) : t.tryAsk(p, game.moveNumber(m.at) + 1)
     : review.step === 'punish' ? t.punishLine(p, gtp(m.punish[0]!, size), s, m.loss)
     : t.betterLine(s, gtp(m.better[0]!, size), m.loss)
   const lastMoment = !!review?.moments && review.k === review.moments.length - 1
@@ -794,7 +800,7 @@ export function App() {
                       <i style={{ width: `${review.pct}%` }} />
                     </div>
                   </> : !m ? <p className="estimate">{t.noMoments(review.side)}</p> : <>
-                    <p className="state">{t.moment(review.k + 1, review.moments!.length, m.at + 1, m.loss)}</p>
+                    <p className="state">{t.moment(review.k + 1, review.moments!.length, game.moveNumber(m.at) + 1, m.loss)}</p>
                     {review.moments!.length > 1 && (
                       <Seg label={t.moments} value={review.k} options={review.moments!.map((_, i) => [i, String(i + 1)])} set={k => openMoment(k, 'try')} />
                     )}
@@ -820,7 +826,7 @@ export function App() {
                 )
               })}
               {!review && cta}
-              <Timeline g={shown} floor={floor} go={goTo} auto={!!auto} toggleAuto={toggleAuto} live={ongoing} relocate={relocate} />
+              <Timeline g={shown} floor={floor} go={goTo} auto={!!auto} toggleAuto={toggleAuto} live={live} relocate={relocate} />
               {settings.territory && !review && !ongoing && (
                 <p className="estimate" aria-live="polite">
                   {!inTauri() || !canAnalyze ? t.territoryNeedsNet : shownOwn ? t.estimate(shownOwn.score) : t.estimating}

@@ -16,11 +16,11 @@ export function Timeline({ g, floor, go, auto, toggleAuto, live, relocate }: {
       <button className="chev" onClick={() => go(g.cursor - 1)} disabled={g.cursor <= floor} aria-label={t.prev} title={`${t.prev} (←)`}><Icon name="chevron-left" /></button>
       <span className="track">
         <input type="range" min={floor} max={total} value={g.cursor} onChange={e => go(+e.target.value)} aria-label={t.history}
-          aria-valuetext={t.move(g.cursor)} style={{ '--n': total - floor } as React.CSSProperties} />
+          aria-valuetext={t.move(g.moveNumber())} style={{ '--n': total - floor } as React.CSSProperties} />
         {forks.map(i => <i key={i} aria-hidden="true" style={{ left: `calc(6px + (100% - 12px) * ${(i - floor) / (total - floor)})` }} />)}
       </span>
       <button className="chev" onClick={() => go(g.cursor + 1)} disabled={g.cursor === total} aria-label={t.next} title={`${t.next} (→)`}><Icon name="chevron-right" /></button>
-      <span className="mv">{t.moveOf(g.cursor, total)}</span>
+      <span className="mv">{t.moveOf(g.moveNumber(), g.moveNumber(total))}</span>
     </div>
     {(fork || !g.onMain) && (
       <p className="vars">

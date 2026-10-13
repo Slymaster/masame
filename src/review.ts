@@ -25,11 +25,18 @@ export const REPLY = { maxVisits: 200, overrideSettings: { maxTime: 1.5 } }
 
 /**
  * Positions the engine can read: up to the first SGF move fromRecord lets through but KataGo refuses or replays
- * differently: onto an occupied point, a single-stone suicide, or the same colour twice in a row; or a setup or empty node.
+ * differently: onto an occupied point, a single-stone suicide, or the same colour twice in a row; or setup stones.
+ * Empty and comment-only nodes (pseudo-moves) are skipped.
  */
 export function reviewEnd(g: Game): number {
-  const i = g.moves.findIndex((m, i) => m.setup || g.nodes[i + 1].stones || (i > 0 && m.sign === g.moves[i - 1].sign)
-    || !!m.vertex && (g.boards[i].get(m.vertex) !== 0 || g.boards[i + 1].get(m.vertex) === 0))
+  let prev: Move | undefined
+  const i = g.moves.findIndex((m, i) => {
+    if (g.nodes[i + 1].stones) return true
+    if (m.setup) return false
+    const bad = prev?.sign === m.sign || !!m.vertex && (g.boards[i].get(m.vertex) !== 0 || g.boards[i + 1].get(m.vertex) === 0)
+    prev = m
+    return bad
+  })
   return i < 0 ? g.moves.length : i
 }
 
@@ -38,9 +45,10 @@ const lossOf = (leads: (number | undefined)[], moves: Move[], i: number) => move
 /** Candidate mistakes (indices into moves), worst first, at least half a board width apart. */
 export function pickMoments(leads: (number | undefined)[], moves: Move[], side: Sign | 0, size: number, max = 5): number[] {
   const gap = Math.ceil(size / 2), picked: number[] = []
-  const ok = moves.map((_, i) => i).filter(i =>
+  const real = moves.map((m, i) => (m.setup ? -1 : i)).filter(i => i >= 0) // pseudo-moves are no one's mistake
+  const ok = real.filter((i, k) =>
     leads[i] !== undefined && leads[i + 1] !== undefined && (side === 0 || moves[i].sign === side)
-    && !(!moves[i].vertex && i > 0 && !moves[i - 1].vertex) // the game-ending pass
+    && !(!moves[i].vertex && k > 0 && !moves[real[k - 1]].vertex) // the game-ending pass
     && lossOf(leads, moves, i) >= MIN_LOSS)
   for (const i of ok.sort((a, b) => lossOf(leads, moves, b) - lossOf(leads, moves, a))) {
     if (picked.length >= max) break
@@ -92,7 +100,8 @@ export async function readGame(game: Game, side: Sign | 0, leads: (number | unde
   ask: (at: number, query: object) => Promise<Analysis>, live: () => boolean, progress: (pct: number) => void): Promise<Moment[]> {
   const end = reviewEnd(game), n = end + 1
   const scan = scanQuery(n), step = scan.overrideSettings.maxTime / 2
-  const todo = Array.from({ length: n }, (_, i) => i).filter(i => leads[i] === undefined)
+  // the position after a pseudo-move is the one before it: not asked, its lead copied after the scan
+  const todo = Array.from({ length: n }, (_, i) => i).filter(i => leads[i] === undefined && !game.moves[i - 1]?.setup)
   // progress in seconds of budget: each scan query is worth half its maxTime (two run at once), each deep pair DEEP_TIME
   const total = n * step + MAX_MOMENTS * DEEP_TIME
   let done = (n - todo.length) * step
@@ -106,6 +115,7 @@ export async function readGame(game: Game, side: Sign | 0, leads: (number | unde
     }
   }
   await settled([worker(), worker()])
+  for (let i = 1; i < n; i++) if (game.moves[i - 1].setup) leads[i] ??= leads[i - 1]
   const moments: Moment[] = []
   for (const at of pickMoments(leads, game.moves.slice(0, end), side, game.info.size)) {
     if (!live() || moments.length >= MAX_MOMENTS) break

@@ -31,6 +31,7 @@ export const fr: Dict = {
   history: 'Historique', prev: 'Coup précédent', next: 'Coup suivant',
   autoplay: 'Lecture auto', perMove: (s: number) => `${f.num(s)} s`, space: 'Espace',
   variation: (k: number, n: number) => `Variante ${k}/${n}`, mainLine: 'Ligne principale',
+  undoAsk: (n: number) => `Supprimer ce coup et les ${f.plural(n, 'coup', 'coups')} qui le suivent ?`,
   pass: 'Passer', undo: 'Annuler', open: 'Ouvrir…', save: 'Enregistrer…', resign: 'Abandonner',
   openFailed: (m: string) => `Impossible d’ouvrir ce fichier : ${m}`,
   saved: 'Partie enregistrée.',
