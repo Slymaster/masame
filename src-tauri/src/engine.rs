@@ -4,12 +4,12 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, Instant};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use std::time::{Duration, Instant, SystemTime};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, watch};
 
@@ -19,6 +19,7 @@ const READY_LINE: &str = "Started, ready to begin handling requests";
 const STDERR_KEEP: usize = 40;
 const QUERY_TIMEOUT: Duration = Duration::from_secs(120);
 const START_TIMEOUT: Duration = Duration::from_secs(180); // until KataGo prints its ready line, or since its last tuning line
+const LOG_MAX: u64 = 1 << 20; // engine.log then moves to engine.log.1
 
 /// What to launch; a different spec (e.g. another active net) means a restart. Paths are absolute; those under `cwd`
 /// reach KataGo relative to it (see `args`). `overrides` are extra `-override-config key=value` arguments.
@@ -69,6 +70,51 @@ fn tuning_progress(line: &str, prev: (u32, u32, u32)) -> Option<(u32, u32, u32)>
     Some((prev.0, i.parse().ok()?, n.parse().ok()?))
 }
 
+/// The next line, lossily decoded: a non-UTF-8 line must not end a drain (a pipe nobody reads fills up, and KataGo
+/// then blocks on its next write). None at EOF or on a read error.
+async fn next_line(r: &mut (impl AsyncBufRead + Unpin), buf: &mut Vec<u8>) -> Option<String> {
+    buf.clear();
+    match r.read_until(b'\n', buf).await { Ok(n) if n > 0 => Some(String::from_utf8_lossy(buf).trim_end().into()), _ => None }
+}
+
+/// UTC "YYYY-MM-DD hh:mm:ss.mmmZ" (days to civil date: Howard Hinnant's algorithm).
+fn stamp(secs: u64, ms: u32) -> String {
+    let z = (secs / 86400) as i64 + 719468;
+    let (era, doe) = (z.div_euclid(146097), z.rem_euclid(146097));
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let (d, m) = (doy - (153 * mp + 2) / 5 + 1, if mp < 10 { mp + 3 } else { mp - 9 });
+    format!("{}-{m:02}-{d:02} {:02}:{:02}:{:02}.{ms:03}Z", yoe + era * 400 + (m <= 2) as i64, secs / 3600 % 24, secs / 60 % 60, secs % 60)
+}
+
+/// Appends each line to `path` from a thread of its own (a slow disk never holds up the engine); past LOG_MAX the
+/// file becomes `<path>.1`, replacing the previous one.
+fn log_writer(path: PathBuf) -> std::sync::mpsc::Sender<String> {
+    use std::io::Write;
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        if let Some(d) = path.parent() { let _ = std::fs::create_dir_all(d); }
+        let open = || std::fs::OpenOptions::new().create(true).append(true).open(&path).ok();
+        let (mut f, mut size) = (open(), std::fs::metadata(&path).map_or(0, |m| m.len()));
+        for line in rx {
+            if size > LOG_MAX { drop(f.take()); let _ = std::fs::rename(&path, rotated(&path)); f = open(); size = 0 }
+            if f.as_mut().is_some_and(|f| f.write_all(line.as_bytes()).is_ok()) { size += line.len() as u64 }
+        }
+    });
+    tx
+}
+
+fn rotated(log: &Path) -> PathBuf { let mut p = log.as_os_str().to_owned(); p.push(".1"); p.into() }
+
+/// The last `n` lines of the log, across its rotated part.
+pub fn log_tail(log: &Path, n: usize) -> String {
+    let read = |p: &Path| std::fs::read(p).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+    let all = read(&rotated(log)) + &read(log);
+    let lines: Vec<&str> = all.lines().collect();
+    lines[lines.len().saturating_sub(n)..].join("\n")
+}
+
 struct Proc { child: Child, tx: mpsc::UnboundedSender<String>, spec: Spec }
 
 pub struct Engine {
@@ -78,6 +124,8 @@ pub struct Engine {
     stderr: Arc<Mutex<VecDeque<String>>>,
     gen: AtomicU64,
     ids: AtomicU64,
+    timeouts: AtomicU32, // query timeouts since the last launch asked for by ensure
+    log: Option<std::sync::mpsc::Sender<String>>,
     emit: Emit,
     fallback: Option<Fallback>,
     on_ready: Option<OnReady>,
@@ -94,7 +142,7 @@ impl Engine {
         Arc::new(Self {
             proc: Mutex::new(None), status: watch::channel(Status::Stopped).0, pending: Default::default(),
             stderr: Default::default(), gen: AtomicU64::new(0), ids: AtomicU64::new(0), emit: Arc::new(emit),
-            fallback: None, on_ready: None, progress: Mutex::new(Instant::now()), query_timeout: QUERY_TIMEOUT, start_timeout: START_TIMEOUT,
+            timeouts: AtomicU32::new(0), log: None, fallback: None, on_ready: None, progress: Mutex::new(Instant::now()), query_timeout: QUERY_TIMEOUT, start_timeout: START_TIMEOUT,
         })
     }
 
@@ -110,6 +158,19 @@ impl Engine {
     pub fn with_on_ready(mut self: Arc<Self>, f: impl Fn(&Spec) + Send + Sync + 'static) -> Arc<Self> {
         Arc::get_mut(&mut self).expect("engine not shared yet").on_ready = Some(Box::new(f));
         self
+    }
+
+    /// Keeps a log of the engine's stderr and lifecycle in `path` (see log_writer); call right after `new`.
+    pub fn with_log(mut self: Arc<Self>, path: PathBuf) -> Arc<Self> {
+        Arc::get_mut(&mut self).expect("engine not shared yet").log = Some(log_writer(path));
+        self
+    }
+
+    fn log(&self, msg: impl std::fmt::Display) {
+        if cfg!(debug_assertions) { eprintln!("[katago] {msg}") }
+        let Some(tx) = &self.log else { return };
+        let t = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default();
+        let _ = tx.send(format!("{} {msg}\n", stamp(t.as_secs(), t.subsec_millis())));
     }
 
     /// The process slot. Callbacks run under it, so a panic in one must not leave the engine unusable (or panic at exit).
@@ -137,6 +198,7 @@ impl Engine {
         if guard.as_ref().is_some_and(|p| p.spec == spec) && !matches!(self.status(), Status::Error { .. } | Status::Stopped) {
             return Ok(());
         }
+        self.timeouts.store(0, Ordering::SeqCst);
         self.launch(&mut guard, spec)
     }
 
@@ -159,6 +221,7 @@ impl Engine {
         for (p, code) in [(&spec.bin, "engine_missing"), (&spec.config, "config_missing"), (&spec.model, "model_missing")] {
             if !p.is_file() { return Err(Failure::with(code, p.display())); }
         }
+        self.log(format_args!("spawn {} {:?}", crate::backend::variant_of(&spec.bin).unwrap_or("katago"), args(&spec)));
         let mut cmd = Command::new(&spec.bin);
         cmd.args(args(&spec))
             .current_dir(&spec.cwd) // the relative paths in args, and homeDataDir (Windows, Linux), resolve against app data
@@ -179,9 +242,9 @@ impl Engine {
         *self.progress.lock().unwrap() = Instant::now();
         let me = self.clone();
         tokio::spawn(async move {
-            let mut lines = BufReader::new(stderr).lines();
-            while let Ok(Some(l)) = lines.next_line().await {
-                if cfg!(debug_assertions) { eprintln!("[katago] {l}") }
+            let (mut r, mut buf) = (BufReader::new(stderr), vec![]);
+            while let Some(l) = next_line(&mut r, &mut buf).await {
+                me.log(&l);
                 if me.gen.load(Ordering::SeqCst) == gen {
                     if l.contains(READY_LINE) { me.warm_up(gen) } else if is_tuning_line(&l) { me.tuning(&l) }
                 }
@@ -192,9 +255,10 @@ impl Engine {
         });
         let me = self.clone();
         tokio::spawn(async move {
-            let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(l)) = lines.next_line().await { me.route(&l) }
+            let (mut r, mut buf) = (BufReader::new(stdout), vec![]);
+            while let Some(l) = next_line(&mut r, &mut buf).await { me.route(&l) }
             // stdout closed: the process exited. Only report it if nobody asked for it.
+            me.log(format_args!("exit: {}", me.exit_status(gen).await));
             let last = me.stderr.lock().unwrap().iter().rev().find(|l| !l.trim().is_empty()).cloned().unwrap_or_default();
             me.report(gen, Failure::with("engine_crashed", last), false);
         });
@@ -212,6 +276,20 @@ impl Engine {
             me.report(gen, Failure::with("engine_timeout", "start"), true);
         });
         Ok(())
+    }
+
+    /// How generation `gen` ended, once it has (stdout can close a moment before the exit).
+    async fn exit_status(&self, gen: u64) -> String {
+        for _ in 0..20 {
+            let r = self.proc().as_mut().filter(|_| self.gen.load(Ordering::SeqCst) == gen).map(|p| p.child.try_wait());
+            match r {
+                Some(Ok(Some(s))) => return s.to_string(),
+                Some(Ok(None)) => tokio::time::sleep(Duration::from_millis(50)).await,
+                Some(Err(e)) => return e.to_string(),
+                None => return "stopped or replaced".into(),
+            }
+        }
+        "stdout closed, still running".into()
     }
 
     /// A tuning line: Starting becomes Tuning, its progress is updated, and the start deadline moves back.
@@ -240,6 +318,7 @@ impl Engine {
     fn report(self: &Arc<Self>, gen: u64, error: Failure, kill: bool) {
         let mut guard = self.proc();
         if self.gen.load(Ordering::SeqCst) != gen { return }
+        self.log(format_args!("failed: {error:?}"));
         let error = match guard.as_ref().filter(|_| self.starting()).map(|p| p.spec.clone()) {
             Some(spec) => match self.fall_back(&spec, error) {
                 Ok(next) => { let _ = self.launch(&mut guard, next); return }
@@ -281,7 +360,7 @@ impl Engine {
             match r {
                 Ok(_) => me.ready(gen),
                 // A refused warm-up (e.g. an old KataGo) is not fatal: real queries will report their own errors.
-                Err(e) if e.code == "katago_error" => { eprintln!("[katago] warm-up refused: {e:?}"); me.ready(gen) }
+                Err(e) if e.code == "katago_error" => { me.log(format_args!("warm-up refused: {e:?}")); me.ready(gen) }
                 Err(e) if e.code == "engine_timeout" => me.report(gen, e, false),
                 Err(_) => {} // the process died: its reader reports engine_crashed
             }
@@ -289,6 +368,7 @@ impl Engine {
     }
 
     fn ready(&self, gen: u64) {
+        self.log("ready");
         self.set_status(Status::Ready);
         // Same lock as spawn's generation bump: the spec is generation `gen`'s, not a later launch's.
         let spec = self.proc().as_ref().filter(|_| self.gen.load(Ordering::SeqCst) == gen).map(|p| p.spec.clone());
@@ -297,17 +377,21 @@ impl Engine {
 
     /// Engine output is untrusted text: anything that is not a JSON object with a known id is only logged.
     fn route(&self, line: &str) {
-        let Ok(v) = serde_json::from_str::<Value>(line) else { return eprintln!("[katago] unreadable line: {line}") };
-        let Some(id) = v.get("id").and_then(Value::as_str) else { return eprintln!("[katago] {v}") };
+        let Ok(v) = serde_json::from_str::<Value>(line) else { return self.log(format_args!("unreadable line: {line}")) };
+        let Some(id) = v.get("id").and_then(Value::as_str) else { return self.log(&v) };
         if v.get("isDuringSearch") == Some(&Value::Bool(true)) {
             return (self.emit)("engine-partial", v);
         }
-        if v.get("warning").is_some() { return eprintln!("[katago] {v}") }
+        // A bare warning (e.g. an unused query field) comes before the response; one riding on a response is only logged.
+        if let Some(w) = v.get("warning") {
+            if !["moveInfos", "rootInfo", "error", "isDuringSearch"].iter().any(|k| v.get(k).is_some()) { return self.log(&v) }
+            self.log(format_args!("warning on {id}: {w}"));
+        }
         if let Some(tx) = self.pending.lock().unwrap().remove(id) { let _ = tx.send(Ok(v)); }
     }
 
     /// Sends one analysis query and waits for its final response (isDuringSearch: false).
-    pub async fn analyze(&self, mut query: Value) -> Res<Value> {
+    pub async fn analyze(self: &Arc<Self>, mut query: Value) -> Res<Value> {
         let stopped = || Failure::new("engine_stopped");
         let obj = query.as_object_mut().ok_or(Failure::new("bad_query"))?;
         if obj.contains_key("action") { return Err(Failure::new("bad_query")) }
@@ -326,7 +410,25 @@ impl Engine {
             }
             st.changed().await.map_err(|_| stopped())?;
         }
-        self.request(id, query).await
+        let gen = self.gen.load(Ordering::SeqCst);
+        let r = self.request(id, query).await;
+        if matches!(&r, Err(e) if e.code == "engine_timeout") { self.recover(gen) }
+        r
+    }
+
+    /// A query of generation `gen` timed out, so KataGo is likely stuck: the first time it is restarted as is, the
+    /// second time the fallback may switch builds (GPU to CPU); otherwise, or if it refuses, it is stopped with the
+    /// error (the next query starts it again). Later queries wait for Ready; concurrent timeouts restart it once.
+    fn recover(self: &Arc<Self>, gen: u64) {
+        let mut guard = self.proc();
+        let Some(spec) = guard.as_ref().filter(|_| self.gen.load(Ordering::SeqCst) == gen).map(|p| p.spec.clone()) else { return };
+        let n = self.timeouts.fetch_add(1, Ordering::SeqCst);
+        let error = Failure::with("engine_timeout", "query");
+        self.log(format_args!("query timeout #{} ({:?})", n + 1, self.query_timeout));
+        match if n == 0 { Ok(spec) } else if n == 1 { self.fall_back(&spec, error.clone()) } else { Err(error) } {
+            Ok(next) => { self.log("restart"); let _ = self.launch(&mut guard, next); }
+            Err(e) => { drop(guard); self.report(gen, e, true) }
+        }
     }
 
     /// Writes one query to the running process and waits for the response routed back by id.
@@ -352,6 +454,7 @@ impl Engine {
     }
 
     pub fn stop(&self) {
+        self.log("stop");
         self.gen.fetch_add(1, Ordering::SeqCst);
         if let Some(mut p) = self.proc().take() { let _ = p.child.start_kill(); }
         self.fail_pending(Failure::new("engine_stopped"));
@@ -475,7 +578,95 @@ mod tests {
 read l; id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{\"id\":\"$id\"}"
 exec sleep 5"#)).unwrap();
         assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), Failure::with("engine_timeout", "query"));
-        assert!(e.pending.lock().unwrap().is_empty());
+        assert!(!e.pending.lock().unwrap().contains_key("q0")); // (the restarted process's warm-up may be pending)
+    }
+
+    /// A hung engine is restarted as is; when the restarted one hangs too, the fallback's build takes over; after
+    /// that, a hang stops the engine with the error, and the next launch gets a fresh restart.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn query_timeouts_restart_then_fall_back() {
+        let ms = Duration::from_millis;
+        let quiet = |mut e: Arc<Engine>| { Arc::get_mut(&mut e).unwrap().query_timeout = ms(300); e };
+        let timeout = Failure::with("engine_timeout", "query");
+        // Hangs on its first real query, once (a marker file): the restarted process answers.
+        let marker = std::env::temp_dir().join(format!("baduk-fake-once-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let once = fake("once", &format!(r#"if [ ! -e "{m}" ]; then touch "{m}"; echo "Started, ready to begin handling requests" >&2
+read l; id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{{\"id\":\"$id\"}}"; {HANG}; fi
+{SERVE}"#, m = marker.display()));
+        let statuses = Arc::new(Mutex::new(vec![]));
+        let st = statuses.clone();
+        let e = quiet(Engine::new(move |ev, v| if ev == "engine-status" { st.lock().unwrap().push(v["state"].as_str().unwrap().to_string()) }));
+        e.ensure(once).unwrap();
+        assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), timeout);
+        e.analyze(json!({"moves": []})).await.unwrap();
+        assert_eq!(*statuses.lock().unwrap(), ["starting", "warming", "ready", "starting", "warming", "ready"]);
+        let _ = std::fs::remove_file(&marker);
+        // Always hangs after the warm-up: restart, then the fallback's build, which works.
+        let hung = fake("hung", &format!(r#"echo "Started, ready to begin handling requests" >&2
+read l; id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{{\"id\":\"$id\"}}"; {HANG}"#));
+        let good = fake("cpu", SERVE);
+        let g2 = good.clone();
+        let e = quiet(Engine::new(|_, _| {}).with_fallback(move |s, f| { assert_eq!(f.code, "engine_timeout"); if s.bin == g2.bin { Err(f) } else { Ok(g2.clone()) } }));
+        e.ensure(hung.clone()).unwrap();
+        assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), timeout);
+        assert_eq!(e.running_spec().unwrap().bin, hung.bin, "first timeout: same build");
+        assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), timeout);
+        assert_eq!(e.running_spec().unwrap().bin, good.bin, "second timeout: the fallback's build");
+        e.analyze(json!({"moves": []})).await.unwrap();
+        // No fallback: the second timeout stops the engine with the error; ensure then relaunches it.
+        let e = quiet(Engine::new(|_, _| {}));
+        e.ensure(hung.clone()).unwrap();
+        for _ in 0..2 { assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), timeout) }
+        assert_eq!(e.status(), Status::Error { error: timeout.clone() });
+        assert!(e.running_spec().is_none());
+        e.ensure(hung).unwrap();
+        assert_eq!(e.analyze(json!({"moves": []})).await.unwrap_err(), timeout);
+        assert!(e.running_spec().is_some(), "a fresh launch gets its own restart");
+    }
+
+    /// Non-UTF-8 stderr and lots of it (more than any pipe buffer) must not stall the engine; it all lands in the log,
+    /// which rotates past LOG_MAX.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stderr_flood_with_bad_utf8_does_not_stall() {
+        let dir = std::env::temp_dir().join(format!("baduk-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let log = dir.join("engine.log");
+        let mut e = Engine::new(|_, _| {}).with_log(log.clone());
+        Arc::get_mut(&mut e).unwrap().query_timeout = Duration::from_secs(10);
+        e.ensure(fake("flood", r#"echo "Started, ready to begin handling requests" >&2
+while read l; do id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); printf 'bad \377\376 utf-8\n' >&2
+head -c 4000 /dev/urandom >&2; echo >&2; echo "{\"id\":\"$id\"}"; done"#)).unwrap();
+        for _ in 0..300 { e.analyze(json!({"moves": []})).await.unwrap(); }
+        e.stop();
+        tokio::time::sleep(Duration::from_millis(500)).await; // the writer thread catches up
+        let (cur, old) = (std::fs::metadata(&log).unwrap().len(), std::fs::metadata(rotated(&log)).unwrap().len());
+        assert!(old > LOG_MAX && cur < LOG_MAX && cur > 0, "{old} {cur}");
+        let tail = log_tail(&log, 200);
+        assert_eq!(tail.lines().count(), 200);
+        assert!(tail.contains(" stop\n"), "{tail}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A bare warning is skipped; a response carrying a warning is still the response.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn warnings_do_not_swallow_responses() {
+        let e = Engine::new(|_, _| {});
+        e.ensure(fake("warn", r#"echo "Started, ready to begin handling requests" >&2
+while read l; do id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{\"id\":\"$id\",\"warning\":\"Unused field\",\"field\":\"x\"}"
+echo "{\"id\":\"$id\",\"warning\":\"w\",\"isDuringSearch\":false,\"moveInfos\":[],\"rootInfo\":{}}"; done"#)).unwrap();
+        let v = e.analyze(json!({"moves": []})).await.unwrap();
+        assert!(v["moveInfos"].is_array() && v["warning"] == "w");
+    }
+
+    #[test]
+    fn log_timestamps() {
+        assert_eq!(stamp(0, 0), "1970-01-01 00:00:00.000Z");
+        assert_eq!(stamp(951_868_800, 5), "2000-03-01 00:00:00.005Z");
+        assert_eq!(stamp(1_709_208_000 + 3661, 999), "2024-02-29 13:01:01.999Z");
     }
 
     #[cfg(unix)]

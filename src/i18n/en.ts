@@ -66,6 +66,7 @@ export const en = {
   tuningCaption: 'Tuning KataGo for your graphics card (first launch only)', // the short form, under the board
   tuningProgress,
   engineReady: 'Engine ready', engineIdle: 'Engine idle', noAnalysisNet: 'No analysis network installed.',
+  copyDiagnostics: 'Copy diagnostics', diagnosticsCopied: 'Copied: paste them into your bug report',
   updates: 'Updates', checkUpdates: 'Check for updates', checking: 'Checking…',
   upToDate: (app: string) => `${app} is up to date`,
   updateAvailable: (v: string) => `Masame ${v} is available`,

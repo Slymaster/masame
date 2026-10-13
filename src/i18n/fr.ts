@@ -67,6 +67,7 @@ export const fr: Dict = {
   tuningCaption: 'Réglage de KataGo pour ta carte graphique (premier lancement)',
   tuningProgress,
   engineReady: 'Moteur prêt', engineIdle: 'Moteur en veille', noAnalysisNet: 'Aucun réseau d’analyse installé.',
+  copyDiagnostics: 'Copier le diagnostic', diagnosticsCopied: 'Copié : colle-le dans ton signalement',
   updates: 'Mises à jour', checkUpdates: 'Rechercher les mises à jour', checking: 'Recherche…',
   upToDate: (app: string) => `${app} est à jour`,
   updateAvailable: (v: string) => `Masame ${v} est disponible`,

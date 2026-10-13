@@ -284,6 +284,16 @@ fn engine_status(s: State<'_, App>) -> Status { s.engine.status() }
 #[tauri::command]
 async fn engine_start(app: AppHandle, s: State<'_, App>) -> Res<()> { ensure_engine(&app, &s) } // async: spawning needs the tokio runtime
 
+const ENGINE_LOG: &str = "engine.log";
+
+/// Diagnostics for a bug report: app version, platform, engine build and state, and the end of the engine log.
+#[tauri::command]
+fn engine_log_tail(app: AppHandle, s: State<'_, App>) -> Res<String> {
+    let build = s.engine.running_spec().map_or("none", |sp| backend::variant_of(&sp.bin).unwrap_or("katago"));
+    Ok(format!("Masame {} · {} {} · engine {build} · {:?}\n\n{}", app.package_info().version, std::env::consts::OS, std::env::consts::ARCH,
+        s.engine.status(), engine::log_tail(&data_dir(&app)?.join(ENGINE_LOG), 200)))
+}
+
 #[tauri::command]
 fn engine_stop(s: State<'_, App>) { s.engine.stop() }
 
@@ -402,7 +412,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let h = app.handle().clone();
-            let engine = Engine::new(move |ev, payload| { let _ = h.emit(ev, payload); });
+            let mut engine = Engine::new(move |ev, payload| { let _ = h.emit(ev, payload); });
+            if let Ok(d) = data_dir(app.handle()) { engine = engine.with_log(d.join(ENGINE_LOG)) }
             #[cfg(any(windows, target_os = "linux"))]
             let engine = {
                 let (h, h2) = (app.handle().clone(), app.handle().clone());
@@ -420,7 +431,7 @@ pub fn run() {
         .on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); })
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
-            engine_status, engine_start, engine_stop, engine_analyze, open_link, set_language, update_check, update_install,
+            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, update_check, update_install,
             ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout
         ])
         .build(tauri::generate_context!())

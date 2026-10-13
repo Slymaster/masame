@@ -159,6 +159,7 @@ export function App() {
   const winrates = useRef<number[]>([])
   const scored = useRef<Game | null>(null)
   const [botError, setBotError] = useMsg()
+  const [diag, setDiag] = useMsg() // "Copy diagnostics": copied, or why not
   const [botRetry, retryBot] = useReducer((x: number) => x + 1, 0)
   // the followed OGS game (its leave() in a ref), an automatch search, the socket's state
   const [online, setOnline] = useState<ogs.Followed | null>(null)
@@ -892,6 +893,12 @@ export function App() {
               <button className="link" data-nets onClick={() => { netsFromSettings.current = true; setSheet('nets') }}>{t.networksBtn}</button>
             </div>
             <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}</p>
+            {inTauri() && <p className="engine" aria-live="polite">
+              {/* a promised ClipboardItem: WebKit refuses a clipboard write made after an await, outside the click */}
+              <button className="link" onClick={() => navigator.clipboard.write([new ClipboardItem({ 'text/plain': call<string>('engine_log_tail').then(s => new Blob([s], { type: 'text/plain' })) })])
+                .then(() => setDiag(d => d.diagnosticsCopied), e => setDiag(d => failureText(e, d)))}>{t.copyDiagnostics}</button>
+              {diag && <> · {diag(t)}</>}
+            </p>}
             {inTauri() && <>
               <div className="row" style={{ cursor: 'default' }}><span>{t.updates}</span></div>
               <p className={`engine${upd.s === 'error' ? ' err' : ''}`} aria-live="polite">
