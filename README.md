@@ -61,10 +61,7 @@ Masame is young, and honest about it.
 - **Windows** support is written — the code, the NSIS installer and a KataGo OpenCL build with automatic CPU fallback — and built by GitHub Actions. The installer is available as a preview, not yet tested on real hardware.
 - **Linux, x86_64** is new: an AppImage, a .deb and an .rpm, built on Ubuntu 22.04 by GitHub Actions, with KataGo 1.18.2 compiled from source (OpenCL, with automatic CPU fallback). Also a preview.
 
-**Download** the latest version from the [releases page](https://github.com/Slymaster/masame/releases/latest): a DMG for macOS (Apple Silicon), an installer for Windows (x64), and an AppImage, a .deb and an .rpm for Linux (x86_64). The builds are not signed yet, so the system warns on first launch:
-
-- **macOS:** if Masame is blocked, open System Settings → Privacy & Security and click **Open Anyway**.
-- **Windows:** when SmartScreen appears, click **More info**, then **Run anyway**.
+**Download** the latest version from the [releases page](https://github.com/Slymaster/masame/releases/latest): a DMG for macOS (Apple Silicon), an installer for Windows (x64), and an AppImage, a .deb and an .rpm for Linux (x86_64). The macOS build is signed and notarized by Apple, so it opens without a warning. The Windows build is not signed yet: when SmartScreen appears, click **More info**, then **Run anyway**.
 
 On **Linux**, Masame needs glibc 2.35 or later (Ubuntu 22.04+, Debian 12, Fedora, Linux Mint 21+). A few things to know:
 
