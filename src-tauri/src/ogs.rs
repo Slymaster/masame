@@ -150,6 +150,7 @@ trait Store: Send + Sync {
 }
 
 /// The OS keychain: macOS Keychain, Windows Credential Manager, the Secret Service on Linux.
+// Blocking calls on a tokio worker: a macOS access prompt holds the OGS token mutex until it is answered.
 struct Keychain;
 
 impl Keychain {
@@ -221,8 +222,8 @@ impl Vault {
     }
 
     fn load(&self) -> Option<Tokens> {
-        if let Ok(Some(json)) = self.file.get() {
-            let t = serde_json::from_str(&json).ok()?; // unreadable: signed out, as before
+        // Only a file that parses wins; an unreadable one falls through to the keychain.
+        if let Some((json, t)) = self.file.get().ok().flatten().and_then(|j| serde_json::from_str(&j).ok().map(|t: Tokens| (j, t))) {
             if let Err(e) = self.to_keychain(&json) { eprintln!("[ogs] tokens stay in the file: {e}") }
             return Some(t);
         }
@@ -628,6 +629,16 @@ mod tests {
         assert_eq!(body(&seen.lock().unwrap()[0])["token"], "r1");
         assert_eq!(v.keychain.get(), Ok(None));
         assert!(!on_disk(&v));
+    }
+
+    #[test]
+    fn corrupt_file_falls_back_to_the_keychain() {
+        let v = with("corruptfile", Fake::holding(&json("a1", "r1")));
+        v.file.set("{\"access\":").unwrap();
+        assert_eq!(v.load().unwrap().refresh, "r1");
+        v.save(&Tokens { access: "a2".into(), refresh: "r2".into(), expires_at: 1 });
+        assert!(!on_disk(&v), "the next save removes the unreadable file");
+        assert_eq!(v.load().unwrap().refresh, "r2");
     }
 
     #[tokio::test]
