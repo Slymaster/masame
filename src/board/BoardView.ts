@@ -18,7 +18,12 @@ export interface BoardState {
   ownership: number[] | null
   /** Counting phase: clicks go to stones (toggle dead/alive) instead of placing; territory owner per point. */
   counting: { dead: boolean[][]; territory: Sign[][] } | null
+  /** Lettered markers on empty points (the joseki trainer): best and ok filled, a mistake as a ring. */
+  marks?: Mark[] | null
+  /** Grid rectangle [x0, y0, x1, y1] left clear; a light veil covers the rest of the board. */
+  focus?: [number, number, number, number] | null
 }
+export interface Mark { v: Vertex; label: string; tone: 'best' | 'ok' | 'mistake' }
 
 interface Geom { N: number; bx: number; by: number; bw: number; cell: number; P: number[]; r: number; font: number; labelOff: number }
 
@@ -264,6 +269,27 @@ function lastRing(c: CanvasRenderingContext2D, g: Geom, [cx, cy]: [number, numbe
   c.beginPath(); c.arc(cx, cy, g.r * 0.4, 0, TAU); c.stroke()
 }
 
+/** Veil and markers, also drawn into the 3D board's overlay texture: px / py map grid indices to canvas units. */
+export function paintMarks(c: CanvasRenderingContext2D, px: (i: number) => number, py: (i: number) => number, cell: number,
+  marks: Mark[] | null | undefined, focus: BoardState['focus'], w: number, h: number) {
+  if (focus) {
+    const m = cell * 0.5, x0 = px(focus[0]) - m, y0 = py(focus[1]) - m
+    c.fillStyle = 'rgba(246,240,229,0.34)'
+    c.beginPath(); c.rect(0, 0, w, h); c.rect(x0, y0, px(focus[2]) + m - x0, py(focus[3]) + m - y0); c.fill('evenodd')
+  }
+  const r = cell * 0.34
+  c.font = `600 ${(r * 1.15).toFixed(1)}px ${LABEL_FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle'
+  for (const { v, label, tone } of marks ?? []) {
+    const x = px(v[0]), y = py(v[1])
+    c.beginPath(); c.arc(x, y, r, 0, TAU)
+    if (tone === 'mistake') {
+      c.fillStyle = 'rgba(246,240,229,0.7)'; c.fill()
+      c.lineWidth = Math.max(1, r * 0.12); c.strokeStyle = '#6E5F4D'; c.stroke(); c.fillStyle = '#6E5F4D'
+    } else { c.fillStyle = tone === 'best' ? '#8A2F22' : '#6E5F4D'; c.fill(); c.fillStyle = '#F6F0E5' }
+    c.fillText(label, x, y + r * 0.08)
+  }
+}
+
 /* ---------- view ---------- */
 export class BoardView {
   private ctx: CanvasRenderingContext2D
@@ -476,6 +502,7 @@ export class BoardView {
     c.setTransform(dpr, 0, 0, dpr, 0, 0)
     if (own) deadHint(c, g, own, s.signMap, this.at)
     if (s.counting) countMarks(c, g, s.signMap, s.counting, this.at)
+    if (s.focus || s.marks?.length) paintMarks(c, i => g.P[i], i => g.P[i], g.cell, s.marks, s.focus, S, S)
     if (a) { const ap = this.at(a.x, a.y); stoneShadow(c, g, ...ap, t); stone(c, g, a.x, a.y, a.c, t, ap) }
     const l = s.last
     if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) lastRing(c, g, this.at(l[0], l[1]), s.signMap[l[1]][l[0]])

@@ -14,7 +14,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import type { Sign, Vertex } from '@sabaki/go-board'
-import type { BoardState } from '../board/BoardView'
+import { paintMarks, type BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
 import { bowlHeap, BT, clampOrbit, dims, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, stepOrbit, SX, SZ, TGT_Y, TOD, todAt, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
@@ -328,6 +328,8 @@ export class Board3D {
   private boardU = { uInk: { value: new THREE.Color(0x120c07) }, uLim: { value: 9 }, uStep: { value: 6 }, uFive: { value: 0 }, uHalf: { value: 0.5 } }
   private board: THREE.Mesh | null = null
   private labels: THREE.Mesh | null = null
+  private marks: THREE.Mesh | null = null
+  private marksKey = ''
   private bowlMat = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.26, 0.15, 0.09), roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.16 })
   private decor = new THREE.Group()
   private bowls: THREE.Mesh[] = []
@@ -477,6 +479,7 @@ export class Board3D {
     }
     this.state = state
     this.reconcile(state)
+    this.buildMarks()
     const own = state.ownership?.length === N * N ? state.ownership : null
     if (own !== this.own) {
       this.own = own
@@ -1003,6 +1006,7 @@ export class Board3D {
     Object.assign(this.key.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, near: 600, far: 2800 })
     this.key.shadow.camera.updateProjectionMatrix()
     this.buildLabels()
+    this.marksKey = ''; this.buildMarks()
     this.buildBowls()
     if (this.own) this.paintOwnership(this.own)
   }
@@ -1030,6 +1034,23 @@ export class Board3D {
     this.labels = new THREE.Mesh(new THREE.PlaneGeometry(BW, BD).rotateX(-Math.PI / 2), mat)
     this.labels.position.y = 0.02; this.labels.receiveShadow = true; this.labels.renderOrder = 1
     this.scene.add(this.labels)
+  }
+
+  /** The trainer's veil and lettered markers: one unlit plane over the board, repainted only when they change. */
+  private buildMarks() {
+    const s = this.state, key = s?.marks?.length || s?.focus ? JSON.stringify([s.marks, s.focus, this.N, this.coords]) : ''
+    if (key === this.marksKey) return
+    this.marksKey = key
+    if (this.marks) { this.scene.remove(this.marks); this.marks.geometry.dispose(); (this.marks.material as THREE.MeshBasicMaterial).map?.dispose(); (this.marks.material as THREE.Material).dispose(); this.marks = null }
+    if (!key || !s) return
+    const { BW, BD, N } = this.D, k = 2048 / Math.max(BW, BD), cv = mkCanvas(Math.round(BW * k), Math.round(BD * k))
+    paintMarks(cv.getContext('2d')!, i => (gx(N, i) + BW / 2) * k, j => (gz(N, j) + BD / 2) * k, SX * k, s.marks, s.focus, cv.width, cv.height)
+    const tex = new THREE.CanvasTexture(cv)
+    tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+    this.marks = new THREE.Mesh(new THREE.PlaneGeometry(BW, BD).rotateX(-Math.PI / 2), mat)
+    this.marks.position.y = 0.04; this.marks.renderOrder = 2
+    this.scene.add(this.marks)
   }
 
   private buildBowls() {

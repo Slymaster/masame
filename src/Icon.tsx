@@ -18,6 +18,7 @@ const ICONS = {
   'sun-low': <><circle cx="12" cy="13" r="3.5" /><path d="M3 20h18M4.5 13h1M18.5 13h1M12 5.5v1M6.7 7.7l.7.7M17.3 7.7l-.7.7" /></>,
   flag: <path d="M5 21V4M5 4h12l-2.5 4.5L17 13H5" />,
   review: <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5M3.5 3.5v5h5M12 8v4l2.5 2.5" />,
+  book: <path d="M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0M3 6v13M12 6v13M21 6v13" />,
 }
 
 export type IconName = keyof typeof ICONS
