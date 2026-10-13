@@ -22,6 +22,8 @@ futures-util = { version = "0.3", default-features = false }
 sha2 = "0.10"
 getrandom = "0.4" # PKCE verifier and OAuth state
 base64 = "0.23"
+# OGS tokens in the OS keychain. Linux: the blocking libdbus Secret Service client (libdbus is already linked by tao), not the zbus one, which brings its own runtime.
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service"] }
 tokio = { version = "1", features = ["process", "io-util", "sync", "fs", "macros", "rt-multi-thread", "time", "net"] }
 
 # Engine process (job object, error mode, OpenCL.dll check) and opening the credit links; already in the dependency tree via tauri.

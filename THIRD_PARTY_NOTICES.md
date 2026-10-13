@@ -83,6 +83,7 @@ About 300 crates are resolved for the macOS build (`src-tauri/Cargo.lock`). Dire
 | reqwest | MIT OR Apache-2.0 |
 | futures-util | MIT OR Apache-2.0 |
 | sha2 | MIT OR Apache-2.0 |
+| keyring | MIT OR Apache-2.0 |
 | tokio | MIT |
 
 Notable transitive dependencies:
