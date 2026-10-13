@@ -61,10 +61,7 @@ Masame est jeune, et le dit franchement.
 - **Windows** est écrit — le code, l'installeur NSIS et une compilation KataGo OpenCL avec repli automatique sur le processeur — et compilé par GitHub Actions. L'installeur est disponible en préversion, pas encore testé sur du vrai matériel.
 - **Linux, x86_64** est nouveau : une AppImage, un .deb et un .rpm, compilés sur Ubuntu 22.04 par GitHub Actions, avec KataGo 1.18.2 compilé depuis les sources (OpenCL, avec repli automatique sur le processeur). En préversion aussi.
 
-**Télécharge** la dernière version sur la [page des versions](https://github.com/Slymaster/masame/releases/latest) : un DMG pour macOS (Apple Silicon), un installeur pour Windows (x64), et une AppImage, un .deb et un .rpm pour Linux (x86_64). Les versions ne sont pas encore signées ; le système avertit donc au premier lancement :
-
-- **macOS :** si Masame est bloqué, ouvre Réglages Système → Confidentialité et sécurité et clique sur **Ouvrir quand même**.
-- **Windows :** quand SmartScreen apparaît, clique sur **Informations complémentaires**, puis **Exécuter quand même**.
+**Télécharge** la dernière version sur la [page des versions](https://github.com/Slymaster/masame/releases/latest) : un DMG pour macOS (Apple Silicon), un installeur pour Windows (x64), et une AppImage, un .deb et un .rpm pour Linux (x86_64). La version macOS est signée et notarisée par Apple : elle s'ouvre sans avertissement. La version Windows n'est pas encore signée : quand SmartScreen apparaît, clique sur **Informations complémentaires**, puis **Exécuter quand même**.
 
 Sous **Linux**, Masame demande glibc 2.35 ou plus récent (Ubuntu 22.04+, Debian 12, Fedora, Linux Mint 21+). Quelques points à savoir :
 
