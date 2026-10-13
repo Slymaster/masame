@@ -181,13 +181,32 @@ describe('governor', () => {
   })
 
   it('caps the pixel ratio and degrades monotonically', () => {
-    const l = qualityLadder(3)
-    expect(l[0].dpr).toBe(2)
-    for (let i = 1; i < l.length; i++) {
-      expect(l[i].dpr).toBeLessThanOrEqual(l[i - 1].dpr)
-      expect(l[i].shadow).toBeLessThanOrEqual(l[i - 1].shadow)
+    for (const d of [1, 1.5, 2, 2.5, 3, 4]) {
+      const l = qualityLadder(d)
+      expect(l[0].dpr).toBe(Math.min(d, 3))
+      expect(l.map(q => q.kaya4k)).toEqual([true, true, false, false, false])
+      for (let i = 1; i < l.length; i++) {
+        expect(l[i].dpr).toBeLessThanOrEqual(l[i - 1].dpr)
+        expect(l[i].shadow).toBeLessThanOrEqual(l[i - 1].shadow)
+      }
+      expect(l.at(-1)).toMatchObject({ dpr: 1, shadow: 1024, msaa: 0 })
     }
-    expect(l.at(-1)).toMatchObject({ dpr: 1, shadow: 1024, msaa: 0 })
+    expect(qualityLadder(3).map(q => q.dpr)).toEqual([3, 3, 2.25, 1.875, 1])
+  })
+
+  it('keeps v0.2 pixel ratios up to dpr 2', () => {
+    const v02 = (d: number) => { d = Math.min(Math.max(d, 1), 2); return [d, d, Math.min(d, 1.5), Math.min(d, 1.25), 1] }
+    for (const d of [0.5, 1, 1.25, 1.5, 1.75, 2]) expect(qualityLadder(d).map(q => q.dpr)).toEqual(v02(d))
+  })
+
+  it('restarts from the top', () => {
+    const g = new Governor(5, 10)
+    while (g.measured(30));
+    g.sample(40)
+    g.restart()
+    expect(g.level).toBe(0)
+    for (let i = 0; i < 9; i++) expect(g.sample(40)).toBeNull() // the half-filled window was dropped
+    expect(g.sample(40)).toBe('down')
   })
 })
 

@@ -55,7 +55,7 @@ const FLOOR_MARGIN = 0.8
 // cosine^BAND_SHARP (soft edges), cooler than the body; the fine lines run through them, stronger inside a band
 const BAND_PITCH = 0.25, BAND_PITCH_VAR = 0.15, BAND_SHARP = 2, BAND_DARK = 0.13, BAND_WARP = 0.15
 const FINE_STRIPES = 0.7, FINE_OUTSIDE = 0.5, STRIPE_ROUGH = 0.12
-const KAYA_PX_MM = 4.08 // scan density: 2048 px along the grain = 502 mm
+const KAYA_MM = [502, 424.5] // the kaya scan's physical size (along, across the grain), at 2K and 4K alike
 const easeIO = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const lerp = THREE.MathUtils.lerp
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
@@ -389,6 +389,7 @@ export class Board3D {
   private q: Quality = this.ladder[0]
   private pendingQ = false // the governor stepped down: applied at the next scene change, never on a still board
   private resizeTimer = 0
+  private benchedPx = 0 // canvas area at the last warm-up
   private sound: StoneSound
   private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
   private autoTimer = 0
@@ -490,9 +491,14 @@ export class Board3D {
       this.canvas.style.width = `${W}px`; this.canvas.style.height = `${H}px`
       this.renderer.setSize(W, H, false)
       this.composer.setSize(W, H)
-      // quality is re-decided once the size settles (steps down only)
+      // quality is re-decided once the size settles (steps down only, unless the canvas shrank a lot)
       clearTimeout(this.resizeTimer)
-      this.resizeTimer = window.setTimeout(() => { if (this.ready && !this.dead) { this.applyPendingQuality(); this.warmUp(); this.invalidate() } }, 300)
+      this.resizeTimer = window.setTimeout(() => {
+        if (!this.ready || this.dead) return
+        // a much smaller canvas (window un-maximized) may afford a better level: re-decide from the top
+        if (this.W * this.H < 0.7 * this.benchedPx) { this.governor.restart(); this.pendingQ = true }
+        this.applyPendingQuality(); this.warmUp(); this.invalidate()
+      }, 300)
     }
     for (const c of [this.ortho, this.persp]) c.setViewOffset(fr.w, fr.h, -fr.x, -fr.y, W, H)
     this.endFade()
@@ -536,7 +542,8 @@ export class Board3D {
     this.composer = new EffectComposer(r, rt)
     this.composer.setPixelRatio(this.q.dpr)
     this.composer.addPass(new RenderPass(scene, this.ortho))
-    this.composer.addPass(new OutputPass())
+    const out = new OutputPass(); out.needsSwap = false // last pass, on screen: swapping would alternate (and allocate) a second MSAA target
+    this.composer.addPass(out)
 
     this.ortho.position.set(0, 3000, 0); this.ortho.up.set(0, 0, -1); this.ortho.lookAt(0, 0, 0)
     this.persp.up.set(0, 0, -1)
@@ -693,29 +700,43 @@ export class Board3D {
 
   private async boot(base: string) {
     try {
-      const tl = new THREE.TextureLoader(), decor = this.opts.decor
-      const [diff, nor, rough, env] = await Promise.all([
-        tl.loadAsync(`${base}kaya_diff.jpg`), tl.loadAsync(`${base}kaya_nor.jpg`), tl.loadAsync(`${base}kaya_rough.jpg`),
-        this.envFor(LOOKS[decor].sky).then(t => t.texture),
-      ])
+      const tl = new THREE.TextureLoader(), decor = this.opts.decor, aniso = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+      const kaya = async (sfx: string) => {
+        const [diff, nor, rough] = await Promise.all(['diff', 'nor', 'rough'].map(m => tl.loadAsync(`${base}kaya_${m}${sfx}.jpg`)))
+        diff.colorSpace = THREE.SRGBColorSpace
+        // mirrored: seamless, and the walnut ground's clone of the diffuse (same wrap) shares its GPU upload
+        for (const t of [diff, nor, rough]) { t.anisotropy = aniso; t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping }
+        return { diff, nor, rough }
+      }
+      const setMaps = (m: { diff: THREE.Texture; nor: THREE.Texture; rough: THREE.Texture }) => {
+        this.maps = m
+        Object.assign(this.boardMat, { map: m.diff, normalMap: m.nor, roughnessMap: m.rough }); this.boardMat.needsUpdate = true
+        this.bowlMat.map = m.diff; this.bowlMat.needsUpdate = true
+      }
+      const [maps, env] = await Promise.all([kaya(''), this.envFor(LOOKS[decor].sky).then(t => t.texture)])
       if (this.dead) return
-      diff.colorSpace = THREE.SRGBColorSpace
-      const aniso = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
-      for (const t of [diff, nor, rough]) t.anisotropy = aniso
-      this.maps = { diff, nor, rough }
-      Object.assign(this.boardMat, { map: diff, normalMap: nor, roughnessMap: rough }); this.boardMat.needsUpdate = true
-      this.bowlMat.map = diff; this.bowlMat.needsUpdate = true
+      setMaps(maps)
       if (!this.N) { this.N = 19; this.D = dims(19, false); this.buildBoard() }
       this.applyDecor(decor, env)
       this.updateScene(performance.now())
       // hide the first-frame shader compile: compile both cameras for the off-screen target, then fade in
-      this.renderer.setRenderTarget(this.composer.renderTarget1)
+      this.renderer.setRenderTarget(this.composer.readBuffer)
       this.decor.visible = true
       await this.renderer.compileAsync(this.scene, this.ortho)
       await this.renderer.compileAsync(this.scene, this.persp)
       this.renderer.setRenderTarget(null)
       if (this.dead) return
       this.warmUp() // still invisible: quality is decided here, once
+      // sharp close-ups on capable GPUs: swap in the 4K scan, uploaded before the fade-in (decided once, here)
+      const big = this.q.kaya4k && this.renderer.capabilities.maxTextureSize >= 4096 ? await kaya('_4k').catch(() => null) : null
+      if (this.dead) return
+      if (big) {
+        for (const t of Object.values(maps)) t.dispose()
+        setMaps(big)
+        if (this.grounds.walnut) { this.grounds.walnut.map.dispose(); delete this.grounds.walnut }
+        if (LOOKS[decor].ground === 'walnut') this.tableMat.map = this.groundMaps('walnut').map
+        for (const t of Object.values(big)) this.renderer.initTexture(t)
+      }
       this.ready = true
       this.frame(performance.now())
       requestAnimationFrame(() => { this.canvas.style.opacity = '1' })
@@ -837,7 +858,7 @@ export class Board3D {
     }
     if (g === 'walnut') { // the board's own scan, tiled across the table, grain running side to side
       const t = this.maps!.diff.clone()
-      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(plane / 502, plane / 424); t.rotation = Math.PI / 2
+      t.repeat.set(plane / KAYA_MM[0], plane / KAYA_MM[1]); t.rotation = Math.PI / 2
       m = { map: t }
     } else if (g === 'tatami') {
       const [c, h] = tatamiMaps()
@@ -874,6 +895,7 @@ export class Board3D {
   private warmUp() {
     this.updateScene(performance.now())
     while (this.governor.measured(this.benchMs(8))) this.applyQuality(this.ladder[this.governor.level])
+    this.benchedPx = this.W * this.H
   }
 
   private applyPendingQuality() {
@@ -901,7 +923,7 @@ export class Board3D {
     const geo = new RoundedBoxGeometry(BW, BT, BD, 4, 2.2)
     // planar UVs at the scan's real density; the grain runs along the board's depth (player to player)
     const P = geo.attributes.position, Nn = geo.attributes.normal, uv = geo.attributes.uv
-    const U = 2048 / KAYA_PX_MM, V = 1732 / KAYA_PX_MM
+    const [U, V] = KAYA_MM
     for (let i = 0; i < P.count; i++) {
       const x = P.getX(i), y = P.getY(i), z = P.getZ(i), nx = Math.abs(Nn.getX(i)), ny = Math.abs(Nn.getY(i))
       if (ny > 0.6) uv.setXY(i, 0.5 + z / U, 0.5 + x / V)                // top: fibres along z
