@@ -54,10 +54,11 @@ const FLOOR_MARGIN = 0.8
 // cosine^BAND_SHARP (soft edges), cooler than the body; the fine lines run through them, stronger inside a band
 const BAND_PITCH = 0.25, BAND_PITCH_VAR = 0.15, BAND_SHARP = 2, BAND_DARK = 0.13, BAND_WARP = 0.15
 const FINE_STRIPES = 0.7, FINE_OUTSIDE = 0.5, STRIPE_ROUGH = 0.12
-// realism, kept subtle (debug.tune() sets them live): the urushi lines' dome (edge slope), width wobble (±share) and
-// gloss; the shoji's bars (light level left behind a bar; the share of light is LOOKS.shoji, shoji ≥ 0 overrides it);
+// realism, kept subtle and only in Contemplation (Study stays as tuned for readability; debug.tune() sets them live):
+// the urushi lines' dome (edge slope), width wobble (±share) and gloss; the kaya's patina (roughness × (1 − patina) at
+// the centre, gone 80→220 mm out, where hands polish the board); the shoji's bars (light level left behind a bar; the share of light is LOOKS.shoji, shoji ≥ 0 overrides it);
 // Contemplation's vignette (darkening in the frame's corners)
-const FX = { relief: 0.45, wobble: 0.08, inkRough: 0.28, shojiBar: 0.15, shoji: -1, vignette: 0.22 }
+const FX = { relief: 0.45, wobble: 0.08, inkRough: 0.28, patina: 0.1, shojiBar: 0.15, shoji: -1, vignette: 0.22 }
 const SHOJI_MM = 4000, SHOJI_R = 1600 // the shoji light's distance and its cookie's half width there
 const KAYA_MM = [502, 424.5] // the kaya scan's physical size (along, across the grain), at 2K and 4K alike
 const easeIO = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
@@ -69,6 +70,8 @@ const mkCanvas = (w: number, h: number) => Object.assign(document.createElement(
 interface Stone extends Placed {
   p: number; c: Sign; seed: number; rotY: number
   t0: number; landed: boolean; captured: Stone[]
+  /** Landed at once (navigation interrupted its drop): no slide. */
+  still?: boolean
 }
 
 function kelvin(K: number) {
@@ -81,7 +84,7 @@ function kelvin(K: number) {
 
 /* ---------- shaders ---------- */
 const GLSL_GRID = /* glsl */`
-uniform vec3 uInk; uniform float uLim, uStep, uFive, uHalf, uRelief, uWobble, uInkRough;
+uniform vec3 uInk; uniform float uLim, uStep, uFive, uHalf, uRelief, uWobble, uInkRough, uPatina;
 varying vec3 vLoc;
 // ink coverage across a line; g: the slope of its lacquer dome (urushi stands proud of the wood), only where the line is
 // wide enough on screen to show it. a = the coordinate along the line: brush-drawn, its width wanders slowly.
@@ -344,7 +347,7 @@ export class Board3D {
   private boardMat!: THREE.MeshPhysicalMaterial
   /** Pale golden kaya (the scan, barely graded): readability comes from the stones' contact shadow and rim, not dark wood. */
   private woodTone = new THREE.Color(0.47, 0.442, 0.395)
-  private boardU = { uInk: { value: new THREE.Color(0x120c07) }, uLim: { value: 9 }, uStep: { value: 6 }, uFive: { value: 0 }, uHalf: { value: 0.5 }, uRelief: { value: FX.relief }, uWobble: { value: FX.wobble }, uInkRough: { value: FX.inkRough } }
+  private boardU = { uInk: { value: new THREE.Color(0x120c07) }, uLim: { value: 9 }, uStep: { value: 6 }, uFive: { value: 0 }, uHalf: { value: 0.5 }, uRelief: { value: 0 }, uWobble: { value: 0 }, uInkRough: { value: 0.45 }, uPatina: { value: 0 } }
   private board: THREE.Mesh | null = null
   private labels: THREE.Mesh | null = null
   private bowlMat = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.26, 0.15, 0.09), roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.16 })
@@ -551,6 +554,7 @@ export class Board3D {
     for (const g of Object.values(this.grounds)) { g.map.dispose(); g.bump?.dispose() }
     this.tableMat.alphaMap?.dispose()
     this.owTex.dispose(); this.shojiTex.dispose()
+    for (const l of [this.key, this.lamp, this.shoji, this.spot]) l.shadow.map?.dispose() // render targets the renderer doesn't free
     for (const e of this.envs.values()) void e.then(t => t.dispose(), () => {})
     this.endFade(); this.fadeMat.dispose(); (this.fadeScene.children[0] as THREE.Mesh).geometry.dispose()
     this.composer.dispose()
@@ -648,10 +652,14 @@ export class Board3D {
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLoc = position;')
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + GLSL_GRID)
         .replace('#include <map_fragment>', '#include <map_fragment>\nvec2 inkG; float ink = gridInk(vLoc, inkG);\ndiffuseColor.rgb = mix(diffuseColor.rgb, uInk, ink);')
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, uInkRough, ink);')
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          #ifdef USE_ROUGHNESSMAP
+          { float d = length((vRoughnessMapUv - 0.5) * vec2(${KAYA_MM[0]}, ${KAYA_MM[1]})); roughnessFactor *= 1.0 - uPatina * (1.0 - smoothstep(80.0, 220.0, d)); }
+          #endif
+          roughnessFactor = mix(roughnessFactor, uInkRough, ink);`)
         // the dome tilts both the wood's normal and the clear coat's (the board is only translated: object xz = world xz)
-        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nvec3 inkN = mat3(viewMatrix) * vec3(inkG.x, 0.0, inkG.y);\nnormal = normalize(normal - inkN);')
-        .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\n#ifdef USE_CLEARCOAT\nclearcoatNormal = normalize(clearcoatNormal - inkN);\n#endif')
+        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nvec3 inkN = mat3(viewMatrix) * vec3(inkG.x, 0.0, inkG.y);\nif (uRelief > 0.0) normal = normalize(normal - inkN);')
+        .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\n#ifdef USE_CLEARCOAT\nif (uRelief > 0.0) clearcoatNormal = normalize(clearcoatNormal - inkN);\n#endif')
     }
     this.boardMat.customProgramCacheKey = () => 'kaya'
 
@@ -992,7 +1000,8 @@ export class Board3D {
   private extrasOn() {
     this.vignette.visible = this.camE > 0 && this.fx.vignette > 0
     const on = this.shojiShare() > 0 && LOOKS[this.decorOn ?? this.opts.decor].lamp === 0
-    if (this.shoji.visible !== on) { this.shoji.visible = this.shoji.castShadow = on; this.shoji.shadow.map?.dispose(); this.shoji.shadow.map = null }
+    const cast = on && this.governor.level < this.ladder.length - 2 // the two lowest levels skip its shadow pass
+    if (this.shoji.visible !== on || this.shoji.castShadow !== cast) { this.shoji.visible = on; this.shoji.castShadow = cast; this.shoji.shadow.map?.dispose(); this.shoji.shadow.map = null }
   }
 
   private applyDecor(d: Decor, env: THREE.Texture) {
@@ -1040,6 +1049,7 @@ export class Board3D {
     if (q.shadow !== prev.shadow) for (const l of [this.key, this.lamp, this.shoji]) { const n = l === this.shoji ? q.shadow / 2 : q.shadow; l.shadow.mapSize.set(n, n); l.shadow.map?.dispose(); l.shadow.map = null }
     if (q.msaa !== prev.msaa) for (const rt of [this.composer.renderTarget1, this.composer.renderTarget2]) { rt.samples = q.msaa; rt.dispose() }
     if (q.bowlSegments !== prev.bowlSegments && this.N) this.buildBowls()
+    this.extrasOn()
     this.invalidate()
   }
 
@@ -1174,7 +1184,7 @@ export class Board3D {
 
   private animateDrop(s: Stone, now: number) {
     if (this.instant()) { this.contact(s); return }
-    s.t0 = now; s.landed = false
+    s.t0 = now; s.landed = false; s.still = false
   }
 
   /** Diffs the position against the stones on the board: a single new stone with removed opponents is a move with captures. */
@@ -1199,7 +1209,7 @@ export class Board3D {
       return
     }
     // navigation, undo, setup, or a move whose drop() comes later: settle at once (an interrupted drop lands now)
-    for (const [k, s] of this.stones) if (k < 0) this.stones.delete(k); else if (!s.landed) { s.landed = true; s.captured = []; s.t0 = -1e9 }
+    for (const [k, s] of this.stones) if (k < 0) this.stones.delete(k); else if (!s.landed) { s.landed = true; s.captured = []; s.still = true }
     this.recent = move ? { p: move.p, c: move.c, list: removed, at: now } : null
     if (move && removed.length && !this.state?.captures) this.capCount[move.c] += removed.length
     if (state.signMap.every(r => r.every(c => !c))) this.capCount = { 1: 0, [-1]: 0 }
@@ -1246,7 +1256,7 @@ export class Board3D {
       // the only motion: the new stone's last 12 mm, its shadow tightening as it comes down, then a 1 mm slide into place
       const P = dropPose(now - s.t0), a = s.seed * 43.98 // a direction of its own per stone
       if (!s.landed && now - s.t0 >= DROP_MS) this.contact(s)
-      const y = s.landed ? 0 : P.y, k = s.landed ? 1 : P.k, sl = s.landed ? P.slide * SLIDE_MM : SLIDE_MM
+      const y = s.landed ? 0 : P.y, k = s.landed ? 1 : P.k, sl = s.still ? 0 : s.landed ? P.slide * SLIDE_MM : SLIDE_MM
       if (!s.landed || sl > 0) busy = true
       let dim = false
       if (s.p >= 0 && counting?.dead[s.y]?.[s.x]) dim = true
@@ -1407,7 +1417,8 @@ export class Board3D {
     this.boardMat.color.copy(this.woodTone).multiplyScalar(lerp(1, 0.88, hc))
     this.boardMat.normalScale.setScalar(lerp(0.6, 0.25, hc))
     this.boardU.uHalf.value = this.noGrid ? 0 : lerp(0.5, 0.62, hc)
-    this.boardU.uRelief.value = this.fx.relief; this.boardU.uWobble.value = this.fx.wobble; this.boardU.uInkRough.value = this.fx.inkRough
+    this.boardU.uRelief.value = this.fx.relief * c; this.boardU.uWobble.value = this.fx.wobble * c
+    this.boardU.uInkRough.value = lerp(0.45, this.fx.inkRough, c); this.boardU.uPatina.value = this.fx.patina * c
     this.vigU.uVig.value = this.fx.vignette
     if (this.updateStones(now)) busy = true
     return busy
