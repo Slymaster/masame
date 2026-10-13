@@ -142,7 +142,7 @@ async fn grant(c: &reqwest::Client, base: &str, pairs: &[(&str, &str)]) -> Res<T
 
 fn load(dir: &Path) -> Option<Tokens> { serde_json::from_slice(&std::fs::read(dir.join(FILE)).ok()?).ok() }
 
-// shortcut: a user-only file, not the keychain (ad-hoc macOS signing would re-prompt keychain access after every update); move to the keychain once the app is notarized
+// shortcut: a user-only file, not the keychain (builds up to 0.2.0 were ad-hoc signed, which re-prompts keychain access after every update); macOS builds are Developer ID signed since 0.2.1, so the keychain is now an option
 fn save(dir: &Path, t: &Tokens) -> std::io::Result<()> {
     use std::io::Write;
     std::fs::create_dir_all(dir)?;
