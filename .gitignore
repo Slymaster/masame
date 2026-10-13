@@ -18,3 +18,4 @@ design/atelier3d/
 src-tauri/resources/licenses/THIRD_PARTY_LICENSES.txt
 src-tauri/resources/licenses/LICENSE
 src-tauri/resources/licenses/THIRD_PARTY_NOTICES.md
+scripts/joseki/.cache/
