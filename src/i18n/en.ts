@@ -28,6 +28,9 @@ export const en = {
   score: (lead: number) => (lead === 0 ? 'Draw.' : `${color(lead > 0 ? 1 : -1)} wins by ${f.num(Math.abs(lead))}.`),
   refused: { ko: 'Ko: you can’t retake right away. Play elsewhere first.', suicide: 'Illegal move: it would be suicide.' },
   history: 'History', prev: 'Previous move', next: 'Next move',
+  autoplay: 'Autoplay', perMove: (s: number) => `${f.num(s)} s`, space: 'Space',
+  variation: (k: number, n: number) => `Variation ${k}/${n}`, mainLine: 'Main line',
+  undoAsk: (n: number) => `Delete this move and the ${f.plural(n, 'move', 'moves')} after it?`,
   pass: 'Pass', undo: 'Undo', open: 'Open…', save: 'Save…', resign: 'Resign',
   openFailed: (m: string) => `Couldn’t open this file: ${m}`,
   saved: 'Game saved.',
@@ -75,7 +78,7 @@ export const en = {
   updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
   updateInstalling: 'Installing the update…',
   autoUpdate: 'Check for updates automatically',
-  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel' },
+  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay' },
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
     about: 'About Masame', hide: 'Hide Masame', hideOthers: 'Hide Others', showAll: 'Show All', quit: 'Quit Masame',
@@ -112,10 +115,10 @@ export const en = {
   missed: (s: number, gap: number) => `${color(s)} gets away with it: ${pts(gap)} from the best punishment.`,
   seePunishment: 'See the punishment',
   punishLine: (p: number, v: string, s: number, loss: number) => `${color(p)} ${v} punishes it: ${color(s)} loses ${pts(loss)}.`,
-  punishHelp: '→ follows the line, and the light shows what changed hands. Play anywhere to explore: each move gets an answer.',
+  punishHelp: '→ follows the line, and the light shows what changed hands. Play anywhere to explore: each move gets an answer. ↑ ↓ compare your tries.',
   seeBetter: 'See the better move',
   betterLine: (s: number, v: string, loss: number) => `Better: ${color(s)} ${v}, which keeps those ${pts(loss)}.`,
-  betterHelp: '→ follows the line. Compare its light with the punishment’s. Play anywhere to explore: each move gets an answer.',
+  betterHelp: '→ follows the line. Compare its light with the punishment’s. Play anywhere to explore: each move gets an answer. ↑ ↓ compare your tries.',
   nextMoment: 'Next moment',
   // OGS (online-go.com)
   ogsBoard: (n: number, komi: number, rules: string) => `${n}×${n} · komi ${f.num(komi)} · ${rules} · OGS`,

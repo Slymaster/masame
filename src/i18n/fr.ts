@@ -29,6 +29,9 @@ export const fr: Dict = {
   score: (lead: number) => (lead === 0 ? 'Égalité.' : `${color(lead > 0 ? 1 : -1)} gagne de ${f.num(Math.abs(lead))}.`),
   refused: { ko: 'Ko : la reprise immédiate est interdite. Joue ailleurs d’abord.', suicide: 'Coup interdit : ce serait un suicide.' },
   history: 'Historique', prev: 'Coup précédent', next: 'Coup suivant',
+  autoplay: 'Lecture auto', perMove: (s: number) => `${f.num(s)} s`, space: 'Espace',
+  variation: (k: number, n: number) => `Variante ${k}/${n}`, mainLine: 'Ligne principale',
+  undoAsk: (n: number) => `Supprimer ce coup et les ${f.plural(n, 'coup', 'coups')} qui le suivent ?`,
   pass: 'Passer', undo: 'Annuler', open: 'Ouvrir…', save: 'Enregistrer…', resign: 'Abandonner',
   openFailed: (m: string) => `Impossible d’ouvrir ce fichier : ${m}`,
   saved: 'Partie enregistrée.',
@@ -76,7 +79,7 @@ export const fr: Dict = {
   updateDownloading: (p: number | null) => (p === null ? 'Téléchargement de la mise à jour…' : `Téléchargement de la mise à jour… ${f.pct(p)}`),
   updateInstalling: 'Installation de la mise à jour…',
   autoUpdate: 'Rechercher les mises à jour automatiquement',
-  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau' },
+  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto' },
   // barre de menus macOS (src-tauri/src/menu.rs)
   menu: {
     about: 'À propos de Masame', hide: 'Masquer Masame', hideOthers: 'Masquer les autres', showAll: 'Tout afficher', quit: 'Quitter Masame',
@@ -113,10 +116,10 @@ export const fr: Dict = {
   missed: (s: number, gap: number) => `${color(s)} s’en tire : à ${pts(gap)} de la meilleure punition.`,
   seePunishment: 'Voir la punition',
   punishLine: (p: number, v: string, s: number, loss: number) => `${color(p)} ${v} punit l’erreur : ${color(s)} perd ${pts(loss)}.`,
-  punishHelp: '→ suit la ligne, et la lumière montre ce qui a changé de camp. Joue où tu veux pour explorer : chaque coup reçoit une réponse.',
+  punishHelp: '→ suit la ligne, et la lumière montre ce qui a changé de camp. Joue où tu veux pour explorer : chaque coup reçoit une réponse. ↑ ↓ compare tes essais.',
   seeBetter: 'Voir le bon coup',
   betterLine: (s: number, v: string, loss: number) => `Mieux : ${color(s)} ${v}, qui garde ces ${pts(loss)}.`,
-  betterHelp: '→ suit la ligne. Compare sa lumière avec celle de la punition. Joue où tu veux pour explorer : chaque coup reçoit une réponse.',
+  betterHelp: '→ suit la ligne. Compare sa lumière avec celle de la punition. Joue où tu veux pour explorer : chaque coup reçoit une réponse. ↑ ↓ compare tes essais.',
   nextMoment: 'Moment suivant',
   // OGS (online-go.com)
   ogsBoard: (n: number, komi: number, rules: string) => `${n}×${n} · komi ${f.num(komi)} · ${rules} · OGS`,

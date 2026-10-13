@@ -4,7 +4,7 @@ import type { Board3D, Board3DOptions, Board3DState, FallbackReason, TimeMode } 
 import { rng } from './board/noise'
 import { adjustRank, clampRank, decide, DEFAULT_RANK, humanProfile, stepRank } from './bot'
 import { askFirst, confirmDiscard, openSgfFile, saveSgfFile } from './files'
-import { Game, type Sign, type Vertex } from './game'
+import { Game, type GameNode, type Move, type Sign, type Vertex } from './game'
 import { analyze, call, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
 import { OgsSection } from './OgsSection'
@@ -13,6 +13,7 @@ import { Seg } from './Seg'
 import * as ogs from './ogs'
 import { Sheet } from './Sheet'
 import { Icon } from './Icon'
+import { Timeline } from './Timeline'
 import { cardSkin } from './board3d/logic'
 import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
 import { loadSgf, resignResult, saveSgf, scoreResult } from './sgf'
@@ -32,17 +33,18 @@ const random = rng(Date.now())
 
 type Renderer = '3d' | '2d'
 const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
+const AUTOPLAY = [0.5, 1, 2, 4] as const // seconds per move
 interface Settings {
   lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; delay: boolean; territory: boolean
   renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor
-  langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number
+  langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number; autoplay: typeof AUTOPLAY[number]
 }
 const SETTINGS_KEY = 'baduk.settings'
 function loadSettings(): Settings {
   const d: Settings = {
     lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, delay: true, territory: false,
     renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', langChosen: false, panelHidden: false,
-    autoUpdate: true, updateChecked: 0,
+    autoUpdate: true, updateChecked: 0, autoplay: 1,
   }
   let j: Partial<Settings> = {}
   try { j = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') ?? {} } catch { /* private mode or garbage: defaults */ }
@@ -54,6 +56,7 @@ function loadSettings(): Settings {
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: DECORS.includes(s.decor) ? s.decor : 'atelier', panelHidden: s.panelHidden === true, ...updateSettings(j),
+    autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1,
   }
 }
 
@@ -152,11 +155,13 @@ export function App() {
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setSettings(s => ({ ...s, [k]: v }))
   useEffect(() => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch { /* private mode */ } }, [settings])
 
-  // the current match against the bot (null = two players), its result, and the bot's past winrates for resigning
+  // the current match against the bot (null = two players), the results by line (keyed by its leaf), the bot's winrates for resigning
   const [bot, setBot] = useState<{ sign: Sign; rank: string } | null>(null)
-  const [result, setResult] = useMsg()
+  const outcomes = useRef(new WeakMap<GameNode, { msg: Msg; re: string }>())
+  const outcome = outcomes.current.get(game.leaf), result = outcome?.msg ?? null
+  const setResult = (g: Game, o: { msg: Msg; re: string } | null) => { if (o) outcomes.current.set(g.leaf, o); else outcomes.current.delete(g.leaf); rerender() }
   const [thinking, setThinking] = useState(false)
-  const winrates = useRef<number[]>([])
+  const winrates = useRef(new WeakMap<Move, number>())
   const scored = useRef<Game | null>(null)
   const [botError, setBotError] = useMsg()
   const [diag, setDiag] = useMsg() // "Copy diagnostics": copied, or why not
@@ -190,7 +195,7 @@ export function App() {
   const [own, setOwn] = useState<{ game: Game; data: number[] | null; score: number } | null>(null)
   // game review: null = off; moments null while reading; branch = the lesson's variation (null while reading or clean)
   const [review, setReview] = useState<{ side: Sign | 0; pct: number; error: unknown; moments: Moment[] | null; k: number; step: Step
-    branch: Game | null; ask: boolean; gap: number | null; explored: boolean } | null>(null)
+    branch: Game | null; ask: GameNode | null; gap: number | null; explored: boolean } | null>(null)
   const [reviewTry, retryReview] = useReducer((x: number) => x + 1, 0)
   const scan = useRef<{ last: Game['board']; leads: (number | undefined)[] } | null>(null) // scan leads of the record ending on `last`
   const scanRun = useRef<Promise<unknown>>(Promise.resolve()) // the last readGame or answer: the next one starts once it settles (2 queries at most)
@@ -273,7 +278,8 @@ export function App() {
   const countingNow = !review && counting?.game === game && game.ended && atEnd ? counting : null
   const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result) && !ongoing
   const canReview = reviewShown && canAnalyze
-  const locked = !!result && (!!bot || atEnd) // two players may branch off a validated game from an earlier move
+  const live = ongoing || !!bot && !result // a game being played: no autoplay
+  const locked = !!result && atEnd // a decided line: playing from an earlier move opens a variation
   const play = (v: Vertex | null) => {
     if (countingNow) {
       if (v && !result) setCounting({ ...countingNow, dead: toggleDead(game.board.signMap, countingNow.dead, v) })
@@ -284,7 +290,7 @@ export function App() {
       const r = shown.play(v)
       if (r === 'ok') {
         const graded = shown.cursor === from + 1 // a new try from the lesson's start: graded again
-        setReview(x => x && { ...x, ask: true, explored: x.explored || x.step !== 'try', gap: graded ? null : x.gap })
+        setReview(x => x && { ...x, ask: shown.leaf, explored: x.explored || x.step !== 'try', gap: graded ? null : x.gap })
         changed()
       } else if (pick(t.refused, r)) setNote(d => pick(d.refused, r)!)
       return r === 'ok'
@@ -297,30 +303,59 @@ export function App() {
     if (locked || !humanTurn) return false
     const r = game.play(v)
     if (r === 'ok' && online) { changed(); if (!send(() => ogs.move(online.id, v))) game.undo() } // optimistic: OGS echoes it back
-    else if (r === 'ok') { setDirty(true); setCounting(null); if (!bot) setResult(null); changed() }
+    else if (r === 'ok') { setDirty(true); setCounting(null); changed() }
     else if (pick(t.refused, r)) setNote(d => pick(d.refused, r)!)
     return r === 'ok'
   }
-  const undo = () => {
-    if (review || bot && result || online) return
+  const undo = async () => {
+    if (review || bot && result || online || game.cursor === 0) return
+    // what goes: the subtree from the first move taken back (against the bot, back to the player's last move)
+    let to = game.cursor - 1, n = 0
+    if (bot) while (to > 0 && -game.moves[to - 1].sign === bot.sign) to--
+    for (const st = [game.nodes[to + 1]]; st.length; n++) st.push(...st.pop()!.children)
+    if (n > 2 && !(await askFirst(t.undoAsk(n - 1), t.undo))) return
     let undone = false
     // against the bot, take back to the player's last move
     while (game.undo()) { undone = true; if (!bot || game.cursor === 0 || game.toPlay !== bot.sign) break }
-    if (undone) { winrates.current = winrates.current.slice(0, Math.ceil(game.cursor / 2)); setDirty(true); setCounting(null); changed() }
-    if (undone && !bot) setResult(null) // two players: counted again if the game ends again (Game.undo dropped the RE)
+    if (undone) { setDirty(true); setCounting(null); changed() }
   }
   const goTo = (i: number) => {
+    setAuto(null)
     i = Math.max(review?.branch ? from : 0, Math.min(shown.moves.length, i))
     if (i === shown.cursor) return
     shown.goTo(i) // in a lesson, an owed answer (ask) waits until the cursor is back at the branch end
     changed()
   }
+  /** Another line of the shown tree (↑ ↓, the variation links); not while reading or without lessons. */
+  const relocate = (f: (g: Game) => void) => {
+    if (review && !review.branch) return
+    setAuto(null); setCounting(null); f(shown); changed()
+  }
+  // Autoplay: the line being played, one move per settings.autoplay seconds, dropped like the bot's moves
+  const [auto, setAuto] = useState<Game | null>(null)
+  const toggleAuto = () => {
+    if (auto) return setAuto(null)
+    if (live || shown.moves.length === floor) return
+    if (shown.cursor === shown.moves.length) { shown.goTo(floor); changed() } // from the start again (an opened file shows its end)
+    setAuto(shown)
+  }
+  useEffect(() => {
+    if (!auto) return
+    if (auto !== shown || live || shown.cursor >= shown.moves.length) { setAuto(null); return }
+    const id = setTimeout(() => {
+      shown.goTo(shown.cursor + 1)
+      const m = shown.lastMove
+      if (m?.vertex) view.current?.drop(m.vertex, m.sign); else if (m) view.current?.pass?.(m.sign)
+      changed()
+    }, settings.autoplay * 1000)
+    return () => clearTimeout(id)
+  }, [auto, shown, ver, live, settings.autoplay]) // eslint-disable-line react-hooks/exhaustive-deps
   // online is cleared only here, and only with the board replaced: an unfinished OGS position never becomes a local
   // game open to KataGo (a finished one may stay, see signOut)
   const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null); setJoining(false) }
   const start = (g: Game, b: typeof bot) => { cancelSearch(); stopOnline(); show(g, b) }
   const show = (g: Game, b: typeof bot) => {
-    setGame(g); setBot(b); setResult(null); setNote(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); winrates.current = []
+    setGame(g); setBot(b); setNote(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null)
   }
   /** Leaving the shown game: an unfinished OGS game goes on without us; unsaved moves are lost. */
   const canLeave = async () => ongoing ? askFirst(t.ogsLeaveAsk, t.ogsLeave) : !dirty || confirmDiscard()
@@ -378,7 +413,7 @@ export function App() {
         }
         len = s.game.moves.length
         const r = s.result
-        setOnline(s); setResult(r ? d => d.ogsResult(r.winner, r.how, r.points) : null)
+        setOnline(s); setResult(s.game, r ? { msg: d => d.ogsResult(r.winner, r.how, r.points), re: r.re } : null)
       })
     } catch (e) { setNote(d => failureText(e, d)) }
   }
@@ -405,8 +440,9 @@ export function App() {
 
   /** End of a game: record the result (and, against the bot, nudge its rank toward a 50 % win rate, once). */
   const finish = (text: Msg, botWon: boolean | null, re: string) => {
-    setResult(text)
+    game.promote() // the decided line is the record's main line, which RE describes
     game.info.result = re
+    setResult(game, { msg: text, re })
     if (!bot || scored.current === game || botWon === null) return
     scored.current = game
     if (settings.autoAdjust) {
@@ -429,12 +465,12 @@ export function App() {
   const startReview = (side: Sign | 0) => {
     const last = game.boards.at(-1)!
     if (scan.current?.last !== last) scan.current = { last, leads: [] }
-    setReview({ side, pct: 0, error: null, moments: null, k: 0, step: 'try', branch: null, ask: false, gap: null, explored: false })
+    setReview({ side, pct: 0, error: null, moments: null, k: 0, step: 'try', branch: null, ask: null, gap: null, explored: false })
     changed()
   }
   const openMoment = (k: number, step: Step, moments = review!.moments!) => {
     const branch = moments[k] ? lessonBoard(game, moments[k], step) : null
-    setReview(x => x && { ...x, moments, k, step, branch, ask: false, gap: null, explored: false, error: null })
+    setReview(x => x && { ...x, moments, k, step, branch, ask: null, gap: null, explored: false, error: null })
     changed()
   }
   const leaveReview = () => { setReview(null); changed() }
@@ -467,18 +503,19 @@ export function App() {
       if (!live) return
       if (!a.humanPolicy) throw new LocalizedError(d => d.humanSilent)
       const n = game.info.size, botWinrate = bot.sign === 1 ? a.winrate : 1 - a.winrate
+      const history = game.moves.slice(0, game.cursor).flatMap(m => winrates.current.get(m) ?? []) // the bot's moves on this line
       const m = decide({
-        humanPolicy: a.humanPolicy, topMove: a.topMove, botWinrate, history: winrates.current, ownership: a.ownership,
-        signMap: game.board.signMap, opponentPassed: !!game.lastMove && !game.lastMove.vertex, moveNumber: game.cursor,
+        humanPolicy: a.humanPolicy, topMove: a.topMove, botWinrate, history, ownership: a.ownership,
+        signMap: game.board.signMap, opponentPassed: !!game.lastMove && !game.lastMove.vertex, moveNumber: game.moveNumber(),
         legal: i => game.isLegal([i % n, Math.floor(i / n)]),
       }, random)
-      winrates.current = [...winrates.current, botWinrate]
       if (m.kind === 'resign') return finish(d => d.resigns(bot.sign), false, resignResult(-bot.sign as Sign))
       const wait = settings.delay ? m.delay - (performance.now() - t0) : 0
       if (wait > 0) await new Promise(r => setTimeout(r, wait))
       if (!live) return
       const v: Vertex | null = m.kind === 'play' ? [m.index % n, Math.floor(m.index / n)] : null
       if (game.play(v) !== 'ok') game.play(null) // shortcut: an illegal sample (superko corner case) becomes a pass
+      winrates.current.set(game.lastMove!, botWinrate)
       if (v && game.lastMove?.vertex) view.current?.drop(v, bot.sign)
       else view.current?.pass?.(bot.sign)
       setDirty(true); changed()
@@ -524,7 +561,8 @@ export function App() {
 
   // In a lesson, the engine answers each move played on the branch; a try from the lesson's start is graded.
   const lesson = review?.branch
-  const answering = !!lesson && !!review?.ask && !review.error && lesson.cursor === lesson.moves.length && !lesson.ended
+  // only for the try that asked: a switch to an answered try (its end is the engine's move) asks nothing more
+  const answering = !!lesson && review?.ask === lesson.leaf && !review.error && lesson.cursor === lesson.moves.length && !lesson.ended
   useEffect(() => {
     if (!answering || !lesson || !m) return
     let live = true
@@ -539,7 +577,7 @@ export function App() {
       if (lesson.play(v) !== 'ok') lesson.play(null)
       if (v && lesson.lastMove?.vertex) view.current?.drop(v, sign)
       else view.current?.pass?.(sign)
-      setReview(x => x && { ...x, ask: false, error: null, gap: graded ? gradeTry(m, tried, a.scoreLead) : x.gap })
+      setReview(x => x && { ...x, ask: null, error: null, gap: graded ? gradeTry(m, tried, a.scoreLead) : x.gap })
       changed()
     }).catch(e => live && setReview(x => x && { ...x, error: e })).finally(() => live && setThinking(false))
     return () => { live = false; setThinking(false) }
@@ -584,6 +622,8 @@ export function App() {
         : e.altKey || e.metaKey || e.ctrlKey ? undefined
         : ({
             arrowleft: () => goTo(shown.cursor - 1), arrowright: () => goTo(shown.cursor + 1),
+            arrowup: () => relocate(g => g.switchVariation(-1)), arrowdown: () => relocate(g => g.switchVariation(1)),
+            ' ': e.target instanceof HTMLButtonElement ? undefined : toggleAuto,
             home: () => goTo(0), end: () => goTo(shown.moves.length),
             ...(review && { escape: leaveReview }),
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
@@ -595,7 +635,7 @@ export function App() {
               l: () => set('light', LIGHTS[(LIGHTS.indexOf(settings.light) + 1) % LIGHTS.length]),
             }),
           } as Record<string, () => void>)[k]
-      if (!act || e.repeat && cmd) return
+      if (!act || e.repeat && (cmd || k === ' ')) return
       e.preventDefault()
       act()
     }
@@ -604,7 +644,7 @@ export function App() {
   })
 
   const { size, komi, playerBlack, playerWhite } = game.info
-  const board = shown.board, total = shown.moves.length, toPlay = shown.toPlay, last = shown.lastMove
+  const board = shown.board, toPlay = shown.toPlay, last = shown.lastMove
   const shownOwn = settings.territory && own?.game === game && !ongoing ? own : null
   const engineWait = engine.state === 'tuning' ? t.tuningCaption
     : (thinking || reading) && engine.state === 'starting' ? t.engineStarting
@@ -615,7 +655,7 @@ export function App() {
   const lessonLine = !review ? null
     : reading ? t.reading
     : !m ? t.noMoments(review.side)
-    : review.step === 'try' ? graded === 'found' ? t.found : graded === 'short' ? t.shortOf(review.gap!) : graded ? t.missed(s, review.gap!) : t.tryAsk(p, m.at + 1)
+    : review.step === 'try' ? graded === 'found' ? t.found : graded === 'short' ? t.shortOf(review.gap!) : graded ? t.missed(s, review.gap!) : t.tryAsk(p, game.moveNumber(m.at) + 1)
     : review.step === 'punish' ? t.punishLine(p, gtp(m.punish[0]!, size), s, m.loss)
     : t.betterLine(s, gtp(m.better[0]!, size), m.loss)
   const lastMoment = !!review?.moments && review.k === review.moments.length - 1
@@ -669,7 +709,7 @@ export function App() {
 
   const playing = review ? !!review.branch : !game.ended && !result && (!online || online.phase === 'play') // whose turn it is means something
   const floor = review?.branch ? from : 0
-  const re = result ? game.info.result ?? '' : '' // "B+R", "W+4.5", "0"
+  const re = outcome?.re ?? '' // "B+R", "W+4.5", "0"
   const resignation = re.endsWith('+R'), countingOpen = !!final && !result
   // the count, shown while counting and, once validated, at every cursor position (scored on the final board)
   const end = game.boards.at(-1)!
@@ -771,7 +811,7 @@ export function App() {
                       <i style={{ width: `${review.pct}%` }} />
                     </div>
                   </> : !m ? <p className="estimate">{t.noMoments(review.side)}</p> : <>
-                    <p className="state">{t.moment(review.k + 1, review.moments!.length, m.at + 1, m.loss)}</p>
+                    <p className="state">{t.moment(review.k + 1, review.moments!.length, game.moveNumber(m.at) + 1, m.loss)}</p>
                     {review.moments!.length > 1 && (
                       <Seg label={t.moments} value={review.k} options={review.moments!.map((_, i) => [i, String(i + 1)])} set={k => openMoment(k, 'try')} />
                     )}
@@ -797,13 +837,7 @@ export function App() {
                 )
               })}
               {!review && cta}
-              <div className="tl">
-                <button className="chev" onClick={() => goTo(shown.cursor - 1)} disabled={shown.cursor <= floor} aria-label={t.prev} title={`${t.prev} (←)`}><Icon name="chevron-left" /></button>
-                <input type="range" min={floor} max={total} value={shown.cursor} onChange={e => goTo(+e.target.value)} aria-label={t.history}
-                  aria-valuetext={t.move(shown.cursor)} style={{ '--n': total - floor } as React.CSSProperties} />
-                <button className="chev" onClick={() => goTo(shown.cursor + 1)} disabled={shown.cursor === total} aria-label={t.next} title={`${t.next} (→)`}><Icon name="chevron-right" /></button>
-                <span className="mv">{t.moveOf(shown.cursor, total)}</span>
-              </div>
+              <Timeline g={shown} floor={floor} go={goTo} auto={!!auto} toggleAuto={toggleAuto} live={live} relocate={relocate} />
               {settings.territory && !review && !ongoing && (
                 <p className="estimate" aria-live="polite">
                   {!inTauri() || !canAnalyze ? t.territoryNeedsNet : shownOwn ? t.estimate(shownOwn.score) : t.estimating}
@@ -865,6 +899,10 @@ export function App() {
             <div className="lab"><span>{t.boardSection}</span><span /></div>
             <Switch label={t.coords} k="C" on={coords} toggle={() => setCoords(v => !v)} />
             <Switch label={t.sound} k="M" on={sound} toggle={() => setSound(v => !v)} />
+            <div className="row" style={{ cursor: 'default', gap: 16 }}>
+              <span>{t.autoplay} <kbd>{t.space}</kbd></span>
+              <Seg label={t.autoplay} value={settings.autoplay} options={AUTOPLAY.map(s => [s, t.perMove(s)])} set={v => set('autoplay', v)} />
+            </div>
             <Switch label={t.territory} k="T" on={settings.territory} toggle={() => set('territory', !settings.territory)}
               disabled={ongoing} title={ongoing ? t.ogsUnavailable : undefined} />
           </section>
@@ -923,7 +961,7 @@ export function App() {
 
           <section>
             <div className="lab"><span>{t.keyboard}</span><span /></div>
-            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel}</p>
+            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel}</p>
           </section>
         </Sheet>
       )}
