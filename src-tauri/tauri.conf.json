@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Masame",
   "mainBinaryName": "masame",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.sylvainrey.masame",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -24,11 +24,12 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://online-go.com wss://online-go.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
     }
   },
   "bundle": {
     "active": true,
+    "category": "BoardGame",
     "targets": [
       "app"
     ],
@@ -52,6 +53,15 @@
         ],
         "installMode": "currentUser"
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk1QkMzOEJCMUMyNjczQjcKUldTM2N5WWN1emk4bGVsV2djcGl0OEVxSjFhYkZ0V3RuSWhldXZKdkxHRnl0L2JVdzN4TWtIdXUK",
+      "endpoints": [
+        "https://github.com/Slymaster/masame/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true
     }
   }
 }

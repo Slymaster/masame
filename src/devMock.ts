@@ -5,10 +5,14 @@
 //     networks_state: { ok: { installed: [], active: null, activeKey: null, downloading: [], human: 'b18c384nbt-humanv0' } },
 //     engine_analyze: [{ ok: analysis }, { ok: analysis }, { err: { code: 'engine_stopped' } }], // per call, last repeats
 //     networks_catalog: { ok: { entries: [], error: null }, delay: 800 },
+//     'plugin:app|version': { ok: '0.2.0' },
+//     update_check: [{ ok: { version: '0.2.1', install: true }, delay: 600 }], // { ok: null } = up to date
+//     update_install: { err: { code: 'update_failed', detail: 'signature' }, delay: 5000 },
 //   } })); location.reload()
 //
 // Unlisted commands reject with { code: 'unmocked', detail: <command> }. From the console:
-// window.__badukMock.emit('network-progress', {...}) fires an event; window.__badukMock.calls lists every invoke.
+// window.__badukMock.emit('network-progress', {...}) fires an event (update-progress: { received, total }, then update-installing);
+// window.__badukMock.calls lists every invoke.
 
 type Reply = { ok?: unknown; err?: { code: string; detail?: string }; delay?: number }
 type Spec = { commands?: Record<string, Reply | Reply[]> }

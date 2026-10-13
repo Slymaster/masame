@@ -1,0 +1,170 @@
+import { describe, expect, it } from 'vitest'
+import { Game, type Move, type Sign, type Vertex } from './game'
+import type { Analysis } from './katago'
+import { gradeTry, lessonBoard, MIN_LOSS, pickMoments, readGame, reviewEnd, scanQuery, shift, verdict, type Moment } from './review'
+
+/** Alternating moves from Black; null = pass. */
+const record = (vs: (Vertex | null)[]): Move[] => vs.map((vertex, i) => ({ sign: (i % 2 ? -1 : 1) as Sign, vertex }))
+const row = (n: number): (Vertex | null)[] => Array.from({ length: n }, (_, i) => [i % 9, Math.floor(i / 9)] as Vertex)
+const moment = (o: Partial<Moment> = {}): Moment =>
+  ({ at: 4, sign: 1, loss: 6, lead: -3, punish: [[3, 3], [4, 4]], better: [[5, 5]], lost: null, kept: null, ...o })
+
+describe('pickMoments', () => {
+  const moves = record(row(8))
+  it('measures the loss from the mover’s side and filters by colour', () => {
+    // move 2 (Black) drops Black's lead by 5, move 5 (White) raises it by 3, move 6 (Black) loses 1
+    const leads = [0, 0, 0, -5, -5, -5, -2, -3, -3]
+    expect(pickMoments(leads, moves, 0, 19)).toEqual([2])
+    expect(pickMoments(leads, moves, 0, 9)).toEqual([2]) // 5 is too close
+    expect(pickMoments(leads, moves, 1, 3)).toEqual([2])
+    expect(pickMoments(leads, moves, -1, 3)).toEqual([5])
+    expect(pickMoments(leads, moves, 0, 3)).toEqual([2, 5])
+  })
+  it('sorts worst first, keeps picks apart, respects max', () => {
+    const many = record(row(30))
+    const leads = Array.from({ length: 31 }, () => 0)
+    const drop = (i: number, by: number) => { for (let j = i + 1; j < leads.length; j++) leads[j] += many[i].sign * -by }
+    drop(2, 3); drop(4, 8); drop(12, 5); drop(20, 2); drop(28, 4)
+    expect(pickMoments(leads, many, 0, 9)).toEqual([4, 12, 28, 20]) // 2 is within 5 plies of 4
+    expect(pickMoments(leads, many, 0, 19)).toEqual([4, 28]) // 10 plies apart on 19×19
+    expect(pickMoments(leads, many, 0, 3, 2)).toEqual([4, 12])
+  })
+  it('skips missing leads and the game-ending pass, keeps a first pass', () => {
+    const passes = record([[0, 0], null, null])
+    expect(pickMoments([0, 0, 5, 9], passes, 0, 3)).toEqual([1]) // White's first pass gave Black 5
+    expect(pickMoments([0, 0, 0, -9], passes, 0, 3)).toEqual([]) // Black's game-ending pass
+    expect(pickMoments([0, undefined, 9, 9], passes, 0, 3)).toEqual([])
+    expect(pickMoments([0, -MIN_LOSS + 0.1, 0, 0], passes, 0, 3)).toEqual([])
+  })
+})
+
+describe('reviewEnd', () => {
+  it('is the whole record, or stops before a move onto an occupied point', () => {
+    const g = new Game({ size: 9 })
+    for (const v of row(5)) g.play(v)
+    expect(reviewEnd(g)).toBe(5)
+    const bad = Game.fromRecord({ size: 9 }, record([[0, 0], [1, 1], [0, 0], [2, 2]]))
+    expect(reviewEnd(bad)).toBe(2)
+    // White B9, Black F4, White A8, Black A9 (lone-stone suicide), White G3
+    const suicide = Game.fromRecord({ size: 9 }, [[-1, [1, 0]], [1, [5, 5]], [-1, [0, 1]], [1, [0, 0]], [-1, [6, 6]]]
+      .map(([sign, vertex]) => ({ sign, vertex }) as Move))
+    expect(reviewEnd(suicide)).toBe(3)
+    const twice = Game.fromRecord({ size: 9 }, [{ sign: 1, vertex: [2, 2] }, { sign: 1, vertex: [6, 6] }, { sign: -1, vertex: [4, 4] }])
+    expect(reviewEnd(twice)).toBe(1)
+  })
+})
+
+describe('shift', () => {
+  it('keeps only the points that changed hands, with one mask for both maps', () => {
+    expect(shift([1, 0.2, -1, 0.5], [-1, 0.3, -1, 0])).toEqual({ lost: [-1, 0, 0, 0], kept: [1, 0, 0, 0.5] })
+    expect(shift(null, [1])).toEqual({ lost: null, kept: null })
+    expect(shift([1], null)).toEqual({ lost: null, kept: null })
+  })
+})
+
+describe('grading a try', () => {
+  it('is 0 on the punishment itself and never negative, for both colours', () => {
+    const b = moment() // Black's mistake: after the punishment Black leads by -3
+    expect(gradeTry(b, [3, 3], 10)).toBe(0)
+    expect(gradeTry(b, [0, 0], -1.5)).toBe(1.5)
+    expect(gradeTry(b, [0, 0], -5)).toBe(0)
+    expect(gradeTry(b, null, 3)).toBe(6)
+    const w = moment({ sign: -1, lead: 3 })
+    expect(gradeTry(w, [0, 0], 1)).toBe(2)
+    expect(gradeTry(w, [0, 0], 4)).toBe(0)
+  })
+  it('found under 1 point, missed when less than 1 point is recovered, short otherwise', () => {
+    const m = moment({ loss: 6 })
+    expect(verdict(m, 0)).toBe('found')
+    expect(verdict(m, 0.99)).toBe('found')
+    expect(verdict(m, 1)).toBe('short')
+    expect(verdict(m, 5)).toBe('short')
+    expect(verdict(m, 5.01)).toBe('missed')
+  })
+})
+
+describe('lessonBoard', () => {
+  it('starts each step at its position and leaves the game untouched', () => {
+    const g = new Game({ size: 9, result: 'B+R' })
+    for (const v of row(8)) g.play(v)
+    g.info.result = 'B+R'
+    g.goTo(3)
+    const m = moment({ at: 4, sign: 1, punish: [[3, 3], [4, 4], [0, 0], [5, 5]], better: [[6, 6]] }) // [0,0] is occupied
+    const tr = lessonBoard(g, m, 'try')
+    expect([tr.cursor, tr.moves.length]).toEqual([5, 5])
+    const pu = lessonBoard(g, m, 'punish')
+    expect([pu.cursor, pu.moves.length, pu.lastMove?.vertex]).toEqual([6, 7, [3, 3]])
+    const be = lessonBoard(g, m, 'better')
+    expect([be.cursor, be.moves.length, be.lastMove?.vertex]).toEqual([5, 5, [6, 6]])
+    expect([g.cursor, g.moves.length, g.info.result]).toEqual([3, 8, 'B+R'])
+  })
+})
+
+/** A fake engine: Black's lead per position, pvs and ownership for the deep checks, optional failure. */
+function fakeEngine(leads: number[], opts: { failAt?: number; deep?: Record<number, Partial<Analysis>> } = {}) {
+  let inFlight = 0, max = 0
+  const calls: { at: number; query: Record<string, unknown> }[] = []
+  const ask = async (at: number, query: object): Promise<Analysis> => {
+    const id = calls.push({ at, query: query as Record<string, unknown> })
+    inFlight++; max = Math.max(max, inFlight)
+    await new Promise(r => setTimeout(r, 1))
+    inFlight--
+    if (id === opts.failAt) throw new Error('engine_stopped')
+    const deep = 'includeOwnership' in query ? opts.deep?.[at] : undefined
+    return { winrate: 0.5, scoreLead: leads[at], topMove: '', pv: [[at % 9, 8]], ownership: [at % 2 ? 0.9 : -0.9, 0.1], humanPolicy: null, ...deep }
+  }
+  return { ask, calls, max: () => max }
+}
+
+describe('readGame', () => {
+  const game = new Game({ size: 9 })
+  for (const v of row(22)) game.play(v)
+  // mistakes, by index: Black's 2 (−4), White's 9 (−6), Black's 14 (−3), Black's 20 (−2.5)
+  const leads = Array.from({ length: 23 }, (_, i) => (i > 2 ? -4 : 0) + (i > 9 ? 6 : 0) + (i > 14 ? -3 : 0) + (i > 20 ? -2.5 : 0))
+  it('scans with two queries at most, then confirms candidates in game order', async () => {
+    const e = fakeEngine(leads, { deep: { 3: { scoreLead: -1 } } }) // the deep check sees move 2 lose only 1
+    const pct: number[] = []
+    const ms = await readGame(game, 0, [], e.ask, () => true, p => pct.push(p))
+    expect(e.max()).toBe(2)
+    const scans = e.calls.filter(c => !('includeOwnership' in c.query))
+    expect(scans.map(c => c.at)).toEqual(Array.from({ length: 23 }, (_, i) => i))
+    for (const c of scans) expect(c.query).toEqual(scanQuery(23))
+    expect(scanQuery(23).overrideSettings.maxTime).toBeCloseTo(120 / 23)
+    expect(scanQuery(1000).overrideSettings.maxTime).toBe(0.25)
+    expect(ms.map(m => [m.at, m.sign, m.loss])).toEqual([[9, -1, 6], [14, 1, 3], [20, 1, 2.5]]) // 2 is replaced by 20
+    expect(ms[0].punish).toEqual([[1, 8]])
+    expect(ms[0].better).toEqual([[0, 8]])
+    expect([ms[0].lost, ms[0].kept]).toEqual([[-0.9, 0], [0.9, 0]]) // the point that changed hands, from both sides
+    expect(pct.every((p, i) => p <= 99 && (i === 0 || p >= pct[i - 1]))).toBe(true)
+  })
+  it('drops a moment whose better move is the mistake itself', async () => {
+    const e = fakeEngine(leads, { deep: { 2: { pv: [[2, 0]] } } }) // game.moves[2] is [2, 0]
+    expect((await readGame(game, 0, [], e.ask, () => true, () => {})).map(m => m.at)).toEqual([9, 14, 20])
+  })
+  it('keeps at most three moments and filters by colour', async () => {
+    expect((await readGame(game, 0, [], fakeEngine(leads).ask, () => true, () => {})).map(m => m.at)).toEqual([2, 9, 14])
+    expect((await readGame(game, 1, [], fakeEngine(leads).ask, () => true, () => {})).map(m => m.at)).toEqual([2, 14, 20])
+  })
+  it('does not ask again for cached leads', async () => {
+    const cache: (number | undefined)[] = leads.slice(0, 20)
+    const e = fakeEngine(leads)
+    await readGame(game, 0, cache, e.ask, () => true, () => {})
+    expect(e.calls.filter(c => !('includeOwnership' in c.query)).map(c => c.at)).toEqual([20, 21, 22])
+    expect(cache).toEqual(leads)
+  })
+  it('rejects on the first error and starts nothing after it', async () => {
+    const e = fakeEngine(leads, { failAt: 3 })
+    const cache: (number | undefined)[] = []
+    await expect(readGame(game, 0, cache, e.ask, () => true, () => {})).rejects.toThrow('engine_stopped')
+    expect(e.calls.length).toBe(4) // the 4th was already in flight, and has settled
+    expect(cache[3]).toBe(leads[3])
+    expect(cache.filter(x => x !== undefined).length).toBe(3)
+  })
+  it('stops when no longer live', async () => {
+    let n = 0
+    const e = fakeEngine(leads)
+    const ms = await readGame(game, 0, [], (at, q) => { n++; return e.ask(at, q) }, () => n < 4, () => {})
+    expect(n).toBe(4)
+    expect(ms).toEqual([])
+  })
+})

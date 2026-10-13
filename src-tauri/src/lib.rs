@@ -3,6 +3,7 @@ mod engine;
 mod failure;
 mod menu;
 mod networks;
+mod ogs;
 
 use engine::{Engine, Spec, Status};
 use failure::{Failure, Res};
@@ -13,16 +14,19 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 struct App {
     engine: Arc<Engine>,
     http: reqwest::Client,
     catalog: Mutex<Vec<Entry>>,
     downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
-    #[cfg(windows)]
+    update: Mutex<Option<Update>>, // the newer release update_check found, for update_install
+    ogs: ogs::Ogs,
+    #[cfg(any(windows, target_os = "linux"))]
     failed_variants: Mutex<Vec<&'static str>>, // engine builds that failed to start in this session
 }
 
@@ -35,7 +39,7 @@ fn settings_path(app: &AppHandle) -> Res<PathBuf> { Ok(data_dir(app)?.join("sett
 fn read_settings(app: &AppHandle) -> Value { parse_settings(&settings_path(app).ok().and_then(|p| std::fs::read(p).ok()).unwrap_or_default()) }
 
 /// Always an object (anything else, even valid JSON, reads as empty), so `settings[key] = value` never panics: it can
-/// run with the engine lock held (the Windows fallback).
+/// run with the engine lock held (the engine fallback).
 fn parse_settings(bytes: &[u8]) -> Value { serde_json::from_slice(bytes).ok().filter(Value::is_object).unwrap_or(json!({})) }
 
 fn write_setting(app: &AppHandle, key: &str, value: Value) -> Res<()> {
@@ -59,9 +63,9 @@ fn active_network(app: &AppHandle) -> Option<String> {
 fn env_path(k: &str) -> Option<PathBuf> { if cfg!(debug_assertions) { std::env::var_os(k).map(PathBuf::from) } else { None } }
 
 /// The one place that decides which KataGo binary runs, and its platform-specific overrides: BADUK_KATAGO (dev), else
-/// on macOS the bundled sidecar, which Tauri places next to the app executable; on Windows (below) one of the official
+/// on macOS the bundled sidecar, which Tauri places next to the app executable; on Windows and Linux (below) one of the
 /// builds bundled as resources.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
     env_path("BADUK_KATAGO")
         .or_else(|| Some(std::env::current_exe().ok()?.parent()?.join(format!("katago{}", std::env::consts::EXE_SUFFIX))))
@@ -69,22 +73,26 @@ fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
         .ok_or(Failure::new("engine_missing"))
 }
 
-/// Windows: resources/katago-win/<variant>/katago.exe (next to its DLLs), the variant chosen by backend.rs.
-#[cfg(windows)]
+/// Windows: resources/katago-win/<variant>/katago.exe (next to its DLLs); Linux:
+/// resources/katago-linux/<variant>/katago. The variant is chosen by backend.rs.
+#[cfg(any(windows, target_os = "linux"))]
 fn engine_bin(app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
-    // OpenCL's tuning cache would default to katago.exe's folder, which is read-only once installed. Relative to
-    // KataGo's working directory, the data dir (an absolute path could hold characters its narrow argv cannot).
+    // OpenCL's tuning cache would default to the binary's folder, which is read-only once installed. Relative to
+    // KataGo's working directory, the data dir (on Windows an absolute path could hold characters its narrow argv
+    // cannot).
     let home = vec![OsString::from("homeDataDir=katago")];
     if let Some(b) = env_path("BADUK_KATAGO") { return Ok((b, home)) }
     let failed = app.state::<App>().failed_variants.lock().unwrap().clone();
     // No candidate: no OpenCL driver and no AVX2.
     let variant = backend::pick(&candidates(app), &failed).ok_or(Failure::with("cpu_unsupported", "no OpenCL.dll"))?;
-    let bin = app.path().resolve(Path::new("resources").join("katago-win").join(variant).join("katago.exe"), BaseDirectory::Resource)
+    let folder = if cfg!(windows) { "katago-win" } else { "katago-linux" };
+    let exe = format!("katago{}", std::env::consts::EXE_SUFFIX);
+    let bin = app.path().resolve(Path::new("resources").join(folder).join(variant).join(exe), BaseDirectory::Resource)
         .map_err(|e| Failure::with("engine_missing", e))?;
     Ok((bin, home))
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn candidates(app: &AppHandle) -> Vec<&'static str> { backend::candidates(read_settings(app)["engineVariant"].as_str(), opencl_ok(), cpu_ok()) }
 
 /// The OpenCL build imports OpenCL.dll, which only a GPU driver installs (in System32); it is not bundled. Without the
@@ -99,8 +107,13 @@ fn opencl_ok() -> bool {
     n > 0 && n < buf.len() && PathBuf::from(OsString::from_wide(&buf[..n])).join("OpenCL.dll").is_file()
 }
 
+/// Linux: libOpenCL.so.1 is only looked up in the system library paths (no planting concern); without a driver the
+/// OpenCL build fails before Ready and engine_fallback moves on to the CPU build. Only a Ready variant is remembered.
+#[cfg(target_os = "linux")]
+fn opencl_ok() -> bool { true }
+
 /// The CPU build is compiled for AVX2 + FMA; without them it would die on an illegal instruction.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn cpu_ok() -> bool {
     #[cfg(target_arch = "x86_64")]
     { is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") }
@@ -108,10 +121,10 @@ fn cpu_ok() -> bool {
     { false }
 }
 
-/// Windows: a bundled build that fails before it is ready (driver crash, hang) is replaced by the next candidate for
-/// this session. Nothing is persisted here: a bad model or config crashes every build, so only a build that reaches
-/// Ready is remembered (engine_ready). Engine calls this with its process lock held, so it must not touch the engine.
-#[cfg(windows)]
+/// Windows and Linux: a bundled build that fails before it is ready (driver crash, hang) is replaced by the next
+/// candidate for this session. Nothing is persisted here: a bad model or config crashes every build, so only a build
+/// that reaches Ready is remembered (engine_ready). Engine calls this with its process lock held, so it must not touch the engine.
+#[cfg(any(windows, target_os = "linux"))]
 fn engine_fallback(app: &AppHandle, spec: &engine::Spec, error: Failure) -> Res<engine::Spec> {
     let Some(variant) = backend::variant_of(&spec.bin).filter(|_| backend::is_backend_failure(error.code) && env_path("BADUK_KATAGO").is_none())
     else { return Err(error) };
@@ -125,8 +138,8 @@ fn engine_fallback(app: &AppHandle, spec: &engine::Spec, error: Failure) -> Res<
     engine_spec(app)
 }
 
-/// Windows: the bundled build that reached Ready becomes the one the next launch starts with.
-#[cfg(windows)]
+/// Windows and Linux: the bundled build that reached Ready becomes the one the next launch starts with.
+#[cfg(any(windows, target_os = "linux"))]
 fn engine_ready(app: &AppHandle, spec: &engine::Spec) {
     if env_path("BADUK_KATAGO").is_some() { return }
     if let Some(v) = backend::to_persist(read_settings(app)["engineVariant"].as_str(), &spec.bin) {
@@ -287,9 +300,65 @@ fn open_link(which: String) -> Res<()> {
     let url = match which.as_str() {
         "katago" => "https://github.com/lightvector/KataGo",
         "license" => "https://katagotraining.org/network_license/",
+        "releases" => "https://github.com/Slymaster/masame/releases/latest",
         _ => return Err(Failure::new("unknown_link")),
     };
     open_url(url)
+}
+
+/// Whether this build can replace itself: everywhere but Linux, where only the AppImage can (a .deb or .rpm belongs to
+/// the package manager). The bundle type is the marker Tauri's bundler patches into the binary, not the environment.
+fn installable() -> bool {
+    !cfg!(target_os = "linux") || matches!(tauri::utils::platform::bundle_type(), Some(tauri::utils::config::BundleType::AppImage))
+}
+
+/// The updater for the fixed endpoint in tauri.conf.json.
+fn updater<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
+    // Only the local end-to-end test build allows plain http (an override config, never committed).
+    let https = app.config().plugins.0.get("updater").and_then(|u| u.get("dangerousInsecureTransportProtocol")).and_then(Value::as_bool) != Some(true);
+    app.updater_builder()
+        .timeout(Duration::from_secs(30)) // the check only; the Update gets no overall timeout
+        // Copied into the Update, so it also covers the download: a stalled transfer fails instead of hanging, and an
+        // https -> http redirect (GitHub sends the files from its download hosts) is refused rather than followed.
+        .configure_client(move |c| c.read_timeout(Duration::from_secs(30)).https_only(https))
+        .build()
+}
+
+/// Asks the fixed endpoint whether a newer release exists, and keeps it for update_install.
+#[tauri::command]
+async fn update_check(app: AppHandle, s: State<'_, App>) -> Res<Option<Value>> {
+    let fail = |e: tauri_plugin_updater::Error| Failure::with("update_check", e);
+    let update = updater(&app).map_err(fail)?.check().await.map_err(fail)?;
+    let reply = update.as_ref().map(|u| json!({ "version": u.version, "install": installable() }));
+    *s.update.lock().unwrap() = update;
+    Ok(reply)
+}
+
+/// Downloads the checked update (verified against the public key in tauri.conf.json), stops KataGo (on Windows the
+/// installer replaces katago.exe and its DLLs), installs and restarts. On Windows `install` exits the app itself.
+#[tauri::command]
+async fn update_install(app: AppHandle, s: State<'_, App>) -> Res<()> {
+    if !installable() { return Err(Failure::with("update_failed", "not installable")) }
+    // Taken out while it runs, so a second click finds nothing; put back if it fails, for another try.
+    let update = s.update.lock().unwrap().take().ok_or(Failure::with("update_failed", "no update checked"))?;
+    let r: Result<(), String> = async {
+        let (mut got, mut last) = (0u64, Instant::now());
+        let bytes = update.download(|n, total| {
+            got += n as u64;
+            if Some(got) == total || last.elapsed().as_millis() >= 120 {
+                last = Instant::now();
+                let _ = app.emit("update-progress", json!({ "received": got, "total": total }));
+            }
+        }, || {}).await.map_err(|e| e.to_string())?;
+        let _ = app.emit("update-installing", ()); // downloaded and verified (also when the size was unknown)
+        s.engine.stop();
+        let u = update.clone();
+        tauri::async_runtime::spawn_blocking(move || u.install(bytes)).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())
+    }.await;
+    match r {
+        Ok(()) => { app.request_restart(); Ok(()) }
+        Err(e) => { *s.update.lock().unwrap() = Some(update); Err(Failure::with("update_failed", e)) }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -310,7 +379,10 @@ fn open_url(url: &str) -> Res<()> {
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
-fn open_url(_url: &str) -> Res<()> { Err(Failure::new("open_failed")) } // shortcut: no Linux build yet
+fn open_url(url: &str) -> Res<()> {
+    // Absolute path: never resolved through PATH.
+    std::process::Command::new("/usr/bin/xdg-open").arg(url).spawn().map(|_| ()).map_err(|e| Failure::with("open_failed", e))
+}
 
 /// Rebuilds the macOS menu bar in the UI language; `labels` come from the frontend dictionary. No-op elsewhere.
 #[tauri::command]
@@ -327,18 +399,19 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let h = app.handle().clone();
             let engine = Engine::new(move |ev, payload| { let _ = h.emit(ev, payload); });
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             let engine = {
                 let (h, h2) = (app.handle().clone(), app.handle().clone());
                 engine.with_fallback(move |spec, e| engine_fallback(&h, spec, e)).with_on_ready(move |spec| engine_ready(&h2, spec))
             };
             if let Err(e) = install_config(app.handle()) { eprintln!("[katago] config not installed: {e:?}") }
             app.manage(App {
-                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(),
-                #[cfg(windows)]
+                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), update: Default::default(), ogs: Default::default(),
+                #[cfg(any(windows, target_os = "linux"))]
                 failed_variants: Default::default(),
             });
             Ok(())
@@ -347,7 +420,8 @@ pub fn run() {
         .on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); })
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
-            engine_status, engine_start, engine_stop, engine_analyze, open_link, set_language
+            engine_status, engine_start, engine_stop, engine_analyze, open_link, set_language, update_check, update_install,
+            ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -366,5 +440,27 @@ mod tests {
             v["activeNetwork"] = json!("n"); // would panic on an array, number or string
             assert_eq!(v, json!({"activeNetwork": "n"}));
         }
+    }
+
+    /// Our catalogue client and the updater plugin's own reqwest clients in one process: both must complete a TLS
+    /// handshake. Network: `cargo test -- --ignored tls_`.
+    #[test]
+    #[ignore = "network: katagotraining.org and github.com"]
+    fn tls_catalog_and_updater_in_one_process() {
+        let mut ctx = tauri::test::mock_context(tauri::test::noop_assets());
+        let conf: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        ctx.config_mut().plugins.0.insert("updater".into(), conf["plugins"]["updater"].clone());
+        let app = tauri::test::mock_builder().plugin(tauri_plugin_updater::Builder::new().build()).build(ctx).unwrap();
+        tauri::async_runtime::block_on(async {
+            assert!(!networks::fetch_nets(&networks::client()).await.expect("catalogue over TLS").is_empty());
+            // Until a release carries latest.json, GitHub redirects to a 404: ReleaseNotFound means TLS worked.
+            let r = updater(app.handle()).unwrap().check().await; // the same client settings as update_check
+            eprintln!("updater check: {:?}", r.as_ref().map(|u| u.as_ref().map(|u| u.version.clone())));
+            match r {
+                Ok(_) | Err(tauri_plugin_updater::Error::ReleaseNotFound) => {}
+                Err(e) => panic!("updater check: {e:?}"),
+            }
+            assert!(!networks::fetch_nets(&networks::client()).await.expect("catalogue after the updater ran").is_empty());
+        });
     }
 }

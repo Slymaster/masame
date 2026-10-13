@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bowlHeap, contrast, dims, dropStones, fit, Governor, gx, gz, jitter, lens, LOOKS, panFor, qualityLadder, RB, RW, silhouette, TOD, todAt, type Placed } from './logic'
+import { bowlHeap, cardSkin, contrast, dims, dropStones, fit, FIT_REACH, Governor, gx, gz, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, panFor, qualityLadder, RB, RW, settle, silhouette, TOD, todAt, worstGap, type Placed } from './logic'
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -13,29 +13,61 @@ describe('dimensions', () => {
 })
 
 describe('jitter + fitting', () => {
-  it('is stable per point and move, and within 1.5 mm', () => {
-    const a = jitter(19, 3, 4, 10), b = jitter(19, 3, 4, 10)
-    expect(a).toEqual(b)
-    expect(Math.hypot(a.jx - gx(19, 3), a.jz - gz(19, 4))).toBeLessThanOrEqual(1.5)
+  it('is stable per point and move, within its amplitudes and never dead centre', () => {
+    expect(jitter(19, 3, 4, 10)).toEqual(jitter(19, 3, 4, 10))
+    for (let k = 0; k < 2000; k++) {
+      const x = k % 19, y = (k * 7) % 19, j = jitter(19, x, y, k), dx = j.jx - gx(19, x), dz = j.jz - gz(19, y)
+      expect(Math.abs(dx)).toBeLessThanOrEqual(JIT_ACROSS); expect(Math.abs(dz)).toBeLessThanOrEqual(JIT_ALONG)
+      expect(Math.hypot(dx / JIT_ACROSS, dz / JIT_ALONG)).toBeGreaterThanOrEqual(0.4 - 1e-9)
+    }
+    expect([JIT_ACROSS, JIT_ALONG]).toEqual([0.8, 2.2])
   })
 
-  it('fits each newcomer around the stones already down, which never move', () => {
-    const N = 19, m = new Map<number, Placed>()
-    let worst = Infinity, moved = 0
-    for (let k = 0; k < N * N; k++) { // a full board, in a scattered order
-      const p = (k * 7) % (N * N), x = p % N, y = (p / N) | 0, R = (x + y) % 2 ? RB : RW, j = jitter(N, x, y, k)
-      const before = [...m.values()].map(o => [o.tx, o.tz])
-      const s: Placed = { x, y, R, jx: j.jx, jz: j.jz, tx: 0, tz: 0 }
-      m.set(p, s); fit(s, m, N)
-      ;[...m.values()].slice(0, before.length).forEach((o, i) => { if (o.tx !== before[i][0] || o.tz !== before[i][1]) moved++ })
-      expect(Math.hypot(s.tx - gx(N, x), s.tz - gz(N, y))).toBeLessThan(3) // nudged, never off its point
+  // A full board filled in a random order: 3D (real spacing, slate and shell radii, default jitter) or the 2D view's
+  // square 22 mm cells (R 0.482 cell, 1.2 mm both ways). Returns the worst gap (8 neighbours), the largest distance from a
+  // grid point, and whether a stone already down ever moved.
+  const fill = (N: number, seed: number, flat: boolean) => {
+    const r = rng(seed), order = Array.from({ length: N * N }, (_, i) => i), m = new Map<number, Placed>()
+    for (let i = order.length - 1; i > 0; i--) { const k = Math.floor(r() * (i + 1)); [order[i], order[k]] = [order[k], order[i]] }
+    let nudge = 0, moved = false
+    order.forEach((p, k) => {
+      const x = p % N, y = (p / N) | 0, cx = flat ? x * 22 : gx(N, x), cz = flat ? y * 22 : gz(N, y)
+      const j = flat ? jitter(N, x, y, k, 1.2, 1.2) : jitter(N, x, y, k), R = flat ? 0.482 * 22 : r() < 0.5 ? RB : RW
+      const s: Placed = { x, y, R, jx: cx + j.jx - gx(N, x), jz: cz + j.jz - gz(N, y), tx: 0, tz: 0 }
+      const o = m.get(order[k - 1]), was = o && [o.tx, o.tz]
+      m.set(p, s)
+      if (flat) settle(s, m, N, cx, cz, 22, 22); else settle(s, m, N, cx, cz)
+      if (o && (o.tx !== was![0] || o.tz !== was![1])) moved = true
+      nudge = Math.max(nudge, Math.hypot(s.tx - cx, s.tz - cz))
+    })
+    return { worst: Math.min(...[...m.values()].map(s => worstGap(s, m, N))), nudge, moved }
+  }
+
+  it('fits each newcomer around the stones already down, which never move, in any order', () => {
+    // Bounds from 600 random orders per size: worst gap 3D -0.98 mm (v0.1's jitter + fit: -1.21), 2D -0.52 mm. The guard
+    // that matters is FIT_ROOM: stones never move, so a stone that crowds an empty point would squeeze its later occupant.
+    let w3 = 0, w2 = 0
+    for (const N of [9, 13, 19]) for (let seed = 1; seed <= 100; seed++) for (const flat of [false, true]) {
+      const { worst, nudge, moved } = fill(N, seed * 7919 + N, flat)
+      expect(moved).toBe(false)
+      expect(nudge).toBeLessThanOrEqual(FIT_REACH + 1e-9)
+      if (flat) w2 = Math.min(w2, worst); else w3 = Math.min(w3, worst)
     }
-    expect(moved).toBe(0)
-    for (const s of m.values()) for (const [dx, dy] of [[1, 0], [0, 1]]) {
-      const o = m.get((s.y + dy) * N + s.x + dx)
-      if (o && s.x + dx < N) worst = Math.min(worst, Math.hypot(o.tx - s.tx, o.tz - s.tz) - s.R - o.R)
+    expect(w3).toBeGreaterThan(-1.05)
+    expect(w2).toBeGreaterThan(-0.6)
+  })
+
+  it('keeps the full jitter for an isolated stone (slate: across up to the room it leaves its neighbours)', () => {
+    const N = 19, m = new Map<number, Placed>(), cx = gx(N, 9), cz = gz(N, 9)
+    const max = { [RB]: [0, 0], [RW]: [0, 0] }
+    for (let k = 0; k < 4000; k++) {
+      const R = k % 2 ? RB : RW, j = jitter(N, 9, 9, k), s: Placed = { x: 9, y: 9, R, jx: j.jx, jz: j.jz, tx: 0, tz: 0 }
+      m.clear(); m.set(9 * N + 9, s); settle(s, m, N, cx, cz)
+      if (R === RW) expect([s.tx, s.tz]).toEqual([j.jx, j.jz]) // shell: untouched
+      max[R][0] = Math.max(max[R][0], Math.abs(s.tx - cx)); max[R][1] = Math.max(max[R][1], Math.abs(s.tz - cz))
     }
-    expect(worst).toBeGreaterThan(-0.6) // only when squeezed between two stones placed inwards: a hidden girdle overlap
+    expect(max[RW][0]).toBeGreaterThan(0.95 * JIT_ACROSS); expect(max[RW][1]).toBeGreaterThan(0.95 * JIT_ALONG)
+    expect(max[RB][0]).toBeGreaterThan(0.55); expect(max[RB][1]).toBeGreaterThan(0.95 * JIT_ALONG)
   })
 
   it('leaves no overlap around a lone newcomer', () => {
@@ -84,6 +116,17 @@ describe('time of day', () => {
     expect(el).toBeLessThan(0.2)
     expect(K).toBeLessThan(15)
     expect(exp).toBeLessThan(0.003)
+  })
+})
+
+describe('card skin', () => {
+  it('is Laque on the dark backdrops only, Washi in 2D', () => {
+    const table = Object.fromEntries(DECORS.flatMap(d => (['study', 'contemplation'] as const).map(c => [`${d}/${c}`, cardSkin('3d', c, d)])))
+    expect(table).toEqual({
+      'atelier/study': 'washi', 'atelier/contemplation': 'laque', 'washitsu/study': 'washi', 'washitsu/contemplation': 'washi',
+      'lanterne/study': 'laque', 'lanterne/contemplation': 'laque', 'clair/study': 'washi', 'clair/contemplation': 'washi',
+    })
+    for (const d of DECORS) for (const c of ['study', 'contemplation'] as const) expect(cardSkin('2d', c, d)).toBe('washi')
   })
 })
 

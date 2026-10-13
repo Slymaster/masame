@@ -1,6 +1,6 @@
 [package]
 name = "baduk"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [lib]
@@ -14,12 +14,15 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-updater = { version = "~2.13", default-features = false, features = ["rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "stream"] }
 futures-util = { version = "0.3", default-features = false }
 sha2 = "0.10"
-tokio = { version = "1", features = ["process", "io-util", "sync", "fs", "macros", "rt-multi-thread", "time"] }
+getrandom = "0.4" # PKCE verifier and OAuth state
+base64 = "0.23"
+tokio = { version = "1", features = ["process", "io-util", "sync", "fs", "macros", "rt-multi-thread", "time", "net"] }
 
 # Engine process (job object, error mode, OpenCL.dll check) and opening the credit links; already in the dependency tree via tauri.
 [target.'cfg(windows)'.dependencies]
@@ -28,3 +31,7 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Threading",
   "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging",
 ] }
+
+# The mock runtime, for the (ignored) TLS test that runs the updater next to our own client.
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }

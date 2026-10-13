@@ -1,6 +1,7 @@
-// Windows engine builds (official KataGo zips, bundled under resources/katago-win/<variant>/): which one to launch,
-// and what to try next when one fails before it is ready. Pure functions, so the logic is tested on every platform.
-#![cfg_attr(not(windows), allow(dead_code))]
+// Windows and Linux engine builds (official KataGo zips under resources/katago-win/<variant>/, source builds under
+// resources/katago-linux/<variant>/): which one to launch, and what to try next when one fails before it is ready.
+// Pure functions, so the logic is tested on every platform.
+#![cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 
 use std::path::Path;
 
@@ -104,6 +105,7 @@ mod tests {
     fn variant_from_path() {
         let p = Path::new("resources").join("katago-win").join(OPENCL).join("katago.exe");
         assert_eq!(variant_of(&p), Some(OPENCL));
+        assert_eq!(variant_of(&Path::new("resources").join("katago-linux").join(OPENCL).join("katago")), Some(OPENCL));
         assert_eq!(variant_of(&Path::new("x").join(CPU).join("katago.exe")), Some(CPU));
         assert_eq!(variant_of(Path::new("/usr/bin/katago")), None);
         assert_eq!(variant_of(Path::new("katago")), None);

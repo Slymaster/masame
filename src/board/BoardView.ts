@@ -4,7 +4,8 @@
 
 import type { Sign, SignMap, Vertex } from '@sabaki/go-board'
 import { clamp01, easeOut, hash, n1, rng, sstep, stoneRng, TAU, vn2 } from './noise'
-import { playClack } from './sound'
+import { playClack, playTap } from './sound'
+import { gx, gz, jitter, settle, type Placed } from '../board3d/logic'
 
 export interface BoardState {
   signMap: SignMap
@@ -29,6 +30,12 @@ const HOSHI: Record<number, number[][]> = {
 const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ' // no I, by convention
 const DROP_MS = 160
 const LABEL_FONT = 'Manrope, system-ui, sans-serif'
+// one light for the board and the stones: the shadows fall towards the lower right
+const SUN: [number, number] = [0.496, 0.868]
+const STONE_SHADOW_A = 0.42
+// hand placement, laid out like the 3D board's in a square 22 mm grid (stone radius 0.482 cell)
+const J_MM = 22, J_R = 0.482 * J_MM, J_AMP = 1.2
+type At = (X: number, Y: number) => [number, number]
 
 const mk = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h })
 
@@ -84,9 +91,10 @@ function geom(S: number, N: number, coords: boolean, dpr: number): Geom {
 function drawBoard(x: CanvasRenderingContext2D, g: Geom, S: number, dpr: number) {
   const { bx, by, bw } = g, t = S * 0.016
   // cast + contact shadow on the linen
-  x.save(); x.shadowColor = 'rgba(70,44,18,0.32)'; x.shadowBlur = S * 0.03 * dpr; x.shadowOffsetX = S * 0.008 * dpr; x.shadowOffsetY = S * 0.014 * dpr
+  const cast = S * 0.0161 * dpr, touch = 1.8 * dpr
+  x.save(); x.shadowColor = 'rgba(70,44,18,0.32)'; x.shadowBlur = S * 0.03 * dpr; x.shadowOffsetX = SUN[0] * cast; x.shadowOffsetY = SUN[1] * cast
   x.fillStyle = '#8a5a28'; x.fillRect(bx, by, bw + t * 0.45, bw + t); x.restore()
-  x.save(); x.shadowColor = 'rgba(40,24,8,0.45)'; x.shadowBlur = 3 * dpr; x.shadowOffsetX = dpr; x.shadowOffsetY = 1.5 * dpr
+  x.save(); x.shadowColor = 'rgba(40,24,8,0.45)'; x.shadowBlur = 3 * dpr; x.shadowOffsetX = SUN[0] * touch; x.shadowOffsetY = SUN[1] * touch
   x.fillStyle = '#8a5a28'; x.fillRect(bx, by, bw + t * 0.45, bw + t); x.restore()
   // thickness: front (bottom) and right side faces
   let gr = x.createLinearGradient(0, by + bw, 0, by + bw + t)
@@ -163,7 +171,7 @@ function drawTerritory(x: CanvasRenderingContext2D, g: Geom, own: number[], sign
 }
 
 /** Stones KataGo expects to be captured fade toward the territory they sit in. */
-function deadHint(c: CanvasRenderingContext2D, g: Geom, own: number[], signMap: SignMap) {
+function deadHint(c: CanvasRenderingContext2D, g: Geom, own: number[], signMap: SignMap, at: At) {
   const N = g.N
   signMap.forEach((row, Y) => row.forEach((s, X) => {
     const v = own[Y * N + X]
@@ -171,15 +179,15 @@ function deadHint(c: CanvasRenderingContext2D, g: Geom, own: number[], signMap: 
     const a = sstep(0.4, 0.9, Math.abs(v))
     if (a <= 0) return
     c.fillStyle = s === 1 ? `rgba(246,236,218,${0.42 * a})` : `rgba(52,32,14,${0.38 * a})`
-    c.beginPath(); c.arc(g.P[X], g.P[Y], g.r * 1.01, 0, TAU); c.fill()
+    c.beginPath(); c.arc(...at(X, Y), g.r * 1.01, 0, TAU); c.fill()
   }))
 }
 
 /** Counting: dead stones fade into the wood; counted points get a tiny slate or shell square (on dead stones too). */
-function countMarks(c: CanvasRenderingContext2D, g: Geom, signMap: SignMap, { dead, territory }: NonNullable<BoardState['counting']>) {
+function countMarks(c: CanvasRenderingContext2D, g: Geom, signMap: SignMap, { dead, territory }: NonNullable<BoardState['counting']>, at: At) {
   const q = Math.max(4, g.cell * 0.28)
   signMap.forEach((row, Y) => row.forEach((s, X) => {
-    const cx = g.P[X], cy = g.P[Y]
+    const [cx, cy] = at(X, Y)
     if (s && dead[Y][X]) {
       c.fillStyle = 'rgba(212,168,104,0.62)'
       c.beginPath(); c.arc(cx, cy, g.r * 1.02, 0, TAU); c.fill()
@@ -199,15 +207,15 @@ function countMarks(c: CanvasRenderingContext2D, g: Geom, signMap: SignMap, { de
 /* ---------- stones ---------- */
 function stoneShadow(c: CanvasRenderingContext2D, g: Geom, cx: number, cy: number, t: number) {
   const r = g.r, e = 1 - easeOut(t), off = r * (0.1 + 0.16 * e), blur = r * (0.22 + 0.35 * e)
-  const sx = cx + off * 0.8, sy = cy + off * 1.15
+  const sx = cx + off * 1.4 * SUN[0], sy = cy + off * 1.4 * SUN[1]
   const gr = c.createRadialGradient(sx, sy, r * 0.6, sx, sy, r + blur)
-  gr.addColorStop(0, `rgba(48,26,6,${0.5 - 0.2 * e})`); gr.addColorStop(1, 'rgba(48,26,6,0)')
+  gr.addColorStop(0, `rgba(48,26,6,${STONE_SHADOW_A - 0.2 * e})`); gr.addColorStop(1, 'rgba(48,26,6,0)')
   c.fillStyle = gr; c.beginPath(); c.arc(sx, sy, r + blur, 0, TAU); c.fill()
 }
 
-function stone(c: CanvasRenderingContext2D, g: Geom, X: number, Y: number, col: Sign, t: number) {
+function stone(c: CanvasRenderingContext2D, g: Geom, X: number, Y: number, col: Sign, t: number, [cx, cy] = [g.P[X], g.P[Y]]) {
   const r = g.r * (1.06 - 0.06 * easeOut(t)) // lands from slightly above: a touch larger, then settles
-  c.save(); c.translate(g.P[X], g.P[Y])
+  c.save(); c.translate(cx, cy)
   if (col === 1) {
     // slate (nachiguro): matte, faint per-stone tone shift, soft specular, warm rim bounce from the kaya
     const R = stoneRng(X, Y, 11), tn = (R() - 0.5) * 9, k = (v: number) => Math.round(v + tn)
@@ -231,6 +239,12 @@ function stone(c: CanvasRenderingContext2D, g: Geom, X: number, Y: number, col: 
     c.save(); c.clip()
     const Dd = r * 3.4, ccx = Math.cos(ang) * Dd, ccy = Math.sin(ang) * Dd
     for (let rad = Dd - r * 1.1; rad < Dd + r * 1.1;) {
+      if (R() < 0.3) { // a translucent growth band, cooler and wider than the fine lines
+        c.strokeStyle = `rgba(140,128,110,${0.07 + R() * 0.05})`; c.lineWidth = r * (0.05 + R() * 0.04)
+        c.beginPath(); c.arc(ccx, ccy, rad, 0, TAU); c.stroke()
+        rad += r * (0.1 + R() * 0.08)
+        continue
+      }
       c.strokeStyle = `rgba(150,126,92,${0.025 + R() * 0.055})`; c.lineWidth = r * (0.012 + R() * 0.03)
       c.beginPath(); c.arc(ccx, ccy, rad, 0, TAU); c.stroke()
       rad += r * (0.045 + R() * 0.09)
@@ -244,10 +258,10 @@ function stone(c: CanvasRenderingContext2D, g: Geom, X: number, Y: number, col: 
   c.restore()
 }
 
-function lastRing(c: CanvasRenderingContext2D, g: Geom, X: number, Y: number, col: Sign) {
+function lastRing(c: CanvasRenderingContext2D, g: Geom, [cx, cy]: [number, number], col: Sign) {
   c.strokeStyle = col === 1 ? 'rgba(238,230,214,0.92)' : 'rgba(26,26,29,0.85)'
   c.lineWidth = Math.max(1.2, g.r * 0.085)
-  c.beginPath(); c.arc(g.P[X], g.P[Y], g.r * 0.4, 0, TAU); c.stroke()
+  c.beginPath(); c.arc(cx, cy, g.r * 0.4, 0, TAU); c.stroke()
 }
 
 /* ---------- view ---------- */
@@ -268,6 +282,11 @@ export class BoardView {
   private stonesKey = ''
   private hover: Vertex | null = null
   private anim: { x: number; y: number; c: Sign; start: number } | null = null
+  /** Where each stone was put down (mm in the square jitter space); stones never move once down. */
+  private placed = new Map<number, Placed & { c: Sign }>()
+  private placedN = 0
+  private placedId = 0
+  private moveNo = 0
   private raf = 0
   private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
   private cleanup: () => void
@@ -315,16 +334,43 @@ export class BoardView {
 
   destroy() { this.cleanup() }
 
+  /** The bot passed: a soft tap, nothing drawn. */
+  pass() { if (this.state?.sound) playTap() }
+
   /** Animates and sounds a stone landing (the player's click, or the bot's move). */
   drop(v: Vertex, c: Sign) {
     this.hover = null
+    const N = this.placedN, p = v[1] * N + v[0] // the bot's drop arrives before its state update: put the stone down now
+    if (N && this.placed.get(p)?.c !== c) { this.placed.delete(p); this.place(N, p, c) }
     if (!this.reducedMotion.matches) this.anim = { x: v[0], y: v[1], c, start: performance.now() }
     if (this.state?.sound) playClack()
     this.req()
   }
 
+  private place(N: number, p: number, c: Sign) {
+    const x = p % N, y = (p / N) | 0, j = jitter(N, x, y, ++this.moveNo, J_AMP, J_AMP)
+    const s = { x, y, c, R: J_R, jx: x * J_MM + j.jx - gx(N, x), jz: y * J_MM + j.jz - gz(N, y), tx: 0, tz: 0 }
+    this.placed.set(p, s); settle(s, this.placed, N, x * J_MM, y * J_MM, J_MM, J_MM) // around the stones already down
+    this.placedId++
+  }
+
+  /** Removals first, so a newcomer fits around the stones that stay. */
+  private reconcile(state: BoardState) {
+    const N = state.signMap.length
+    if (N !== this.placedN) { this.placed.clear(); this.placedN = N; this.placedId++ }
+    for (const [p, s] of this.placed) if (state.signMap[s.y][s.x] !== s.c) { this.placed.delete(p); this.placedId++ }
+    state.signMap.forEach((row, Y) => row.forEach((c, X) => { if (c && !this.placed.has(Y * N + X)) this.place(N, Y * N + X, c) }))
+  }
+
+  /** A stone's drawn centre (the grid point when nothing is there). */
+  private at: At = (X, Y) => {
+    const g = this.g!, s = this.placed.get(Y * g.N + X), k = g.cell / J_MM
+    return s ? [g.P[X] + (s.tx - X * J_MM) * k, g.P[Y] + (s.tz - Y * J_MM) * k] : [g.P[X], g.P[Y]]
+  }
+
   update(state: BoardState) {
     if (!state.interactive || state.counting) this.hover = null
+    this.reconcile(state)
     const a = this.anim, l = state.last
     if (a && !(l && l[0] === a.x && l[1] === a.y)) this.anim = null // undo/navigation mid-drop
     if (state.ownership !== this.own) { this.own = state.ownership; this.ownId++ }
@@ -361,6 +407,15 @@ export class BoardView {
     if (!g) return null
     const rect = this.canvas.getBoundingClientRect(), mx = e.clientX - rect.left, my = e.clientY - rect.top
     const x = Math.round((mx - g.P[0]) / g.cell), y = Math.round((my - g.P[0]) / g.cell)
+    // a click on a drawn (jittered) stone picks that stone, even past the half-way line to the neighbour
+    const cx = Math.min(g.N - 1, Math.max(0, x)), cy = Math.min(g.N - 1, Math.max(0, y)), sm = this.state?.signMap
+    let hit: Vertex | null = null, best = g.r
+    for (let Y = cy - 1; Y <= cy + 1; Y++) for (let X = cx - 1; X <= cx + 1; X++) {
+      if (!sm?.[Y]?.[X]) continue
+      const [px, py] = this.at(X, Y), d = Math.hypot(mx - px, my - py)
+      if (d <= best) { best = d; hit = [X, Y] }
+    }
+    if (hit) return hit
     if (x < 0 || y < 0 || x >= g.N || y >= g.N) return null
     if (Math.hypot(mx - g.P[x], my - g.P[y]) > g.cell * 0.5) return null
     return [x, y]
@@ -401,15 +456,15 @@ export class BoardView {
       if (t >= 1) { this.anim = null; t = 1 }
     }
     const a = this.anim, ex = a ? a.y * N + a.x : -1
-    const stonesKey = `${woodKey}|${ex}|${posKey}`
+    const stonesKey = `${woodKey}|${ex}|${posKey}|${this.placedId}`
     if (stonesKey !== this.stonesKey) {
       this.stones = mk(W, W)
       const x = this.stones.getContext('2d')!
       x.setTransform(dpr, 0, 0, dpr, 0, 0)
       const list: [number, number, Sign][] = []
       s.signMap.forEach((row, Y) => row.forEach((c, X) => { if (c && Y * N + X !== ex) list.push([X, Y, c]) }))
-      for (const [X, Y] of list) stoneShadow(x, g, g.P[X], g.P[Y], 1) // all shadows first so none overlaps a stone
-      for (const [X, Y, c] of list) stone(x, g, X, Y, c, 1)
+      for (const [X, Y] of list) stoneShadow(x, g, ...this.at(X, Y), 1) // all shadows first so none overlaps a stone
+      for (const [X, Y, c] of list) stone(x, g, X, Y, c, 1, this.at(X, Y))
       this.stonesKey = stonesKey
     }
 
@@ -419,11 +474,11 @@ export class BoardView {
     c.drawImage(this.base!, 0, 0)
     c.drawImage(this.stones!, 0, 0)
     c.setTransform(dpr, 0, 0, dpr, 0, 0)
-    if (own) deadHint(c, g, own, s.signMap)
-    if (s.counting) countMarks(c, g, s.signMap, s.counting)
-    if (a) { stoneShadow(c, g, g.P[a.x], g.P[a.y], t); stone(c, g, a.x, a.y, a.c, t) }
+    if (own) deadHint(c, g, own, s.signMap, this.at)
+    if (s.counting) countMarks(c, g, s.signMap, s.counting, this.at)
+    if (a) { const ap = this.at(a.x, a.y); stoneShadow(c, g, ...ap, t); stone(c, g, a.x, a.y, a.c, t, ap) }
     const l = s.last
-    if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) lastRing(c, g, l[0], l[1], s.signMap[l[1]][l[0]])
+    if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) lastRing(c, g, this.at(l[0], l[1]), s.signMap[l[1]][l[0]])
     const h = this.hover
     if (h && s.interactive && !s.signMap[h[1]]?.[h[0]]) {
       c.globalAlpha = 0.35; stone(c, g, h[0], h[1], s.toPlay, 1); c.globalAlpha = 1

@@ -12,6 +12,7 @@ src-tauri/binaries/
 .env.*
 *.part
 src-tauri/resources/katago-win/
+src-tauri/resources/katago-linux/
 design/screenshots/
 design/atelier3d/
 src-tauri/resources/licenses/THIRD_PARTY_LICENSES.txt

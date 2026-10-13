@@ -1,5 +1,7 @@
 // "Atelier vivant": the real-time 3D goban (three.js, WebGL2). Same contract as the Canvas2D BoardView
 // (constructor(canvas, onPlay), update(state), drop(v, c), resize(size), destroy()), so the app can swap renderers.
+// resize(width, height, frame) may also give the board's frame inside the canvas: the scene runs full-bleed, the board
+// is framed in that rectangle (a view offset on both cameras).
 // Units are millimetres. Only MeshPhysicalMaterial / MeshBasicMaterial / ShadowMaterial + PMREM, so a WebGPURenderer
 // port stays possible; the onBeforeCompile GLSL snippets (grid ink, shell stripes, slate micro-roughness, AO alpha) are
 // the parts that would need a TSL rewrite.
@@ -15,7 +17,7 @@ import type { Sign, Vertex } from '@sabaki/go-board'
 import type { BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
-import { bowlHeap, BT, dims, dropStones, fit, Governor, gx, gz, hoshiStep, jitter, lens, LOOKS, qualityLadder, RB, RW, SH, SX, SZ, TOD, todAt, type Ground, type Placed, type Quality, type Rest, type TimeName, type Tod } from './logic'
+import { bowlHeap, BT, dims, dropStones, Governor, gx, gz, hoshiStep, jitter, lens, LOOKS, qualityLadder, RB, RW, settle, SH, SX, SZ, TOD, todAt, type Ground, type Placed, type Quality, type Rest, type TimeName, type Tod } from './logic'
 import { StoneSound } from './sound3d'
 
 export interface Board3DState extends BoardState {
@@ -38,7 +40,21 @@ export interface Board3DInit {
 const DROP_MS = 140, FADE_MS = 230, OMBRE_MS = 900, AUTO_MS = 15_000
 const TILT = THREE.MathUtils.degToRad(22)
 const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
-const AO_K = 1.8 // contact-shadow quad half size, in stone radii
+const AO_K = 1.4 // contact-shadow quad half size, in stone radii
+// contact shadow: darkest right at the silhouette (peak per colour), a gaussian gone (≈2 %) AO_REACH radii out on the
+// shadow side (plus the lean), AO_REACH_LIT on the lit side, where its strength is only AO_LIT of the peak
+const AO_PEAK_WHITE = 0.35, AO_PEAK_BLACK = 0.25, AO_REACH = 0.2, AO_REACH_LIT = 0.08, AO_LIT = 0.12
+// a thin soft line all round the silhouette, so a white stone's lit side still has an edge (0 = none)
+const AO_LINE_WHITE = 0.4, AO_LINE_BLACK = 0, AO_LINE_W = 0.03
+// the shadow side reaches further by AO_LEAN·SH/tan(el) mm, clamped
+const AO_LEAN = 0.1, AO_LEAN_MIN = 0.3, AO_LEAN_MAX = 1.5
+const CAST_STUDY = 0.95, CAST_ROOM = 0.8 // cast-shadow strength (× the décor's shade)
+// Study + linen: the board's shadow on the linen stays within this share of the frame margin (true direction, never cut)
+const FLOOR_MARGIN = 0.8
+// shell growth bands: pitch = BAND_PITCH + BAND_PITCH_VAR·fract per stone, in cycles/mm (2.5–4 mm periods); a raised
+// cosine^BAND_SHARP (soft edges), cooler than the body; the fine lines run through them, stronger inside a band
+const BAND_PITCH = 0.25, BAND_PITCH_VAR = 0.15, BAND_SHARP = 2, BAND_DARK = 0.13, BAND_WARP = 0.15
+const FINE_STRIPES = 0.7, FINE_OUTSIDE = 0.5, STRIPE_ROUGH = 0.12
 const KAYA_PX_MM = 4.08 // scan density: 2048 px along the grain = 502 mm
 const easeIO = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const lerp = THREE.MathUtils.lerp
@@ -133,14 +149,21 @@ function shellMaterial(hc: { value: number }, extra: THREE.MeshPhysicalMaterialP
         float ph = d * pitch + 1.7 * sin(d * 0.21 + sd) + 0.8 * sin(d * 0.67 + sd * 1.7);
         float tri = 1.0 - abs(fract(ph) - 0.5) * 2.0;
         float aa = 1.0 - smoothstep(0.25, 0.65, fwidth(ph));
-        float stripe = smoothstep(0.6, 1.0, tri) * (0.35 + 0.65 * smoothstep(-0.3, 0.8, sin(d * 0.39 + sd * 2.3))) * aa * (1.0 - 0.6 * uHC);
+        float shellEnv = (0.35 + 0.65 * smoothstep(-0.3, 0.8, sin(d * 0.39 + sd * 2.3))) * (1.0 - 0.6 * uHC);
+        // translucent growth bands on the same arcs, regular (barely warped), coarse enough to survive the Study scale
+        float pb = ${BAND_PITCH.toFixed(3)} + ${BAND_PITCH_VAR.toFixed(3)} * fract(sd * 0.29);
+        float phb = d * pb + ${BAND_WARP.toFixed(3)} * sin(d * 0.21 + sd);
+        float band = pow(0.5 + 0.5 * cos(6.2832 * phb), ${BAND_SHARP.toFixed(2)})
+          * (1.0 - smoothstep(0.3, 0.55, fwidth(phb))) * shellEnv * (0.7 + 0.3 * fract(sd * 0.71));
+        float stripe = smoothstep(0.6, 1.0, tri) * shellEnv * aa * mix(${FINE_OUTSIDE.toFixed(3)}, 1.0, band);
         float broad = 0.5 + 0.5 * sin(d * 1.1 + sd * 3.1 + 1.3 * sin(d * 0.3));
         float depth = 0.55 + 0.45 * fract(sd * 0.71);
-        diffuseColor.rgb *= 1.0 - (vec3(0.075, 0.095, 0.13) * stripe + vec3(0.025, 0.032, 0.045) * broad) * depth;
+        diffuseColor.rgb *= 1.0 - (vec3(0.075, 0.095, 0.13) * ${FINE_STRIPES.toFixed(3)} * stripe + vec3(0.025, 0.032, 0.045) * broad) * depth
+          - vec3(1.06, 1.0, 0.94) * ${BAND_DARK.toFixed(3)} * band; // cooler, greyer than the warm white body
         // the girdle: warmer and deeper where the shell is thin (a firm dark rim in high contrast)
         diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(0.9, 0.85, 0.76), vec3(0.35, 0.31, 0.27), uHC), smoothstep(0.72 + 0.12 * uHC, 1.0, rr) * (0.55 + 0.45 * uHC));`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor *= 1.0 + 0.35 * stripe;`)
+        roughnessFactor *= 1.0 + ${STRIPE_ROUGH.toFixed(3)} * stripe; // the polish is uniform: the lines are inside the shell`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
         #if NUM_DIR_LIGHTS > 0
         { // cheap translucency: the window's light wraps warm through the thin girdle; the far side of the girdle falls darker
@@ -283,8 +306,9 @@ export class Board3D {
   private hc = { value: 0 }
   private slate = slateMaterial()
   private shell = shellMaterial(this.hc)
-  private slateDim = slateMaterial({ transparent: true, opacity: 0.38, depthWrite: false })
-  private shellDim = shellMaterial(this.hc, { transparent: true, opacity: 0.45, depthWrite: false })
+  // dying stones: faded but clearly present (greyed slate, dulled shell), like the 2D board's grey stones
+  private slateDim = slateMaterial({ color: 0x5a5a60, roughness: 0.6, clearcoat: 0.1 })
+  private shellDim = shellMaterial(this.hc, { color: 0xb4b0a8, roughness: 0.5, sheen: 0 })
   private geoB = stoneGeo(RB)
   private geoW = stoneGeo(RW)
   private layerB = stoneLayer(this.geoB, this.slate, 400)
@@ -294,6 +318,7 @@ export class Board3D {
   private decorB = stoneLayer(this.geoB, this.slate, 120)
   private decorW = stoneLayer(this.geoW, this.shell, 120)
   private ao!: THREE.InstancedMesh
+  private aoU = { uAoDir: { value: new THREE.Vector2(1, 0) }, uAoLean: { value: 0 } }
   private terr!: { 1: THREE.InstancedMesh; [-1]: THREE.InstancedMesh }
   private ghost!: THREE.Mesh
   private ghostMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
@@ -354,6 +379,7 @@ export class Board3D {
   private noGrid = false // measurements only: the ink lines would pass for stone edges
 
   private W = 1; private H = 1
+  private fr = { x: 0, y: 0, w: 1, h: 1 } // the board's frame in the canvas, CSS px
   private raf = 0
   private lastFrame = 0
   private ready = false
@@ -407,6 +433,9 @@ export class Board3D {
   /** The quiet "stones stirred in the bowl" loop while the AI thinks. */
   setThinking(on: boolean) { this.sound.setThinking(on) }
 
+  /** The bot passed: a soft tap from its bowl, nothing moves. */
+  pass(c: Sign) { this.sound.tap(c) }
+
   /** Animates and sounds a stone landing (the player's click, or the bot's move). */
   drop(v: Vertex, c: Sign) {
     if (this.dead) return
@@ -446,20 +475,28 @@ export class Board3D {
     this.invalidate()
   }
 
-  /** Canvas size in CSS pixels; height defaults to width (the 2D view's square contract). */
-  resize(width: number, height = width) {
+  /** Canvas size in CSS pixels; height defaults to width (the 2D view's square contract). `frame` (canvas CSS px,
+   *  default the whole canvas) is where the board is framed; a frame-only change re-frames without re-measuring quality. */
+  resize(width: number, height = width, frame?: { left: number; top: number; width: number; height: number }) {
     if (this.dead) return
     const W = Math.max(200, Math.floor(width)), H = Math.max(200, Math.floor(height))
-    if (W === this.W && H === this.H) return
-    this.W = W; this.H = H
-    this.canvas.style.width = `${W}px`; this.canvas.style.height = `${H}px`
-    this.renderer.setSize(W, H, false)
-    this.composer.setSize(W, H)
+    const f = frame ?? { left: 0, top: 0, width: W, height: H }
+    const fr = { x: Math.round(f.left), y: Math.round(f.top), w: Math.max(1, Math.round(f.width)), h: Math.max(1, Math.round(f.height)) }
+    const sized = W !== this.W || H !== this.H, o = this.fr
+    if (!sized && fr.x === o.x && fr.y === o.y && fr.w === o.w && fr.h === o.h) return
+    this.fr = fr
+    if (sized) {
+      this.W = W; this.H = H
+      this.canvas.style.width = `${W}px`; this.canvas.style.height = `${H}px`
+      this.renderer.setSize(W, H, false)
+      this.composer.setSize(W, H)
+      // quality is re-decided once the size settles (steps down only)
+      clearTimeout(this.resizeTimer)
+      this.resizeTimer = window.setTimeout(() => { if (this.ready && !this.dead) { this.applyPendingQuality(); this.warmUp(); this.invalidate() } }, 300)
+    }
+    for (const c of [this.ortho, this.persp]) c.setViewOffset(fr.w, fr.h, -fr.x, -fr.y, W, H)
     this.endFade()
     if (this.ready) this.frame(performance.now()) // synchronous: no blank frame while the window is being dragged
-    // quality is re-decided once the size settles (steps down only)
-    clearTimeout(this.resizeTimer)
-    this.resizeTimer = window.setTimeout(() => { if (this.ready && !this.dead) { this.applyPendingQuality(); this.warmUp(); this.invalidate() } }, 300)
   }
 
   destroy() {
@@ -507,17 +544,21 @@ export class Board3D {
     scene.add(this.layerB, this.layerW, this.dimB, this.dimW)
     for (const m of [this.dimB, this.dimW]) { m.renderOrder = 2; m.castShadow = false }
 
-    // contact AO blobs, alpha per instance through instanceColor.r
-    // the quad spans 2 × AO_K stone radii: ambient occlusion densest under the girdle, easing out over ~half a radius
-    const S = 256, cv = mkCanvas(S, S), x = cv.getContext('2d')!, im = x.createImageData(S, S), e = 1 / AO_K
-    for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
-      const rr = Math.hypot(i + 0.5 - S / 2, j + 0.5 - S / 2) / (S / 2)
-      const a = Math.pow(1 - sstep(e * 0.97, e * 1.5, rr), 1.2) * 0.9 + 0.1 * (1 - sstep(e, 1, rr)), o = (j * S + i) * 4
-      im.data[o] = im.data[o + 1] = im.data[o + 2] = 255; im.data[o + 3] = a * 255
+    // contact AO, per instance: instanceColor.r = shadow strength, .g = edge line strength. The quad spans 2 × AO_K radii;
+    // vAo is the world xz offset from the stone's axis in radii. Asymmetric: almost nothing on the lit side.
+    const aoMat = new THREE.MeshBasicMaterial({ color: 0x0c0603, transparent: true, depthWrite: false })
+    aoMat.onBeforeCompile = sh => {
+      Object.assign(sh.uniforms, this.aoU)
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vAo;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>\nvAo = vec2(uv.x - 0.5, 0.5 - uv.y) * ${(2 * AO_K).toFixed(3)};`)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vAo; uniform vec2 uAoDir; uniform float uAoLean;')
+        .replace('#include <color_fragment>', `#include <color_fragment>
+        #ifdef USE_COLOR
+        { float r = length(vAo), d = max(r - 1.0, 0.0), t = 0.5 + 0.5 * dot(vAo / max(r, 1e-3), uAoDir);
+          float reach = mix(${AO_REACH_LIT.toFixed(3)}, ${AO_REACH.toFixed(3)} + uAoLean, t), k = d / reach, l = d / ${AO_LINE_W.toFixed(3)};
+          diffuseColor.a *= min(1.0, max(mix(${AO_LIT.toFixed(3)}, 1.0, t * t) * exp(-4.0 * k * k) * vColor.r, exp(-l * l) * vColor.g)); }
+        #endif`)
     }
-    x.putImageData(im, 0, 0)
-    const aoMat = new THREE.MeshBasicMaterial({ color: 0x0c0603, map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false, opacity: 0.89 })
-    aoMat.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n#ifdef USE_INSTANCING_COLOR\ndiffuseColor.a *= vColor.r;\n#endif') }
     this.ao = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), aoMat, 420)
     this.ao.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(420 * 3), 3)
     this.ao.count = 0; this.ao.frustumCulled = false; this.ao.renderOrder = 1; this.ao.position.y = 0.06
@@ -873,9 +914,6 @@ export class Board3D {
     this.boardU.uLim.value = (N - 1) / 2
     this.boardU.uStep.value = hoshiStep(N)
     this.boardU.uFive.value = N < 19 ? 1 : 0
-    const under = this.ground.getObjectByName('under')!
-    under.scale.set(BW * 1.3, 1, BD * 1.3)
-    this.ground.position.y = -BT
     // shadow frustum covers board + bowls
     const ext = BW / 2 + 260
     Object.assign(this.key.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, near: 600, far: 2800 })
@@ -979,7 +1017,7 @@ export class Board3D {
     const N = this.N, x = p % N, y = (p / N) | 0, j = jitter(N, x, y, ++this.moveNo)
     const s: Stone = { p, x, y, c, R: c === 1 ? RB : RW, jx: j.jx, jz: j.jz, tx: j.jx, tz: j.jz, seed: j.seed, rotY: j.rotY, t0: -1e9, landed: true, captured: [] }
     this.stones.set(p, s)
-    fit(s, this.stones, N) // around the stones already down, which never move
+    settle(s, this.stones, N, gx(N, x), gz(N, y)) // around the stones already down, which never move
     return s
   }
 
@@ -1029,7 +1067,6 @@ export class Board3D {
     }
   }
 
-  private aoOff = new THREE.Vector2() // contact shadow leans away from the window
   private _m = new THREE.Matrix4(); private _q = new THREE.Quaternion()
   private _v = new THREE.Vector3(); private _s = new THREE.Vector3(1, 1, 1)
 
@@ -1049,8 +1086,9 @@ export class Board3D {
         const mk = this.markers[s.c as 1 | -1]; mk.matrix.copy(_m); mk.visible = true
       }
       if (aoA > 0 && na < 420) {
-        _m.compose(_v.set(s.tx + this.aoOff.x, 0, s.tz + this.aoOff.y), _q.identity(), _s.set(s.R * 2 * AO_K * aoS, 1, s.R * 2 * AO_K * aoS))
-        this.ao.setMatrixAt(na, _m); this.ao.instanceColor!.setXYZ(na++, aoA, aoA, aoA)
+        const q = s.R * 2 * AO_K * aoS, black = s.c === 1
+        _m.compose(_v.set(s.tx, 0, s.tz), _q.identity(), _s.set(q, 1, q))
+        this.ao.setMatrixAt(na, _m); this.ao.instanceColor!.setXYZ(na++, aoA * (black ? AO_PEAK_BLACK : AO_PEAK_WHITE), aoA * (black ? AO_LINE_BLACK : AO_LINE_WHITE), 1)
       }
     }
     for (const s of this.stones.values()) {
@@ -1062,7 +1100,7 @@ export class Board3D {
       let dim = false
       if (s.p >= 0 && counting?.dead[s.y]?.[s.x]) dim = true
       else if (s.p >= 0 && own && Math.sign(own[s.p]) === -s.c && sstep(0.4, 0.9, Math.abs(own[s.p])) > 0.5) dim = true // KataGo expects it captured
-      put(s, y, dim ? 0.3 : 0.25 + 0.75 * k, 1.45 - 0.45 * k, dim)
+      put(s, y, dim ? 0.6 : 0.25 + 0.75 * k, 1.45 - 0.45 * k, dim)
     }
     this.layerB.count = nb; this.layerW.count = nw; this.dimB.count = db; this.dimW.count = dw; this.ao.count = na
     for (const L of [this.layerB, this.layerW, this.dimB, this.dimW]) { L.instanceMatrix.needsUpdate = true; L.geometry.attributes.aSeed.needsUpdate = true }
@@ -1122,18 +1160,18 @@ export class Board3D {
   /* ---------- cameras ---------- */
 
   private frameHeight(mode: 0 | 1) {
-    const { BW, BD } = this.D, aspect = Math.max(0.4, this.W / this.H)
+    const { BW, BD } = this.D, aspect = Math.max(0.4, this.fr.w / this.fr.h)
     if (mode === 0) return Math.max(BD * 1.1, (BW * 1.1) / aspect)
     return Math.max(BD * 1.22, ((BW + 2 * 190) * 1.04) / aspect)
   }
 
-  /** Both cameras are fixed: they depend only on the board and canvas sizes. */
+  /** Both cameras are fixed: they depend only on the board and frame sizes (the view offset places the frame in the canvas). */
   private placeCameras() {
-    const { W, H } = this, hs = this.frameHeight(0), o = this.ortho
-    o.top = hs / 2; o.bottom = -hs / 2; o.left = (-hs / 2) * W / H; o.right = (hs / 2) * W / H; o.updateProjectionMatrix()
+    const a = this.fr.w / this.fr.h, hs = this.frameHeight(0), o = this.ortho
+    o.top = hs / 2; o.bottom = -hs / 2; o.left = (-hs / 2) * a; o.right = (hs / 2) * a; o.updateProjectionMatrix()
     const p = this.persp, hc = this.frameHeight(1), fov = 28, dist = hc / 2 / Math.tan(THREE.MathUtils.degToRad(fov) / 2)
     const tgt = this._v.set(0, -6, 14)
-    p.fov = fov; p.aspect = W / H
+    p.fov = fov; p.aspect = a
     p.position.set(tgt.x, tgt.y + dist * Math.cos(TILT), tgt.z + dist * Math.sin(TILT))
     p.near = Math.max(5, dist - 1200); p.far = dist + 2500
     p.lookAt(tgt); p.updateProjectionMatrix()
@@ -1171,14 +1209,17 @@ export class Board3D {
     // Study keeps the hour's colour and direction but never lets the sun rake so low that stones shade their neighbours
     const el = lerp(Math.max(el0, THREE.MathUtils.degToRad(22)), el0, ce), lift = lerp(Math.min(1.15, Math.sin(el0) / Math.sin(el) * 1.25), 1, ce)
     this.key.position.set(Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)).multiplyScalar(1600)
-    this.aoOff.set(-Math.cos(az), -Math.sin(az)).multiplyScalar(0.5)
+    // contact shadow away from the window, reaching further when the sun is low (lean in radii)
+    this.aoU.uAoDir.value.set(-Math.cos(az), -Math.sin(az))
+    this.aoU.uAoLean.value = THREE.MathUtils.clamp(AO_LEAN * SH / Math.tan(el), AO_LEAN_MIN, AO_LEAN_MAX) / RW
     this.key.color.copy(kelvin(tod.K)); this.key.intensity = tod.I * lift * L.key * lerp(1, 0.2, ok)
     if (L.lamp) { // Lanterne: the lamp hangs on the same bearing, closer, its cone pooling over board and bowls
       this.lamp.position.copy(this.key.position).setLength(1250); this.lamp.color.copy(kelvin(tod.K))
       this.lamp.intensity = L.lamp * 1e6 * lerp(1, 0.25, ok)
     }
     this.scene.environmentIntensity = lerp(Math.max(tod.env, 0.5), tod.env, ce) * L.ibl * lerp(1, 0.35, ok)
-    this.scene.environmentRotation.y = tod.rot
+    // three samples the sky at azimuth + rotation: this brings the sky's bright side round to the key's (Lanterne: the lamp's) bearing
+    this.scene.environmentRotation.y = L.skyAz - az
     this.renderer.toneMappingExposure = tod.exp * L.exp
     this.spot.intensity = 5.5 * ok; this.spot.color.copy(kelvin(lerp(tod.K, 3600, 0.5)))
     // Study damps reflections for readability; high contrast darkens the wood a little and calms the shell
@@ -1196,8 +1237,14 @@ export class Board3D {
     const fa = this.tableMat.alphaMap!, fade = L.fade && c
     fa.repeat.setScalar(fade ? 1 : 0.1); fa.offset.setScalar(fade ? 0 : 0.45)
     this.shadowFloor.visible = linen
+    // Study on the linen: the floor rises so the board's shadow keeps the key's true direction yet never reaches the frame edge
+    // (a frame narrower than the board, m ≤ 0, keeps the default floor)
+    const { BW, BD } = this.D, mx = this.ortho.right - BW / 2, mz = this.ortho.top - BD / 2, m = Math.min(mx, mz), raise = linen && m > 0
+    const fh = !raise ? BT : Math.min(BT, FLOOR_MARGIN * Math.tan(el) * Math.min(mx / Math.abs(Math.cos(az)), mz / Math.abs(Math.sin(az))))
+    this.ground.position.y = -fh
+    this.ground.getObjectByName('under')!.scale.set(raise ? BW + 1.6 * m : BW * 1.3, 1, raise ? BD + 1.6 * m : BD * 1.3)
     // softer, lighter shadows in the room (a window, not a flash)
-    for (const l of [this.key, this.lamp]) { l.shadow.radius = lerp(5, 9, c) * L.soft; l.shadow.intensity = lerp(1, 0.82, c) * L.shade }
+    for (const l of [this.key, this.lamp]) { l.shadow.radius = lerp(5, 9, c) * L.soft; l.shadow.intensity = lerp(CAST_STUDY, CAST_ROOM, c) * L.shade }
     this.hc.value = hc
     for (const m of [this.shell, this.shellDim]) { m.clearcoat = lerp(lerp(0.28, 0.5, c), 0.1, hc); m.envMapIntensity = lerp(0.75, 1, c) }
     for (const m of [this.slate, this.slateDim]) { m.clearcoat = lerp(lerp(0.18, 0.3, c), 0.08, hc); m.envMapIntensity = lerp(0.6, 1, c) }
@@ -1270,7 +1317,7 @@ export class Board3D {
         const p = (self.camOverride ??= new THREE.PerspectiveCamera()), t = THREE.MathUtils.degToRad(tilt)
         p.up.set(0, 0, -1)
         self.updateScene(performance.now() + 1e5)
-        p.fov = 24; p.aspect = self.W / self.H
+        p.fov = 24; p.aspect = self.fr.w / self.fr.h; p.setViewOffset(self.fr.w, self.fr.h, -self.fr.x, -self.fr.y, self.W, self.H)
         p.position.set(at[0] - 40, dist * Math.cos(t), at[1] + dist * Math.sin(t)); p.near = 5; p.far = 3000
         p.lookAt(at[0], 0, at[1]); p.updateProjectionMatrix()
         self.render(p)

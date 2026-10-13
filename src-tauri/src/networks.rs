@@ -12,7 +12,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::failure::{Failure, Res};
 
-pub const USER_AGENT: &str = "Masame/0.1"; // Cloudflare rejects some default user agents
+pub const USER_AGENT: &str = "Masame/0.2"; // Cloudflare rejects some default user agents
 const API: &str = "https://katagotraining.org/api/networks/";
 const MEDIA_HOST: &str = "media.katagotraining.org";
 const PAGES: u32 = 3;
@@ -147,7 +147,7 @@ pub fn catalog(nets: &[ApiNet]) -> Vec<Entry> {
 }
 
 /// Everything but `https_only`, so tests can talk to a local plain-HTTP server with the same policies.
-fn builder() -> reqwest::ClientBuilder {
+pub(crate) fn builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .user_agent(USER_AGENT)
         // Every endpoint answers 200/206 directly; following a redirect would escape the host allowlist.

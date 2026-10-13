@@ -21,7 +21,8 @@ export interface NetState {
 /** Rust-side error: a stable code (texts live in strings.ts) + optional technical detail. */
 export interface Failure { code: string; detail?: string }
 export interface Progress { name: string; state: 'downloading' | 'verifying' | 'done' | 'error' | 'cancelled'; received: number; total: number; error: Failure | null }
-export type EngineStatus = { state: 'stopped' | 'starting' | 'tuning' | 'warming' | 'ready' } | { state: 'error'; error: Failure }
+export type EngineStatus = { state: 'stopped' | 'starting' | 'warming' | 'ready' } | { state: 'tuning'; step: number; done: number; total: number }
+  | { state: 'error'; error: Failure }
 
 export async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!inTauri()) throw new LocalizedError(d => d.engineInAppOnly)
@@ -35,11 +36,20 @@ export async function on<T>(event: string, cb: (payload: T) => void): Promise<()
 
 const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
 export const gtp = ([x, y]: Vertex, n: number) => `${COLS[x]}${n - y}`
+/** A GTP move from the engine: null for a pass, undefined when unreadable or off an n×n board. */
+function vertex(s: unknown, n: number): Vertex | null | undefined {
+  if (typeof s !== 'string') return undefined
+  if (s.toLowerCase() === 'pass') return null
+  const x = COLS.indexOf(s[0]), row = s.slice(1)
+  if (x < 0 || x >= n || !/^\d+$/.test(row) || +row < 1 || +row > n) return undefined
+  return [x, n - +row]
+}
 
 export interface Analysis {
   winrate: number // Black's (the engine is started with reportAnalysisWinratesAs=BLACK)
   scoreLead: number // Black's
   topMove: string
+  pv: (Vertex | null)[] // [0] is the best move itself
   ownership: number[] | null // row-major from the top-left, +1 = Black
   humanPolicy: number[] | null // row-major + pass, -1 = illegal
 }
@@ -49,12 +59,18 @@ const nums = (v: unknown, len: number): number[] | null =>
 
 /** Engine output is untrusted: keep only well-formed fields of the expected sizes. */
 export function parseAnalysis(raw: unknown, n: number): Analysis {
-  const r = raw as { rootInfo?: { winrate?: unknown; scoreLead?: unknown }; moveInfos?: { move?: unknown; order?: unknown }[]; ownership?: unknown; humanPolicy?: unknown }
+  const r = raw as { rootInfo?: { winrate?: unknown; scoreLead?: unknown }; moveInfos?: { move?: unknown; order?: unknown; pv?: unknown }[]; ownership?: unknown; humanPolicy?: unknown }
   const { winrate, scoreLead } = r?.rootInfo ?? {}
   if (typeof winrate !== 'number' || typeof scoreLead !== 'number') throw new LocalizedError(d => d.badAnswer)
-  const top = Array.isArray(r.moveInfos) ? r.moveInfos.find(m => m?.order === 0)?.move : undefined
+  const top = Array.isArray(r.moveInfos) ? r.moveInfos.find(m => m?.order === 0) : undefined
+  const pv: (Vertex | null)[] = []
+  for (const s of Array.isArray(top?.pv) ? top.pv : []) {
+    const v = vertex(s, n)
+    if (v === undefined) break
+    pv.push(v)
+  }
   return {
-    winrate, scoreLead, topMove: typeof top === 'string' ? top.toLowerCase() === 'pass' ? 'pass' : top : '',
+    winrate, scoreLead, topMove: typeof top?.move === 'string' ? top.move.toLowerCase() === 'pass' ? 'pass' : top.move : '', pv,
     ownership: nums(r.ownership, n * n), humanPolicy: nums(r.humanPolicy, n * n + 1),
   }
 }

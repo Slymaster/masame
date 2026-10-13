@@ -35,9 +35,11 @@ export async function saveSgfFile(text: string, defaultName: string): Promise<bo
   return true
 }
 
-/** Asks before discarding unsaved moves; true = go ahead. */
-export async function confirmDiscard(): Promise<boolean> {
-  const msg = t.discardAsk
-  if (isTauri()) return (await import('@tauri-apps/plugin-dialog')).ask(msg, { title: 'Masame', kind: 'warning', okLabel: t.discard, cancelLabel: t.cancel })
+/** A yes/no question before something that can't be taken back; true = go ahead. */
+export async function askFirst(msg: string, okLabel: string): Promise<boolean> {
+  if (isTauri()) return (await import('@tauri-apps/plugin-dialog')).ask(msg, { title: 'Masame', kind: 'warning', okLabel, cancelLabel: t.cancel })
   return window.confirm(msg)
 }
+
+/** Asks before discarding unsaved moves. */
+export const confirmDiscard = () => askFirst(t.discardAsk, t.discard)

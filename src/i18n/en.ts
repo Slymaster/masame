@@ -3,24 +3,31 @@ import { fmt } from './format'
 
 const f = fmt('en-US')
 const color = (s: number): string => (s === 1 ? 'Black' : 'White')
+const tuningProgress = (step: number, done: number, total: number) => [step && `step ${step}`, total && `${done}/${total}`].filter(Boolean).join(' · ')
+const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
 
 export const en = {
-  // panel
-  board: (n: number, komi: number) => `${n} × ${n} board · komi ${f.num(komi)}`,
+  // card
+  board: (n: number, komi: number) => `${n}×${n} · komi ${f.num(komi)} · Japanese rules`,
   boardLabel: (n: number) => `${n}×${n} Go board`,
   game: 'Game',
   moveOf: (i: number, n: number) => (i < n ? `Move ${i} / ${n}` : `Move ${n}`),
+  move: (i: number) => `Move ${i}`,
+  you: 'You', yourMove: 'Your move', thinking: 'thinking…', waiting: 'waiting', passed: 'passed', resigned: 'resigned', wins: 'wins',
+  points: (n: number) => f.plural(n, 'point', 'points'),
+  tally: (territory: number, prisoners: number, komi?: number) =>
+    `${f.num(territory)} territory · ${f.plural(prisoners, 'prisoner', 'prisoners')}${komi ? ` · komi ${f.num(komi)}` : ''}`,
+  settings: 'Settings', boardSection: 'Board', appSection: 'App', keyboard: 'Keyboard',
   color,
   captures: (n: number) => f.plural(n, 'capture', 'captures'),
   passes: (s: number) => `${color(s)} passes.`,
+  botPasses: (s: number) => `${color(s)} passes. Your move.`,
   countingWait: 'Two passes in a row: the game is over. Counting…',
   countingHelp: 'Counting: click a group to mark it dead or alive, then accept the score.',
-  side: (s: number, total: number, territory: number, prisoners: number, komi?: number) =>
-    `${color(s)} ${f.num(total)}: ${f.num(territory)} territory, ${f.plural(prisoners, 'prisoner', 'prisoners')}${komi ? `, komi ${f.num(komi)}` : ''}`,
   validate: 'Accept score',
   score: (lead: number) => (lead === 0 ? 'Draw.' : `${color(lead > 0 ? 1 : -1)} wins by ${f.num(Math.abs(lead))}.`),
   refused: { ko: 'Ko: you can’t retake right away. Play elsewhere first.', suicide: 'Illegal move: it would be suicide.' },
-  history: 'History', start: 'First move', prev: 'Previous move', next: 'Next move', end: 'Last move',
+  history: 'History', prev: 'Previous move', next: 'Next move',
   pass: 'Pass', undo: 'Undo', open: 'Open…', save: 'Save…', resign: 'Resign',
   openFailed: (m: string) => `Couldn’t open this file: ${m}`,
   saved: 'Game saved.',
@@ -36,7 +43,7 @@ export const en = {
   aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
     `To play against the AI, install the Human network${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' and an analysis network' : ''}.`,
   openNetworks: 'Open networks',
-  display: 'Display', coords: 'Coordinates', sound: 'Sound', territory: 'Territory', language: 'Language',
+  display: 'Display', coords: 'Coordinates', sound: 'Sound', territory: 'Light and shadow', language: 'Language',
   rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
   view: 'View', study: 'Study', contemplation: 'Contemplation',
   light: 'Lighting', lights: { auto: 'Auto', morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' },
@@ -54,9 +61,19 @@ export const en = {
   engineInAppOnly: 'The engine is available in the app.',
   engineStarting: 'Starting the engine… The first time, this can take a few minutes.',
   engineWarming: 'Warming up the engine…',
-  engineTuning: 'Tuning the engine…',
+  engineTuning: (step: number, done: number, total: number) =>
+    [`Tuning KataGo for this graphics card (first launch only, a few minutes)`, tuningProgress(step, done, total)].filter(Boolean).join(' · '),
+  tuningCaption: 'Tuning KataGo for your graphics card (first launch only)', // the short form, under the board
+  tuningProgress,
   engineReady: 'Engine ready', engineIdle: 'Engine idle', noAnalysisNet: 'No analysis network installed.',
-  footer: { browse: 'browse', pass: 'pass', territory: 'territory', undo: 'undo', newGame: 'new game', panel: 'panel' },
+  updates: 'Updates', checkUpdates: 'Check for updates', checking: 'Checking…',
+  upToDate: (app: string) => `${app} is up to date`,
+  updateAvailable: (v: string) => `Masame ${v} is available`,
+  install: 'Install',
+  updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
+  updateInstalling: 'Installing the update…',
+  autoUpdate: 'Check for updates automatically',
+  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel' },
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
     about: 'About Masame', hide: 'Hide Masame', hideOthers: 'Hide Others', showAll: 'Show All', quit: 'Quit Masame',
@@ -72,6 +89,55 @@ export const en = {
   rankAdjusted: (r: string) => `AI level adjusted to ${r} for the next game.`,
   humanSilent: 'The Human network isn’t responding. Check that it’s installed.',
   badAnswer: 'Unreadable answer from KataGo.',
+  // game review (p: the colour that punishes, s: the colour that made the mistake)
+  review: 'Review', reviewGame: 'Review the game', backToGame: 'Back to the game',
+  reviewNeedsNet: 'Install an analysis network to review a game.',
+  reviewSide: 'Mistakes by', both: 'Both',
+  reading: 'Reading the game…',
+  readingHelp: 'Looking for the moves that cost the most points. About a minute.',
+  percent: (p: number) => f.pct(p),
+  reviewFailed: (m: string) => `The review stopped. ${m}`,
+  answerFailed: (m: string) => `No answer came. ${m}`,
+  noMoments: (s: number) => `No move${s ? ` by ${color(s)}` : ''} lost 2 points or more.`,
+  moment: (k: number, n: number, mv: number, loss: number) => `Moment ${k}/${n} · move ${mv} · −${pts(loss)}`,
+  moments: 'Key moments', lesson: 'Lesson',
+  steps: { try: 'Your try', punish: 'The punishment', better: 'Better move' },
+  tryAsk: (p: number, mv: number) => `Play ${color(p)}: how do you punish move ${mv}?`,
+  tryHelp: (p: number, s: number, loss: number) =>
+    `${color(s)}’s move costs ${pts(loss)} only if ${color(p)} finds the reply. Look for it as ${color(p)}: ${color(s)} answers each try, and Try again takes it back.`,
+  found: 'Found it: that punishes the mistake.',
+  shortOf: (gap: number) => `${pts(gap)} from the best punishment.`,
+  missed: (s: number, gap: number) => `${color(s)} gets away with it: ${pts(gap)} from the best punishment.`,
+  seePunishment: 'See the punishment',
+  punishLine: (p: number, v: string, s: number, loss: number) => `${color(p)} ${v} punishes it: ${color(s)} loses ${pts(loss)}.`,
+  punishHelp: '→ follows the line, and the light shows what changed hands. Play anywhere to explore: each move gets an answer.',
+  seeBetter: 'See the better move',
+  betterLine: (s: number, v: string, loss: number) => `Better: ${color(s)} ${v}, which keeps those ${pts(loss)}.`,
+  betterHelp: '→ follows the line. Compare its light with the punishment’s. Play anywhere to explore: each move gets an answer.',
+  nextMoment: 'Next moment',
+  // OGS (online-go.com)
+  ogsBoard: (n: number, komi: number, rules: string) => `${n}×${n} · komi ${f.num(komi)} · ${rules} · OGS`,
+  rules: { japanese: 'Japanese rules', chinese: 'Chinese rules', aga: 'AGA rules', korean: 'Korean rules', nz: 'New Zealand rules', ing: 'Ing rules' },
+  ogsInAppOnly: 'OGS games are available in the app.',
+  ogsSignInHelp: 'Sign-in happens in your browser; Masame never sees your password.',
+  ogsSignIn: 'Sign in to OGS', ogsWaiting: 'Waiting for the browser…',
+  ogsSignedIn: (who: string) => `Signed in: ${who}`, ogsSignOut: 'Sign out',
+  pace: 'Pace', paces: { blitz: 'Blitz', rapid: 'Rapid', live: 'Live' },
+  ogsFind: 'Find an opponent',
+  ogsGames: 'My OGS games', ongoing: 'Ongoing', finished: 'Finished', none: 'None', ogsLoading: 'Loading…',
+  date: f.day,
+  ogsSearching: (n: number, pace: string) => `Looking for a ${n}×${n} ${pace.toLowerCase()} opponent…`,
+  ogsUnavailable: 'Unavailable during an OGS game',
+  ogsReconnecting: 'Connection to OGS lost, reconnecting…',
+  ogsLeaveAsk: 'The game goes on at OGS and your clock keeps running. Leave anyway?', ogsLeave: 'Leave',
+  ogsResignAsk: 'Resign this game? It counts as a loss on OGS.',
+  ogsResult: (winner: number, how: string, points?: number) => how === 'cancel' ? 'Game cancelled.'
+    : how === 'score' && !winner && !points ? 'Draw.'
+    : !winner ? 'Game over.' // OGS named no winner
+    : `${color(winner)} wins ${how === 'resign' ? 'by resignation' : how === 'time' ? 'on time' : how === 'score' ? `by ${pts(points ?? 0)}` : 'by forfeit'}.`,
+  periods: (n: number, s: number) => `${n}×${s} s`,
+  stones: (n: number) => f.plural(n, 'stone', 'stones'),
+  days: (d: number, h: number) => `${d} d ${h} h`,
   // files
   sgfFilter: 'SGF game',
   openTitle: 'Open a game', saveTitle: 'Save the game',
@@ -136,6 +202,19 @@ export const en = {
     open_failed: 'Couldn’t open the browser.',
     cpu_unsupported: 'KataGo couldn’t run on the graphics card, and this processor lacks AVX2 for the CPU version.',
     menu_failed: 'Couldn’t update the menu bar.',
+    update_check: 'Couldn’t check for updates.',
+    update_failed: 'Couldn’t install the update.',
+    ogs_login_required: 'Sign in to OGS first.',
+    ogs_denied: 'OGS sign-in was declined.',
+    ogs_timeout: 'The OGS sign-in took too long. Try again.',
+    ogs_port_busy: 'Couldn’t receive the OGS sign-in: no local port is free.',
+    ogs_network: 'Couldn’t reach OGS.',
+    ogs_cancelled: 'OGS sign-in cancelled.',
+    ogs_not_square: 'Masame only shows square boards.',
+    ogs_placing_handicap: 'Handicap stones are still being placed on OGS.',
+    ogs_http: 'OGS answered with an error.',
+    ogs_offline: 'Not connected to OGS.',
+    ogs_refused: 'OGS refused this move.',
   },
 }
 

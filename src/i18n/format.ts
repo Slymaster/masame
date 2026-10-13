@@ -4,6 +4,7 @@ export function fmt(locale: string) {
   const nf = new Intl.NumberFormat(locale), rules = new Intl.PluralRules(locale)
   const pct = new Intl.NumberFormat(locale, { style: 'percent' })
   const month = new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' })
+  const day = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' })
   const num = (x: number) => nf.format(x)
   return {
     num,
@@ -13,5 +14,7 @@ export function fmt(locale: string) {
     plural: (n: number, one: string, other: string) => `${num(n)} ${rules.select(n) === 'one' ? one : other}`,
     pct: (p: number) => pct.format(p / 100),
     month: (iso: string) => month.format(new Date(iso)),
+    /** A local date without the year: "Oct 12". */
+    day: (ms: number) => day.format(ms),
   }
 }
