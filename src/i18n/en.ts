@@ -5,6 +5,7 @@ const f = fmt('en-US')
 const color = (s: number): string => (s === 1 ? 'Black' : 'White')
 const tuningProgress = (step: number, done: number, total: number) => [step && `step ${step}`, total && `${done}/${total}`].filter(Boolean).join(' · ')
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
+const lost = (x: number) => Math.round(x * 10) ? `−${pts(x)}` : '±0' // never "−0 points"
 
 export const en = {
   // card
@@ -125,9 +126,9 @@ export const en = {
   joseki: 'Joseki', jLoading: 'Loading the joseki…', jFailed: (m: string) => `Couldn’t load the joseki: ${m}`,
   jTabs: { explore: 'Explore', practise: 'Practise', programme: 'Programme' },
   jCorner: 'Corner', jBack: 'Back', jFrequent: 'Most played at your level', jMoves: 'Moves',
-  jBest: 'best', jLoss: (x: number) => `−${pts(x)}`, jAt: (pct: string, rank: string) => `${pct} at ${rank}`,
+  jBest: 'best', jLoss: (x: number) => lost(x), jAt: (pct: string, rank: string) => `${pct} at ${rank}`,
   jTags: { classic: 'classic', pro: 'pro', ai: 'AI', verified: 'verified by KataGo', contested: 'contested' },
-  jTenuki: 'Tenuki', jTenukiHelp: 'Play elsewhere', jTenukiFine: (x: number) => `Tenuki is fine here (−${pts(x)}).`,
+  jTenuki: 'Tenuki', jTenukiHelp: 'Play elsewhere', jTenukiFine: (x: number) => `Tenuki is fine here (${lost(x)}).`,
   jComplete: 'Joseki complete: tenuki is fine.',
   jLens: 'Rank lens', jShowLine: 'Show KataGo’s line', jHideLine: 'Hide KataGo’s line',
   jKataLine: (moves: string) => `KataGo continues: ${moves}.`,
@@ -145,6 +146,7 @@ export const en = {
   jWrong: 'Not the joseki: the lettered moves are.', jWrongTenuki: 'Not the joseki: tenuki loses here.',
   jMissedPunish: 'That lets it go. See how KataGo punishes it.',
   jLineEnd: 'Line complete.',
+  jElsewhere: 'The tenuki stone went to another part of the board. ',
   jExport: 'Export progress', jReset: 'Reset progress', jResetAsk: 'Delete all your joseki progress?', jExported: 'Progress exported.',
   jFileName: 'masame-joseki.json', exportTitle: 'Export joseki progress',
   jReadOnly: 'This progress was saved by a newer Masame: practise here won’t be recorded.',

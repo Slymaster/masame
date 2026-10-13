@@ -6,6 +6,7 @@ const f = fmt('fr-FR')
 const color = (s: number): string => (s === 1 ? 'Noir' : 'Blanc')
 const tuningProgress = (step: number, done: number, total: number) => [step && `étape ${step}`, total && `${done}/${total}`].filter(Boolean).join(' · ')
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
+const lost = (x: number) => Math.round(x * 10) ? `−${pts(x)}` : '±0' // never "−0 points"
 
 export const fr: Dict = {
   // card
@@ -126,9 +127,9 @@ export const fr: Dict = {
   joseki: 'Joseki', jLoading: 'Chargement des joseki…', jFailed: (m: string) => `Impossible de charger les joseki : ${m}`,
   jTabs: { explore: 'Explorer', practise: 'S’entraîner', programme: 'Programme' },
   jCorner: 'Coin', jBack: 'Retour', jFrequent: 'Le plus joué à ton niveau', jMoves: 'Coups',
-  jBest: 'meilleur', jLoss: (x: number) => `−${pts(x)}`, jAt: (pct: string, rank: string) => `${pct} en ${rank}`,
+  jBest: 'meilleur', jLoss: (x: number) => lost(x), jAt: (pct: string, rank: string) => `${pct} en ${rank}`,
   jTags: { classic: 'classique', pro: 'pro', ai: 'IA', verified: 'vérifié par KataGo', contested: 'contesté' },
-  jTenuki: 'Tenuki', jTenukiHelp: 'Jouer ailleurs', jTenukiFine: (x: number) => `Tenuki possible ici (−${pts(x)}).`,
+  jTenuki: 'Tenuki', jTenukiHelp: 'Jouer ailleurs', jTenukiFine: (x: number) => `Tenuki possible ici (${lost(x)}).`,
   jComplete: 'Joseki terminé : tu peux jouer ailleurs.',
   jLens: 'Lentille de rang', jShowLine: 'Voir la suite de KataGo', jHideLine: 'Masquer la suite de KataGo',
   jKataLine: (moves: string) => `KataGo continue : ${moves}.`,
@@ -146,6 +147,7 @@ export const fr: Dict = {
   jWrong: 'Ce n’est pas le joseki : ce sont les coups marqués d’une lettre.', jWrongTenuki: 'Ce n’est pas le joseki : tenuki perd ici.',
   jMissedPunish: 'Tu le laisses s’en tirer. Regarde comment KataGo le punit.',
   jLineEnd: 'Séquence terminée.',
+  jElsewhere: 'Le tenuki a été joué ailleurs sur le goban. ',
   jExport: 'Exporter la progression', jReset: 'Remettre à zéro', jResetAsk: 'Effacer toute ta progression en joseki ?', jExported: 'Progression exportée.',
   jFileName: 'masame-joseki.json', exportTitle: 'Exporter la progression en joseki',
   jReadOnly: 'Cette progression vient d’une version plus récente de Masame : l’entraînement ici ne sera pas enregistré.',

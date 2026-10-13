@@ -1,6 +1,6 @@
 // The joseki trainer: Explore, Practise and Programme panels, which borrow the board and the card while open.
 // App keeps its game untouched underneath; its play(), bot turn and Undo defer to the trainer while it is open.
-import { useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { Board3DState } from '../board3d/Board3D'
 import type { Mark } from '../board/BoardView'
 import { askFirst, saveSgfFile } from '../files'
@@ -45,7 +45,8 @@ export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
   const [replaying, setReplaying] = useState(false)
   const [store, setStore] = useState<Stored>(() => load())
   const [say, setSay] = useState<string | null>(null) // a one-off note (not in the book, exported)
-  useEffect(() => save(store), [store])
+  const loaded = useRef(store)
+  useEffect(() => { if (store !== loaded.current) save(store) }, [store]) // written on real changes only, never at launch
 
   useEffect(() => {
     if (!open || db) return
@@ -162,11 +163,14 @@ export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
     return true
   }
   const last = line?.last
+  // the tree keeps one tenuki stone, which may land in another corner of a turned board: say so
+  const away = practising && line!.phase !== 'wrong' && isTenuki(lw!.nodes.length > 1 ? db.nodes[lw!.nodes.at(-2)!].e[line!.path.picks.at(-1)!][0] : 'pd')
   const lineNote = !line ? null
+    : away && line.phase === 'ask' ? `${t.jElsewhere}${t.jAsk(toPlayLine)}`
     : line.phase === 'ask' ? line.dev !== null ? t.jAskPunish(line.dev) : `${last ? last.rating === 3 ? t.jGood : t.jHard : ''}${t.jAsk(toPlayLine)}`
     : line.phase === 'reply' ? last?.rating === 3 ? t.jGood : t.jHard
     : line.phase === 'wrong' ? ln!.e.length ? lineMarks.length ? t.jWrong : t.jWrongTenuki : t.jMissedPunish
-    : `${last ? last.rating === 1 ? '' : line.dev !== null ? `${t.found} ` : t.jGood : ''}${t.jLineEnd}`
+    : `${away ? t.jElsewhere : ''}${last ? last.rating === 1 ? '' : line.dev !== null ? `${t.found} ` : t.jGood : ''}${t.jLineEnd}`
   const note = say ?? (tab === 'practise' ? lineNote ?? t.jPractiseHelp : tab === 'explore'
     ? exLine.length && ex.line ? t.jKataLine(exLine.map(m => gtp(point(m), N)).join(' '))
     : t.jExploreNote(exW.moves.length) : t.jProgrammeNote)

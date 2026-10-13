@@ -20,8 +20,12 @@ export function load(st: Storage = localStorage): Stored {
   try {
     const j = JSON.parse(raw)
     if (num(j?.v) && j.v > 1) return { p: empty(), readOnly: true }
-    if (j?.v === 1 && j.cards && typeof j.cards === 'object' && Object.values(j.cards).every(isCard) && typeof j.day === 'string' && num(j.fresh))
-      return { p: j.day === today() ? j : { ...j, day: today(), fresh: 0 }, readOnly: false }
+    if (j?.v === 1 && j.cards && typeof j.cards === 'object' && !Array.isArray(j.cards) && typeof j.day === 'string' && num(j.fresh)) {
+      const cards = Object.fromEntries(Object.entries(j.cards).filter(([, c]) => isCard(c))) as Progress['cards']
+      // a bad card costs that card only; the raw text is kept aside
+      if (Object.keys(cards).length < Object.keys(j.cards).length) try { st.setItem(BAD, raw) } catch { /* full */ }
+      return { p: j.day === today() ? { ...j, cards } : { ...j, cards, day: today(), fresh: 0 }, readOnly: false }
+    }
   } catch { /* garbage: below */ }
   try { st.setItem(BAD, raw) } catch { /* full: the fresh start still beats a crash */ }
   return { p: empty(), readOnly: false }

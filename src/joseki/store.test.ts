@@ -22,7 +22,11 @@ describe('joseki progress', () => {
     expect(load(st).p).toMatchObject({ day: today(), fresh: 0 })
   })
   it('backs up unreadable data, then starts fresh', () => {
-    for (const bad of ['{nope', '{"v":1,"cards":{"a":{"s":"x"}},"day":"x","fresh":0}', 'null']) {
+    const good = review(undefined, 3, 0), mixed = JSON.stringify({ v: 1, cards: { a: { s: 'x' }, b: good }, day: today(), fresh: 1 })
+    const st = mem({ [KEY]: mixed })
+    expect(load(st).p.cards).toEqual({ b: good }) // one bad card costs only that card
+    expect(st.m.get(BAD)).toBe(mixed)
+    for (const bad of ['{nope', '{"v":1,"cards":[],"day":"x","fresh":0}', 'null']) {
       const st = mem({ [KEY]: bad })
       expect(load(st)).toMatchObject({ readOnly: false, p: { cards: {} } })
       expect(st.m.get(BAD)).toBe(bad)
