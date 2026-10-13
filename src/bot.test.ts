@@ -63,7 +63,7 @@ describe('thinking delay', () => {
 describe('decisions', () => {
   const base = (o: Partial<BotInput>): BotInput => ({
     humanPolicy: [0.6, 0.4, ...Array(79).fill(0), 0.01], topMove: 'A9', botWinrate: 0.5, history: [],
-    ownership: null, signMap: empty(9), opponentPassed: false, moveNumber: 30, legal: all, ...o,
+    ownership: null, signMap: empty(9), opponentPassed: false, moveNumber: 30, mayResign: true, legal: all, ...o,
   })
   it('plays a sampled human move', () => {
     const m = decide(base({}), rng(3))
@@ -86,6 +86,7 @@ describe('decisions', () => {
     const lost = { botWinrate: 0.01, history: [0.02, 0.02] }
     expect(decide(base({ ...lost, moveNumber: 17 }), rng(1)).kind).toBe('play')
     expect(decide(base({ ...lost, moveNumber: 18 }), rng(1)).kind).toBe('resign')
+    expect(decide(base({ ...lost, moveNumber: 18, mayResign: false }), rng(1)).kind).not.toBe('resign')
     expect(decide(base({ botWinrate: 0.01, history: [0.2, 0.02], moveNumber: 50 }), rng(1)).kind).toBe('play')
   })
   it('settled ignores occupied points and accepts neutral dame', () => {

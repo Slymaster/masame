@@ -43,7 +43,7 @@ export const fr: Dict = {
   aiLevel: 'Niveau de l’IA', myLevel: 'Ton niveau',
   weaker: (label: string) => `${label} : plus faible`, stronger: (label: string) => `${label} : plus fort`,
   aiSettings: 'Réglages de l’IA',
-  autoAdjust: 'Ajustement automatique', thinkTime: 'Temps de réflexion',
+  autoAdjust: 'Ajustement automatique', thinkTime: 'Temps de réflexion', botResign: 'Le bot peut abandonner',
   aiOnlyInApp: 'L’adversaire IA est disponible dans l’application.',
   aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
     `Pour jouer contre l’IA, installe le réseau Humain${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' et un réseau d’analyse' : ''}.`,

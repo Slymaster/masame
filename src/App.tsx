@@ -37,14 +37,14 @@ type Renderer = '3d' | '2d'
 const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
 const AUTOPLAY = [0.5, 1, 2, 4] as const // seconds per move
 interface Settings {
-  lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; delay: boolean; territory: boolean
+  lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; botResign: boolean; delay: boolean; territory: boolean
   renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor
   langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number; autoplay: typeof AUTOPLAY[number]
 }
 const SETTINGS_KEY = 'baduk.settings'
 function loadSettings(): Settings {
   const d: Settings = {
-    lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, delay: true, territory: false,
+    lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, botResign: true, delay: true, territory: false,
     renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', langChosen: false, panelHidden: false,
     autoUpdate: true, updateChecked: 0, autoplay: 1,
   }
@@ -58,7 +58,7 @@ function loadSettings(): Settings {
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: DECORS.includes(s.decor) ? s.decor : 'atelier', panelHidden: s.panelHidden === true, ...updateSettings(j),
-    autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1,
+    autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
   }
 }
 
@@ -521,7 +521,7 @@ export function App() {
       const history = game.moves.slice(0, game.cursor).flatMap(m => winrates.current.get(m) ?? []) // the bot's moves on this line
       const m = decide({
         humanPolicy: a.humanPolicy, topMove: a.topMove, botWinrate, history, ownership: a.ownership,
-        signMap: game.board.signMap, opponentPassed: !!game.lastMove && !game.lastMove.vertex, moveNumber: game.moveNumber(),
+        mayResign: settings.botResign, signMap: game.board.signMap, opponentPassed: !!game.lastMove && !game.lastMove.vertex, moveNumber: game.moveNumber(),
         legal: i => game.isLegal([i % n, Math.floor(i / n)]),
       }, random)
       if (m.kind === 'resign') return finish(d => d.resigns(bot.sign), false, resignResult(-bot.sign as Sign))
@@ -902,6 +902,7 @@ export function App() {
                   <Stepper label={t.myLevel} value={settings.myRank} set={v => setSettings(s => ({ ...s, myRank: v, aiRank: v }))} />
                   <Switch label={t.autoAdjust} on={settings.autoAdjust} toggle={() => set('autoAdjust', !settings.autoAdjust)} />
                   <Switch label={t.thinkTime} on={settings.delay} toggle={() => set('delay', !settings.delay)} />
+                  <Switch label={t.botResign} on={settings.botResign} toggle={() => set('botResign', !settings.botResign)} />
                 </details>
               </> : cta)}
               <button className="btn accent" onClick={() => { closeSheet(); newGame() }} title={shortcut('N')} disabled={settings.opponent === 'ai' && !canPlayAI}>{t.begin}</button>
