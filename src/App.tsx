@@ -70,7 +70,7 @@ function webgl2() {
 }
 
 /** What App drives, whichever renderer is mounted: the Canvas2D BoardView ("light") or the lazily loaded Board3D. */
-type View = { update(s: Board3DState): void; drop(v: Vertex, c: Sign): void; pass?(c: Sign): void; destroy(): void }
+type View = { update(s: Board3DState): void; drop(v: Vertex, c: Sign): void; pass?(c: Sign): void; resetCamera?(): void; destroy(): void }
 
 function Goban({ state, onPlay, view, mode, options, thinking, onFallback, children }: {
   state: Board3DState; onPlay: (v: Vertex) => boolean; view: React.RefObject<View | null>
@@ -630,6 +630,7 @@ export function App() {
             t: ongoing ? undefined : () => set('territory', !settings.territory), h: togglePanel,
             ...(renderer === '3d' && {
               v: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
+              r: () => view.current?.resetCamera?.(),
             }),
             ...(renderer === '3d' && settings.decor !== 'lanterne' && { // lighting has no effect at night
               l: () => set('light', LIGHTS[(LIGHTS.indexOf(settings.light) + 1) % LIGHTS.length]),
@@ -914,7 +915,7 @@ export function App() {
               {renderer === '3d' && <>
                 <div className="row" style={{ cursor: 'default', gap: 16 }}>
                   <span>{t.view} <kbd>V</kbd></span>
-                  <Seg label={t.view} value={settings.camera} options={[['study', t.study], ['contemplation', t.contemplation]]} set={v => set('camera', v)} />
+                  <Seg label={t.view} value={settings.camera} options={[['study', t.study], ['contemplation', t.contemplation, t.contemplationHint]]} set={v => set('camera', v)} />
                 </div>
                 <div className="field">
                   <span>{t.decor}</span>
@@ -961,7 +962,7 @@ export function App() {
 
           <section>
             <div className="lab"><span>{t.keyboard}</span><span /></div>
-            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel}</p>
+            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}</p>
           </section>
         </Sheet>
       )}
