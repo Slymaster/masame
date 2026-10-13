@@ -12,7 +12,7 @@ Legend:
 ## 1. Go engine
 
 ### KataGo (built, macOS and Linux; bundled, Windows)
-- Source: https://github.com/lightvector/KataGo (v1.18.2 on macOS, built by `scripts/build-katago.sh`; v1.18.2 on Linux, built by `scripts/build-katago-linux.sh`; official v1.18.1 release on Windows)
+- Source: https://github.com/lightvector/KataGo (v1.18.2 on macOS, built by `scripts/build-katago.sh` for Apple Silicon and `scripts/build-katago-macos-x86_64.sh` for Intel; v1.18.2 on Linux, built by `scripts/build-katago-linux.sh`; official v1.18.1 release on Windows)
 - Licence: MIT
 - Copyright 2025 David J Wu ("lightvector") and/or other authors of the content in the KataGo repository.
 - Requirement: include the copyright notice and permission text with every copy. The KataGo LICENSE file also names third-party code under `cpp/external/` with its own licences. The parts that can be compiled into the macOS Metal binary are:
@@ -29,7 +29,7 @@ Legend:
 | Swift CMake modules (`cpp/external/macos`) | Apache-2.0 with Runtime Library Exception | Apple Inc. and the Swift project authors |
 | `cpp/core/sha2.cpp` | licence embedded in the file | see file |
 
-The app ships KataGo's `LICENSE`, the licence files of `cpp/external/*` (and katagocoreml's `NOTICE`) and the licences of protobuf, Abseil, the Windows engine's DLLs and Eigen (Linux) in its `resources/licenses/` folder (macOS: `Masame.app/Contents/Resources/resources/licenses/`; Windows: `resources\licenses\` in the install folder; Linux: `/usr/lib/Masame/resources/licenses/` for the .deb and .rpm). Their copies are kept in [`src-tauri/resources/licenses/`](src-tauri/resources/licenses/).
+The app ships KataGo's `LICENSE`, the licence files of `cpp/external/*` (and katagocoreml's `NOTICE`) and the licences of protobuf, Abseil, the Windows engine's DLLs and Eigen (Linux, Intel Mac) in its `resources/licenses/` folder (macOS: `Masame.app/Contents/Resources/resources/licenses/`; Windows: `resources\licenses\` in the install folder; Linux: `/usr/lib/Masame/resources/licenses/` for the .deb and .rpm). Their copies are kept in [`src-tauri/resources/licenses/`](src-tauri/resources/licenses/).
 
 ### protobuf 29.3 (linked into the macOS engine)
 - Source: https://github.com/protocolbuffers/protobuf
@@ -62,6 +62,10 @@ The app downloads networks from https://katagotraining.org (`media.katagotrainin
 - Earlier project notes recorded its licence as unconfirmed. As of 11 October 2026, the licence page above states that the KataGo Neural Network License also applies to networks on the "extra networks" page labelled as "KataGo" networks, "such as the KataGo Human SL Network".
 - We still download it from the official source rather than redistributing it.
 
+### Joseki database (generated, bundled)
+- `public/assets/joseki/joseki.v1.json` was generated for Masame with KataGo v1.18.2 by `scripts/joseki/generate.ts`, from the outputs of `kata1-tf3-b11c768-s11003M-d5973M-7gres` (judge, 800 visits per move) and `b18c384nbt-humanv0` (human move frequencies), both under the KataGo Neural Network License above.
+- It holds moves, score losses, frequencies and tags only; no network weights are bundled.
+
 ### Networks by other contributors
 The licence page lists exceptions. Older `g170` networks are CC0. The "zhizi" networks in the kata1 run (for example `kata1-zhizi-b28c512nbt-muonfd2`) are under an MIT-style licence, Copyright (c) 2026 hzyhhzy & zhizigo.com. The network manager's "strongest" and "newest" entries come from the live kata1 list and could therefore be a zhizi network; its licence then applies.
 
@@ -83,6 +87,7 @@ About 300 crates are resolved for the macOS build (`src-tauri/Cargo.lock`). Dire
 | reqwest | MIT OR Apache-2.0 |
 | futures-util | MIT OR Apache-2.0 |
 | sha2 | MIT OR Apache-2.0 |
+| keyring | MIT OR Apache-2.0 |
 | tokio | MIT |
 
 Notable transitive dependencies:
@@ -96,6 +101,8 @@ Notable transitive dependencies:
 | hyper | MIT | HTTP |
 | cssparser, selectors, dtoa-short, option-ext | MPL-2.0 | file-level copyleft: source of these crates is available on crates.io; we do not modify them |
 | icu_*, zerovec, yoke, tinystr, litemap, writeable, zerofrom, zerotrie, potential_utf | Unicode-3.0 | |
+
+`keyring` brings `zeroize_derive` and, on Linux, `dbus-secret-service`, `dbus` and `libdbus-sys` (all MIT OR Apache-2.0); on macOS and Windows it reuses `security-framework` and `windows-sys`, already in the lock.
 
 The rest are MIT, Apache-2.0, BSD-3-Clause, Zlib, Unlicense or 0BSD, mostly dual-licensed. Each release build generates the complete list with its licence texts (`scripts/third-party-licenses.mjs`, from `cargo metadata`) and ships it as `THIRD_PARTY_LICENSES.txt` in the app's `resources/licenses/` folder.
 
@@ -117,6 +124,12 @@ The `goban-engine` package ships no licence file: `THIRD_PARTY_LICENSES.txt` giv
 
 `@sabaki/sgf` depends on `doken` (MIT, bundled). Its optional dependencies `iconv-lite` (MIT) and `jschardet` (LGPL-2.1+) are replaced by an empty module in `vite.config.ts` and are not bundled; keep it that way, or comply with the LGPL if `jschardet` is ever bundled. The same generated `THIRD_PARTY_LICENSES.txt` lists every bundled package with its licence text (from `pnpm licenses list --prod`).
 
+### FSRS-4.5 (algorithm and default weights)
+- Source: https://github.com/open-spaced-repetition/awesome-fsrs/wiki/The-Algorithm and https://github.com/open-spaced-repetition/fsrs4anki (the v4.5.0 scheduler)
+- Licence: MIT
+- Copyright (c) 2022 Open Spaced Repetition
+- `src/joseki/fsrs.ts` reimplements the FSRS-4.5 formulas and copies its 17 default weights for the joseki trainer's spaced repetition. No package is bundled.
+
 ### Fonts (bundled via Fontsource)
 | Font | Licence | Copyright |
 |---|---|---|
@@ -136,7 +149,7 @@ Licence: https://polyhaven.com/license (all assets CC0). Attribution is not requ
 ### ambientCG (CC0 1.0)
 Licence: https://ambientcg.com/license (all assets CC0).
 
-- Wood095, https://ambientcg.com/view?id=Wood095 (2K JPG: Color, NormalGL, Roughness; downloaded 2026-10-11). Derived files `public/assets/board3d/kaya_diff.jpg`, `kaya_nor.jpg` and `kaya_rough.jpg` (stacked strips of the scan, graded to golden kaya, roughness derived from the fibre detail). The bowls and the table reuse `kaya_diff.jpg`, tinted in the material.
+- Wood095, https://ambientcg.com/view?id=Wood095 (2K and 4K JPG: Color, NormalGL, Roughness; downloaded 2026-10-11 and 2026-10-13). Derived files `public/assets/board3d/kaya_diff.jpg`, `kaya_nor.jpg`, `kaya_rough.jpg` and their 4K versions `kaya_*_4k.jpg`, made by `scripts/kaya-textures.py` (stacked strips of the scan, graded to golden kaya, roughness derived from the fibre detail). The bowls and the table reuse `kaya_diff.jpg`, tinted in the material.
 
 ### Freesound (CC0 1.0)
 Licence of each sound: CC0 1.0, https://creativecommons.org/publicdomain/zero/1.0/
@@ -182,3 +195,15 @@ The Linux version (x86_64; AppImage, .deb and .rpm, built on Ubuntu 22.04) ships
 glibc, libstdc++, libgcc, zlib and the OpenCL ICD loader (`libOpenCL.so.1`) are system libraries, linked dynamically and not shipped by us. Without an OpenCL driver, the app uses the CPU build.
 
 The AppImage also bundles libraries from Ubuntu 22.04 so that it runs on other distributions (WebKitGTK, GTK, GLib and their dependencies, many under the LGPL), unmodified. Each release publishes `linux-appimage-libraries.txt` next to the AppImage: every bundled file with its Ubuntu package and version, how to get the corresponding source, and each package's copyright file. The .deb and .rpm bundle none of these; they depend on the distribution's packages.
+
+---
+
+## 8. Intel Mac build
+
+The Intel Mac version ships KataGo v1.18.2 built from source by `scripts/build-katago-macos-x86_64.sh`, at the same pinned commit as the other builds, as two sidecars in `Masame.app/Contents/MacOS/`: `katago-opencl` (GPU, through the system's OpenCL.framework) and `katago-eigen` (CPU, without AVX2, so it also runs under Rosetta). The app starts the OpenCL build and falls back to the CPU build when it fails.
+
+| File(s) | Component | Licence | Requirement |
+|---|---|---|---|
+| `katago-eigen` | Eigen 3.4.0 (header-only, compiled in, from the pinned upstream tarball) | MPL-2.0 | unmodified, compiled with `EIGEN_MPL2_ONLY` so no LGPL part of Eigen is used; source available at https://gitlab.com/libeigen/eigen; licence text in `resources/licenses/linux-engine/` |
+
+Both link only macOS system libraries and frameworks (libc++, libSystem, zlib, OpenCL).

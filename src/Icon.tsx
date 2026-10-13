@@ -11,11 +11,14 @@ const ICONS = {
   square: <rect x="5" y="5" width="14" height="14" rx="2" />,
   'chevron-left': <path d="M15 6l-6 6 6 6" />,
   'chevron-right': <path d="M9 6l6 6-6 6" />,
+  play: <path d="M8 5.5v13l10-6.5z" />,
+  pause: <path d="M9 6v12M15 6v12" />,
   'hand-stop': <path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 5.5v-2a1.5 1.5 0 0 1 3 0V12M14 5.5a1.5 1.5 0 0 1 3 0V12M17 7.5a1.5 1.5 0 0 1 3 0V16a6 6 0 0 1-6 6h-2a6 6 0 0 1-5-2.7L3.8 13.4a1.5 1.5 0 0 1 .5-2 1.9 1.9 0 0 1 2.3.3L8 13" />,
   'arrow-back-up': <path d="M9 14l-4-4 4-4M5 10h11a4 4 0 0 1 0 8h-1" />,
   'sun-low': <><circle cx="12" cy="13" r="3.5" /><path d="M3 20h18M4.5 13h1M18.5 13h1M12 5.5v1M6.7 7.7l.7.7M17.3 7.7l-.7.7" /></>,
   flag: <path d="M5 21V4M5 4h12l-2.5 4.5L17 13H5" />,
   review: <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5M3.5 3.5v5h5M12 8v4l2.5 2.5" />,
+  book: <path d="M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0M3 6v13M12 6v13M21 6v13" />,
 }
 
 export type IconName = keyof typeof ICONS

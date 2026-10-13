@@ -12,12 +12,16 @@ while read -r in out crop; do
 done <<'LIST'
 app3d-study-en.png study-en.jpg
 app3d-contemplation-en.png contemplation-en.jpg
+app3d-joseki-en.png joseki-en.jpg
+app3d-variation-en.png variations-en.jpg
 app3d-territory-en.png territory-en.jpg
 app3d-counting-en.png counting-en.jpg
 app3d-light2d-en.png light-2d-en.jpg
 i18n-reseaux-en.png networks-en.jpg
 app3d-study-fr.png study-fr.jpg
 app3d-contemplation-fr.png contemplation-fr.jpg
+app3d-joseki-fr.png joseki-fr.jpg
+app3d-variation-fr.png variations-fr.jpg
 app3d-counting-fr.png counting-fr.jpg
 app3d-light2d-fr.png light-2d-fr.jpg
 i18n-reseaux-fr.png networks-fr.jpg

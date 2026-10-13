@@ -14,10 +14,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import type { Sign, Vertex } from '@sabaki/go-board'
-import type { BoardState } from '../board/BoardView'
+import { paintMarks, type BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
-import { bowlHeap, BT, dims, dropStones, Governor, gx, gz, hoshiStep, jitter, lens, LOOKS, qualityLadder, RB, RW, settle, SH, SX, SZ, TOD, todAt, type Ground, type Placed, type Quality, type Rest, type TimeName, type Tod } from './logic'
+import { bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, todAt, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
 
 export interface Board3DState extends BoardState {
@@ -37,8 +37,7 @@ export interface Board3DInit {
 }
 
 // Nothing moves but the stone being placed: view, décor and light changes crossfade (FADE_MS) instead of travelling
-const DROP_MS = 140, FADE_MS = 230, OMBRE_MS = 900, AUTO_MS = 15_000
-const TILT = THREE.MathUtils.degToRad(22)
+const FADE_MS = 230, OMBRE_MS = 900, AUTO_MS = 15_000
 const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
 const AO_K = 1.4 // contact-shadow quad half size, in stone radii
 // contact shadow: darkest right at the silhouette (peak per colour), a gaussian gone (≈2 %) AO_REACH radii out on the
@@ -55,7 +54,13 @@ const FLOOR_MARGIN = 0.8
 // cosine^BAND_SHARP (soft edges), cooler than the body; the fine lines run through them, stronger inside a band
 const BAND_PITCH = 0.25, BAND_PITCH_VAR = 0.15, BAND_SHARP = 2, BAND_DARK = 0.13, BAND_WARP = 0.15
 const FINE_STRIPES = 0.7, FINE_OUTSIDE = 0.5, STRIPE_ROUGH = 0.12
-const KAYA_PX_MM = 4.08 // scan density: 2048 px along the grain = 502 mm
+// realism, kept subtle and only in Contemplation (Study stays as tuned for readability; debug.tune() sets them live):
+// the urushi lines' dome (edge slope), width wobble (±share) and gloss; the kaya's patina (roughness × (1 − patina) at
+// the centre, gone 80→220 mm out, where hands polish the board); the shoji's bars (light level left behind a bar; the share of light is LOOKS.shoji, shoji ≥ 0 overrides it);
+// Contemplation's vignette (darkening in the frame's corners)
+const FX = { relief: 0.45, wobble: 0.08, inkRough: 0.28, patina: 0.1, shojiBar: 0.15, shoji: -1, vignette: 0.22 }
+const SHOJI_MM = 4000, SHOJI_R = 1600 // the shoji light's distance and its cookie's half width there
+const KAYA_MM = [502, 424.5] // the kaya scan's physical size (along, across the grain), at 2K and 4K alike
 const easeIO = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const lerp = THREE.MathUtils.lerp
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
@@ -65,6 +70,8 @@ const mkCanvas = (w: number, h: number) => Object.assign(document.createElement(
 interface Stone extends Placed {
   p: number; c: Sign; seed: number; rotY: number
   t0: number; landed: boolean; captured: Stone[]
+  /** Landed at once (navigation interrupted its drop): no slide. */
+  still?: boolean
 }
 
 function kelvin(K: number) {
@@ -77,20 +84,27 @@ function kelvin(K: number) {
 
 /* ---------- shaders ---------- */
 const GLSL_GRID = /* glsl */`
-uniform vec3 uInk; uniform float uLim, uStep, uFive, uHalf;
+uniform vec3 uInk; uniform float uLim, uStep, uFive, uHalf, uRelief, uWobble, uInkRough, uPatina;
 varying vec3 vLoc;
-float lineAA(float c, float sp, float h, float lim) {
+// ink coverage across a line; g: the slope of its lacquer dome (urushi stands proud of the wood), only where the line is
+// wide enough on screen to show it. a = the coordinate along the line: brush-drawn, its width wanders slowly.
+float lineAA(float c, float a, float sp, float h, float lim, out float g) {
   float n = clamp(floor(c / sp + 0.5), -lim, lim);
-  float dd = abs(c - n * sp), w = max(fwidth(c), 1e-4);
+  h *= 1.0 + uWobble * (0.6 * sin(a * 0.045 + n * 2.1) + 0.4 * sin(a * 0.011 - n * 1.3));
+  float d = c - n * sp, dd = abs(d), w = max(fwidth(c), 1e-4);
   float hw = max(h, 0.55 * w);                         // never thinner than ~1px; fade instead
+  g = -uRelief * clamp(d / max(h, 1e-3), -1.0, 1.0) * (1.0 - smoothstep(0.25, 0.6, w / max(h, 1e-3)));
   return clamp((hw - dd) / w + 0.5, 0.0, 1.0) * sqrt(h / hw);
 }
 float span(float c, float ext, float h) { float w = max(fwidth(c), 1e-4); return clamp((ext + h - abs(c)) / w + 0.5, 0.0, 1.0); }
-float gridInk(vec3 p) {
+float gridInk(vec3 p, out vec2 g) {
+  g = vec2(0.0);
   if (p.y < ${(BT / 2 - 0.01).toFixed(2)}) return 0.0;
   // odd N: lines sit on multiples of the spacing; even N would need a half offset (only 9/13/19 are played)
-  float lx = lineAA(p.x, ${SX.toFixed(2)}, uHalf, uLim) * span(p.z, uLim * ${SZ.toFixed(2)}, uHalf);
-  float lz = lineAA(p.z, ${SZ.toFixed(2)}, uHalf, uLim) * span(p.x, uLim * ${SX.toFixed(2)}, uHalf);
+  float gx, gz;
+  float lx = lineAA(p.x, p.z, ${SX.toFixed(2)}, uHalf, uLim, gx) * span(p.z, uLim * ${SZ.toFixed(2)}, uHalf);
+  float lz = lineAA(p.z, p.x, ${SZ.toFixed(2)}, uHalf, uLim, gz) * span(p.x, uLim * ${SX.toFixed(2)}, uHalf);
+  g = vec2(gx * lx, gz * lz);
   float ho = 0.0;
   if (uStep > 0.0) {
     vec2 k = clamp(floor(p.xz / (uStep * vec2(${SX.toFixed(2)}, ${SZ.toFixed(2)})) + 0.5), -1.0, 1.0);
@@ -98,6 +112,7 @@ float gridInk(vec3 p) {
     float hd = length(p.xz - h), hwid = max(fwidth(hd), 1e-4);
     ho = clamp((2.0 - hd) / hwid + 0.5, 0.0, 1.0);
     if (uFive > 0.5 && ((k.x == 0.0) != (k.y == 0.0))) ho = 0.0; // 9×9 and 13×13: corners + centre only
+    g = mix(g, -uRelief * (p.xz - h) / 2.0 * (1.0 - smoothstep(0.25, 0.6, hwid / 2.0)), ho); // a radial dome
   }
   return max(max(lx, lz), ho) * 0.94;
 }`
@@ -298,11 +313,17 @@ export class Board3D {
   private composer!: EffectComposer
   private scene = new THREE.Scene()
   private ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 100, 6000)
-  private persp = new THREE.PerspectiveCamera(28, 1, 10, 5000)
+  private persp = new THREE.PerspectiveCamera(FOV, 1, 10, 5000)
   private key = new THREE.DirectionalLight(0xffffff, 3)
   private spot = new THREE.SpotLight(0xffe2b8, 0, 0, Math.atan(430 / 1500), 0, 0)
   /** Lanterne: a warm lamp hanging over the board, soft-edged, pooling on the board and bowls. */
   private lamp = new THREE.SpotLight(0xffffff, 0, 0, 0.62, 0.95, 2)
+  /** Washitsu: part of the window's light comes through a shoji, the lattice's soft shadow drawn by a cookie. */
+  private shoji = new THREE.SpotLight(0xffffff, 0, 0, Math.atan(SHOJI_R / SHOJI_MM), 0.25, 0)
+  private shojiTex = new THREE.CanvasTexture(mkCanvas(1024, 1024))
+  private vigU = { uVig: { value: 0 }, uVigC: { value: new THREE.Vector2() }, uVigS: { value: new THREE.Vector2(1, 1) } }
+  private vignette!: THREE.Mesh
+  private fx = { ...FX }
   private hc = { value: 0 }
   private slate = slateMaterial()
   private shell = shellMaterial(this.hc)
@@ -326,9 +347,11 @@ export class Board3D {
   private boardMat!: THREE.MeshPhysicalMaterial
   /** Pale golden kaya (the scan, barely graded): readability comes from the stones' contact shadow and rim, not dark wood. */
   private woodTone = new THREE.Color(0.47, 0.442, 0.395)
-  private boardU = { uInk: { value: new THREE.Color(0x120c07) }, uLim: { value: 9 }, uStep: { value: 6 }, uFive: { value: 0 }, uHalf: { value: 0.5 } }
+  private boardU = { uInk: { value: new THREE.Color(0x120c07) }, uLim: { value: 9 }, uStep: { value: 6 }, uFive: { value: 0 }, uHalf: { value: 0.5 }, uRelief: { value: 0 }, uWobble: { value: 0 }, uInkRough: { value: 0.45 }, uPatina: { value: 0 } }
   private board: THREE.Mesh | null = null
   private labels: THREE.Mesh | null = null
+  private marks: THREE.Mesh | null = null
+  private marksKey = ''
   private bowlMat = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.26, 0.15, 0.09), roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.16 })
   private decor = new THREE.Group()
   private bowls: THREE.Mesh[] = []
@@ -373,6 +396,10 @@ export class Board3D {
 
   private opts: Board3DOptions = { camera: 'study', time: 'afternoon', highContrast: false, decor: 'atelier' }
   private camE = 0 // 0 Study, 1 Contemplation
+  /** Contemplation's camera: shown (cur) and wanted (goal, what the mouse moves); seatH = its visible height at home. */
+  private orbit: Orbit = { ...HOME }
+  private orbitGoal: Orbit = { ...HOME }
+  private seatH = 1
   private tod: Tod = { ...TOD.afternoon }
   private ombreK = 0; private ombreFrom = 0; private ombreOn = false; private ombreT0 = -1e9
   private hcK = 0
@@ -389,6 +416,7 @@ export class Board3D {
   private q: Quality = this.ladder[0]
   private pendingQ = false // the governor stepped down: applied at the next scene change, never on a still board
   private resizeTimer = 0
+  private benchedPx = 0 // canvas area at the last warm-up
   private sound: StoneSound
   private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
   private autoTimer = 0
@@ -430,6 +458,13 @@ export class Board3D {
   }
   get options(): Readonly<Board3DOptions> { return this.opts }
 
+  /** Contemplation: back to the seat (crossfade). */
+  resetCamera() {
+    const g = this.orbitGoal
+    if (this.camE && (Object.keys(HOME) as (keyof Orbit)[]).some(k => g[k] !== HOME[k])) void this.transition(() => this.homeCamera())
+  }
+  private homeCamera() { this.orbit = { ...HOME }; this.orbitGoal = { ...HOME } }
+
   /** The quiet "stones stirred in the bowl" loop while the AI thinks. */
   setThinking(on: boolean) { this.sound.setThinking(on) }
 
@@ -461,11 +496,12 @@ export class Board3D {
     if (N !== this.N || state.coords !== this.coords) {
       const sizeChanged = N !== this.N
       this.N = N; this.coords = state.coords; this.D = dims(N, state.coords)
-      if (sizeChanged) { this.stones.clear(); this.capCount = { 1: 0, [-1]: 0 } }
+      if (sizeChanged) { this.stones.clear(); this.capCount = { 1: 0, [-1]: 0 }; this.homeCamera() }
       this.buildBoard()
     }
     this.state = state
     this.reconcile(state)
+    this.buildMarks()
     const own = state.ownership?.length === N * N ? state.ownership : null
     if (own !== this.own) {
       this.own = own
@@ -485,14 +521,20 @@ export class Board3D {
     const sized = W !== this.W || H !== this.H, o = this.fr
     if (!sized && fr.x === o.x && fr.y === o.y && fr.w === o.w && fr.h === o.h) return
     this.fr = fr
+    this.vigU.uVigC.value.set(((fr.x + fr.w / 2) / W) * 2 - 1, 1 - ((fr.y + fr.h / 2) / H) * 2); this.vigU.uVigS.value.set(fr.w / W, fr.h / H)
     if (sized) {
       this.W = W; this.H = H
       this.canvas.style.width = `${W}px`; this.canvas.style.height = `${H}px`
       this.renderer.setSize(W, H, false)
       this.composer.setSize(W, H)
-      // quality is re-decided once the size settles (steps down only)
+      // quality is re-decided once the size settles (steps down only, unless the canvas shrank a lot)
       clearTimeout(this.resizeTimer)
-      this.resizeTimer = window.setTimeout(() => { if (this.ready && !this.dead) { this.applyPendingQuality(); this.warmUp(); this.invalidate() } }, 300)
+      this.resizeTimer = window.setTimeout(() => {
+        if (!this.ready || this.dead) return
+        // a much smaller canvas (window un-maximized) may afford a better level: re-decide from the top
+        if (this.W * this.H < 0.7 * this.benchedPx) { this.governor.restart(); this.pendingQ = true }
+        this.applyPendingQuality(); this.warmUp(); this.invalidate()
+      }, 300)
     }
     for (const c of [this.ortho, this.persp]) c.setViewOffset(fr.w, fr.h, -fr.x, -fr.y, W, H)
     this.endFade()
@@ -514,7 +556,8 @@ export class Board3D {
     for (const t of Object.values(this.maps ?? {})) t.dispose()
     for (const g of Object.values(this.grounds)) { g.map.dispose(); g.bump?.dispose() }
     this.tableMat.alphaMap?.dispose()
-    this.owTex.dispose()
+    this.owTex.dispose(); this.shojiTex.dispose()
+    for (const l of [this.key, this.lamp, this.shoji, this.spot]) l.shadow.map?.dispose() // render targets the renderer doesn't free
     for (const e of this.envs.values()) void e.then(t => t.dispose(), () => {})
     this.endFade(); this.fadeMat.dispose(); (this.fadeScene.children[0] as THREE.Mesh).geometry.dispose()
     this.composer.dispose()
@@ -536,7 +579,8 @@ export class Board3D {
     this.composer = new EffectComposer(r, rt)
     this.composer.setPixelRatio(this.q.dpr)
     this.composer.addPass(new RenderPass(scene, this.ortho))
-    this.composer.addPass(new OutputPass())
+    const out = new OutputPass(); out.needsSwap = false // last pass, on screen: swapping would alternate (and allocate) a second MSAA target
+    this.composer.addPass(out)
 
     this.ortho.position.set(0, 3000, 0); this.ortho.up.set(0, 0, -1); this.ortho.lookAt(0, 0, 0)
     this.persp.up.set(0, 0, -1)
@@ -610,8 +654,15 @@ export class Board3D {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLoc;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLoc = position;')
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + GLSL_GRID)
-        .replace('#include <map_fragment>', '#include <map_fragment>\nfloat ink = gridInk(vLoc);\ndiffuseColor.rgb = mix(diffuseColor.rgb, uInk, ink);')
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.45, ink);')
+        .replace('#include <map_fragment>', '#include <map_fragment>\nvec2 inkG; float ink = gridInk(vLoc, inkG);\ndiffuseColor.rgb = mix(diffuseColor.rgb, uInk, ink);')
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          #ifdef USE_ROUGHNESSMAP
+          { float d = length((vRoughnessMapUv - 0.5) * vec2(${KAYA_MM[0]}, ${KAYA_MM[1]})); roughnessFactor *= 1.0 - uPatina * (1.0 - smoothstep(80.0, 220.0, d)); }
+          #endif
+          roughnessFactor = mix(roughnessFactor, uInkRough, ink);`)
+        // the dome tilts both the wood's normal and the clear coat's (the board is only translated: object xz = world xz)
+        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nvec3 inkN = mat3(viewMatrix) * vec3(inkG.x, 0.0, inkG.y);\nif (uRelief > 0.0) normal = normalize(normal - inkN);')
+        .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\n#ifdef USE_CLEARCOAT\nif (uRelief > 0.0) clearcoatNormal = normalize(clearcoatNormal - inkN);\n#endif')
     }
     this.boardMat.customProgramCacheKey = () => 'kaya'
 
@@ -637,11 +688,47 @@ export class Board3D {
     this.lamp.shadow.bias = -0.0004; this.lamp.shadow.normalBias = 0.25
     this.lamp.shadow.camera.near = 500; this.lamp.shadow.camera.far = 2600
     scene.add(this.lamp, this.lamp.target)
+    this.shoji.visible = false; this.shoji.map = this.shojiTex
+    this.shoji.shadow.mapSize.set(this.q.shadow / 2, this.q.shadow / 2)
+    this.shoji.shadow.bias = -0.0004; this.shoji.shadow.normalBias = 0.25
+    this.shoji.shadow.camera.near = SHOJI_MM - 900; this.shoji.shadow.camera.far = SHOJI_MM + 900
+    this.paintShoji()
+    scene.add(this.shoji, this.shoji.target)
+
+    // Contemplation's vignette: a full-frame quad drawn last, darkening towards the frame's corners (no extra pass)
+    const vm = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, depthTest: false, depthWrite: false })
+    vm.onBeforeCompile = sh => {
+      Object.assign(sh.uniforms, this.vigU)
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vNdc;')
+        .replace('#include <project_vertex>', 'vec4 mvPosition = vec4(transformed, 1.0); gl_Position = vec4(transformed.xy, 0.0, 1.0); vNdc = transformed.xy;')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vNdc; uniform float uVig; uniform vec2 uVigC, uVigS;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.a = uVig * smoothstep(0.55, 1.5, length((vNdc - uVigC) / uVigS));')
+    }
+    vm.customProgramCacheKey = () => 'vignette'
+    this.vignette = Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), vm), { frustumCulled: false, renderOrder: 999, visible: false })
+    scene.add(this.vignette)
   }
 
   private bind() {
     const c = this.canvas
+    // Contemplation's camera: right-drag turns, the wheel or a pinch zooms about the cursor, a trackpad swipe turns
+    let drag: { x: number; y: number } | null = null, wheelAt = 0, wheelWas: WheelIntent | null = null, gesture = 0
+    const turn = (dYaw: number, dTilt: number) => { const g = this.orbitGoal; this.orbitGoal = { ...g, yaw: g.yaw + dYaw, tilt: g.tilt + dTilt }; this.invalidate() }
+    const zoom = (e: MouseEvent, k: number) => { // about the cursor's point as the goal camera sees it
+      const g = this.orbitGoal, zMin = Math.min(1, ZOOM_MM / this.seatH)
+      k = Math.min(1, Math.max(zMin, g.zoom * k)) / g.zoom
+      this.placePersp(g)
+      const r = c.getBoundingClientRect(), ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
+      this.ray.setFromCamera(ndc, this.persp)
+      const P = this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -TGT_Y), new THREE.Vector3())
+      this.placePersp(this.orbit)
+      if (P) { this.orbitGoal = zoomAt(g, k, P.x, P.z); this.invalidate() }
+    }
     const move = (e: PointerEvent) => {
+      if (drag) {
+        if (e.buttons & 2) { turn(-(e.clientX - drag.x) * 0.005, -(e.clientY - drag.y) * 0.005); drag = { x: e.clientX, y: e.clientY } }
+        return
+      }
       const v = this.pick(e), s = this.state
       if (s?.counting) { // only stones are clickable while counting; no ghost stone
         c.style.cursor = v && s.interactive && s.signMap[v[1]][v[0]] ? 'pointer' : 'default'
@@ -654,7 +741,28 @@ export class Board3D {
       this.hover = nh; this.invalidate()
     }
     const leave = () => { this.hover = null; this.invalidate() }
-    const down = () => this.sound.prime()
+    const down = (e: PointerEvent) => {
+      this.sound.prime()
+      if (e.button !== 2 || !this.camE) return
+      c.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY }
+      if (this.hover) { this.hover = null; this.invalidate() }
+    }
+    const up = () => { drag = null }
+    const menu = (e: Event) => e.preventDefault()
+    const wheel = (e: WheelEvent) => {
+      if (e.ctrlKey) e.preventDefault() // a pinch must never zoom the UI
+      if (!this.camE || skipPinchWheel(e.ctrlKey, 'GestureEvent' in window)) return
+      e.preventDefault()
+      const now = performance.now(), how = wheelWas = wheelIntent(e, wheelWas, now - wheelAt), px = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1
+      wheelAt = now
+      if (how === 'orbit') turn(e.deltaX * 0.003, e.deltaY * 0.003)
+      // a pinch sends small steps; a wheel notch zooms at least as much as a 40 px one (macOS sends 4 px notches)
+      else zoom(e, Math.exp(e.ctrlKey ? e.deltaY * 0.01 : Math.sign(e.deltaY) * Math.min(200, Math.max(40, Math.abs(e.deltaY * px))) * 0.0015))
+    }
+    // WebKit (the macOS app): a pinch is a gesture event, e.scale since its start
+    const gStart = (e: Event) => { e.preventDefault(); gesture = 1 }
+    const gChange = (e: Event) => { e.preventDefault(); const sc = (e as Event & { scale: number }).scale; if (this.camE && sc > 0) zoom(e as MouseEvent, gesture / sc); gesture = sc }
+    const dbl = (e: MouseEvent) => { if (this.camE && !this.pick(e)) this.resetCamera() }
     const click = (e: MouseEvent) => {
       const v = this.pick(e), s = this.state
       if (!v || !s?.interactive) return
@@ -668,6 +776,13 @@ export class Board3D {
     c.addEventListener('pointerleave', leave)
     c.addEventListener('pointerdown', down)
     c.addEventListener('click', click)
+    c.addEventListener('pointerup', up)
+    c.addEventListener('lostpointercapture', up)
+    c.addEventListener('contextmenu', menu)
+    c.addEventListener('wheel', wheel, { passive: false })
+    c.addEventListener('gesturestart', gStart)
+    c.addEventListener('gesturechange', gChange)
+    c.addEventListener('dblclick', dbl)
     c.addEventListener('webglcontextlost', lost)
     this.reducedMotion.addEventListener('change', motion)
     // labels need the bundled font actually loaded
@@ -686,6 +801,13 @@ export class Board3D {
       c.removeEventListener('pointerleave', leave)
       c.removeEventListener('pointerdown', down)
       c.removeEventListener('click', click)
+      c.removeEventListener('pointerup', up)
+      c.removeEventListener('lostpointercapture', up)
+      c.removeEventListener('contextmenu', menu)
+      c.removeEventListener('wheel', wheel)
+      c.removeEventListener('gesturestart', gStart)
+      c.removeEventListener('gesturechange', gChange)
+      c.removeEventListener('dblclick', dbl)
       c.removeEventListener('webglcontextlost', lost)
       this.reducedMotion.removeEventListener('change', motion)
     }
@@ -693,29 +815,43 @@ export class Board3D {
 
   private async boot(base: string) {
     try {
-      const tl = new THREE.TextureLoader(), decor = this.opts.decor
-      const [diff, nor, rough, env] = await Promise.all([
-        tl.loadAsync(`${base}kaya_diff.jpg`), tl.loadAsync(`${base}kaya_nor.jpg`), tl.loadAsync(`${base}kaya_rough.jpg`),
-        this.envFor(LOOKS[decor].sky).then(t => t.texture),
-      ])
+      const tl = new THREE.TextureLoader(), decor = this.opts.decor, aniso = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+      const kaya = async (sfx: string) => {
+        const [diff, nor, rough] = await Promise.all(['diff', 'nor', 'rough'].map(m => tl.loadAsync(`${base}kaya_${m}${sfx}.jpg`)))
+        diff.colorSpace = THREE.SRGBColorSpace
+        // mirrored: seamless, and the walnut ground's clone of the diffuse (same wrap) shares its GPU upload
+        for (const t of [diff, nor, rough]) { t.anisotropy = aniso; t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping }
+        return { diff, nor, rough }
+      }
+      const setMaps = (m: { diff: THREE.Texture; nor: THREE.Texture; rough: THREE.Texture }) => {
+        this.maps = m
+        Object.assign(this.boardMat, { map: m.diff, normalMap: m.nor, roughnessMap: m.rough }); this.boardMat.needsUpdate = true
+        this.bowlMat.map = m.diff; this.bowlMat.needsUpdate = true
+      }
+      const [maps, env] = await Promise.all([kaya(''), this.envFor(LOOKS[decor].sky).then(t => t.texture)])
       if (this.dead) return
-      diff.colorSpace = THREE.SRGBColorSpace
-      const aniso = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
-      for (const t of [diff, nor, rough]) t.anisotropy = aniso
-      this.maps = { diff, nor, rough }
-      Object.assign(this.boardMat, { map: diff, normalMap: nor, roughnessMap: rough }); this.boardMat.needsUpdate = true
-      this.bowlMat.map = diff; this.bowlMat.needsUpdate = true
+      setMaps(maps)
       if (!this.N) { this.N = 19; this.D = dims(19, false); this.buildBoard() }
       this.applyDecor(decor, env)
       this.updateScene(performance.now())
       // hide the first-frame shader compile: compile both cameras for the off-screen target, then fade in
-      this.renderer.setRenderTarget(this.composer.renderTarget1)
+      this.renderer.setRenderTarget(this.composer.readBuffer)
       this.decor.visible = true
       await this.renderer.compileAsync(this.scene, this.ortho)
       await this.renderer.compileAsync(this.scene, this.persp)
       this.renderer.setRenderTarget(null)
       if (this.dead) return
       this.warmUp() // still invisible: quality is decided here, once
+      // sharp close-ups on capable GPUs: swap in the 4K scan, uploaded before the fade-in (decided once, here)
+      const big = this.q.kaya4k && this.renderer.capabilities.maxTextureSize >= 4096 ? await kaya('_4k').catch(() => null) : null
+      if (this.dead) return
+      if (big) {
+        for (const t of Object.values(maps)) t.dispose()
+        setMaps(big)
+        if (this.grounds.walnut) { this.grounds.walnut.map.dispose(); delete this.grounds.walnut }
+        if (LOOKS[decor].ground === 'walnut') this.tableMat.map = this.groundMaps('walnut').map
+        for (const t of Object.values(big)) this.renderer.initTexture(t)
+      }
       this.ready = true
       this.frame(performance.now())
       requestAnimationFrame(() => { this.canvas.style.opacity = '1' })
@@ -741,7 +877,8 @@ export class Board3D {
 
   private applyOptions() {
     const cam = this.opts.camera === 'contemplation' ? 1 : 0
-    if (cam !== this.camE) { this.camE = cam; this.hover = null }
+    if (cam !== this.camE) { this.camE = cam; this.hover = null; this.homeCamera() }
+    this.extrasOn()
     this.tod = this.todNow()
     clearInterval(this.autoTimer)
     // "Auto" follows the clock in steps too small to see (a fraction of a degree, a few kelvin), applied at once
@@ -837,13 +974,37 @@ export class Board3D {
     }
     if (g === 'walnut') { // the board's own scan, tiled across the table, grain running side to side
       const t = this.maps!.diff.clone()
-      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(plane / 502, plane / 424); t.rotation = Math.PI / 2
+      t.repeat.set(plane / KAYA_MM[0], plane / KAYA_MM[1]); t.rotation = Math.PI / 2
       m = { map: t }
     } else if (g === 'tatami') {
       const [c, h] = tatamiMaps()
       m = { map: tile(new THREE.CanvasTexture(c), TATAMI_MM), bump: tile(new THREE.CanvasTexture(h), TATAMI_MM, false) }
     } else m = { map: tile(new THREE.CanvasTexture(paperMap()), PAPER_MM) }
     return (this.grounds[g] = m)
+  }
+
+  /** The shoji's light cookie (linear): panes 1, kumiko bars fx.shojiBar, softened by the sun's size and the paper. */
+  private paintShoji() {
+    const cv = this.shojiTex.image as HTMLCanvasElement, S = cv.width, k = S / (2 * SHOJI_R), x = cv.getContext('2d')!
+    const v = Math.round(255 * this.fx.shojiBar), bar = 16 * k, tmp = mkCanvas(S, S), t = tmp.getContext('2d')!
+    t.fillStyle = '#fff'; t.fillRect(0, 0, S, S); t.fillStyle = `rgb(${v},${v},${v})`
+    // yokoshige: wide panes, the horizontal kumiko close together; offset so bars cross the board off-centre
+    for (let u = S / 2 + 70 * k; u > -bar; u -= 260 * k) t.fillRect(u - bar / 2, 0, bar, S)
+    for (let u = S / 2 + 70 * k; u < S + bar; u += 260 * k) t.fillRect(u - bar / 2, 0, bar, S)
+    for (let w = S / 2 + 45 * k; w > -bar; w -= 150 * k) t.fillRect(0, w - bar / 2, S, bar)
+    for (let w = S / 2 + 45 * k; w < S + bar; w += 150 * k) t.fillRect(0, w - bar / 2, S, bar)
+    x.filter = `blur(${(3 * k).toFixed(1)}px)`; x.drawImage(tmp, 0, 0); x.filter = 'none'
+    this.shojiTex.needsUpdate = true
+  }
+
+  /** The share of the key coming through the shoji (Washitsu, Contemplation). */
+  private shojiShare() { const L = LOOKS[this.decorOn ?? this.opts.decor]; return this.camE ? (this.fx.shoji >= 0 ? this.fx.shoji : L.shoji) : 0 }
+  /** Contemplation's extras exist only while used; set inside transition() so their shaders compile before the fade. */
+  private extrasOn() {
+    this.vignette.visible = this.camE > 0 && this.fx.vignette > 0
+    const on = this.shojiShare() > 0 && LOOKS[this.decorOn ?? this.opts.decor].lamp === 0
+    const cast = on && this.governor.level < this.ladder.length - 2 // the two lowest levels skip its shadow pass
+    if (this.shoji.visible !== on || this.shoji.castShadow !== cast) { this.shoji.visible = on; this.shoji.castShadow = cast; this.shoji.shadow.map?.dispose(); this.shoji.shadow.map = null }
   }
 
   private applyDecor(d: Decor, env: THREE.Texture) {
@@ -854,6 +1015,7 @@ export class Board3D {
     const lamp = L.lamp > 0
     if (this.key.castShadow === lamp) { this.key.castShadow = !lamp; this.key.shadow.map?.dispose(); this.key.shadow.map = null }
     if (this.lamp.castShadow !== lamp) { this.lamp.castShadow = this.lamp.visible = lamp; this.lamp.shadow.map?.dispose(); this.lamp.shadow.map = null }
+    this.extrasOn()
     // free what the previous décor held on the GPU
     for (const [k, m] of Object.entries(this.grounds)) if (k !== L.ground) { m.map.dispose(); m.bump?.dispose() }
     const keep = L.sky ?? 'room'
@@ -874,6 +1036,7 @@ export class Board3D {
   private warmUp() {
     this.updateScene(performance.now())
     while (this.governor.measured(this.benchMs(8))) this.applyQuality(this.ladder[this.governor.level])
+    this.benchedPx = this.W * this.H
   }
 
   private applyPendingQuality() {
@@ -886,9 +1049,10 @@ export class Board3D {
     const prev = this.q
     this.q = q
     if (q.dpr !== prev.dpr) { this.renderer.setPixelRatio(q.dpr); this.composer.setPixelRatio(q.dpr); this.endFade() }
-    if (q.shadow !== prev.shadow) for (const l of [this.key, this.lamp]) { l.shadow.mapSize.set(q.shadow, q.shadow); l.shadow.map?.dispose(); l.shadow.map = null }
+    if (q.shadow !== prev.shadow) for (const l of [this.key, this.lamp, this.shoji]) { const n = l === this.shoji ? q.shadow / 2 : q.shadow; l.shadow.mapSize.set(n, n); l.shadow.map?.dispose(); l.shadow.map = null }
     if (q.msaa !== prev.msaa) for (const rt of [this.composer.renderTarget1, this.composer.renderTarget2]) { rt.samples = q.msaa; rt.dispose() }
     if (q.bowlSegments !== prev.bowlSegments && this.N) this.buildBowls()
+    this.extrasOn()
     this.invalidate()
   }
 
@@ -901,7 +1065,7 @@ export class Board3D {
     const geo = new RoundedBoxGeometry(BW, BT, BD, 4, 2.2)
     // planar UVs at the scan's real density; the grain runs along the board's depth (player to player)
     const P = geo.attributes.position, Nn = geo.attributes.normal, uv = geo.attributes.uv
-    const U = 2048 / KAYA_PX_MM, V = 1732 / KAYA_PX_MM
+    const [U, V] = KAYA_MM
     for (let i = 0; i < P.count; i++) {
       const x = P.getX(i), y = P.getY(i), z = P.getZ(i), nx = Math.abs(Nn.getX(i)), ny = Math.abs(Nn.getY(i))
       if (ny > 0.6) uv.setXY(i, 0.5 + z / U, 0.5 + x / V)                // top: fibres along z
@@ -919,6 +1083,7 @@ export class Board3D {
     Object.assign(this.key.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, near: 600, far: 2800 })
     this.key.shadow.camera.updateProjectionMatrix()
     this.buildLabels()
+    this.marksKey = ''; this.buildMarks()
     this.buildBowls()
     if (this.own) this.paintOwnership(this.own)
   }
@@ -946,6 +1111,23 @@ export class Board3D {
     this.labels = new THREE.Mesh(new THREE.PlaneGeometry(BW, BD).rotateX(-Math.PI / 2), mat)
     this.labels.position.y = 0.02; this.labels.receiveShadow = true; this.labels.renderOrder = 1
     this.scene.add(this.labels)
+  }
+
+  /** The trainer's veil and lettered markers: one unlit plane over the board, repainted only when they change. */
+  private buildMarks() {
+    const s = this.state, key = s?.marks?.length || s?.focus ? JSON.stringify([s.marks, s.focus, this.N, this.coords]) : ''
+    if (key === this.marksKey) return
+    this.marksKey = key
+    if (this.marks) { this.scene.remove(this.marks); this.marks.geometry.dispose(); (this.marks.material as THREE.MeshBasicMaterial).map?.dispose(); (this.marks.material as THREE.Material).dispose(); this.marks = null }
+    if (!key || !s) return
+    const { BW, BD, N } = this.D, k = 2048 / Math.max(BW, BD), cv = mkCanvas(Math.round(BW * k), Math.round(BD * k))
+    paintMarks(cv.getContext('2d')!, i => (gx(N, i) + BW / 2) * k, j => (gz(N, j) + BD / 2) * k, SX * k, s.marks, s.focus, cv.width, cv.height, 0.1) // unlit over a lit board: a lighter veil reads the same
+    const tex = new THREE.CanvasTexture(cv)
+    tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+    this.marks = new THREE.Mesh(new THREE.PlaneGeometry(BW, BD).rotateX(-Math.PI / 2), mat)
+    this.marks.position.y = 0.04; this.marks.renderOrder = 2
+    this.scene.add(this.marks)
   }
 
   private buildBowls() {
@@ -1023,7 +1205,7 @@ export class Board3D {
 
   private animateDrop(s: Stone, now: number) {
     if (this.instant()) { this.contact(s); return }
-    s.t0 = now; s.landed = false
+    s.t0 = now; s.landed = false; s.still = false
   }
 
   /** Diffs the position against the stones on the board: a single new stone with removed opponents is a move with captures. */
@@ -1048,7 +1230,7 @@ export class Board3D {
       return
     }
     // navigation, undo, setup, or a move whose drop() comes later: settle at once (an interrupted drop lands now)
-    for (const [k, s] of this.stones) if (k < 0) this.stones.delete(k); else if (!s.landed) { s.landed = true; s.captured = [] }
+    for (const [k, s] of this.stones) if (k < 0) this.stones.delete(k); else if (!s.landed) { s.landed = true; s.captured = []; s.still = true }
     this.recent = move ? { p: move.p, c: move.c, list: removed, at: now } : null
     if (move && removed.length && !this.state?.captures) this.capCount[move.c] += removed.length
     if (state.signMap.every(r => r.every(c => !c))) this.capCount = { 1: 0, [-1]: 0 }
@@ -1075,9 +1257,9 @@ export class Board3D {
     const s0 = this.state, N = this.N, own = this.own, counting = s0?.counting, last = s0?.last
     const lastP = last ? last[1] * N + last[0] : -1
     this.markers[1].visible = this.markers[-1].visible = false
-    const put = (s: Stone, y: number, aoA: number, aoS: number, dim: boolean) => {
+    const put = (s: Stone, y: number, aoA: number, aoS: number, dim: boolean, sx: number, sz: number) => {
       const { _m, _q, _v, _s } = this
-      _m.compose(_v.set(s.tx, SH + y, s.tz), _q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, s.rotY), _s.setScalar(1))
+      _m.compose(_v.set(sx, SH + y, sz), _q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, s.rotY), _s.setScalar(1))
       const L = dim ? (s.c === 1 ? this.dimB : this.dimW) : s.c === 1 ? this.layerB : this.layerW
       const i = dim ? (s.c === 1 ? db++ : dw++) : s.c === 1 ? nb++ : nw++
       if (i >= 400) return
@@ -1087,20 +1269,20 @@ export class Board3D {
       }
       if (aoA > 0 && na < 420) {
         const q = s.R * 2 * AO_K * aoS, black = s.c === 1
-        _m.compose(_v.set(s.tx, 0, s.tz), _q.identity(), _s.set(q, 1, q))
+        _m.compose(_v.set(sx, 0, sz), _q.identity(), _s.set(q, 1, q))
         this.ao.setMatrixAt(na, _m); this.ao.instanceColor!.setXYZ(na++, aoA * (black ? AO_PEAK_BLACK : AO_PEAK_WHITE), aoA * (black ? AO_LINE_BLACK : AO_LINE_WHITE), 1)
       }
     }
     for (const s of this.stones.values()) {
-      let y = 0, k = 1
-      if (!s.landed) { // the only motion: the new stone's last 12 mm, its shadow tightening as it comes down
-        const t = (now - s.t0) / DROP_MS
-        if (t >= 1) this.contact(s); else { y = 12 * (1 - t * t); k = t * t; busy = true }
-      }
+      // the only motion: the new stone's last 12 mm, its shadow tightening as it comes down, then a 1 mm slide into place
+      const P = dropPose(now - s.t0), a = s.seed * 43.98 // a direction of its own per stone
+      if (!s.landed && now - s.t0 >= DROP_MS) this.contact(s)
+      const y = s.landed ? 0 : P.y, k = s.landed ? 1 : P.k, sl = s.still ? 0 : s.landed ? P.slide * SLIDE_MM : SLIDE_MM
+      if (!s.landed || sl > 0) busy = true
       let dim = false
       if (s.p >= 0 && counting?.dead[s.y]?.[s.x]) dim = true
       else if (s.p >= 0 && own && Math.sign(own[s.p]) === -s.c && sstep(0.4, 0.9, Math.abs(own[s.p])) > 0.5) dim = true // KataGo expects it captured
-      put(s, y, dim ? 0.6 : 0.25 + 0.75 * k, 1.45 - 0.45 * k, dim)
+      put(s, y, dim ? 0.6 : 0.25 + 0.75 * k, 1.45 - 0.45 * k, dim, s.tx + sl * Math.cos(a), s.tz + sl * Math.sin(a))
     }
     this.layerB.count = nb; this.layerW.count = nw; this.dimB.count = db; this.dimW.count = dw; this.ao.count = na
     for (const L of [this.layerB, this.layerW, this.dimB, this.dimW]) { L.instanceMatrix.needsUpdate = true; L.geometry.attributes.aSeed.needsUpdate = true }
@@ -1159,22 +1341,21 @@ export class Board3D {
 
   /* ---------- cameras ---------- */
 
-  private frameHeight(mode: 0 | 1) {
-    const { BW, BD } = this.D, aspect = Math.max(0.4, this.fr.w / this.fr.h)
-    if (mode === 0) return Math.max(BD * 1.1, (BW * 1.1) / aspect)
-    return Math.max(BD * 1.22, ((BW + 2 * 190) * 1.04) / aspect)
+  /** Study is fixed; Contemplation follows its orbit. Both depend on the board and frame sizes (the view offset places the frame in the canvas). */
+  private placeCameras() {
+    const { BW, BD } = this.D, a = this.fr.w / this.fr.h, hs = Math.max(BD * 1.1, (BW * 1.1) / Math.max(0.4, a)), o = this.ortho
+    o.top = hs / 2; o.bottom = -hs / 2; o.left = (-hs / 2) * a; o.right = (hs / 2) * a; o.updateProjectionMatrix()
+    this.seatH = seatHeight(BW, BD, a); this.persp.aspect = a
+    this.orbitGoal = clampOrbit(this.orbitGoal, this.seatH, BW, BD)
+    this.orbit = clampOrbit(this.orbit, this.seatH, BW, BD)
+    this.placePersp(this.orbit)
   }
 
-  /** Both cameras are fixed: they depend only on the board and frame sizes (the view offset places the frame in the canvas). */
-  private placeCameras() {
-    const a = this.fr.w / this.fr.h, hs = this.frameHeight(0), o = this.ortho
-    o.top = hs / 2; o.bottom = -hs / 2; o.left = (-hs / 2) * a; o.right = (hs / 2) * a; o.updateProjectionMatrix()
-    const p = this.persp, hc = this.frameHeight(1), fov = 28, dist = hc / 2 / Math.tan(THREE.MathUtils.degToRad(fov) / 2)
-    const tgt = this._v.set(0, -6, 14)
-    p.fov = fov; p.aspect = a
-    p.position.set(tgt.x, tgt.y + dist * Math.cos(TILT), tgt.z + dist * Math.sin(TILT))
+  private placePersp(o: Orbit) {
+    const p = this.persp, { eye, target, up, dist } = orbitEye(o, this.seatH)
+    p.position.fromArray(eye); p.up.fromArray(up)
     p.near = Math.max(5, dist - 1200); p.far = dist + 2500
-    p.lookAt(tgt); p.updateProjectionMatrix()
+    p.lookAt(target[0], target[1], target[2]); p.updateProjectionMatrix(); p.updateMatrixWorld() // picking reads it before the next render
   }
 
   private activeCam() { return this.camE ? this.persp : this.ortho }
@@ -1183,6 +1364,7 @@ export class Board3D {
     if (!this.ready || !this.N) return null
     const r = this.canvas.getBoundingClientRect(), ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
     this.ray.setFromCamera(ndc, this.activeCam())
+    if (this.camE) { const { origin: o, direction: d } = this.ray.ray; return pickPoint([o.x, o.y, o.z], [d.x, d.y, d.z], this.N, this.stones) }
     const hit = this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -SH), new THREE.Vector3())
     if (!hit) return null
     const N = this.N, i = Math.round(hit.x / SX + (N - 1) / 2), j = Math.round(hit.z / SZ + (N - 1) / 2)
@@ -1212,7 +1394,11 @@ export class Board3D {
     // contact shadow away from the window, reaching further when the sun is low (lean in radii)
     this.aoU.uAoDir.value.set(-Math.cos(az), -Math.sin(az))
     this.aoU.uAoLean.value = THREE.MathUtils.clamp(AO_LEAN * SH / Math.tan(el), AO_LEAN_MIN, AO_LEAN_MAX) / RW
-    this.key.color.copy(kelvin(tod.K)); this.key.intensity = tod.I * lift * L.key * lerp(1, 0.2, ok)
+    const keyI = tod.I * lift * L.key * lerp(1, 0.2, ok), sj = this.shoji.visible ? this.shojiShare() : 0
+    this.key.color.copy(kelvin(tod.K)); this.key.intensity = keyI * (1 - sj)
+    if (sj) { // through the shoji, from far out on the key's bearing (it follows the hour): panes as bright as before, bars darker
+      this.shoji.position.copy(this.key.position).setLength(SHOJI_MM); this.shoji.color.copy(this.key.color); this.shoji.intensity = keyI * sj
+    }
     if (L.lamp) { // Lanterne: the lamp hangs on the same bearing, closer, its cone pooling over board and bowls
       this.lamp.position.copy(this.key.position).setLength(1250); this.lamp.color.copy(kelvin(tod.K))
       this.lamp.intensity = L.lamp * 1e6 * lerp(1, 0.25, ok)
@@ -1244,13 +1430,17 @@ export class Board3D {
     this.ground.position.y = -fh
     this.ground.getObjectByName('under')!.scale.set(raise ? BW + 1.6 * m : BW * 1.3, 1, raise ? BD + 1.6 * m : BD * 1.3)
     // softer, lighter shadows in the room (a window, not a flash)
-    for (const l of [this.key, this.lamp]) { l.shadow.radius = lerp(5, 9, c) * L.soft; l.shadow.intensity = lerp(CAST_STUDY, CAST_ROOM, c) * L.shade }
+    for (const l of [this.key, this.lamp, this.shoji]) { l.shadow.radius = lerp(5, 9, c) * L.soft; l.shadow.intensity = lerp(CAST_STUDY, CAST_ROOM, c) * L.shade }
+    this.shoji.shadow.radius *= this.key.shadow.camera.right / (2 * SHOJI_R) // radius is in texels: the same penumbra as the key's in mm
     this.hc.value = hc
     for (const m of [this.shell, this.shellDim]) { m.clearcoat = lerp(lerp(0.28, 0.5, c), 0.1, hc); m.envMapIntensity = lerp(0.75, 1, c) }
     for (const m of [this.slate, this.slateDim]) { m.clearcoat = lerp(lerp(0.18, 0.3, c), 0.08, hc); m.envMapIntensity = lerp(0.6, 1, c) }
     this.boardMat.color.copy(this.woodTone).multiplyScalar(lerp(1, 0.88, hc))
     this.boardMat.normalScale.setScalar(lerp(0.6, 0.25, hc))
     this.boardU.uHalf.value = this.noGrid ? 0 : lerp(0.5, 0.62, hc)
+    this.boardU.uRelief.value = this.fx.relief * c; this.boardU.uWobble.value = this.fx.wobble * c
+    this.boardU.uInkRough.value = lerp(0.45, this.fx.inkRough, c); this.boardU.uPatina.value = this.fx.patina * c
+    this.vigU.uVig.value = this.fx.vignette
     if (this.updateStones(now)) busy = true
     return busy
   }
@@ -1264,8 +1454,10 @@ export class Board3D {
   private frame(now: number) {
     cancelAnimationFrame(this.raf); this.raf = 0
     if (this.dead || !this.ready || this.holding) return
-    let busy = this.updateScene(now)
-    if (busy && this.lastFrame && !this.pendingQ) {
+    const moving = this.camE > 0 && stepOrbit(this.orbit, this.orbitGoal, this.lastFrame ? now - this.lastFrame : 16, this.instant())
+    let busy = this.updateScene(now) || moving
+    // camera frames are paced by the hand, not the GPU, and the governor never steps back up: they are not sampled
+    if (busy && !moving && this.lastFrame && !this.pendingQ) {
       const r = this.governor.sample(now - this.lastFrame)
       if (r === 'down') this.pendingQ = true // applied under the next crossfade, resize or new board
       else if (r === 'fallback') this.fallback('slow')
@@ -1309,6 +1501,12 @@ export class Board3D {
         const msPerFrame = self.benchMs(n), info = self.renderer.info
         return { msPerFrame, dpr: self.renderer.getPixelRatio(), size: [self.W, self.H], calls: info.render.calls, triangles: info.render.triangles, textures: info.memory.textures, geometries: info.memory.geometries }
       },
+      /** Contemplation's camera, at once (null: home). */
+      orbit(o: Partial<Orbit> | null) { self.orbitGoal = { ...HOME, ...o }; self.orbit = { ...self.orbitGoal }; self.placeCameras(); self.invalidate() },
+      /** The intersection a click at CSS (x, y) of the canvas would play. */
+      pickAt(x: number, y: number) { const r = self.canvas.getBoundingClientRect(); return self.pick({ clientX: r.left + x, clientY: r.top + y } as MouseEvent) },
+      /** Realism tunables, live (see FX). */
+      tune(o: Partial<typeof FX>) { const bar = self.fx.shojiBar; Object.assign(self.fx, o); if (self.fx.shojiBar !== bar) self.paintShoji(); self.extrasOn(); self.invalidate(); return { ...self.fx } },
       hideGrid(on: boolean) { self.noGrid = on; self.invalidate() },
       setQuality(level: number) { self.governor.level = level; self.applyQuality(self.ladder[level]) },
       /** Macro framing for material inspection (null restores the camera). */

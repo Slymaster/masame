@@ -1,7 +1,7 @@
 // End-of-game counting under Japanese rules: dead stones suggested from KataGo ownership, territory by flood fill,
 // score = territory + prisoners (captures + dead stones), komi to White. Pure logic, no engine, no DOM.
-// shortcut: no seki detection (seki eyes would count as territory); the player can still mark such groups alive and
-// the shared liberties stay neutral, but an eye fully inside one seki group would be counted — handle when it bites.
+// Seki: an empty region enclosed by one colour stays neutral when KataGo's mean |ownership| over it is below 0.3,
+// unless the player marked a stone of that low-ownership area dead.
 
 import type { Sign, SignMap, Vertex } from '@sabaki/go-board'
 
@@ -21,9 +21,9 @@ export interface Score {
 const around = (n: number, [x, y]: Vertex): Vertex[] =>
   ([[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]] as Vertex[]).filter(([a, b]) => a >= 0 && b >= 0 && a < n && b < n)
 
-/** Points connected to `start` through points satisfying `same`. */
-function region(n: number, start: Vertex, same: (v: Vertex) => boolean): Vertex[] {
-  const seen = new Set([start[1] * n + start[0]]), out = [start]
+/** Points connected to `starts` through points satisfying `same`. */
+function region(n: number, starts: Vertex[], same: (v: Vertex) => boolean): Vertex[] {
+  const seen = new Set(starts.map(([x, y]) => y * n + x)), out = [...starts]
   for (let i = 0; i < out.length; i++) {
     for (const v of around(n, out[i])) {
       const k = v[1] * n + v[0]
@@ -33,7 +33,7 @@ function region(n: number, start: Vertex, same: (v: Vertex) => boolean): Vertex[
   return out
 }
 
-const chain = (m: SignMap, v: Vertex) => region(m.length, v, ([x, y]) => m[y][x] === m[v[1]][v[0]])
+const chain = (m: SignMap, v: Vertex) => region(m.length, [v], ([x, y]) => m[y][x] === m[v[1]][v[0]])
 
 export const noDead = (m: SignMap): Dead => m.map(r => r.map(() => false))
 
@@ -61,20 +61,25 @@ export function toggleDead(m: SignMap, dead: Dead, v: Vertex): Dead {
 /** One decimal: komi like 7.3 must not leave float noise; `+ 0` turns -0 into 0. */
 export const round1 = (x: number) => Math.round(x * 10) / 10 + 0
 
-/** `captures`: stones each colour captured during play (Black's count = White stones taken). */
-export function score(m: SignMap, dead: Dead, captures: { black: number; white: number }, komi: number): Score {
+/** `captures`: stones each colour captured during play (Black's count = White stones taken).
+ *  `ownership` (row-major, as for suggestDead): without it, no seki is detected. */
+export function score(m: SignMap, dead: Dead, captures: { black: number; white: number }, komi: number, ownership?: number[] | null): Score {
   const n = m.length
   const alive = ([x, y]: Vertex) => (dead[y][x] ? 0 : m[y][x])
   const territory: Sign[][] = m.map(r => r.map(() => 0 as Sign)), seen = new Set<number>()
   m.forEach((row, y) => row.forEach((_, x) => {
     if (alive([x, y]) || seen.has(y * n + x)) return
-    const r = region(n, [x, y], v => !alive(v))
+    const r = region(n, [[x, y]], v => !alive(v))
     const borders = new Set<number>()
     for (const v of r) {
       seen.add(v[1] * n + v[0])
       for (const w of around(n, v)) if (alive(w)) borders.add(alive(w))
     }
-    if (borders.size === 1) { const [o] = borders as Set<Sign>; for (const [a, b] of r) territory[b][a] = o }
+    // a stone the player marked dead in KataGo's "nobody's" area around the region overrules the seki
+    const low = ([a, b]: Vertex) => Math.abs(ownership![b * n + a]) < 0.3
+    const seki = !!ownership && r.reduce((acc, [a, b]) => acc + Math.abs(ownership[b * n + a]), 0) / r.length < 0.3
+      && !region(n, r, low).some(([a, b]) => dead[b][a])
+    if (borders.size === 1 && !seki) { const [o] = borders as Set<Sign>; for (const [a, b] of r) territory[b][a] = o }
   }))
   const count = (f: (x: number, y: number) => boolean) => m.reduce((acc, row, y) => acc + row.filter((_, x) => f(x, y)).length, 0)
   const side = (s: Sign, taken: number, extra: number): Side => {

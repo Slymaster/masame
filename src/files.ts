@@ -20,16 +20,16 @@ export async function openSgfFile(): Promise<string | null> {
   })
 }
 
-/** Returns false if the user cancelled. */
-export async function saveSgfFile(text: string, defaultName: string): Promise<boolean> {
+/** Returns false if the user cancelled. `ext` 'json' saves other data (joseki progress) through the same dialog. */
+export async function saveSgfFile(text: string, defaultName: string, ext: 'sgf' | 'json' = 'sgf'): Promise<boolean> {
   if (isTauri()) {
     const [{ save }, { writeTextFile }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs')])
-    const path = await save({ title: t.saveTitle, filters: filters(), defaultPath: defaultName })
+    const path = await save({ title: ext === 'sgf' ? t.saveTitle : t.exportTitle, filters: ext === 'sgf' ? filters() : [{ name: 'JSON', extensions: ['json'] }], defaultPath: defaultName })
     if (!path) return false
     await writeTextFile(path, text)
     return true
   }
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/x-go-sgf' }))
+  const url = URL.createObjectURL(new Blob([text], { type: ext === 'sgf' ? 'application/x-go-sgf' : 'application/json' }))
   Object.assign(document.createElement('a'), { href: url, download: defaultName }).click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
   return true

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bowlHeap, cardSkin, contrast, dims, dropStones, fit, FIT_REACH, Governor, gx, gz, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, panFor, qualityLadder, RB, RW, settle, silhouette, TOD, todAt, worstGap, type Placed } from './logic'
+import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, DROP_MS, dropPose, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panFor, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SX, SZ, silhouette, SLIDE_MS, stepOrbit, TOD, todAt, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -143,6 +143,20 @@ describe('décors', () => {
     expect(LOOKS.atelier.linen).toBe(true) // the app's own look in Study
     expect(LOOKS.lanterne.tod).not.toBeNull() // night: the time of day doesn't apply
     expect(LOOKS.lanterne.key).toBe(0)
+    for (const d of DECORS) expect(LOOKS[d].shoji > 0).toBe(d === 'washitsu') // the lattice is the Japanese room's
+    expect(LOOKS.washitsu.shoji).toBeLessThan(0.5) // the panes carry most of the window's light
+  })
+})
+
+describe('placing a stone', () => {
+  it('falls, touches at DROP_MS, then slides the last millimetre and stops', () => {
+    expect(dropPose(0)).toEqual({ y: 12, k: 0, slide: 1 })
+    expect(dropPose(DROP_MS / 2).y).toBeCloseTo(9)
+    expect(dropPose(DROP_MS)).toEqual({ y: 0, k: 1, slide: 1 }) // contact: the whole slide still to go
+    let prev = 1
+    for (let ms = DROP_MS + 10; ms <= DROP_MS + SLIDE_MS; ms += 10) { const s = dropPose(ms).slide; expect(s).toBeLessThan(prev); prev = s }
+    expect(dropPose(DROP_MS + SLIDE_MS).slide).toBe(0)
+    expect(dropPose(1e9)).toEqual({ y: 0, k: 1, slide: 0 }) // an interrupted drop (t0 = -1e9) is simply at rest
   })
 })
 
@@ -181,13 +195,32 @@ describe('governor', () => {
   })
 
   it('caps the pixel ratio and degrades monotonically', () => {
-    const l = qualityLadder(3)
-    expect(l[0].dpr).toBe(2)
-    for (let i = 1; i < l.length; i++) {
-      expect(l[i].dpr).toBeLessThanOrEqual(l[i - 1].dpr)
-      expect(l[i].shadow).toBeLessThanOrEqual(l[i - 1].shadow)
+    for (const d of [1, 1.5, 2, 2.5, 3, 4]) {
+      const l = qualityLadder(d)
+      expect(l[0].dpr).toBe(Math.min(d, 3))
+      expect(l.map(q => q.kaya4k)).toEqual([true, true, false, false, false])
+      for (let i = 1; i < l.length; i++) {
+        expect(l[i].dpr).toBeLessThanOrEqual(l[i - 1].dpr)
+        expect(l[i].shadow).toBeLessThanOrEqual(l[i - 1].shadow)
+      }
+      expect(l.at(-1)).toMatchObject({ dpr: 1, shadow: 1024, msaa: 0 })
     }
-    expect(l.at(-1)).toMatchObject({ dpr: 1, shadow: 1024, msaa: 0 })
+    expect(qualityLadder(3).map(q => q.dpr)).toEqual([3, 3, 2.25, 1.875, 1])
+  })
+
+  it('keeps v0.2 pixel ratios up to dpr 2', () => {
+    const v02 = (d: number) => { d = Math.min(Math.max(d, 1), 2); return [d, d, Math.min(d, 1.5), Math.min(d, 1.25), 1] }
+    for (const d of [0.5, 1, 1.25, 1.5, 1.75, 2]) expect(qualityLadder(d).map(q => q.dpr)).toEqual(v02(d))
+  })
+
+  it('restarts from the top', () => {
+    const g = new Governor(5, 10)
+    while (g.measured(30));
+    g.sample(40)
+    g.restart()
+    expect(g.level).toBe(0)
+    for (let i = 0; i < 9; i++) expect(g.sample(40)).toBeNull() // the half-filled window was dropped
+    expect(g.sample(40)).toBe('down')
   })
 })
 
@@ -204,5 +237,99 @@ describe('readability + sound', () => {
   })
   it('pans by column', () => {
     expect(panFor(19, 0)).toBeCloseTo(-0.55); expect(panFor(19, 9)).toBeCloseTo(0); expect(panFor(9, 8)).toBeCloseTo(0.55)
+  })
+})
+
+describe('seated camera', () => {
+  const { BW, BD } = dims(19, false), deg = Math.PI / 180, hc = seatHeight(BW, BD, 1.5)
+  const sub = (a: number[], b: number[]) => a.map((v, k) => v - b[k]), norm = (a: number[]) => a.map(v => v / Math.hypot(...a))
+
+  it('frames the whole board, 1.33× closer than v0.2', () => {
+    for (let a = 0.4; a <= 3; a += 0.05) expect(seatHeight(BW, BD, a)).toBeGreaterThanOrEqual(BD * 1.12)
+    // 1280×860 with the floating card open: v0.2 showed 820 mm
+    const a = (BW + 380) * 1.04 / 820
+    expect(Math.max(BD * 1.22, (BW + 380) * 1.04 / a)).toBeCloseTo(820)
+    expect(seatHeight(BW, BD, a)).toBeCloseTo(616.5, 0)
+  })
+
+  it('puts home exactly where v0.2 put the camera', () => {
+    const dist = hc / 2 / Math.tan(FOV / 2 * deg), c = orbitEye(HOME, hc)
+    expect(c.eye[0]).toBeCloseTo(0); expect(c.eye[1]).toBeCloseTo(-6 + dist * Math.cos(22 * deg)); expect(c.eye[2]).toBeCloseTo(14 + dist * Math.sin(22 * deg))
+    expect(c.up.map(v => v + 0)).toEqual([0, 0, -1])
+  })
+
+  it('clamps: eye above the board, target on it, zoom 1 = home', () => {
+    const r = rng(5)
+    for (let k = 0; k < 2000; k++) {
+      const h = seatHeight(BW, BD, 0.4 + r() * 2.6)
+      const o = clampOrbit({ yaw: (r() - 0.5) * 4, tilt: (r() - 0.3) * 3, zoom: r() * 1.5, tx: (r() - 0.5) * 2000, tz: (r() - 0.5) * 2000 }, h, BW, BD)
+      expect(orbitEye(o, h).eye[1]).toBeGreaterThanOrEqual(100)
+      expect(Math.abs(o.tx)).toBeLessThanOrEqual(BW / 2 + 1e-9); expect(Math.abs(o.tz)).toBeLessThanOrEqual(BD / 2 + 1e-9)
+      expect(Math.abs(o.yaw)).toBeLessThanOrEqual(60 * deg + 1e-9); expect(o.tilt).toBeGreaterThanOrEqual(5 * deg - 1e-9); expect(o.tilt).toBeLessThanOrEqual(58 * deg + 1e-9)
+    }
+    expect(clampOrbit({ ...HOME, tx: 300, tz: -300 }, hc, BW, BD)).toEqual(HOME)
+    const corner = clampOrbit({ ...HOME, zoom: 0, tx: 999, tz: 999 }, hc, BW, BD)
+    expect(corner.zoom * hc).toBeCloseTo(140); expect(corner.tx).toBeCloseTo(BW / 2); expect(corner.tz).toBeCloseTo(BD / 2)
+  })
+
+  it('zooms about the point under the cursor', () => {
+    const o: Orbit = { yaw: 0.4, tilt: 0.7, zoom: 0.8, tx: 30, tz: -20 }, P = [120, -6, 90]
+    for (const k of [0.5, 0.9, 1.3]) {
+      const a = orbitEye(o, hc), b = orbitEye(zoomAt(o, k, P[0], P[2]), hc), da = norm(sub(P, a.eye))
+      norm(sub(P, b.eye)).forEach((v, i) => expect(v).toBeCloseTo(da[i], 9))
+      expect(b.dist).toBeCloseTo(a.dist * k)
+    }
+  })
+
+  it('follows the goal, at once under reduced motion', () => {
+    const cur = { ...HOME }, goal: Orbit = { ...HOME, yaw: 0.5, zoom: 0.5, tx: 40 }
+    expect(stepOrbit(cur, goal, 16)).toBe(true)
+    expect(cur.yaw).toBeCloseTo(0.5 * (1 - Math.exp(-16 / 70)))
+    let n = 0
+    while (stepOrbit(cur, goal, 16)) n++
+    expect(cur).toEqual(goal); expect(n).toBeLessThan(60)
+    const c2 = { ...HOME }
+    expect(stepOrbit(c2, goal, 16, true)).toBe(false); expect(c2).toEqual(goal)
+  })
+
+  it('tells a wheel from a trackpad', () => {
+    const w = (deltaY: number, o: Partial<{ deltaX: number; deltaMode: number; ctrlKey: boolean }> = {}) => ({ deltaX: 0, deltaMode: 0, ctrlKey: false, deltaY, ...o })
+    // macOS mouse (WebKit/Chromium): notches of 4.000244 px, accelerated
+    for (const d of [4.000244140625, -4.000244140625, 8.00048828125, 36.002197265625]) expect(wheelIntent(w(d), null, 1e9)).toBe('zoom')
+    // Windows mouse (WebView2): 100 px per notch; Firefox: lines
+    expect(wheelIntent(w(100), null, 1e9)).toBe('zoom'); expect(wheelIntent(w(3, { deltaMode: 1 }), null, 1e9)).toBe('zoom')
+    // macOS trackpad two-finger swipe: small whole or fractional pixels, often with some deltaX
+    for (const d of [1, 2, 4, 7, 12, 0.5, -3]) expect(wheelIntent(w(d), null, 1e9)).toBe('orbit')
+    expect(wheelIntent(w(60, { deltaX: 2 }), null, 1e9)).toBe('orbit')
+    // its momentum keeps the verdict, even past 40 px; a pause starts a new gesture
+    expect(wheelIntent(w(80), 'orbit', 16)).toBe('orbit'); expect(wheelIntent(w(80), 'orbit', 400)).toBe('zoom')
+    // pinch (Chromium, WebView2, Firefox): ctrl+wheel, small fractional deltas, wins over a gesture in progress
+    for (const d of [0.5, -1.25, 3]) expect(wheelIntent(w(d, { ctrlKey: true }), 'orbit', 16)).toBe('zoom')
+    // WebKit pinches through gesture events only; Chromium, WebView2 and WebKitGTK through ctrl+wheel
+    expect([skipPinchWheel(true, true), skipPinchWheel(true, false), skipPinchWheel(false, true)]).toEqual([true, false, false])
+  })
+
+  it('picks the drawn intersection, or the stone on top of it', () => {
+    const N = 19, empty = new Map<number, Placed>(), r = rng(9)
+    // top down: today's rounding
+    for (let k = 0; k < 2000; k++) {
+      const x = (r() - 0.5) * 460, z = (r() - 0.5) * 490, i = Math.round(x / SX + 9), j = Math.round(z / SZ + 9)
+      expect(pickPoint([x, 3000, z], [0, -1, 0], N, empty)).toEqual(i < 0 || j < 0 || i >= N || j >= N ? null : [i, j])
+    }
+    // steepest tilt, turned and zoomed: the ray through the drawn point (y = 0) or through a stone's top
+    for (const o of [{ ...HOME, tilt: 58 * deg }, { ...HOME, tilt: 58 * deg, yaw: -60 * deg, zoom: 0.3 }]) {
+      const eye = orbitEye(o, hc).eye
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+        expect(pickPoint(eye, sub([gx(N, i), 0, gz(N, j)], eye), N, empty)).toEqual([i, j])
+        const s: Placed = { x: i, y: j, R: RB, jx: 0, jz: 0, tx: gx(N, i) + 0.5, tz: gz(N, j) - 1 }
+        expect(pickPoint(eye, sub([s.tx, 2 * SH, s.tz], eye), N, new Map([[j * N + i, s]]))).toEqual([i, j])
+      }
+    }
+    // a stone never claims a ray that misses it (the march passes y = SH exactly, where lens() is 0 outside the stone)
+    const near: Placed = { x: 14, y: 1, R: RB, jx: 0, jz: 0, tx: 109.58, tz: -190.42 }
+    expect(pickPoint([gx(N, 13) - 50, 100, gz(N, 0)], [0.5, -1, 0], N, new Map([[1 * N + 14, near]]))).toEqual([13, 0])
+    // the old plane at y = SH misses by a third of a row at 58°
+    expect(SH * Math.tan(58 * deg) / SZ).toBeGreaterThan(0.3)
+    expect(lens(0, RB)).toBe(SH)
   })
 })

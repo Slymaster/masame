@@ -39,6 +39,14 @@ export function jitter(N: number, x: number, y: number, moveNo: number, across =
   return { jx: gx(N, x) + Math.cos(a) * m * across, jz: gz(N, y) + Math.sin(a) * m * along, seed: r(), rotY: r() * Math.PI * 2 }
 }
 
+/** Placing: the last 12 mm of the fall, then the fingers' last push, a SLIDE_MM slide into place once the stone touches. */
+export const DROP_MS = 140, SLIDE_MS = 90, SLIDE_MM = 1
+/** The new stone ms after release: height above rest (mm), the contact shadow's tightening k, and the share of the slide still to go. */
+export function dropPose(ms: number) {
+  const t = Math.min(1, Math.max(0, ms / DROP_MS)), u = Math.min(1, Math.max(0, (ms - DROP_MS) / SLIDE_MS))
+  return { y: 12 * (1 - t * t), k: t * t, slide: (1 - u) * (1 - u) } // eases out: friction stops it
+}
+
 /**
  * Stones never move once down, so a newcomer fits itself around the stones already there (22 mm spacing < 22.2 mm
  * slate diameter): a few passes pushing only it out of any overlap, from its jittered spot into tx/tz.
@@ -213,35 +221,37 @@ export interface Look {
   soft: number; shade: number
   /** Lanterne: a warm spot over the board, in units of 1e6 cd at 1 m (0 = none: the window key casts the shadows). */
   lamp: number
+  /** Contemplation: the share of the window's light that comes through a shoji, its lattice falling on the board (0 = an open window). */
+  shoji: number
 }
 const NIGHT: Tod = { az: 215, el: 64, K: 2650, I: 0, env: 0.5, exp: 1, room: 0 }
 export const LOOKS: Record<Decor, Look> = {
-  atelier: { sky: 'studio_country_hall', skyAz: 0.52, tod: null, ground: 'walnut', tint: 1, rough: 0.72, fade: true, linen: true, key: 1, ibl: 1, exp: 1, soft: 1, shade: 1, lamp: 0 },
-  washitsu: { sky: 'empty_play_room', skyAz: 0.38, tod: null, ground: 'tatami', tint: 0.92, rough: 0.82, fade: false, linen: false, key: 0.92, ibl: 1.1, exp: 1, soft: 1.3, shade: 0.95, lamp: 0 },
+  atelier: { sky: 'studio_country_hall', skyAz: 0.52, tod: null, ground: 'walnut', tint: 1, rough: 0.72, fade: true, linen: true, key: 1, ibl: 1, exp: 1, soft: 1, shade: 1, lamp: 0, shoji: 0 },
+  washitsu: { sky: 'empty_play_room', skyAz: 0.38, tod: null, ground: 'tatami', tint: 0.92, rough: 0.82, fade: false, linen: false, key: 0.92, ibl: 1.1, exp: 1, soft: 1.3, shade: 0.95, lamp: 0, shoji: 0.35 },
   // time of day has no effect here: a lantern at night
-  lanterne: { sky: 'studio_country_hall', skyAz: 0.52, tod: NIGHT, ground: 'walnut', tint: 0.5, rough: 0.72, fade: true, linen: false, key: 0, ibl: 0.25, exp: 1.6, soft: 1, shade: 1, lamp: 3.6 },
+  lanterne: { sky: 'studio_country_hall', skyAz: 0.52, tod: NIGHT, ground: 'walnut', tint: 0.5, rough: 0.72, fade: true, linen: false, key: 0, ibl: 0.25, exp: 1.6, soft: 1, shade: 1, lamp: 3.6, shoji: 0 },
   // skyAz: estimate from RoomEnvironment's layout (its two strong side panels at ±153°, the third at 92°), not measured on a render
-  clair: { sky: null, skyAz: 2.9, tod: null, ground: 'paper', tint: 1, rough: 0.94, fade: false, linen: false, key: 0.9, ibl: 0.9, exp: 0.82, soft: 2, shade: 0.8, lamp: 0 },
+  clair: { sky: null, skyAz: 2.9, tod: null, ground: 'paper', tint: 1, rough: 0.94, fade: false, linen: false, key: 0.9, ibl: 0.9, exp: 0.82, soft: 2, shade: 0.8, lamp: 0, shoji: 0 },
 }
 
 /* ---------- adaptive quality governor ---------- */
-export interface Quality { dpr: number; shadow: number; msaa: number; bowlSegments: number }
-/** Quality ladder, best first. The pixel ratio is capped by the display's own. */
+export interface Quality { dpr: number; shadow: number; msaa: number; bowlSegments: number; kaya4k: boolean }
+/** Quality ladder, best first. The pixel ratio is capped by the display's own (and at 3); for d ≤ 2 the values are v0.2's. */
 export function qualityLadder(deviceDpr: number): Quality[] {
-  const d = Math.min(Math.max(deviceDpr, 1), 2)
+  const d = Math.min(Math.max(deviceDpr, 1), 3)
   return [
-    { dpr: d, shadow: 4096, msaa: 4, bowlSegments: 72 },
-    { dpr: d, shadow: 2048, msaa: 4, bowlSegments: 72 },
-    { dpr: Math.min(d, 1.5), shadow: 2048, msaa: 4, bowlSegments: 48 },
-    { dpr: Math.min(d, 1.25), shadow: 2048, msaa: 0, bowlSegments: 48 },
-    { dpr: 1, shadow: 1024, msaa: 0, bowlSegments: 32 },
+    { dpr: d, shadow: 4096, msaa: 4, bowlSegments: 72, kaya4k: true },
+    { dpr: d, shadow: 2048, msaa: 4, bowlSegments: 72, kaya4k: true },
+    { dpr: Math.min(d, Math.max(1.5, 0.75 * d)), shadow: 2048, msaa: 4, bowlSegments: 48, kaya4k: false },
+    { dpr: Math.min(d, Math.max(1.25, 0.625 * d)), shadow: 2048, msaa: 0, bowlSegments: 48, kaya4k: false },
+    { dpr: 1, shadow: 1024, msaa: 0, bowlSegments: 32, kaya4k: false },
   ]
 }
 
 /**
  * Quality is decided once: a short measured warm-up at startup and after a resize (`measured`), then only a step down
- * on sustained slowness (`sample`). It never steps back up, so a still board never shifts between levels; the view applies
- * a runtime step only at its next scene change. Render on demand: only animated frames are sampled.
+ * on sustained slowness (`sample`). It never steps back up during play (only `restart`, after a big shrink), so a still
+ * board never shifts between levels; the view applies a runtime step only at its next scene change. Render on demand: only animated frames are sampled.
  * A window averaging slower than 50 fps steps one level down; at the bottom, a window slower than 30 fps asks for the 2D fallback.
  */
 export class Governor {
@@ -253,6 +263,8 @@ export class Governor {
     if (this.level < this.levels - 1 && ms > this.budgetMs) { this.level++; this.dts = []; return true }
     return false
   }
+  /** Back to the top before a fresh warm-up (the canvas shrank a lot, so the old level may be too cautious). */
+  restart() { this.level = 0; this.dts = [] }
   /** dt = interval between two consecutive animated frames, ms. */
   sample(dt: number): 'down' | 'fallback' | null {
     if (dt <= 0 || dt > 100) { this.dts = []; return null } // hidden tab, first frame after idle, debugger
@@ -291,3 +303,84 @@ export function silhouette(rays: number[][][], board: number[]) {
 /* ---------- sound ---------- */
 /** Stereo position of a stone: the board spans about ±0.55 of the field, like sitting at it. */
 export const panFor = (N: number, x: number) => (N > 1 ? (x / (N - 1)) * 2 - 1 : 0) * 0.55
+
+/* ---------- seated camera (Contemplation) ---------- */
+export const FOV = 28, TILT_HOME = (22 * Math.PI) / 180, TGT_Y = -6
+/** Visible height (mm) of the seated view: the whole board stays in frame, bowls partly out ("framing A", 1.33× v0.2). */
+export const seatHeight = (BW: number, BD: number, aspect: number) => Math.max(BD * 1.12, ((BW + 380) * 1.04) / 1.33 / Math.max(0.4, aspect))
+
+/** yaw/tilt in rad (tilt from vertical), zoom = share of the home distance, (tx, tz) the target on the plane y = TGT_Y. */
+export interface Orbit { yaw: number; tilt: number; zoom: number; tx: number; tz: number }
+export const HOME: Readonly<Orbit> = { yaw: 0, tilt: TILT_HOME, zoom: 1, tx: 0, tz: 14 }
+/** Closest zoom: this many mm in view. */
+export const ZOOM_MM = 140
+const YAW_MAX = Math.PI / 3, TILT_MIN = (5 * Math.PI) / 180, TILT_MAX = (58 * Math.PI) / 180
+const clampV = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
+
+/** Limits for a visible height hc: zoom 1 is exactly home; the target may leave home, up to the board's corners, only as far as the view is zoomed in. */
+export function clampOrbit(o: Orbit, hc: number, BW: number, BD: number): Orbit {
+  const zMin = Math.min(1, ZOOM_MM / hc), zoom = clampV(o.zoom, zMin, 1), s = zMin < 1 ? (1 - zoom) / (1 - zMin) : 0
+  const cx = HOME.tx * (1 - s), cz = HOME.tz * (1 - s), hx = (BW / 2) * s, hz = (BD / 2) * s
+  return { yaw: clampV(o.yaw, -YAW_MAX, YAW_MAX), tilt: clampV(o.tilt, TILT_MIN, TILT_MAX), zoom, tx: clampV(o.tx, cx - hx, cx + hx), tz: clampV(o.tz, cz - hz, cz + hz) }
+}
+
+/** Zoom by k about the point (px, TGT_Y, pz): the whole camera scales about it, so that point stays under the cursor. */
+export const zoomAt = (o: Orbit, k: number, px: number, pz: number): Orbit => ({ ...o, zoom: o.zoom * k, tx: px + k * (o.tx - px), tz: pz + k * (o.tz - pz) })
+
+/** Camera for an orbit at visible height hc: no roll (up stays horizontal, pointing away from the player). */
+export function orbitEye(o: Orbit, hc: number) {
+  const dist = (hc * o.zoom) / 2 / Math.tan((FOV * Math.PI) / 360), h = Math.sin(o.tilt) * dist
+  const sy = Math.sin(o.yaw), cy = Math.cos(o.yaw)
+  return { eye: [o.tx + h * sy, TGT_Y + dist * Math.cos(o.tilt), o.tz + h * cy], target: [o.tx, TGT_Y, o.tz], up: [-sy, 0, -cy], dist }
+}
+
+/** Moves cur towards goal (exponential follow, τ = 70 ms; at once under reduced motion). True while still moving. */
+export function stepOrbit(cur: Orbit, goal: Orbit, dt: number, instant = false): boolean {
+  const a = instant ? 1 : 1 - Math.exp(-dt / 70)
+  let moving = false
+  for (const k of ['yaw', 'tilt', 'zoom', 'tx', 'tz'] as const) {
+    const d = goal[k] - cur[k], eps = k === 'tx' || k === 'tz' ? 0.02 : 1e-4
+    if (Math.abs(d) * (1 - a) < eps) cur[k] = goal[k]
+    else { cur[k] += d * a; moving = true }
+  }
+  return moving
+}
+
+export type WheelIntent = 'zoom' | 'orbit'
+/**
+ * Mouse wheel or trackpad, from the wheel event alone: pinches arrive as ctrl+wheel (Chromium, WebView2, Firefox);
+ * a gesture keeps its first verdict through its momentum; line/page deltas and horizontal deltas tell a wheel from a
+ * trackpad; macOS mouse notches come as multiples of 4.000244 px, Windows notches as ≥ 40 px; anything else is a
+ * two-finger swipe.
+ */
+/** WebKit (WKWebView, Safari) sends a pinch both as gesture events and as ctrl+wheel: only the gesture events count there. */
+export const skipPinchWheel = (ctrlKey: boolean, gestureEvents: boolean) => ctrlKey && gestureEvents
+
+export function wheelIntent(e: { deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean }, prev: WheelIntent | null, gapMs: number): WheelIntent {
+  if (e.ctrlKey) return 'zoom'
+  if (prev && gapMs < 250) return prev
+  if (e.deltaMode !== 0) return 'zoom'
+  if (e.deltaX !== 0) return 'orbit'
+  const d = Math.abs(e.deltaY), n = Math.round(d / 4.000244)
+  return d >= 40 || (n > 0 && Math.abs(d - n * 4.000244) < 1e-4 * n) ? 'zoom' : 'orbit'
+}
+
+/**
+ * The point a ray points at in the seated view: the first stone it crosses (lens shape) between y = 2·SH and the board,
+ * otherwise the board surface at y = 0, rounded to the nearest intersection (null off the grid).
+ */
+export function pickPoint(o: number[], d: number[], N: number, stones: Map<number, Placed>): [number, number] | null {
+  if (d[1] >= 0) return null
+  const t0 = (2 * SH - o[1]) / d[1], t1 = -o[1] / d[1], n = Math.ceil(((t1 - t0) * Math.hypot(d[0], d[2])) / 0.5) + 1
+  for (let k = 0; k <= n; k++) {
+    const t = t0 + ((t1 - t0) * k) / n, x = o[0] + d[0] * t, y = o[1] + d[1] * t, z = o[2] + d[2] * t
+    const i = Math.round(x / SX + (N - 1) / 2), j = Math.round(z / SZ + (N - 1) / 2)
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const i2 = i + di, j2 = j + dj, s = i2 >= 0 && j2 >= 0 && i2 < N && j2 < N ? stones.get(j2 * N + i2) : undefined
+      if (s && Math.abs(y - SH) < lens(Math.hypot(x - s.tx, z - s.tz), s.R)) return [s.x, s.y]
+    }
+  }
+  const x = o[0] + d[0] * t1, z = o[2] + d[2] * t1, i = Math.round(x / SX + (N - 1) / 2), j = Math.round(z / SZ + (N - 1) / 2)
+  if (i < 0 || j < 0 || i >= N || j >= N || Math.abs(x - gx(N, i)) > SX * 0.5 || Math.abs(z - gz(N, j)) > SZ * 0.5) return null
+  return [i, j]
+}

@@ -157,7 +157,7 @@ export function apply(s: Followed | null, [event, data]: GameEvent, myId?: numbe
       const g = s.game, i = data.move_number - 1 - s.offset, v = fromOgs(data.move)
       if (i < g.moves.length) return i >= 0 && same(g.moves[i].vertex, v) ? s : { ...s, reload: true } // our own move echoed back
       if (i > g.moves.length) return { ...s, reload: true }
-      g.goTo(g.moves.length) // play() would cut the record at a browsed position
+      g.goTo(g.moves.length) // play() would open a variation at a browsed position (live games stay linear)
       // a refusal includes play resuming after stone removal (two passes "end" a Game): the full gamedata replays it
       return g.play(v) === 'ok' ? { ...s } : { ...s, reload: true }
     }

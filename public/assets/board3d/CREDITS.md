@@ -5,13 +5,16 @@ Derived files were made with ffmpeg / Python (numpy, Pillow) from the originals;
 but we keep the trail.
 
 ## Wood (board top, sides, bowls)
-- **ambientCG — Wood095** (2K JPG: Color, NormalGL, Roughness) — https://ambientcg.com/view?id=Wood095
-  Licence: CC0 1.0 (ambientCG states all its assets are CC0). Downloaded 2026-10-11.
+- **ambientCG — Wood095** (2K and 4K JPG: Color, NormalGL, Roughness) — https://ambientcg.com/view?id=Wood095
+  Licence: CC0 1.0 (ambientCG states all its assets are CC0). Downloaded 2026-10-11 (2K) and 2026-10-13 (4K).
+  All the files below are made by `scripts/kaya-textures.py` (2K scan → `kaya_*.jpg`, 4K scan → `kaya_*_4k.jpg`).
   - `kaya_diff.jpg` (2048×1732): the clean straight-grain lower band of the scan, three strips stacked across the
     grain (horizontal rolls of the tileable scan, middle strip mirrored, 40 px feathered seams parallel to the
     fibres), graded to golden kaya (fibre contrast ×1.35, darker late wood slightly warmer).
   - `kaya_nor.jpg`: same stacking of the NormalGL map (mirrored strip has its X component flipped).
   - `kaya_rough.jpg` (1024×866): roughness derived from the fibre detail (the scan's own roughness is flat).
+  - `kaya_diff_4k.jpg`, `kaya_nor_4k.jpg` (4096×3464), `kaya_rough_4k.jpg` (2048×1732): the same, from the 4K scan
+    (crop, rolls and feather scaled ×2); loaded instead of the 2K set on the top quality levels.
   - The bowls reuse `kaya_diff.jpg`, tinted to mulberry in the material.
   - The table in Contemplation reuses `kaya_diff.jpg` too, tiled and tinted to a dark walnut in the material.
 

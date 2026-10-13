@@ -9,7 +9,7 @@ $ProgressPreference = 'SilentlyContinue' # Invoke-WebRequest is very slow with i
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 # PowerShell 5.1 default is older
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-$Tag = 'v1.18.1'
+$Tag = 'v1.18.1' # still the latest OpenCL/Eigen build: v1.18.2 only changed (and only ships) CUDA
 # Pinned 2026-10-11 from the GitHub release assets (sha256 = the release's digest field).
 $Pins = [ordered]@{
   opencl    = @{ File = 'katago-v1.18.1-opencl-windows-x64.zip';    Size = 6004137; Sha256 = '1710db1903ab921aa6837a9599c8474f8a59f057650217c5d9bc125ee393a9ff' }

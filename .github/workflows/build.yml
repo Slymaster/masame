@@ -1,4 +1,5 @@
-# Tests and builds for macOS (Apple Silicon: .app + .dmg; ad-hoc signed, Developer ID signed and notarized on v* tags),
+# Tests and builds for macOS (Apple Silicon and Intel: .app + .dmg each; ad-hoc signed, Developer ID signed and notarized
+# on v* tags),
 # Windows x64 (NSIS installer, unsigned) and Linux x86_64 (AppImage, .deb, .rpm; built on Ubuntu 22.04 for a glibc 2.35
 # baseline) on every push and pull request.
 # On a v* tag push only, the packages are uploaded as workflow artifacts and the release job turns them into a draft
@@ -29,6 +30,10 @@ jobs:
         include:
           - os: macos-latest
             bundles: app,dmg
+          # Intel Macs: KataGo OpenCL + CPU sidecars instead of Metal (tauri.macos-x86_64.conf.json). GitHub's last Intel image.
+          - os: macos-15-intel
+            bundles: app,dmg
+            config: --config src-tauri/tauri.macos-x86_64.conf.json
           - os: windows-latest
             bundles: nsis
           - os: ubuntu-22.04
@@ -72,12 +77,19 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: vendor
-          key: katago-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-katago.sh') }}
+          key: katago-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-katago.sh', 'scripts/build-katago-macos-x86_64.sh') }}
       - name: Build KataGo (macOS, Metal)
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && runner.arch == 'ARM64'
         run: |
           brew install ninja pkg-config
           scripts/build-katago.sh
+      # Later steps (cargo test included) see the Intel sidecars through TAURI_CONFIG, which tauri-build merges.
+      - name: Build KataGo (Intel Mac, OpenCL + CPU)
+        if: runner.os == 'macOS' && runner.arch == 'X64'
+        run: |
+          brew install ninja
+          scripts/build-katago-macos-x86_64.sh
+          echo "TAURI_CONFIG=$(jq -c . src-tauri/tauri.macos-x86_64.conf.json)" >> "$GITHUB_ENV"
       - name: Cache the KataGo build (Linux)
         if: runner.os == 'Linux'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -106,7 +118,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: pnpm tauri
-          args: --bundles ${{ matrix.bundles }}${{ startsWith(github.ref, 'refs/tags/v') && ' --config ''{"bundle":{"createUpdaterArtifacts":true}}''' || '' }}
+          args: --bundles ${{ matrix.bundles }} ${{ matrix.config }}${{ startsWith(github.ref, 'refs/tags/v') && ' --config ''{"bundle":{"createUpdaterArtifacts":true}}''' || '' }}
           # off: binaries leave CI only through the explicit tag-only upload below
           uploadWorkflowArtifacts: false
 
@@ -133,7 +145,7 @@ jobs:
           trap 'rm -f "$APPLE_API_KEY_PATH"' EXIT
           (umask 077 && printf '%s\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY_PATH")
           unset APPLE_API_KEY_P8
-          pnpm tauri build --bundles ${{ matrix.bundles }} --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          pnpm tauri build --bundles ${{ matrix.bundles }} ${{ matrix.config }} --config '{"bundle":{"createUpdaterArtifacts":true}}'
           dmgs=(src-tauri/target/release/bundle/dmg/*.dmg)
           [ ${#dmgs[@]} -eq 1 ] || { echo "::error::expected one DMG, found ${#dmgs[@]}"; exit 1; }
           xcrun notarytool submit "${dmgs[0]}" --wait \
@@ -149,12 +161,14 @@ jobs:
           team='anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists'
           team+=' and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "CN9TKA949C"'
           bundle=src-tauri/target/release/bundle
-          check_app() { # app -> Developer ID, hardened runtime, notarized and stapled, KataGo signed the same way
+          check_app() { # app -> Developer ID, hardened runtime, notarized and stapled, each KataGo signed the same way
             codesign --verify --deep --strict --verbose=2 -R="$team" "$1"
             spctl --assess --type execute -vv "$1" 2>&1 | tee /dev/stderr | grep -qxF 'source=Notarized Developer ID'
             xcrun stapler validate "$1"
-            codesign --verify --strict --verbose=2 -R="$team" "$1/Contents/MacOS/katago"
-            for code in "$1" "$1/Contents/MacOS/katago"; do
+            engines=("$1"/Contents/MacOS/katago*) # katago (Apple Silicon); katago-opencl and katago-eigen (Intel)
+            [ -f "${engines[0]}" ] || { echo "::error::$1: no KataGo"; exit 1; }
+            for code in "$1" "${engines[@]}"; do
+              codesign --verify --strict --verbose=2 -R="$team" "$code"
               codesign -dv "$code" 2>&1 | grep -q '^CodeDirectory .*flags=0x10000(runtime)' \
                 || { echo "::error::$code: hardened runtime is off"; exit 1; }
             done
@@ -170,6 +184,10 @@ jobs:
               | grep -qxF 'source=Notarized Developer ID'
             xcrun stapler validate "$dmg"
           done
+          # Both Macs' updater packages are Masame.app.tar.gz: name them after the architecture, like the DMGs.
+          for f in "${tarballs[0]}" "${tarballs[0]}.sig"; do
+            mv "$f" "${f/Masame.app/Masame_${{ runner.arch == 'X64' && 'x64' || 'aarch64' }}.app}"
+          done
 
       # The AppImage bundles Ubuntu's WebKitGTK, GTK, GLib...: list them with their packages, versions and licences.
       - name: List the AppImage's bundled libraries (Linux)
@@ -183,7 +201,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'macOS'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: masame-macos
+          name: masame-macos-${{ runner.arch == 'X64' && 'x64' || 'aarch64' }}
           path: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/macos/*.app.tar.gz
@@ -260,7 +278,7 @@ jobs:
           shopt -s nullglob
           jq -r .plugins.updater.pubkey ../src-tauri/tauri.conf.json | base64 -d > "$RUNNER_TEMP/updater.pub"
           platforms='{}'
-          for entry in 'darwin-aarch64 *.app.tar.gz' 'windows-x86_64 *-setup.exe' 'linux-x86_64 *.AppImage'; do
+          for entry in 'darwin-aarch64 *_aarch64.app.tar.gz' 'darwin-x86_64 *_x64.app.tar.gz' 'windows-x86_64 *-setup.exe' 'linux-x86_64 *.AppImage'; do
             target=${entry%% *}
             # shellcheck disable=SC2206 # the glob is the point
             files=(${entry#* })

@@ -75,15 +75,17 @@ export function parseAnalysis(raw: unknown, n: number): Analysis {
   }
 }
 
-/** The displayed position (moves up to the cursor) as an analysis query. */
+/** The displayed position: the last position with setup stones at or before the cursor (the root otherwise) as the initial stones, then the moves. */
 export function positionQuery(game: Game) {
-  const { size, komi, setup, firstSign } = game.info
+  const { size, komi, firstSign } = game.info
   const color = (s: number) => (s === 1 ? 'B' : 'W')
+  let at = game.cursor
+  while (at > 0 && !game.nodes[at].stones) at--
   return {
     rules: 'japanese', komi, boardXSize: size, boardYSize: size,
-    initialStones: [...setup.black.map(v => ['B', gtp(v, size)]), ...setup.white.map(v => ['W', gtp(v, size)])],
-    initialPlayer: color(firstSign),
-    moves: game.moves.slice(0, game.cursor).map(m => [color(m.sign), m.vertex ? gtp(m.vertex, size) : 'pass']),
+    initialStones: game.boards[at].signMap.flatMap((row, y) => row.flatMap((c, x) => (c ? [[color(c), gtp([x, y], size)]] : []))),
+    initialPlayer: color(at ? -game.moves[at - 1].sign : firstSign),
+    moves: game.moves.slice(at, game.cursor).filter(m => !m.setup).map(m => [color(m.sign), m.vertex ? gtp(m.vertex, size) : 'pass']),
   }
 }
 

@@ -1,12 +1,13 @@
-// Windows and Linux engine builds (official KataGo zips under resources/katago-win/<variant>/, source builds under
-// resources/katago-linux/<variant>/): which one to launch, and what to try next when one fails before it is ready.
+// Windows, Linux and Intel Mac engine builds (official KataGo zips under resources/katago-win/<variant>/, source builds
+// under resources/katago-linux/<variant>/, sidecars Contents/MacOS/katago-<variant> on Intel Macs): which one to launch, and what to try next when one fails before it is ready.
 // Pure functions, so the logic is tested on every platform.
-#![cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
+#![cfg_attr(not(engine_variants), allow(dead_code))]
 
 use std::path::Path;
 
 pub const OPENCL: &str = "opencl";
-pub const CPU: &str = "eigenavx2";
+/// The CPU build: AVX2 + FMA on Windows and Linux; plain SSE on Intel Macs, so it also runs under Rosetta.
+pub const CPU: &str = if cfg!(target_os = "macos") { "eigen" } else { "eigenavx2" };
 const VARIANTS: [&str; 2] = [OPENCL, CPU];
 
 /// Variants worth trying, best first: GPU (OpenCL) before CPU, except that the persisted one (the last that reached
@@ -39,10 +40,11 @@ pub fn is_backend_failure(code: &str) -> bool { matches!(code, "engine_missing" 
 /// crash that is not the build's fault (bad model or config) never replaces a working preference.
 pub fn to_persist(saved: Option<&str>, ready_bin: &Path) -> Option<&'static str> { variant_of(ready_bin).filter(|&v| Some(v) != saved) }
 
-/// Which bundled variant a binary is (its folder name), if any.
+/// Which bundled variant a binary is (its folder name, or a macOS sidecar's katago-<variant>), if any.
 pub fn variant_of(bin: &Path) -> Option<&'static str> {
     let dir = bin.parent()?.file_name()?;
-    VARIANTS.into_iter().find(|v| dir == std::ffi::OsStr::new(v))
+    let name = bin.file_name()?.to_str()?;
+    VARIANTS.into_iter().find(|v| dir == std::ffi::OsStr::new(v) || name.strip_prefix("katago-") == Some(v))
 }
 
 #[cfg(test)]
@@ -109,5 +111,8 @@ mod tests {
         assert_eq!(variant_of(&Path::new("x").join(CPU).join("katago.exe")), Some(CPU));
         assert_eq!(variant_of(Path::new("/usr/bin/katago")), None);
         assert_eq!(variant_of(Path::new("katago")), None);
+        assert_eq!(variant_of(Path::new("Masame.app/Contents/MacOS/katago-opencl")), Some(OPENCL), "Intel Mac sidecar");
+        assert_eq!(variant_of(&Path::new("Masame.app/Contents/MacOS").join(format!("katago-{CPU}"))), Some(CPU));
+        assert_eq!(variant_of(Path::new("Masame.app/Contents/MacOS/katago-metal")), None);
     }
 }

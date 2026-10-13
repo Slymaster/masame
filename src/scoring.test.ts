@@ -63,6 +63,53 @@ describe('scoring', () => {
     const m = board(Array(9).fill('.........'))
     expect(score(m, noDead(m), { black: 0, white: 0 }, 0).lead).toBe(0)
   })
+
+  // Eye vs no eye: Black's A5 eye group and White's eyeless group share the C5 liberty; KataGo sees both as nobody's.
+  const EYE = board([
+    '.X.OX',
+    'XXOOX',
+    'OOXXX',
+    '.OX..',
+    'OOX..',
+  ])
+  const EYE_OWN = EYE.flatMap((row, y) => row.map((s, x) => (y < 2 && x < 4 ? 0.05 : s === -1 || (x < 2 && y > 2) ? -0.9 : 0.9)))
+  it('an eye inside a seki group is neutral when ownership says so', () => {
+    const s = score(EYE, noDead(EYE), { black: 0, white: 0 }, 0, EYE_OWN)
+    expect(s.territory[0][0]).toBe(0)
+    expect(s.black.territory).toBe(4) // the lower-right corner only
+    expect(s.white.territory).toBe(1) // A2
+    // Without ownership (no engine) the eye counts, as before.
+    expect(score(EYE, noDead(EYE), { black: 0, white: 0 }, 0).black.territory).toBe(5)
+    expect(score(EYE, noDead(EYE), { black: 0, white: 0 }, 0, null).black.territory).toBe(5)
+  })
+
+  it('the player overrules a seki by marking the eyeless group dead', () => {
+    const s = score(EYE, toggleDead(EYE, noDead(EYE), [3, 0]), { black: 0, white: 0 }, 0, EYE_OWN)
+    expect(s.black.territory).toBe(9) // the eye, C5, the three dead stones' points and the lower-right corner
+    expect(s.black.prisoners).toBe(3)
+    expect(s.white.territory).toBe(1)
+  })
+
+  it('two eyeless groups in seki: shared liberties neutral, real territory still counted', () => {
+    const m = board([
+      '.XO.X',
+      'OXOXX',
+      'OXOX.',
+      'OXOXX',
+      '.XO.X',
+    ])
+    const own = m.flatMap(row => row.map((_, x) => (x < 3 ? 0.02 : 0.9)))
+    const s = score(m, noDead(m), { black: 0, white: 0 }, 0, own)
+    expect(s.black.territory).toBe(1) // E3, Black's real eye
+    expect(s.white.territory).toBe(0)
+    expect([s.territory[0][0], s.territory[0][3], s.territory[4][0], s.territory[4][3]]).toEqual([0, 0, 0, 0])
+  })
+
+  it('ordinary territory is unchanged with ownership', () => {
+    const s = score(SPLIT, suggestDead(SPLIT, OWN), { black: 2, white: 1 }, 6.5, OWN)
+    expect(s.black.territory).toBe(36)
+    expect(s.white.territory).toBe(27)
+  })
 })
 
 describe('score rounding', () => {
