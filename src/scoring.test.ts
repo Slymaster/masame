@@ -83,6 +83,13 @@ describe('scoring', () => {
     expect(score(EYE, noDead(EYE), { black: 0, white: 0 }, 0, null).black.territory).toBe(5)
   })
 
+  it('the player overrules a seki by marking the eyeless group dead', () => {
+    const s = score(EYE, toggleDead(EYE, noDead(EYE), [3, 0]), { black: 0, white: 0 }, 0, EYE_OWN)
+    expect(s.black.territory).toBe(9) // the eye, C5, the three dead stones' points and the lower-right corner
+    expect(s.black.prisoners).toBe(3)
+    expect(s.white.territory).toBe(1)
+  })
+
   it('two eyeless groups in seki: shared liberties neutral, real territory still counted', () => {
     const m = board([
       '.XO.X',
