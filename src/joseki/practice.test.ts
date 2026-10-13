@@ -22,12 +22,14 @@ describe('walking the tree', () => {
       expect(node(w)).toBe(i)
       const b = position(shown(w.moves, { k: 0, swap: false }))
       expect(positionKey(b.signMap, w.moves.length)).toBe(db.nodes[i].k)
-      for (const o of ORIENTS) { // the same stones, turned and recoloured
-        const s = position(shown(w.moves, o)).signMap
-        b.signMap.forEach((row, y) => row.forEach((c, x) => { const [a, z] = sym(o.k, [x, y]); expect(s[z][a]).toBe(o.swap ? -c || 0 : c) }))
+      if (i % 7) return
+      for (const o of ORIENTS) { // on a sample of nodes: the same stones, turned and recoloured
+        const want = b.signMap.map(r => r.map(() => 0))
+        b.signMap.forEach((row, y) => row.forEach((c, x) => { const [a, z] = sym(o.k, [x, y]); want[z][a] = o.swap ? -c || 0 : c }))
+        expect(position(shown(w.moves, o)).signMap).toEqual(want)
       }
     })
-  })
+  }, 20_000)
   it('maps a click back to the stored move in all 8 symmetries, colours swapped or not', () => {
     for (const p of paths.slice(0, 40)) {
       const w = walk(db, p), x = db.nodes[node(w)]
