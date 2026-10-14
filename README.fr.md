@@ -48,13 +48,17 @@
 ## Fonctions
 
 - **L'Atelier vivant.** Un goban three.js en temps réel, bois et pierres aux matières physiques, lumière qui suit l'heure du jour, deux vues (Étude, et une vue assise, Contemplation, qu'on tourne et qu'on zoome à la souris), et des bols avec couvercles pour les pierres en réserve et capturées. 9×9, 13×13 et 19×19.
-- **Un adversaire humain.** KataGo, avec son réseau humain (SL), imite un joueur de 20k à 9d, avec ajustement automatique du niveau et temps de réflexion naturels (optionnels).
+- **Un adversaire humain.** KataGo, avec son réseau humain (SL), imite un joueur de 20k à 9d, avec ajustement automatique du niveau et temps de réflexion naturels (optionnels). Des parties à handicap de 2 à 9 pierres, proposé d'après l'écart entre ton niveau et celui de l'IA.
 - **Ombre et lumière.** L'estimation de propriété de KataGo affichée en vraie lumière et ombre sur le goban.
 - **Comptage.** Le moteur propose les pierres mortes ; tu les corriges d'un clic.
-- **Revue de partie.** Jusqu'à trois moments où un coup a coûté le plus de points, chacun une courte leçon : trouve toi-même la punition, vois-la, puis vois le bon coup. Après une partie contre l'IA, ou à tout moment dans une partie à deux joueurs ou un SGF. Elle tourne en local, en une minute environ. À partir d'un moment clé, tu peux aussi essayer ta propre suite, et KataGo répond.
+- **Revue de partie.** Jusqu'à trois moments où un coup a coûté le plus de points, chacun une courte leçon : trouve toi-même la punition, vois-la, puis vois le bon coup. Après une partie contre l'IA, ou à tout moment dans une partie à deux joueurs ou un SGF. Elle tourne en local, en une minute environ. À partir d'un moment clé, tu peux aussi essayer ta propre suite, et KataGo répond. Chaque partie terminée est aussi lue en arrière-plan, sur ta machine, dès que le moteur est libre : les parties contre l'IA et tes parties OGS, jouées ou importées. Ses moments clés rejoignent tes exercices sans un clic.
+- **Exercices tirés de tes parties.** Les moments clés de chaque revue reviennent en exercices, en répétition espacée : trouve un meilleur coup, KataGo le note. Masame te dit aussi où tu perds tes points : à l'ouverture, en milieu de partie ou en fin de partie.
+- **Aujourd'hui.** Un rituel quotidien d'une dizaine de minutes : tes exercices dus, tes joseki dus, puis une 9×9 contre l'IA à ton niveau, avec une série de jours.
+- **Analyse libre.** Maintiens A sur n'importe quelle position, hors partie OGS en cours : les coups candidats de KataGo apparaissent lettrés sur le goban, avec les points que chacun perd. Pas de courbe de taux de victoire.
 - **Entraîneur de joseki.** Explore les coups candidats avec les points que chacun perd, la fréquence à laquelle les joueurs de ton niveau le jouent, et son origine (classique, pro, IA, vérifié par KataGo, contesté). Entraîne-toi en répétition espacée, dans des orientations et des couleurs au hasard, contre un adversaire qui sort du livre comme les joueurs de ton niveau. Un programme classe les coins selon la fréquence à laquelle tu les rencontreras × les points qu'ils te coûtent. Les joseki sont générés par nous avec KataGo et son réseau humain (SL).
-- **Jouer en ligne sur OGS.** Des parties classées et des défis sur [online-go.com](https://online-go.com), avec pendules, correspondance comprise ; regarde les meilleures parties en direct ; retrouve tes parties terminées et ta courbe de rang ; tes parties OGS terminées s'ouvrent pour la revue.
-- **Règles et parties.** Captures, ko, suicide, passe, annulation, navigation dans les coups, variantes, lecture automatique, et ouverture et enregistrement SGF qui gardent les variantes et les commentaires.
+- **Jouer en ligne sur OGS.** Des parties classées et des défis sur [online-go.com](https://online-go.com), avec pendules, correspondance comprise ; regarde les meilleures parties en direct ; retrouve tes parties terminées et ta courbe de rang ; tes parties OGS terminées sont revues automatiquement.
+- **Règles et parties.** Captures, ko, suicide, passe, annulation, navigation dans les coups, variantes, lecture automatique, une pendule byo-yomi pour les parties locales, et ouverture et enregistrement SGF qui gardent les variantes et les commentaires. Dépose un SGF sur la fenêtre, ou double-clique dessus, pour l'ouvrir.
+- **Carte postale.** La position en PNG, un tirage du goban 3D signé du sceau de Masame, prêt pour Reddit ou Discord.
 - **Deux langues.** Entièrement en français et en anglais ; suit la langue du système et se change dans l'app.
 - **Un mode léger 2D.** Un goban Canvas, utilisé automatiquement quand le rendu 3D n'est pas disponible.
 
@@ -111,7 +115,7 @@ Masame est un client OGS. Choisis OGS comme adversaire dans le panneau Partie et
 - **Regarder :** les meilleures parties en direct, ou n'importe quelle partie depuis un lien OGS, même sans être connecté. L'aide du moteur reste coupée jusqu'à la fin de la partie.
 - **Notifications :** quand Masame est ouvert en arrière-plan, une notification système t'avertit quand c'est à toi de jouer dans une partie par correspondance, quand un défi arrive, et quand une partie commence ou se termine.
 
-OGS n'autorise aucune aide d'un moteur pendant une partie : tant qu'une partie OGS est en cours, Ombre et lumière, les suggestions de comptage du moteur et la revue sont coupées. Elles reviennent dès la fin de la partie.
+OGS n'autorise aucune aide d'un moteur pendant une partie : tant qu'une partie OGS est en cours, Ombre et lumière, l'analyse libre, les suggestions de comptage du moteur et la revue sont coupées. Elles reviennent dès la fin de la partie, et tes parties OGS terminées sont alors revues automatiquement.
 
 ## Vie privée
 
@@ -122,7 +126,7 @@ OGS n'autorise aucune aide d'un moteur pendant une partie : tant qu'une partie O
 
 ## Feuille de route
 
-Les fondations, l'Atelier vivant en 3D et la première partie du professeur sont en place : une revue locale de tes parties, les trois moments qui les ont décidées, « devine, puis découvre ». Le client OGS est là aussi : parties classées, reprise, import et revue. La version 0.3 ajoute l'entraîneur de joseki, les variantes et la lecture automatique. Vient ensuite Masame sur mobile, Android d'abord. Plus tard : des problèmes tirés de tes propres parties, puis d'autres serveurs en ligne après OGS. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
+Les fondations, l'Atelier vivant en 3D et le professeur sont en place : une revue locale de chaque partie, les trois moments qui l'ont décidée, « devine, puis découvre », et des exercices tirés de tes propres parties. Le client OGS est là aussi : parties classées, reprise, import et revue. La version 0.3 a ajouté l'entraîneur de joseki, les variantes et la lecture automatique ; la version 0.4 ajoute la revue automatique, les exercices tirés de tes parties, le rituel du jour, le handicap, l'analyse libre, une pendule locale, le glisser-déposer des SGF et la carte postale. Vient ensuite Masame sur mobile, Android d'abord. Plus tard : d'autres serveurs en ligne après OGS. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
 
 ## Remerciements
 
