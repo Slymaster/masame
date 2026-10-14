@@ -432,7 +432,7 @@ export function App() {
   const newGame = async (size = nextSize, o: { rank?: string; handicap?: number; ritual?: true } = {}) => {
     abandon()
     if (!(await canLeave())) return
-    setNextSize(size)
+    resize(size)
     let g: Game
     if ((settings.opponent === 'ai' || o.ritual) && canPlayAI) {
       const h = o.handicap ?? settings.handicap // with a handicap the player takes Black, White plays first
@@ -453,7 +453,7 @@ export function App() {
       if (text.length > MAX_SGF) throw new LocalizedError(l => l.sgfTooBig)
       const g = loadSgf(text)
       if (!asked && !(await canLeave())) return
-      start(g, null); setNextSize(SIZES.includes(g.info.size) ? g.info.size : nextSize)
+      start(g, null); if (SIZES.includes(g.info.size)) resize(g.info.size)
       if (imported) ar.enqueue(g, ogsSide(g)) // an ended OGS game of mine
     } catch (e) {
       setNote(d => d.openFailed(failureText(e, d)))
@@ -1003,6 +1003,8 @@ export function App() {
   /** The player's own changes in the Game sheet re-propose the handicap (the bot's auto-adjusted level does not). */
   const propose = ({ size = nextSize, ...c }: Partial<Pick<Settings, 'myRank' | 'aiRank'>> & { size?: number }) =>
     setSettings(s => { const n = { ...s, ...c }; return { ...n, handicap: proposeHandicap(n.myRank, n.aiRank, size) } })
+  /** The next game's size changed (the sheet, a game of another size started or opened): its handicap is proposed again. */
+  const resize = (n: number) => { if (n !== nextSize) { setNextSize(n); propose({ size: n }) } }
   // Networks opened from Settings closes back to Settings, on its link
   const closeNets = () => setSheet(netsFromSettings.current ? 'settings' : null)
   useEffect(() => { if (sheet === 'view') document.getElementById('display')?.scrollIntoView({ block: 'start' }) }, [sheet])
@@ -1160,7 +1162,7 @@ export function App() {
           <section>
             <div className="lab"><span>{t.newGame}</span><span /></div>
             <div className="opts">
-              <Seg label={t.size} value={nextSize} options={SIZES.map(n => [n, `${n}×${n}`])} set={n => { setNextSize(n); propose({ size: n }) }} />
+              <Seg label={t.size} value={nextSize} options={SIZES.map(n => [n, `${n}×${n}`])} set={resize} />
               <Seg label={t.opponent} value={settings.opponent} options={[['human', t.twoPlayers], ['ai', t.ai], ['ogs', 'OGS']]} set={v => set('opponent', v)} />
               {settings.opponent === 'ogs' ? (
                 <OgsSection speed={settings.ogsSpeed} setSpeed={v => set('ogsSpeed', v)}
