@@ -152,15 +152,23 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 /* caption under the board, in room of its own below .board-wrap (up to two lines), so it never covers the board and stays
    visible with the card hidden; ink on the card's colour, larger than the card's notes: it is what the player reads */
 .board-wrap { margin-bottom: 36px }
-.board-wrap > .note { position: absolute; left: calc(2 * var(--shift, 0px)); right: 0; top: 100%; min-height: 0; margin: 4px 0 0; text-align: center; pointer-events: none }
+.board-wrap > .note { position: absolute; left: calc(2 * var(--shift, 0px)); right: 0; top: 100%; min-height: 0; margin: 4px 0 0; text-align: center; pointer-events: none; container-type: inline-size }
 .board-wrap > .note > span {
-  display: inline-block; max-width: min(100%, 600px); padding: 5px 20px 7px; border-radius: 19px; background: var(--card);
+  display: inline-block; max-width: min(100%, 600px); padding: 5px 20px 0; border-bottom: 7px solid transparent; border-radius: 19px; background: var(--card);
   box-shadow: 0 4px 14px var(--shadow), 0 0 0 1px var(--rule); font-size: 18.5px; line-height: 1.25; color: var(--ink); text-wrap: balance;
-  max-height: calc(2.5em + 12px); overflow: hidden; /* shortcut: a third line is cut, not ellipsed (the full text is in the title); clamp if messages grow */
+  /* two lines at most: overflow clips at the padding box, and the bottom room is a border, so a third line never peeks in;
+     the full text is in the title */
+  max-height: calc(2.5em + 12px); overflow: hidden;
   pointer-events: auto; animation: fade .3s ease-out;
 }
 .board-wrap > .note .link { font: inherit; color: var(--accent); text-decoration-color: currentColor; white-space: nowrap; margin-left: .45em }
 .board-wrap > .note .link:hover { color: var(--accent-hover) }
+/* a narrow window beside the card: smaller type, and the links beside two lines of text at most, so they are never cut */
+@container (max-width: 460px) {
+  .board-wrap > .note > span { display: inline-flex; align-items: center; gap: .45em; font-size: 16.5px }
+  .board-wrap > .note .txt { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden }
+  .board-wrap > .note .link { margin-left: 0 }
+}
 .board-wrap > .note:focus { outline: none } /* a resting place for focus after a caption link, not a control */
 
 .lab { display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); padding-bottom: 11px; border-bottom: 1px solid var(--rule); margin-bottom: 10px }

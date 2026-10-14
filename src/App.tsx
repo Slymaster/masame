@@ -328,9 +328,9 @@ export function App() {
     scanRun, add: (...x) => ex.add(...x),
     done: (k, ms, r) => { // a job is always the player's own game
       const prev = note, ai = r && keepRank(k, r)
+      if (ai) setNextAi(ai) // the next game's level, whichever game the line shows
       if (!result || recordKey(game) !== k) return
       setNote(d => [prev?.(d), d.autoDone(ms.length, r ? rankName(r.all) : undefined)].filter(Boolean).join(' '))
-      if (ai) setNextAi(ai)
     },
     human: canPlayAI,
   })
@@ -648,7 +648,9 @@ export function App() {
     if (!bot || scored.current === game || botWon === null) return
     scored.current = game
     if (settings.autoAdjust && !bot.ritual) {
-      const next = adjustRank(bot.rank, botWon)
+      // a step toward 50 % wins, kept within BAND of the rank read in the player's moves (once there is one)
+      const step = adjustRank(bot.rank, botWon), local = localRank(ranksRef.current.p.games)
+      const next = local === null ? step : RANKS[anchored(RANKS.indexOf(step), local)]
       if (next !== bot.rank) { set('aiRank', next); setNextAi(next) }
     }
   }
