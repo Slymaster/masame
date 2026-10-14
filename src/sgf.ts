@@ -6,6 +6,9 @@ import { LocalizedError } from './i18n'
 
 import { version } from '../package.json'
 
+/** Characters; far beyond any game record. The Rust side caps the files the OS opens at the same figure, in bytes. */
+export const MAX_SGF = 5 * 1024 * 1024
+
 const vertices = (values: string[] = []) => values.filter(Boolean).flatMap(v => sgf.parseCompressedVertices(v))
 const signOf = (pl?: string): Sign | undefined => (pl === 'W' ? -1 : pl === 'B' ? 1 : undefined)
 

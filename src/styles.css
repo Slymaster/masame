@@ -325,3 +325,17 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 /* free analysis: the candidates, read-only rows */
 .jrow.an { cursor: default }
 .jrow.an:hover { background: none }
+
+/* opening files: while files are dragged over the window, a faint veil in a hairline frame (html[data-drop]) and a
+   caption on a card-like pill (body[data-drop], its text in the attribute) */
+html[data-drop]::before, html[data-drop]::after {
+  content: ""; position: fixed; inset: 10px; z-index: 100; pointer-events: none; border-radius: 16px;
+}
+html[data-drop]::before { background: var(--hover) }
+html[data-drop]::after { border: 1.5px solid var(--accent); opacity: .45 }
+body[data-drop]::after {
+  content: attr(data-drop); position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 101;
+  pointer-events: none; padding: 9px 22px 11px; border-radius: 999px; background: var(--card); white-space: nowrap;
+  box-shadow: 0 4px 14px var(--shadow), 0 0 0 1px var(--rule);
+  font-family: var(--f-title); font-style: italic; font-size: 20px; color: var(--ink);
+}

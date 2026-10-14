@@ -10,6 +10,7 @@
         "minWidth": 900,
         "minHeight": 640,
         "center": true,
+        "dragDropEnabled": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "backgroundColor": "#ECE4D6"

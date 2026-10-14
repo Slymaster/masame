@@ -264,6 +264,9 @@ export const en = {
   sgfBadSize: (sz: string | undefined) => `Unsupported board size: ${sz}`,
   sgfSetupOff: 'Handicap stone off the board',
   sgfMoveOff: (v: string) => `Move off the board: ${v}`,
+  // opening files: drops, the OS (double-click), the size cap
+  dropHint: 'Drop the game to open it',
+  sgfTooBig: 'Larger than 5 MB: not a game record',
   // networks sheet
   networks: 'Networks', close: 'Close', closeHint: 'Close (Esc)',
   humanRequired: 'The Human network is required to play against the AI. The others power analysis and territory.',
@@ -285,6 +288,8 @@ export const en = {
   creditsKataGo: 'KataGo', creditsMid: '© David J Wu — MIT license; networks under the', creditsLicense: 'KataGo Neural Network License',
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
+    open_too_big: 'Larger than 5 MB: not a game record.',
+    open_unreadable: 'The file can’t be read.',
     invalid_name: 'Invalid network name.',
     url_rejected: 'Download address rejected.',
     unknown_network: 'Unknown network.',
