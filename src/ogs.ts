@@ -117,7 +117,7 @@ const pauseOf = (control: object | undefined, since: number | undefined) =>
 type PauseControl = { paused?: { pausing_player_id?: number; pauses_left?: number }; moderator_paused?: unknown; [key: string]: unknown }
 // only a player's own pause may be resumed by a player; a moderator's overrides it
 const pauseFrom = (pc: PauseControl | undefined): Followed['pause'] =>
-  pc && Object.keys(pc).length ? { player: !!pc.paused && !('moderator_paused' in pc), by: pc.paused?.pausing_player_id, left: pc.paused?.pauses_left } : undefined
+  pc && Object.keys(pc).length ? { player: !!pc.paused && !('moderator_paused' in pc), moderator: 'moderator_paused' in pc, by: pc.paused?.pausing_player_id, left: pc.paused?.pauses_left } : undefined
 
 export type BoardSize = 9 | 13 | 19
 export type Speed = 'blitz' | 'rapid' | 'live' | 'correspondence'
@@ -236,7 +236,7 @@ export interface Followed {
   offset: number // OGS move numbers count free handicap stones, which game holds as setup
   placing: number // free handicap stones still to place
   pausedSince?: number // server ms while the game is paused: pass to clockOf
-  pause?: { player: boolean; by?: number; left?: number } // player: a player's pause, which either player may resume
+  pause?: { player: boolean; moderator: boolean; by?: number; left?: number } // player: a player's pause, which either player may resume
   pausesLeft?: number // mine, when OGS tells
   undo?: { by: number; move: number } // a pending request: the requester's id, the OGS move number
   competition: boolean // tournament, ladder, casual rengo: no cancel
@@ -260,7 +260,7 @@ export const canCancel = (s: Followed) => s.phase === 'play' && !s.competition &
 export const canRequestUndo = (s: Followed) => s.me !== 0 && s.phase === 'play' && !s.placing && !s.undo && !s.rengo && s.game.moves.at(-1)?.sign === s.me
 export const canAnswerUndo = (s: Followed, myId: number) => s.me !== 0 && s.phase === 'play' && !!s.undo && s.undo.by !== myId
 // the official usePauseControl: any phase but finished; a weekend, vacation or server pause does not block it
-export const canPause = (s: Followed) => s.me !== 0 && s.phase !== 'finished' && !s.noPause && !s.pause?.player && !s.placing && s.pausesLeft !== 0
+export const canPause = (s: Followed) => s.me !== 0 && s.phase !== 'finished' && !s.noPause && !s.pause?.player && !s.pause?.moderator && !s.placing && s.pausesLeft !== 0
 export const canResume = (s: Followed) => s.me !== 0 && !!s.pause?.player
 
 const player = (p: { id: number; username: string; rank?: number }): Player => ({ id: p.id, username: p.username, rank: rankLabel(p.rank) })

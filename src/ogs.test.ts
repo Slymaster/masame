@@ -303,8 +303,9 @@ describe('game controls', () => {
     expect([ogs.canPause(s), ogs.canResume(s)]).toEqual([false, true])
     expect(at(live, 116, { pause_control: { paused: { pausing_player_id: 1002, pauses_left: 2 } }, paused_since: since }).pausesLeft).toBe(2)
     s = at(live, 116, { pause_control: { paused: { pausing_player_id: 1001, pauses_left: 3 }, moderator_paused: { moderator_id: 9 } }, paused_since: since })
-    expect(s.pause!.player).toBe(false)
-    expect(ogs.canResume(s)).toBe(false)
+    expect(s.pause).toMatchObject({ player: false, moderator: true })
+    expect([ogs.canPause(s), ogs.canResume(s)]).toEqual([false, false]) // the official client offers nothing under a moderator's pause
+    expect([ogs.canPause(at(live, 116, { pause_control: { moderator_paused: { moderator_id: 9 } }, paused_since: since })), ogs.canResume(at(live, 116, { pause_control: { moderator_paused: { moderator_id: 9 } }, paused_since: since }))]).toEqual([false, false])
     for (const key of ['weekend', 'system', 'stone-removal', 'vacation-1001']) expect(at(live, 116, { pause_control: { [key]: true }, paused_since: since }).pause).toMatchObject({ player: false })
     s = at(live, 116, { pause_control: {}, pauses_left_1002: 0 })
     expect(s.pause).toBeUndefined()
