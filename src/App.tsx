@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { BoardView } from './board/BoardView'
+import { centreShift } from './board/frame'
 import type { Board3D, Board3DOptions, Board3DState, FallbackReason, TimeMode } from './board3d/Board3D'
 import { rng } from './board/noise'
 import { adjustRank, clampRank, decide, DEFAULT_RANK, humanProfile, stepRank } from './bot'
@@ -91,20 +92,26 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, child
       ro = new ResizeObserver(([e]) => fit(e.contentRect))
       ro.observe(wrap.current!)
     }
+    // --shift: how far right of .board-wrap's centre the board is drawn (centred on the window beside the card); the caption follows
+    const shift = (px: number) => wrap.current?.style.setProperty('--shift', `${px}px`)
     if (mode === '2d') {
       const b = new BoardView(canvas.current!, play)
-      mount(b, r => b.resize(Math.min(r.width, r.height)))
+      mount(b, () => {
+        const r = wrap.current!.getBoundingClientRect(), S = Math.min(r.width, r.height), l = r.left + (r.width - S) / 2
+        shift(centreShift(l, l + S, r.right, innerWidth / 2)) // before resize(), which snaps the canvas to the pixel grid
+        b.resize(S)
+      })
     } else {
       // three.js is a lazy chunk; until it boots the canvas stays empty and Board3D fades in on its first frame
       import('./board3d/Board3D').then(({ Board3D }) => {
         if (!live) return
-        const b = three.current = new Board3D(canvas.current!, play, { options: latest.current.options, onFallback: r => latest.current.onFallback(r) })
+        const b = three.current = new Board3D(canvas.current!, play, { options: latest.current.options, onFallback: r => latest.current.onFallback(r), onShift: shift })
         b.setThinking(latest.current.thinking)
         // full-bleed canvas (fixed, the whole window); the board stays framed in .board-wrap's rectangle
         mount(b, () => b.resize(innerWidth, innerHeight, wrap.current!.getBoundingClientRect()))
       }, () => live && latest.current.onFallback('webgl2'))
     }
-    return () => { live = false; ro?.disconnect(); v?.destroy(); view.current = three.current = null }
+    return () => { live = false; ro?.disconnect(); v?.destroy(); view.current = three.current = null; shift(0) }
   }, [mode, view])
   useEffect(() => { view.current?.update(state); if (import.meta.env.DEV) Object.assign(window, { __badukState: state }) })
   useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor]) // eslint-disable-line react-hooks/exhaustive-deps

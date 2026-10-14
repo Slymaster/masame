@@ -63,6 +63,7 @@ kbd { font-family: var(--f-ui); font-size: 10.5px; line-height: 1; border: 1px s
 .board-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; line-height: 0 }
 canvas { display: block; -webkit-tap-highlight-color: transparent }
 .board-wrap > canvas[data-r="3d"] { position: fixed; inset: 0 } /* the 3D scene runs full-bleed under the UI */
+.board-wrap > canvas[data-r="2d"] { position: relative; left: var(--shift, 0px) } /* --shift: see Goban */
 
 /* the floating card, top right: its own background, above the fixed 3D canvas; only the body scrolls */
 .card {
@@ -149,7 +150,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 
 .note { min-height: 2.9em; margin-top: 6px; font-family: var(--f-title); font-style: italic; font-size: 16px; line-height: 1.4; color: var(--muted) }
 /* caption under the board, in the stage's bottom padding: visible with the card hidden */
-.board-wrap > .note { position: absolute; left: 0; right: 0; bottom: -26px; min-height: 0; margin: 0; text-align: center; pointer-events: none }
+.board-wrap > .note { position: absolute; left: calc(2 * var(--shift, 0px)); right: 0; bottom: -26px; min-height: 0; margin: 0; text-align: center; pointer-events: none }
 .board-wrap > .note > span { display: inline-flex; gap: .3em; max-width: 100%; padding: 1px 14px; border-radius: 999px; background: var(--card); white-space: nowrap; pointer-events: auto; animation: fade .3s ease-out }
 /* one line, inside the stage's bottom padding, so it never covers the board; the full text is in the title */
 .board-wrap > .note .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis }

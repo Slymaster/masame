@@ -51,7 +51,7 @@ export const fr: Dict = {
   display: 'Affichage', coords: 'Coordonnées', sound: 'Son', territory: 'Ombre et lumière', language: 'Langue',
   rendering: 'Rendu', render3d: 'Atelier vivant (3D)', render2d: 'Léger (2D)',
   view: 'Regard', study: 'Étude', contemplation: 'Contemplation',
-  contemplationHint: 'Clic droit et glisser pour tourner, molette ou pincement pour zoomer, R ou double-clic hors du plateau pour recentrer',
+  contemplationHint: 'Clic droit et glisser pour tourner, avec Maj ou clic molette pour déplacer, molette ou pincement pour zoomer, R ou double-clic hors du plateau pour recentrer',
   light: 'Lumière', lights: { auto: 'Auto', morning: 'Matin', afternoon: 'Après-midi', evening: 'Soir' },
   highContrast: 'Contraste élevé',
   decor: 'Décor',

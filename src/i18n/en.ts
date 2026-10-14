@@ -50,7 +50,7 @@ export const en = {
   display: 'Display', coords: 'Coordinates', sound: 'Sound', territory: 'Light and shadow', language: 'Language',
   rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
   view: 'View', study: 'Study', contemplation: 'Contemplation',
-  contemplationHint: 'Right-drag to turn, scroll or pinch to zoom, R or double-click outside the board to recentre',
+  contemplationHint: 'Right-drag to turn, middle- or Shift+right-drag to move, scroll or pinch to zoom, R or double-click outside the board to recentre',
   light: 'Lighting', lights: { auto: 'Auto', morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' },
   highContrast: 'High contrast',
   decor: 'Decor',

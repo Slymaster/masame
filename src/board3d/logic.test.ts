@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, DROP_MS, dropPose, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panFor, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SX, SZ, silhouette, SLIDE_MS, stepOrbit, TOD, todAt, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
+import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, DROP_MS, dropPose, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panBy, panFor, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SX, SZ, silhouette, SLIDE_MS, stepOrbit, TOD, todAt, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -258,7 +258,7 @@ describe('seated camera', () => {
     expect(c.up.map(v => v + 0)).toEqual([0, 0, -1])
   })
 
-  it('clamps: eye above the board, target on it, zoom 1 = home', () => {
+  it('clamps: eye above the board, target on it', () => {
     const r = rng(5)
     for (let k = 0; k < 2000; k++) {
       const h = seatHeight(BW, BD, 0.4 + r() * 2.6)
@@ -267,9 +267,14 @@ describe('seated camera', () => {
       expect(Math.abs(o.tx)).toBeLessThanOrEqual(BW / 2 + 1e-9); expect(Math.abs(o.tz)).toBeLessThanOrEqual(BD / 2 + 1e-9)
       expect(Math.abs(o.yaw)).toBeLessThanOrEqual(60 * deg + 1e-9); expect(o.tilt).toBeGreaterThanOrEqual(5 * deg - 1e-9); expect(o.tilt).toBeLessThanOrEqual(58 * deg + 1e-9)
     }
-    expect(clampOrbit({ ...HOME, tx: 300, tz: -300 }, hc, BW, BD)).toEqual(HOME)
+    // zoom 1: a quarter of the board each way from home, no further
+    const far = clampOrbit({ ...HOME, tx: 300, tz: -300 }, hc, BW, BD), near = clampOrbit({ ...HOME, tx: -BW / 4, tz: HOME.tz + BD / 4 }, hc, BW, BD)
+    expect([far.tx, far.tz, far.zoom]).toEqual([BW / 4, HOME.tz - BD / 4, 1]); expect([near.tx, near.tz]).toEqual([-BW / 4, HOME.tz + BD / 4])
+    // fully zoomed in: the corners; zooming back out draws a corner target back to a quarter of the board
     const corner = clampOrbit({ ...HOME, zoom: 0, tx: 999, tz: 999 }, hc, BW, BD)
     expect(corner.zoom * hc).toBeCloseTo(140); expect(corner.tx).toBeCloseTo(BW / 2); expect(corner.tz).toBeCloseTo(BD / 2)
+    const out = clampOrbit({ ...corner, zoom: 1 }, hc, BW, BD)
+    expect(out.tx).toBeCloseTo(BW / 4); expect(out.tz).toBeCloseTo(HOME.tz + BD / 4)
   })
 
   it('zooms about the point under the cursor', () => {
@@ -279,6 +284,14 @@ describe('seated camera', () => {
       norm(sub(P, b.eye)).forEach((v, i) => expect(v).toBeCloseTo(da[i], 9))
       expect(b.dist).toBeCloseTo(a.dist * k)
     }
+  })
+
+  it('pans: the grabbed point stays under the cursor', () => {
+    const o: Orbit = { yaw: -0.5, tilt: 0.9, zoom: 0.6, tx: 20, tz: 40 }, A = [70, -6, -30], B = [-40, -6, 110]
+    // the ray from the panned eye towards A is the one the old eye had towards B: A shows where B was
+    const a = orbitEye(o, hc), b = orbitEye(panBy(o, A[0], A[2], B[0], B[2]), hc), dB = norm(sub(B, a.eye))
+    norm(sub(A, b.eye)).forEach((v, i) => expect(v).toBeCloseTo(dB[i], 9))
+    expect(b.dist).toBe(a.dist); expect(b.up).toEqual(a.up)
   })
 
   it('follows the goal, at once under reduced motion', () => {
@@ -293,7 +306,7 @@ describe('seated camera', () => {
   })
 
   it('tells a wheel from a trackpad', () => {
-    const w = (deltaY: number, o: Partial<{ deltaX: number; deltaMode: number; ctrlKey: boolean }> = {}) => ({ deltaX: 0, deltaMode: 0, ctrlKey: false, deltaY, ...o })
+    const w = (deltaY: number, o: Partial<{ deltaX: number; deltaMode: number; ctrlKey: boolean; shiftKey: boolean }> = {}) => ({ deltaX: 0, deltaMode: 0, ctrlKey: false, deltaY, ...o })
     // macOS mouse (WebKit/Chromium): notches of 4.000244 px, accelerated
     for (const d of [4.000244140625, -4.000244140625, 8.00048828125, 36.002197265625]) expect(wheelIntent(w(d), null, 1e9)).toBe('zoom')
     // Windows mouse (WebView2): 100 px per notch; Firefox: lines
@@ -305,6 +318,11 @@ describe('seated camera', () => {
     expect(wheelIntent(w(80), 'orbit', 16)).toBe('orbit'); expect(wheelIntent(w(80), 'orbit', 400)).toBe('zoom')
     // pinch (Chromium, WebView2, Firefox): ctrl+wheel, small fractional deltas, wins over a gesture in progress
     for (const d of [0.5, -1.25, 3]) expect(wheelIntent(w(d, { ctrlKey: true }), 'orbit', 16)).toBe('zoom')
+    // Shift turns a swipe into a pan, never a wheel notch or a pinch; a gesture keeps its verdict
+    for (const d of [1, 7, -3]) expect(wheelIntent(w(d, { shiftKey: true }), null, 1e9)).toBe('pan')
+    expect(wheelIntent(w(0, { deltaX: 4, shiftKey: true }), null, 1e9)).toBe('pan')
+    expect(wheelIntent(w(100, { shiftKey: true }), null, 1e9)).toBe('zoom'); expect(wheelIntent(w(2, { ctrlKey: true, shiftKey: true }), null, 1e9)).toBe('zoom')
+    expect(wheelIntent(w(3, { shiftKey: true }), 'orbit', 16)).toBe('orbit'); expect(wheelIntent(w(3), 'pan', 16)).toBe('pan')
     // WebKit pinches through gesture events only; Chromium, WebView2 and WebKitGTK through ctrl+wheel
     expect([skipPinchWheel(true, true), skipPinchWheel(true, false), skipPinchWheel(false, true)]).toEqual([true, false, false])
   })
