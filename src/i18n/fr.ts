@@ -81,7 +81,7 @@ export const fr: Dict = {
   updateDownloading: (p: number | null) => (p === null ? 'Téléchargement de la mise à jour…' : `Téléchargement de la mise à jour… ${f.pct(p)}`),
   updateInstalling: 'Installation de la mise à jour…',
   fullscreen: 'Plein écran', autoUpdate: 'Rechercher les mises à jour automatiquement',
-  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', exercises: 'exercices', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
+  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', exercises: 'exercices', today: 'aujourd’hui', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
   // barre de menus macOS (src-tauri/src/menu.rs)
   menu: {
     about: 'À propos de Masame', hide: 'Masquer Masame', hideOthers: 'Masquer les autres', showAll: 'Tout afficher', quit: 'Quitter Masame',
@@ -154,6 +154,16 @@ export const fr: Dict = {
   jProgrammeNote: 'Ton programme : les coins à apprendre en premier.',
   jProgrammeHelp: (rank: string) => `Classés selon la fréquence de chaque coin en ${rank} × les points qu’il y coûte.`,
   jMet: (n: number) => `environ 1 coin sur ${f.num(n)}`, jOpenFamily: (name: string) => `Explorer ${name}`,
+  // le rituel du jour
+  today: 'Aujourd’hui', tdIntro: 'Dix minutes par jour : tes exercices, quelques joseki, une partie rapide.',
+  tdSteps: { exercises: 'Exercices de tes parties', joseki: 'Joseki', game: 'Un 9×9 à ton niveau' },
+  tdGameAt: (rank: string) => `contre l’IA en ${rank}, sans handicap`,
+  tdLeft: (n: number) => `${f.num(n)} à faire`, tdDoneStep: 'fait', tdLoading: 'chargement…',
+  tdOff: { exercises: 'demande un réseau d’analyse', game: 'demande les réseaux de l’IA' },
+  tdStreak: (n: number) => f.plural(n, 'jour', 'jours'), tdStreakLab: 'Série',
+  tdStart: 'Commencer', tdContinue: 'Continuer', tdAllDone: 'Le rituel du jour est accompli. À demain.',
+  tdNothing: 'Rien à faire pour l’instant : installe un réseau d’analyse, ou travaille les joseki.',
+  ritualGo: 'Continuer le rituel', ritualDone: (n: number) => `Rituel du jour terminé · série de ${f.plural(n, 'jour', 'jours')}.`,
   // exercices tirés de tes parties (s : la couleur qui a commis l’erreur)
   exercises: 'Exercices',
   exNeedsNet: 'Installe un réseau d’analyse pour t’entraîner : KataGo vérifie chaque réponse.',
