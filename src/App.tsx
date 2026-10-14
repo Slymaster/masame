@@ -433,6 +433,7 @@ export function App() {
   // dialog: a match starting meanwhile would replace the game without the leave question; backing out leaves it cancelled
   // o: the daily ritual's game (always against the AI, at your level, even)
   const newGame = async (size = nextSize, o: { rank?: string; handicap?: number; ritual?: true } = {}) => {
+    if (o.ritual && !canPlayAI) return // never a two-player 9×9 in its place (the network state not known yet)
     abandon()
     if (!(await canLeave())) return
     resize(size)
