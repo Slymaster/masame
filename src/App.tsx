@@ -11,6 +11,7 @@ import { Networks } from './Networks'
 import { OgsSection } from './OgsSection'
 import { Clock } from './Clock'
 import { Seg } from './Seg'
+import { Switch } from './Switch'
 import * as ogs from './ogs'
 import { Sheet } from './Sheet'
 import { Icon } from './Icon'
@@ -56,7 +57,7 @@ function loadSettings(): Settings {
   return {
     ...s, lang: storedLang(j), langChosen: j.langChosen === true,
     opponent: (['human', 'ai', 'ogs'] as const).includes(s.opponent) ? s.opponent : 'ai',
-    ogsSpeed: (['blitz', 'rapid', 'live'] as const).includes(s.ogsSpeed) ? s.ogsSpeed : 'rapid', myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
+    ogsSpeed: (['blitz', 'rapid', 'live', 'correspondence'] as const).includes(s.ogsSpeed) ? s.ogsSpeed : 'rapid', myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: DECORS.includes(s.decor) ? s.decor : 'atelier', panelHidden: s.panelHidden === true, ...updateSettings(j),
@@ -128,15 +129,6 @@ const ogsSide = ({ info }: Game): Sign | 0 => !ogs.me ? 0 : info.playerBlack ===
 function useMsg() {
   const [m, set] = useState<Msg | null>(null)
   return [m, useCallback((v: Msg | null) => set(() => v), [])] as const
-}
-
-function Switch({ label, k, on, toggle, disabled, title }: { label: string; k?: string; on: boolean; toggle: () => void; disabled?: boolean; title?: string }) {
-  return (
-    <div className="row" onClick={disabled ? undefined : toggle} title={title}>
-      <span>{label} {k && <kbd>{k}</kbd>}</span>
-      <button className="switch" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={e => { e.stopPropagation(); toggle() }} />
-    </div>
-  )
 }
 
 function Stepper({ label, value, set }: { label: string; value: string; set: (v: string) => void }) {

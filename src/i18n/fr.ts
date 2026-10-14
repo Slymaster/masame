@@ -184,7 +184,7 @@ export const fr: Dict = {
   ogsSignInHelp: 'La connexion se fait dans ton navigateur ; Masame ne voit jamais ton mot de passe.',
   ogsSignIn: 'Se connecter à OGS', ogsWaiting: 'En attente du navigateur…',
   ogsSignedIn: (who: string) => `Connecté : ${who}`, ogsSignOut: 'Se déconnecter',
-  pace: 'Cadence', paces: { blitz: 'Blitz', rapid: 'Rapide', live: 'Live' },
+  pace: 'Cadence', paces: { blitz: 'Blitz', rapid: 'Rapide', live: 'Live', correspondence: 'Correspondance' },
   ogsFind: 'Chercher un adversaire',
   ogsGames: 'Mes parties OGS', ongoing: 'En cours', finished: 'Terminées', none: 'Aucune', ogsLoading: 'Chargement…',
   date: f.day,

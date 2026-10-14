@@ -183,7 +183,7 @@ export const en = {
   ogsSignInHelp: 'Sign-in happens in your browser; Masame never sees your password.',
   ogsSignIn: 'Sign in to OGS', ogsWaiting: 'Waiting for the browser…',
   ogsSignedIn: (who: string) => `Signed in: ${who}`, ogsSignOut: 'Sign out',
-  pace: 'Pace', paces: { blitz: 'Blitz', rapid: 'Rapid', live: 'Live' },
+  pace: 'Pace', paces: { blitz: 'Blitz', rapid: 'Rapid', live: 'Live', correspondence: 'Correspondence' },
   ogsFind: 'Find an opponent',
   ogsGames: 'My OGS games', ongoing: 'Ongoing', finished: 'Finished', none: 'None', ogsLoading: 'Loading…',
   date: f.day,
