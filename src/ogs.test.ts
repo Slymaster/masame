@@ -589,12 +589,12 @@ describe('session', () => {
   })
 
   it('lists finished games from my side', async () => {
-    expect(await ogs.finishedGames()).toEqual([{
+    expect((await ogs.history(1)).rows).toEqual([{
       id: 9, size: 19, color: -1, opponent: { id: 1001, username: 'them', rank: '3k' }, result: 'W+R', date: Date.parse('2026-10-12T22:42:02Z'),
     }])
-    expect(fetches[1]).toBe('https://online-go.com/api/v1/me/games/?ended__isnull=false&ordering=-ended&page_size=10 Bearer token')
+    expect(fetches[1]).toBe('https://online-go.com/api/v1/players/1002/game_history/?page_size=20&page=1&ordering=-ended Bearer token')
     lost = true // both sides marked lost: no winner to show
-    expect((await ogs.finishedGames())[0].result).toBe('?')
+    expect((await ogs.history(1)).rows[0].result).toBe('?')
   })
 
   it('sends cancel, undo and pause', async () => {
@@ -862,8 +862,11 @@ describe('session', () => {
     expect(await ogs.history(2)).toEqual({ rows: [], more: false })
     lost = false
     reply = () => undefined
-    expect((await ogs.history(3)).rows).toEqual(await ogs.finishedGames()) // the same rows as before
+    expect(await ogs.history(3)).toEqual({ rows: [expect.objectContaining({ id: 9, result: 'W+R' })], more: false })
     host.tsv = 'ended\trating\tdeviation\n1700000000\t1917\t60\n1600000000\t1500\t350'
-    expect(await ogs.ratingHistory()).toEqual([{ t: 1600000000_000, rank: ogs.rankOf(1500) }, { t: 1700000000_000, rank: ogs.rankOf(1917) }])
+    expect(await ogs.ratingHistory()).toEqual([
+      { t: 1600000000_000, rank: ogs.rankOf(1500), lo: ogs.rankOf(1150), hi: ogs.rankOf(1850) },
+      { t: 1700000000_000, rank: ogs.rankOf(1917), lo: ogs.rankOf(1857), hi: ogs.rankOf(1977) },
+    ])
   })
 })

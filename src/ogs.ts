@@ -787,18 +787,6 @@ const gameRow = (g: GameRestRow, myId: number): GameRow => ({
   result: g.ended ? resultOf({ outcome: g.outcome, winner: lostWinner(g) }).re : undefined,
 })
 
-// One endpoint for both lists (its filter is verified live); the ongoing rows carry no clock, so no "whose turn".
-const ONGOING = '/api/v1/me/games/?ended__isnull=true&ordering=-id&page_size=10'
-const FINISHED = '/api/v1/me/games/?ended__isnull=false&ordering=-ended&page_size=10'
-async function games(ended: boolean): Promise<GameRow[]> {
-  const { id: myId } = await mine()
-  const { results } = await json<{ results: GameRestRow[] }>(ended ? FINISHED : ONGOING)
-  return results.map(g => gameRow(g, myId))
-}
-/** @deprecated the `active` store and history() replace them. */
-export const activeGames = () => games(false)
-export const finishedGames = () => games(true)
-
 /** My finished games, newest first, 20 a page (from 1). */
 export async function history(page: number): Promise<{ rows: GameRow[]; more: boolean }> {
   const { id } = await mine()
@@ -806,10 +794,11 @@ export async function history(page: number): Promise<{ rows: GameRow[]; more: bo
   return { rows: r.results.map(g => gameRow(g, id)), more: !!r.next }
 }
 
-/** My rating over time, as ranking floats for rankLabel. */
-export async function ratingHistory(): Promise<{ t: number; rank: number }[]> {
+/** My rating over time, as ranking floats for rankLabel; lo and hi: the rating ± its deviation. */
+export async function ratingHistory(): Promise<{ t: number; rank: number; lo: number; hi: number }[]> {
   const { id } = await mine()
-  return ratingPoints(await call<string>('ogs_rating_history', { playerId: id })).map(p => ({ t: p.t, rank: rankOf(p.rating) }))
+  return ratingPoints(await call<string>('ogs_rating_history', { playerId: id }))
+    .map(p => ({ t: p.t, rank: rankOf(p.rating), lo: rankOf(p.rating - p.deviation), hi: rankOf(p.rating + p.deviation) }))
 }
 
 export const sgf = async (id: number) => (await rest(`/api/v1/games/${id}/sgf`, { anon: true })).text()
