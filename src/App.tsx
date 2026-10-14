@@ -368,6 +368,8 @@ export function App() {
     // free handicap placement: OGS echoes each stone back as a reload with the new setup
     if (online?.placing) { if (v && humanTurn) send(() => ogs.move(online.id, v)); return false }
     if (locked || !humanTurn) return false
+    // a move after the flag fell (the timer late, after a sleep) is no move: the loss on time first
+    if (clock?.turn && !result && clock.turn !== bot?.sign && timeUp(clock, clock.turn, Date.now())) { loseOnTime(clock.turn); return false }
     const r = game.play(v)
     if (r === 'ok' && online) { changed(); if (!send(() => ogs.move(online.id, v))) game.undo() } // optimistic: OGS echoes it back
     else if (r === 'ok') { setDirty(true); setCounting(null); changed() }
@@ -631,14 +633,14 @@ export function App() {
   const clockTurn = result || panel || tail.length === 2 && tail.every(m => !m.vertex) ? null : endTurn
   useEffect(() => { if (clock) { const c = sync(clock, clockTurn, Date.now()); if (c !== clock) setClock(c) } })
   // a human side out of time loses (checked late too, after a sleep); the bot's clock runs but it never loses on time
+  const loseOnTime = (s: Sign) => finish(d => d.losesOnTime(s), bot ? true : null, timeResult(-s as Sign))
   useEffect(() => {
     if (!clock || clock.turn === null || result) return
-    const lose = (s: Sign) => finish(d => d.losesOnTime(s), bot ? true : null, timeResult(-s as Sign))
     const late = ([1, -1] as const).find(s => s !== bot?.sign && timeUp(clock, s, Date.now()))
-    if (late) return lose(late)
+    if (late) return loseOnTime(late)
     const s = clock.turn
     if (s === bot?.sign) return
-    const id = setTimeout(() => lose(s), flagAt(clock)! - Date.now())
+    const id = setTimeout(() => loseOnTime(s), flagAt(clock)! - Date.now())
     return () => clearTimeout(id)
   }, [clock, result]) // eslint-disable-line react-hooks/exhaustive-deps
   const final = countingNow && score(game.board.signMap, countingNow.dead, { black: game.board.getCaptures(1), white: game.board.getCaptures(-1) }, game.info.komi, countingNow.own)
