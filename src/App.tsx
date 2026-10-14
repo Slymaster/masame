@@ -844,7 +844,7 @@ export function App() {
     : !playing ? ''
     : toPlay === s ? bot?.sign === s ? thinking ? t.thinking : t.waiting : online && online.me !== s ? t.thinking : t.yourMove
     : t.waiting
-  const gameHint = challengeRows.some(c => !c.mine) ? t.ogsChallengeHint : activeRows?.some(r => r.myTurn && r.corr) ? t.ogsTurnHint : null
+  const gameHint = challengeRows.some(c => !c.mine) ? t.ogsDotChallenge : activeRows?.some(r => r.myTurn && r.corr) ? t.ogsDotTurn : null
   const gameLabel = gameHint ? `${t.game} · ${gameHint}` : t.game
   const alert = upd.s === 'available' ? t.updateAvailable(upd.version) : engine.state === 'error' ? failureText(engine.error) : null
   const closeSheet = () => setSheet(null)
