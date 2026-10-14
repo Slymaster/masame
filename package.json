@@ -18,7 +18,7 @@
     "@tauri-apps/api": "^2.12.3",
     "@tauri-apps/plugin-dialog": "^2.8.2",
     "@tauri-apps/plugin-fs": "^2.7.0",
-    "@tauri-apps/plugin-notification": "^2.6.0",
+    "@tauri-apps/plugin-notification": "2.5.1",
     "goban-engine": "8.3.226",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
