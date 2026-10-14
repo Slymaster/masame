@@ -198,9 +198,9 @@ export const en = {
   exReset: 'Delete the exercises', exResetAsk: 'Delete all your exercises and their statistics?',
   exReadOnly: 'These exercises were saved by a newer Masame: practice here won’t be recorded.',
   // automatic review
-  autoDone: (n: number, rank?: string) => rank ? `You played like ${aRank(rank)} · ${n ? `${f.plural(n, 'key moment', 'key moments')} for your exercises` : 'no decisive moment'}.`
+  autoDone: (n: number, rank?: string) => rank ? `You played like ${aRank(rank).replace(' ', '\u00a0')}\u00a0· ${n ? `${f.plural(n, 'key moment', 'key moments').replace(' ', '\u00a0')} for your exercises` : 'no decisive moment'}.`
     : `Review done: ${n ? `${f.plural(n, 'key moment joins', 'key moments join')} your exercises` : 'no decisive moment'}.`,
-  aiNext: (r: string) => `AI moves to ${r}.`,
+  aiNext: (r: string) => `AI moves to\u00a0${r}.`,
   autoPending: (n: number) => `Automatic review: ${f.plural(n, 'game', 'games')} waiting`,
   autoRunning: (pct: number) => `Automatic review: in progress… ${f.pct(pct)}`,
   // your rank, read in your moves
