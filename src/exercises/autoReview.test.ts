@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { Game, type Sign, type Vertex } from '../game'
 import type { Analysis } from '../katago'
 import { loadSgf, saveSgf } from '../sgf'
-import { CAP, eligible, enqueue, leadsOf, loadQueue, MAX_FAILS, newAuto, nextJob, QUEUE_KEY, RETRY_MS, reviewed, runJob, saveQueue, type Job } from './autoReview'
+import { CAP, eligible, enqueue, leadsOf, ranksOf, loadQueue, MAX_FAILS, newAuto, nextJob, QUEUE_KEY, RETRY_MS, reviewed, runJob, saveQueue, type Job } from './autoReview'
 import { addReview, emptyDeck, recordKey } from './deck'
+import { PROFILES } from '../rank'
 
 const mem = (init: Record<string, string> = {}) => {
   const m = new Map(Object.entries(init))
@@ -64,7 +65,10 @@ describe('a background run', () => {
     asked.push(g.moves.length)
     if (fail()) throw new Error('engine down')
     void q
-    return { scoreLead: leadAt(g.moves.length), pv: [[8, 8], [7, 7]], ownership: null } as unknown as Analysis
+    // the human policy favours the played move under rank_5k
+    const p = (q as { overrideSettings?: { humanSLProfile?: string } }).overrideSettings?.humanSLProfile
+    const humanPolicy = p && Array.from({ length: 82 }, () => (p === 'rank_5k' ? 0.5 : 0.1))
+    return { scoreLead: leadAt(g.moves.length), pv: [[8, 8], [7, 7]], ownership: null, humanPolicy } as unknown as Analysis
   }
   const setup = () => {
     const a = newAuto([]); a.queue = enqueue(a, game(12), 1, 0)
@@ -103,5 +107,24 @@ describe('a background run', () => {
       expect(a.wait).toBeGreaterThanOrEqual(t0 + RETRY_MS)
     }
     expect([a.queue, added.length]).toEqual([[j], 0])
+  })
+  it('reads the rank after the moments, reports it, then drops the job', async () => {
+    const { a, j, added, add } = setup(), asked: number[] = [], got: unknown[] = []
+    const ms = await runJob(a, j, fake(asked), () => true, () => {}, add, r => got.push(r))
+    expect(Array.isArray(ms)).toBe(true)
+    expect(got).toEqual([{ all: 15, n: 6, phases: [null, null, null] }]) // Black's 6 moves, all read as 5k
+    expect(asked.length).toBe(13 + 2 + 6 * PROFILES.length) // the scan, one deep pair, the rank
+    expect([added.length, a.queue, a.ranks.size, a.read.size]).toEqual([1, [], 0, 0])
+  })
+  it('keeps a job interrupted while ranking, and resumes without reading the moments again', async () => {
+    const { a, j, added, add } = setup(), asked: number[] = [], got: unknown[] = []
+    let n = 0
+    expect(await runJob(a, j, fake(asked), () => n++ < 30, () => {}, add, r => got.push(r))).toBe('paused')
+    expect([added.length, got.length, a.queue.length]).toEqual([1, 0, 1])
+    const known = ranksOf(a, j.k).size
+    expect(known).toBeGreaterThan(0)
+    asked.length = 0
+    expect(Array.isArray(await runJob(a, j, fake(asked), () => true, () => {}, add, r => got.push(r)))).toBe(true)
+    expect([asked.length, added.length, got.length, a.queue.length]).toEqual([6 * PROFILES.length - known, 1, 1, 0])
   })
 })

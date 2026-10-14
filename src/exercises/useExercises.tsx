@@ -10,25 +10,30 @@ import { Icon } from '../Icon'
 import { review } from '../joseki/fsrs'
 import { record } from '../joseki/store'
 import { gtp, type Analysis } from '../katago'
+import { curve, localRank, phaseRanks, rankName, WINDOW, type Read } from '../rank'
+import { RankChart } from '../RankChart'
 import type { Moment } from '../review'
 import { deckStep } from '../today/ritual'
 import { addReview, counts, emptyDeck, gapOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save, verdictOf, whereLost, type Exercise, type StoredDeck } from './deck'
 
 const REPLAY_MS = 650
 const PHASES = ['opening', 'middle', 'endgame'] as const
+/** « Ouverture 4k · Milieu de partie 7k · Fin de partie 12k », phases without a rank left out. */
+export const phaseLine = (ps: (number | null)[]) => ps.flatMap((x, i) => (x === null ? [] : [`${t.exPhases[PHASES[i]]} ${rankName(x)}`])).join(' · ')
 type Link = [string, string, () => void]
 type Line = (Vertex | null)[]
 interface Run { k: string; tried: Vertex | null; gap: number | null; shown: Line; more: Line; line: 'better' | 'punish' | null; error: unknown }
 /** The exercise's position, then `line` played with rule checks. */
 const after = (x: Exercise, line: Line) => { const g = positionOf(x); return g.branch(g.moves.length, line) }
 
-export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, setThinking, autoLine }: {
+export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, setThinking, autoLine, ranks }: {
   view: RefObject<{ drop(v: Vertex, c: Sign): void; pass?(c: Sign): void } | null>
   open: boolean; setOpen: (o: boolean) => void; blocked: boolean
   canAnalyze: boolean // an analysis network is active (KataGo grades each answer)
   ask: (g: Game) => Promise<Analysis> // KataGo's view of a position; App serialises the queries
   setThinking: (on: boolean) => void // App's "thinking" (board animation, engine-start captions)
   autoLine: string | null // the automatic review's state, while games wait
+  ranks: Read[] // the player's rank read in each reviewed game (src/rank.ts), oldest first
 }) {
   const [store, setStore] = useState<StoredDeck>(load)
   const loaded = useRef(store)
@@ -146,6 +151,13 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
         </>}
         <p className="quiet">{PHASES.flatMap((name, j) => (head && j === i ? [] : [`${t.exPhases[name]} ${t.exLost(where[j])}`])).join(' · ')}</p>
         <p className="quiet">{t.exWhereHelp(n)}</p>
+      </>}
+      {ranks.length > 0 && <>
+        <div className="lab"><span>{t.rankLab}</span><span /></div>
+        <p className="state">{rankName(localRank(ranks)!)}</p>
+        <p className="quiet">{phaseLine(phaseRanks(ranks))}</p>
+        <RankChart points={curve(ranks)} label={(a, b) => t.rankChartLabel(a, b, ranks.length)} width={308} />
+        <p className="quiet">{t.rankHelp(Math.min(WINDOW, ranks.length))}</p>
       </>}
       <p className="quiet"><button className="link" onClick={resetAll} disabled={store.readOnly}>{t.exReset}</button></p>
     </section>

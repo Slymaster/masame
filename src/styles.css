@@ -353,3 +353,8 @@ body[data-drop]::after {
 .td-rail span { font-size: 12px; color: var(--muted) }
 .td-rail .done b { color: var(--muted) }
 .td-rail .off { opacity: .5 }
+
+/* ---------- your rank, read in your moves ---------- */
+.rv-rank { display: flex; flex-direction: column; gap: 2px }
+.rv-rank .estimate { color: var(--ink) }
+.ex .rc-now { stroke: var(--card) }

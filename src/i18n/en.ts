@@ -201,6 +201,14 @@ export const en = {
   autoDone: (n: number) => (n ? `Review done: ${f.plural(n, 'key moment joins', 'key moments join')} your exercises.` : 'Review done: no decisive moment.'),
   autoPending: (n: number) => `Automatic review: ${f.plural(n, 'game', 'games')} waiting`,
   autoRunning: (pct: number) => `Automatic review: in progress… ${f.pct(pct)}`,
+  // your rank, read in your moves
+  rankReading: (s: number) => (s ? `Reading ${color(s)}’s rank…` : 'Reading your rank…'),
+  rankPlayed: (s: number, r: string) => `${s ? `${color(s)} played` : 'You played'} like ${/^(8|11|18)\D/.test(r) ? 'an' : 'a'} ${r}`,
+  rankSet: (me: string | null, ai: string | null) => [me && `Your level: ${me}, read in your moves.`, ai && `AI level: ${ai}.`].filter(Boolean).join(' '),
+  autoAdjustHelp: 'The AI goes up a rank when it loses and down when it wins; your level follows the rank read in your moves, and the AI stays within 2 ranks of it.',
+  rankLab: 'Your rank',
+  rankHelp: (n: number) => `Read in your moves by KataGo’s human network, over your last ${n === 1 ? 'game' : `${f.num(n)} games`}.`,
+  rankChartLabel: (from: string, to: string, n: number) => `Your rank read in your moves: from ${from} to ${to} over ${f.plural(n, 'game', 'games')}`,
   // OGS (online-go.com)
   // OGS sheet: tabs, play, my games, watch
   ogsTabs: { play: 'Play', games: 'My games', watch: 'Watch' }, ogsTabsLabel: 'OGS',
