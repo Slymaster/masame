@@ -2,15 +2,17 @@
 // the exercises. Pure: the queue (persisted like the deck) and one run of a job, which drives readGame through `ask`.
 import type { Game, Sign } from '../game'
 import type { Analysis } from '../katago'
+import { readRank, type Reading } from '../rank'
 import { readGame, reviewEnd, type Moment } from '../review'
 import { loadSgf, saveSgf } from '../sgf'
 import { recordKey } from './deck'
 
 /** A game waiting for its review: the record as SGF (a snapshot: the shown game may grow variations), the player's side. */
 export interface Job { k: string; sgf: string; side: Sign; t: number }
-/** The session's memory: scan leads per record key (shared with the foreground review), failures per job, keys reviewed,
- * and when the engine may be tried again after a failure (ms). */
-export interface Auto { queue: Job[]; leads: Map<string, (number | undefined)[]>; fails: Map<string, number>; reviewed: Set<string>; wait: number }
+/** The session's memory: scan leads and rank probabilities per record key (shared with the foreground review), the moments
+ * of jobs read but not yet ranked, failures per job, keys reviewed, and when the engine may be tried again after a failure (ms). */
+export interface Auto { queue: Job[]; leads: Map<string, (number | undefined)[]>; ranks: Map<string, Map<string, number>>; read: Map<string, Moment[]>
+  fails: Map<string, number>; reviewed: Set<string>; wait: number }
 export const QUEUE_KEY = 'masame.reviewQueue', CAP = 20, MIN_MOVES = 10, MAX_FAILS = 3, RETRY_MS = 60_000
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem'>
 
@@ -29,32 +31,45 @@ export function enqueue(a: Auto, game: Game, side: Sign | 0, now: number): Job[]
 
 /** The oldest job that has not failed too often this session; none for RETRY_MS after a failure. */
 export const nextJob = (a: Auto, now: number) => (now < a.wait ? undefined : a.queue.find(j => (a.fails.get(j.k) ?? 0) < MAX_FAILS))
-export const newAuto = (queue: Job[]): Auto => ({ queue, leads: new Map(), fails: new Map(), reviewed: new Set(), wait: 0 })
+export const newAuto = (queue: Job[]): Auto => ({ queue, leads: new Map(), ranks: new Map(), read: new Map(), fails: new Map(), reviewed: new Set(), wait: 0 })
 
 /** A record reviewed (in the background or by the player): its job goes, and it is not queued again this session. */
-export function reviewed(a: Auto, k: string) { a.reviewed.add(k); a.queue = a.queue.filter(j => j.k !== k) }
+export function reviewed(a: Auto, k: string) { a.reviewed.add(k); a.queue = a.queue.filter(j => j.k !== k); a.read.delete(k); a.ranks.delete(k) }
 
 export function leadsOf(a: Auto, k: string) {
   let l = a.leads.get(k)
   if (!l) a.leads.set(k, l = [])
   return l
 }
+export function ranksOf(a: Auto, k: string) {
+  let r = a.ranks.get(k)
+  if (!r) a.ranks.set(k, r = new Map())
+  return r
+}
 
 /**
- * Reads a job until `live` turns false: its moments once complete (added, the job dropped), 'paused' when interrupted
- * (the job stays; the cached leads let it resume), 'failed' on an engine error (counted toward MAX_FAILS).
+ * Reads a job until `live` turns false: its moments (added once), then, given `rank`, the player's rank (reported); once
+ * complete the job is dropped. 'paused' when interrupted (the job stays; the cached leads, moments and probabilities let it
+ * resume), 'failed' on an engine error (counted toward MAX_FAILS).
  */
 export async function runJob(a: Auto, j: Job, ask: (g: Game, q: object) => Promise<Analysis>, live: () => boolean,
-  progress: (pct: number) => void, add: (g: Game, ms: Moment[], leads: (number | undefined)[], side: Sign) => void): Promise<Moment[] | 'paused' | 'failed'> {
+  progress: (pct: number) => void, add: (g: Game, ms: Moment[], leads: (number | undefined)[], side: Sign) => void,
+  rank?: (r: Reading | null) => void): Promise<Moment[] | 'paused' | 'failed'> {
   const game = loadSgf(j.sgf), leads = leadsOf(a, j.k)
-  let ms: Moment[]
-  try { ms = await readGame(game, j.side, leads, (at, q) => ask(game.branch(at), q), live, progress) } catch (e) {
+  let ms = a.read.get(j.k), r: Reading | null = null
+  try {
+    if (!ms) {
+      ms = await readGame(game, j.side, leads, (at, q) => ask(game.branch(at), q), live, progress)
+      if (!live()) return 'paused'
+      add(game, ms, leads, j.side); a.read.set(j.k, ms)
+    }
+    if (rank) { r = await readRank(game, j.side, ranksOf(a, j.k), ask, live); if (!live()) return 'paused' }
+  } catch (e) {
     console.error('automatic review', e)
     a.fails.set(j.k, (a.fails.get(j.k) ?? 0) + 1); a.wait = Date.now() + RETRY_MS
     return 'failed'
   }
-  if (!live()) return 'paused'
-  add(game, ms, leads, j.side)
+  rank?.(r)
   reviewed(a, j.k)
   return ms
 }

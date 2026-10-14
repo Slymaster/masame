@@ -94,7 +94,6 @@ export const fr: Dict = {
   resigns: (loser: number) => `${color(loser)} abandonne. ${color(-loser)} gagne.`,
   botFailed: (m: string) => `L’IA n’arrive pas à jouer pour l’instant. ${m}`,
   retry: 'Réessayer',
-  rankAdjusted: (r: string) => `Niveau de l’IA ajusté : ${r} pour la prochaine partie.`,
   humanSilent: 'Le réseau Humain ne répond pas. Vérifie qu’il est installé.',
   badAnswer: 'Réponse de KataGo illisible.',
   // handicap and the local clock
@@ -199,9 +198,18 @@ export const fr: Dict = {
   exReset: 'Effacer les exercices', exResetAsk: 'Effacer tous tes exercices et leurs statistiques ?',
   exReadOnly: 'Ces exercices viennent d’une version plus récente de Masame : l’entraînement ici ne sera pas enregistré.',
   // revue automatique
-  autoDone: (n: number) => (n ? `Revue faite : ${f.plural(n, 'moment rejoint', 'moments rejoignent')} tes exercices.` : 'Revue faite : aucun moment décisif.'),
+  autoDone: (n: number, rank?: string) => rank ? `Tu as joué comme un ${rank} · ${n ? `${f.plural(n, 'moment', 'moments')} pour tes exercices` : 'aucun moment décisif'}.`
+    : `Revue faite : ${n ? `${f.plural(n, 'moment rejoint', 'moments rejoignent')} tes exercices` : 'aucun moment décisif'}.`,
+  aiNext: (r: string) => `L’IA passe à ${r}.`,
   autoPending: (n: number) => `Revue automatique : ${f.plural(n, 'partie', 'parties')} en attente`,
   autoRunning: (pct: number) => `Revue automatique : en cours… ${f.pct(pct)}`,
+  // ton rang, lu dans tes coups
+  rankReading: (s: number) => (s ? `Lecture du rang de ${color(s)}…` : 'Lecture de ton rang…'),
+  rankPlayed: (s: number, r: string) => `${s ? `${color(s)} a joué` : 'Tu as joué'} comme un ${r}`,
+  autoAdjustHelp: 'L’IA monte d’un rang quand elle perd et descend quand elle gagne ; ton niveau suit le rang lu dans tes coups, et l’IA reste à 2 rangs au plus de lui.',
+  rankLab: 'Ton rang',
+  rankHelp: (n: number, follows: boolean) => `Lu dans tes coups par le réseau humain de KataGo, à l’échelle des niveaux de l’IA, sur ${n === 1 ? 'ta dernière partie' : `tes ${f.num(n)} dernières parties`}${follows ? ' ; ton niveau le suit' : ''}.`,
+  rankChartLabel: (from: string, to: string, n: number) => `Ton rang lu dans tes coups : de ${from} à ${to} sur ${f.plural(n, 'partie', 'parties')}`,
   // OGS (online-go.com)
   // OGS sheet: tabs, play, my games, watch
   ogsTabs: { play: 'Jouer', games: 'Mes parties', watch: 'Regarder' }, ogsTabsLabel: 'OGS',

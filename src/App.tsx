@@ -3,7 +3,7 @@ import { BoardView } from './board/BoardView'
 import { centreShift } from './board/frame'
 import type { Board3D, Board3DOptions, Board3DState, FallbackReason, TimeMode } from './board3d/Board3D'
 import { rng } from './board/noise'
-import { adjustRank, clampRank, decide, DEFAULT_RANK, humanProfile, stepRank } from './bot'
+import { adjustRank, clampRank, decide, DEFAULT_RANK, humanProfile, RANKS, stepRank } from './bot'
 import { askFirst, confirmDiscard, openSgfFile, savePngFile, saveSgfFile } from './files'
 import { Game, type GameNode, type Move, type Sign, type Vertex } from './game'
 import { analyze, call, candidates, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
@@ -30,7 +30,8 @@ import { getVersion } from '@tauri-apps/api/app'
 import { checkDue, updateSettings, type UpdateInfo } from './update'
 import { fromOf, gradeTry, lessonBoard, readGame, REPLY, verdict, type Moment, type Step } from './review'
 import { useJoseki } from './joseki/useJoseki'
-import { useExercises } from './exercises/useExercises'
+import { phaseLine, useExercises } from './exercises/useExercises'
+import { anchored, loadRanks, localRank, rankName, readRank, saveRanks, withReading, type Reading } from './rank'
 import { useAutoReview } from './exercises/useAutoReview'
 import { recordKey } from './exercises/deck'
 import { tone } from './joseki/practice'
@@ -224,7 +225,7 @@ export function App() {
   const [own, setOwn] = useState<{ game: Game; data: number[] | null; score: number } | null>(null)
   // game review: null = off; moments null while reading; branch = the lesson's variation (null while reading or clean)
   const [review, setReview] = useState<{ side: Sign | 0; pct: number; error: unknown; moments: Moment[] | null; k: number; step: Step
-    branch: Game | null; ask: GameNode | null; gap: number | null; explored: boolean } | null>(null)
+    branch: Game | null; ask: GameNode | null; gap: number | null; explored: boolean; rank?: Reading | null } | null>(null) // rank: undefined while read
   const [reviewTry, retryReview] = useReducer((x: number) => x + 1, 0)
   const scan = useRef<{ last: Game['board']; leads: (number | undefined)[] } | null>(null) // scan leads of the record ending on `last`
   const scanRun = useRef<Promise<unknown>>(Promise.resolve()) // the last readGame or answer: the next one starts once it settles (2 queries at most)
@@ -305,11 +306,33 @@ export function App() {
   const [held, setHeld] = useState(false) // A held: free analysis of the shown position
   // the automatic review reads only when nothing else wants the engine, nor a local game the player's attention
   const playingLocal = !result && (!!bot || dirty)
+  // the player's rank read in their moves (src/rank.ts); with "Auto-adjust", it sets their level and anchors the AI's
+  const [ranks, setRanks] = useState(loadRanks)
+  const ranksRef = useRef(ranks) // the latest store, so two readings completing close together both count
+  // the AI level the next game will use, announced on the shown game's result line (finish()'s nudge, then the rank's anchoring)
+  const [nextAi, setNextAi] = useState<string | null>(null)
+  /** Stores a reading of the player's own moves; with "Auto-adjust", their level and the AI's follow. The AI level, when it changed. */
+  const keepRank = (k: string, r: Reading): string | null => {
+    const s = ranksRef.current = { ...ranksRef.current, p: withReading(ranksRef.current.p, k, r, Date.now()) }, local = localRank(s.p.games)!
+    setRanks(s); saveRanks(s)
+    if (!settings.autoAdjust) return null
+    const me = rankName(local), ai = RANKS[anchored(RANKS.indexOf(settings.aiRank), local)]
+    if (me !== settings.myRank || ai !== settings.aiRank) setSettings(x => ({ ...x, myRank: me, aiRank: ai }))
+    return ai !== settings.aiRank ? ai : null
+  }
+  const keep = useRef(keepRank)
+  keep.current = keepRank
   const ar = useAutoReview({
     free: canAnalyze && engine.state !== 'error' && !thinking && !review && !panel && !ongoing && !joining && !playingLocal && !auto && !held,
     ask: (g, q) => analyze(g, { ...q, priority: -1 }), // KataGo serves higher priorities first: the bot, the trainers jump the queue
     scanRun, add: (...x) => ex.add(...x),
-    done: (k, ms) => { const prev = note; if (result && recordKey(game) === k) setNote(d => [prev?.(d), d.autoDone(ms.length)].filter(Boolean).join(' ')) },
+    done: (k, ms, r) => { // a job is always the player's own game
+      const prev = note, ai = r && keepRank(k, r)
+      if (!result || recordKey(game) !== k) return
+      setNote(d => [prev?.(d), d.autoDone(ms.length, r ? rankName(r.all) : undefined)].filter(Boolean).join(' '))
+      if (ai) setNextAi(ai)
+    },
+    human: canPlayAI,
   })
   const jt = useJoseki({
     view, open: panel === 'joseki', preload: panel === 'today', setOpen: o => setPanel(p => (o ? 'joseki' : p === 'joseki' ? null : p)),
@@ -317,7 +340,7 @@ export function App() {
   })
   const ex = useExercises({
     view, open: panel === 'exercises', setOpen: o => setPanel(p => (o ? 'exercises' : p === 'exercises' ? null : p)), blocked: ongoing || !!review, canAnalyze, setThinking,
-    autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null,
+    autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null, ranks: ranks.p.games, follows: settings.autoAdjust,
     ask: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, REPLY)); scanRun.current = run; return run },
   })
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
@@ -423,7 +446,7 @@ export function App() {
   const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null); setJoining(false) }
   const start = (g: Game, b: typeof bot) => { abandon(); stopOnline(); show(g, b) }
   const show = (g: Game, b: typeof bot) => {
-    setGame(g); setBot(b); setNote(null); setStarted(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); setClock(null)
+    setGame(g); setBot(b); setNote(null); setStarted(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); setClock(null); setNextAi(null)
   }
   /** Leaving the shown game: an unfinished OGS game goes on without us; unsaved moves are lost. */
   // only a live game I play goes on with my clock running; spectated and correspondence games are left silently
@@ -626,7 +649,7 @@ export function App() {
     scored.current = game
     if (settings.autoAdjust && !bot.ritual) {
       const next = adjustRank(bot.rank, botWon)
-      if (next !== bot.rank) { set('aiRank', next); setNote(d => d.rankAdjusted(next)) }
+      if (next !== bot.rank) { set('aiRank', next); setNextAi(next) }
     }
   }
   const cancellable = !!myGame && ogs.canCancel(myGame) // early in the game: cancelled instead, not counted
@@ -751,9 +774,30 @@ export function App() {
     const run = scanRun.current.catch(() => {}).then(() => readGame(game, review.side, leads,
       (at, q) => analyze(game.branch(at), q as Record<string, unknown>), () => live, pct => live && setReview(x => x && { ...x, pct })))
     scanRun.current = run
-    run.then(ms => { if (live) { ex.add(game, ms, leads, mine || review.side); ar.reviewed(game); openMoment(0, 'try', ms) } }, e => live && setReview(x => x && { ...x, error: e }))
+    run.then(ms => {
+      if (!live) return
+      ex.add(game, ms, leads, mine || review.side)
+      if (!canPlayAI || !review.side || review.side !== mine) ar.reviewed(game) // else once the rank is read too
+      openMoment(0, 'try', ms)
+    }, e => live && setReview(x => x && { ...x, error: e }))
     return () => { live = false }
   }, [reading, review?.side, game, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The reviewed side's rank, once the moments are in: not behind scanRun (the lessons' answers don't wait for its many
+  // tiny queries), at a lower priority than them; stored only for the player's own side
+  const rankSide = review?.moments && review.side && canPlayAI ? review.side : 0
+  useEffect(() => {
+    if (!rankSide) return
+    let live = true
+    readRank(game, rankSide, ar.ranksOf(game), (g, q) => analyze(g, { ...q, priority: -1 }), () => live).then(r => {
+      if (!live) return
+      setReview(x => x && { ...x, rank: r })
+      if (rankSide !== mine) return
+      const ai = r && keep.current(recordKey(game), r) // no note: it would replace the lesson's caption
+      if (ai) setNextAi(ai)
+      ar.reviewed(game)
+    }, e => { if (live) { console.error('rank', e); setReview(x => x && { ...x, rank: null }) } })
+    return () => { live = false }
+  }, [rankSide, game]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // In a lesson, the engine answers each move played on the branch; a try from the lesson's start is graded.
   const lesson = review?.branch
@@ -946,7 +990,7 @@ export function App() {
     : challengeWait ? [t.ogsChallengeWait(challengeWait.who), [['cancel', t.cancel, () => cancelChallenge()]]]
     : ongoing && online.me === 0 ? [withNote(t.ogsWatching(online.players.black.username, online.players.white.username)),
       [['quit', t.ogsLeave, () => start(new Game({ size: game.info.size }), null)]]]
-    : result ? [withNote(result(t)), [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
+    : result ? [[result(t), note?.(t), nextAi && nextAi !== bot?.rank ? t.aiNext(nextAi) : null].filter(Boolean).join(' '), [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
       ...(online && online.me !== 0 && online.phase === 'finished' ? [['rematch', t.ogsRematch, rematch] as Link] : [])]]
     : countingNow ? [t.countingHelp, []]
     : game.ended ? [t.countingWait, []]
@@ -1126,6 +1170,12 @@ export function App() {
                     <p className="quiet">{review.step === 'try' ? t.tryHelp(p, s, m.loss) : review.step === 'punish' ? t.punishHelp : t.betterHelp}</p>
                     <p className="quiet">{t.exKept(review.moments!.length)}</p>
                   </>}
+                  {rankSide !== 0 && <div className="rv-rank" aria-live="polite">
+                    {review.rank === undefined ? <p className="quiet">{t.rankReading(rankSide === mine ? 0 : rankSide)}</p> : review.rank && <>
+                      <p className="estimate">{t.rankPlayed(rankSide === mine ? 0 : rankSide, rankName(review.rank.all))}</p>
+                      {review.rank.phases.some(x => x !== null) && <p className="quiet">{phaseLine(review.rank.phases)}</p>}
+                    </>}
+                  </div>}
                 </section>
               ) : ([1, -1] as const).map(c => {
                 const n = board.getCaptures(c), sub = subOf(c)
@@ -1201,7 +1251,7 @@ export function App() {
                 <details className="more">
                   <summary>{t.aiSettings}</summary>
                   <Stepper label={t.myLevel} value={settings.myRank} step={d => { const v = stepRank(settings.myRank, d); propose({ myRank: v, aiRank: v }) }} />
-                  <Switch label={t.autoAdjust} on={settings.autoAdjust} toggle={() => set('autoAdjust', !settings.autoAdjust)} />
+                  <Switch label={t.autoAdjust} on={settings.autoAdjust} toggle={() => set('autoAdjust', !settings.autoAdjust)} title={t.autoAdjustHelp} />
                   <Switch label={t.thinkTime} on={settings.delay} toggle={() => set('delay', !settings.delay)} />
                   <Switch label={t.botResign} on={settings.botResign} toggle={() => set('botResign', !settings.botResign)} />
                 </details>
