@@ -417,6 +417,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let h = app.handle().clone();
@@ -440,7 +441,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
             engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, update_check, update_install,
-            ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout
+            ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
