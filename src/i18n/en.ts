@@ -3,9 +3,16 @@ import { fmt } from './format'
 
 const f = fmt('en-US')
 const color = (s: number): string => (s === 1 ? 'Black' : 'White')
+const aRank = (r: string) => `${/^(8|11|18)\D/.test(r) ? 'an' : 'a'} ${r}` // an 8k, an 11k, an 18k
 const tuningProgress = (step: number, done: number, total: number) => [step && `step ${step}`, total && `${done}/${total}`].filter(Boolean).join(' · ')
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
 const lost = (x: number) => Math.round(x * 10) ? `−${pts(x)}` : '±0' // never "−0 points"
+
+// a result in two parts, as the caption's card shows it: who (or what) and how
+const ended = (winner: number, how: string, points?: number) => how === 'cancel' ? 'Game cancelled'
+  : how === 'score' && !winner && !points ? 'Draw' : !winner ? 'Game over' /* no winner named */ : `${color(winner)} wins`
+const endedHow = (how: string, points?: number): string =>
+  ({ resign: 'by resignation', time: 'on time', score: `by ${pts(points ?? 0)}`, forfeit: 'by forfeit' } as Record<string, string>)[how] ?? ''
 
 export const en = {
   // card
@@ -42,7 +49,7 @@ export const en = {
   aiLevel: 'AI level', myLevel: 'Your level',
   weaker: (label: string) => `${label}: weaker`, stronger: (label: string) => `${label}: stronger`,
   aiSettings: 'AI settings',
-  autoAdjust: 'Auto-adjust level', thinkTime: 'Thinking time',
+  autoAdjust: 'Auto-adjust level', thinkTime: 'Thinking time', botResign: 'Bot may resign',
   aiOnlyInApp: 'The AI opponent is available in the app.',
   aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
     `To play against the AI, install the Human network${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' and an analysis network' : ''}.`,
@@ -50,7 +57,7 @@ export const en = {
   display: 'Display', coords: 'Coordinates', sound: 'Sound', territory: 'Light and shadow', language: 'Language',
   rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
   view: 'View', study: 'Study', contemplation: 'Contemplation',
-  contemplationHint: 'Right-drag to turn, scroll or pinch to zoom, R or double-click outside the board to recentre',
+  contemplationHint: 'Right-drag to turn, middle- or Shift+right-drag to move, scroll or pinch to zoom, R or double-click outside the board to recentre',
   light: 'Lighting', lights: { auto: 'Auto', morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' },
   highContrast: 'High contrast',
   decor: 'Decor',
@@ -80,7 +87,7 @@ export const en = {
   updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
   updateInstalling: 'Installing the update…',
   fullscreen: 'Full screen', autoUpdate: 'Check for updates automatically',
-  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
+  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', today: 'today', candidates: 'candidate moves (hold)', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
     about: 'About Masame', hide: 'Hide Masame', hideOthers: 'Hide Others', showAll: 'Show All', quit: 'Quit Masame',
@@ -93,9 +100,16 @@ export const en = {
   resigns: (loser: number) => `${color(loser)} resigns. ${color(-loser)} wins.`,
   botFailed: (m: string) => `The AI can’t play right now. ${m}`,
   retry: 'Try again',
-  rankAdjusted: (r: string) => `AI level adjusted to ${r} for the next game.`,
   humanSilent: 'The Human network isn’t responding. Check that it’s installed.',
   badAnswer: 'Unreadable answer from KataGo.',
+  // handicap and the local clock
+  handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} stones` : 'None'),
+  fewerStones: 'Handicap: fewer stones', moreStones: 'Handicap: more stones',
+  handicapProposed: 'Suggested by the level gap.', handicapBlack: 'With a handicap, you take Black.',
+  clock: 'Clock', clockOff: 'Off', clockNone: 'No clock',
+  clockShort: (min: number, n: number, s: number) => `${min}′ + ${n}×${s}″`,
+  clockLong: (min: number, n: number, s: number) => `${min} minutes, then ${n} periods of ${s} seconds (byo-yomi)`,
+  losesOnTime: (loser: number) => `${color(loser)} loses on time.`, onTime: 'lost on time',
   // game review (p: the colour that punishes, s: the colour that made the mistake)
   review: 'Review', reviewGame: 'Review the game', backToGame: 'Back to the game',
   reviewNeedsNet: 'Install an analysis network to review a game.',
@@ -122,6 +136,9 @@ export const en = {
   betterLine: (s: number, v: string, loss: number) => `Better: ${color(s)} ${v}, which keeps those ${pts(loss)}.`,
   betterHelp: '→ follows the line. Compare its light with the punishment’s. Play anywhere to explore: each move gets an answer. ↑ ↓ compare your tries.',
   nextMoment: 'Next moment',
+  // free analysis
+  anFor: (s: number) => `Candidate moves for ${color(s)}`, anReading: 'Reading the position…', anPass: 'Pass',
+  anNeedsNet: 'Candidate moves need an analysis network.', anFailed: (m: string) => `The position could not be read. ${m}`,
   // joseki trainer
   joseki: 'Joseki', jLoading: 'Loading the joseki…', jFailed: (m: string) => `Couldn’t load the joseki: ${m}`,
   jTabs: { explore: 'Explore', practise: 'Practise', programme: 'Programme' },
@@ -153,29 +170,112 @@ export const en = {
   jProgrammeNote: 'Your programme: the corners worth learning first.',
   jProgrammeHelp: (rank: string) => `Ordered by how often you meet each corner at ${rank} × the points it costs there.`,
   jMet: (n: number) => `met about 1 corner in ${f.num(n)}`, jOpenFamily: (name: string) => `Explore ${name}`,
+  // the daily ritual
+  today: 'Today', tdIntro: 'Ten minutes a day: your exercises, a few joseki, a quick game.',
+  tdSteps: { exercises: 'Exercises from your games', joseki: 'Joseki', game: 'A 9×9 at your level' },
+  tdGameAt: (rank: string) => `against the AI at ${rank}, even`,
+  tdLeft: (n: number) => `${f.num(n)} to do`, tdDoneStep: 'done', tdLoading: 'loading…',
+  tdOff: { exercises: 'needs an analysis network', game: 'needs the AI networks' },
+  tdStreak: (n: number) => f.plural(n, 'day', 'days'), tdStreakLab: 'Streak',
+  tdStart: 'Start', tdContinue: 'Continue', tdAllDone: 'Today’s ritual is done. See you tomorrow.',
+  tdNothing: 'Nothing to do yet: install an analysis network, or practise the joseki.',
+  ritualGo: 'Continue the ritual', ritualDone: (n: number) => `Today’s ritual done · ${f.plural(n, 'day', 'days')} in a row.`,
+  // exercises from your own games (s: the colour that made the mistake)
+  exercises: 'Exercises',
+  exNeedsNet: 'Install an analysis network to practise: KataGo checks each answer.',
+  exProgress: (due: number, fresh: number, later: number) =>
+    [due && `${f.plural(due, 'exercise', 'exercises')} due`, fresh && `${f.num(fresh)} new today`, later && `${f.num(later)} from tomorrow`].filter(Boolean).join(' · '),
+  exEmpty: 'No exercises yet. Review a game: its key moments become exercises from the next day.',
+  exDone: 'Nothing left for today. Come back tomorrow, or review another game.',
+  exFrom: (vs: string, mv: number) => (vs ? `From the game against ${vs}, move ${mv}.` : `From one of your games, move ${mv}.`),
+  exAsk: (s: number, v: string | null, loss: number) => `${color(s)} to play. ${v ? `${v} (×)` : 'Passing'} lost ${pts(loss)} in the game: find better.`,
+  exChecking: 'Checking your move…',
+  exFound: 'Found it: that keeps the points.',
+  exShort: (gap: number) => `Better, but ${pts(gap)} short of the best.`,
+  exMissed: (gap: number) => `No better than the game move: ${lost(gap)}.`,
+  exNext: 'Next exercise',
+  exKept: (n: number): string => (n === 1 ? 'This moment is saved to your exercises (E).' : 'These moments are saved to your exercises (E).'),
+  exWhere: 'Where you lose points', exGames: (n: number) => f.plural(n, 'game', 'games'),
+  exPhases: { opening: 'Opening', middle: 'Middle game', endgame: 'Endgame' },
+  exPerGame: (x: number, share: number) => `−${f.plural(Math.round(x), 'point', 'points')} per game · ${f.pct(share)} of what you lose`,
+  exLost: (x: number) => (Math.round(x) ? `−${f.num(Math.round(x))}` : '0'),
+  exWhereNone: 'Review a game you played (against the AI, on OGS, or a file with your colour picked) to see where you lose points.',
+  exWhereHelp: (n: number) => `Points lost per game by your moves, over your last ${n === 1 ? 'reviewed game' : `${f.num(n)} reviewed games`}. Opening: the first 50 moves; endgame: from move 151 (19×19, scaled on smaller boards).`,
+  exReset: 'Delete the exercises', exResetAsk: 'Delete all your exercises and their statistics?',
+  exReadOnly: 'These exercises were saved by a newer Masame: practice here won’t be recorded.',
+  // automatic review
+  autoDone: (n: number, rank?: string) => rank ? `You played like ${aRank(rank).replace(' ', '\u00a0')}\u00a0· ${n ? `${f.plural(n, 'key moment', 'key moments').replace(' ', '\u00a0')} for your exercises` : 'no decisive moment'}.`
+    : `Review done: ${n ? `${f.plural(n, 'key moment joins', 'key moments join')} your exercises` : 'no decisive moment'}.`,
+  aiNext: (r: string) => `AI moves to\u00a0${r}.`,
+  autoPending: (n: number) => `Automatic review: ${f.plural(n, 'game', 'games')} waiting`,
+  autoRunning: (pct: number) => `Automatic review: in progress… ${f.pct(pct)}`,
+  // your rank, read in your moves
+  rankReading: (s: number) => (s ? `Reading ${color(s)}’s rank…` : 'Reading your rank…'),
+  rankPlayed: (s: number, r: string) => `${s ? `${color(s)} played` : 'You played'} like ${aRank(r)}`,
+  autoAdjustHelp: 'The AI goes up a rank when it loses and down when it wins; your level follows the rank read in your moves, and the AI stays within 2 ranks of it.',
+  rankLab: 'Your rank',
+  rankHelp: (n: number, follows: boolean) => `Read in your moves by KataGo’s human network, on the AI levels’ scale, over your last ${n === 1 ? 'game' : `${f.num(n)} games`}${follows ? '; your level follows it' : ''}.`,
+  rankChartLabel: (from: string, to: string, n: number) => `Your rank read in your moves: from ${from} to ${to} over ${f.plural(n, 'game', 'games')}`,
   // OGS (online-go.com)
+  // OGS sheet: tabs, play, my games, watch
+  ogsTabs: { play: 'Play', games: 'My games', watch: 'Watch' }, ogsTabsLabel: 'OGS',
+  ogsCorrShort: 'Corresp.',
+  ogsCorrSearch: (n: number) => `Correspondence search · ${n}×${n}`,
+  ogsChallengeTitle: 'Challenge a player', ogsUsername: 'OGS username',
+  ogsRanked: 'Ranked', ogsAutoHandicap: 'Automatic handicap', ogsChallenge: 'Challenge',
+  ogsChallengeHint: 'Board size and pace: the ones chosen above.',
+  ogsReceived: 'Challenges received', ogsSent: 'Challenges sent', ogsRankedShort: 'ranked', ogsFriendly: 'friendly',
+  ogsAccept: 'Accept', ogsDecline: 'Decline',
+  ogsYourTurn: 'your move', ogsTheirTurn: 'their move', ogsCounting: 'counting',
+  ogsHours: (h: number) => `${h} h`, ogsMinutes: (m: number) => `${m} min`,
+  ogsMore: 'Show more', ogsRank: 'Rank', ogsNoRanked: 'No ranked game yet',
+  ogsChartLabel: (from: string, to: string, months: number) => `OGS rank: from ${from} to ${to} over ${f.plural(months, 'month', 'months')}`,
+  ogsOpenLink: 'Open an OGS link', ogsLinkPlaceholder: 'online-go.com/game/…', ogsOpen: 'Open', ogsBadLink: 'OGS link not recognised',
+  ogsLiveNow: 'Live now', ogsRefresh: 'Refresh', ogsMoveN: (n: number) => `move ${n}`,
   ogsBoard: (n: number, komi: number, rules: string) => `${n}×${n} · komi ${f.num(komi)} · ${rules} · OGS`,
   rules: { japanese: 'Japanese rules', chinese: 'Chinese rules', aga: 'AGA rules', korean: 'Korean rules', nz: 'New Zealand rules', ing: 'Ing rules' },
   ogsInAppOnly: 'OGS games are available in the app.',
   ogsSignInHelp: 'Sign-in happens in your browser; Masame never sees your password.',
   ogsSignIn: 'Sign in to OGS', ogsWaiting: 'Waiting for the browser…',
   ogsSignedIn: (who: string) => `Signed in: ${who}`, ogsSignOut: 'Sign out',
-  pace: 'Pace', paces: { blitz: 'Blitz', rapid: 'Rapid', live: 'Live' },
+  pace: 'Pace', paces: { blitz: 'Blitz', rapid: 'Rapid', live: 'Live', correspondence: 'Correspondence' },
   ogsFind: 'Find an opponent',
-  ogsGames: 'My OGS games', ongoing: 'Ongoing', finished: 'Finished', none: 'None', ogsLoading: 'Loading…',
+  ongoing: 'Ongoing', finished: 'Finished', none: 'None', ogsLoading: 'Loading…',
   date: f.day,
   ogsSearching: (n: number, pace: string) => `Looking for a ${n}×${n} ${pace.toLowerCase()} opponent…`,
   ogsUnavailable: 'Unavailable during an OGS game',
   ogsReconnecting: 'Connection to OGS lost, reconnecting…',
   ogsLeaveAsk: 'The game goes on at OGS and your clock keeps running. Leave anyway?', ogsLeave: 'Leave',
   ogsResignAsk: 'Resign this game? It counts as a loss on OGS.',
-  ogsResult: (winner: number, how: string, points?: number) => how === 'cancel' ? 'Game cancelled.'
-    : how === 'score' && !winner && !points ? 'Draw.'
-    : !winner ? 'Game over.' // OGS named no winner
-    : `${color(winner)} wins ${how === 'resign' ? 'by resignation' : how === 'time' ? 'on time' : how === 'score' ? `by ${pts(points ?? 0)}` : 'by forfeit'}.`,
+  ogsResult: (winner: number, how: string, points?: number) => `${[ended(winner, how, points), winner && how !== 'cancel' && endedHow(how, points)].filter(Boolean).join(' ')}.`,
+  ended, endedHow,
   periods: (n: number, s: number) => `${n}×${s} s`,
   stones: (n: number) => f.plural(n, 'stone', 'stones'),
   days: (d: number, h: number) => `${d} d ${h} h`,
+  // OGS: notifications, in-game controls, challenges
+  ogsTurnTitle: 'Your move',
+  ogsTurnBody: (who: string, n: number) => [who && `Against ${who}`, n && `${n}×${n}`].filter(Boolean).join(' · '),
+  ogsChallengeFrom: (who: string) => (who ? `Challenge from ${who}` : 'New challenge'),
+  ogsStartedVs: (who: string) => (who ? `Game started against ${who}` : 'Game started'),
+  ogsEndedVs: (who: string) => (who ? `Game against ${who} finished` : 'Game finished'),
+  ogsDeclined: (who: string) => (who ? `${who} declined your challenge` : 'Your challenge was declined'),
+  ogsWithdraw: 'Withdraw', ogsRematch: 'Rematch',
+  ogsDotChallenge: 'a challenge is waiting', ogsDotTurn: 'your move',
+  ogsCancelGame: 'Cancel the game', ogsCancelAsk: 'Cancel this game? It won’t count on OGS.',
+  ogsUndoHelp: 'Ask your opponent to take back your last move',
+  ogsUndoSent: 'Undo request sent',
+  ogsUndoAsked: (who: string) => `${who} asks to take back their last move`,
+  ogsPause: 'Pause', ogsPaused: 'Game paused',
+  ogsPausesLeft: (n: number) => `You have ${f.plural(n, 'pause', 'pauses')} left`,
+  ogsPlaceMine: (n: number) => `Place your handicap stones: ${f.num(n)} to go`,
+  ogsPlaceTheirs: (who: string, n: number) => `${who} is placing handicap stones: ${f.num(n)} to go`,
+  ogsScoringWait: 'OGS is proposing the dead stones…',
+  ogsScoringFailed: 'No proposal from OGS: click the dead groups, then Accept score.',
+  ogsWatching: (black: string, white: string) => `You’re watching ${black} – ${white}`,
+  ogsChallengeSent: (who: string) => `Challenge sent to ${who}`,
+  ogsChallengeWait: (who: string) => `Challenge sent to ${who}, waiting…`,
+  ogsChallenged: (who: string, rank: string, n: number, pace: string, ranked: boolean) =>
+    `${who}${rank ? ` (${rank})` : ''} challenges you · ${n}×${n} · ${pace.toLowerCase()} · ${ranked ? 'ranked' : 'friendly'}`,
   // files
   sgfFilter: 'SGF game',
   openTitle: 'Open a game', saveTitle: 'Save the game',
@@ -187,6 +287,9 @@ export const en = {
   sgfBadSize: (sz: string | undefined) => `Unsupported board size: ${sz}`,
   sgfSetupOff: 'Handicap stone off the board',
   sgfMoveOff: (v: string) => `Move off the board: ${v}`,
+  // opening files: drops, the OS (double-click), the size cap
+  dropHint: 'Drop the game to open it',
+  sgfTooBig: 'Larger than 5 MB: not a game record',
   // networks sheet
   networks: 'Networks', close: 'Close', closeHint: 'Close (Esc)',
   humanRequired: 'The Human network is required to play against the AI. The others power analysis and territory.',
@@ -206,8 +309,14 @@ export const en = {
   progress: (p: number, got: string, total: string) => `${f.pct(p)} · ${got} / ${total}`,
   download: 'Download', resume: 'Resume', cancel: 'Cancel', remove: 'Delete', useForAnalysis: 'Use for analysis',
   creditsKataGo: 'KataGo', creditsMid: '© David J Wu — MIT license; networks under the', creditsLicense: 'KataGo Neural Network License',
+  // postcard
+  postcard: 'Postcard…', postcardHint: 'Save the board as a picture (PNG), signed, to share', postcardTitle: 'Save the postcard',
+  postcardName: (n: number, move?: number) => `masame-${n}x${n}${move === undefined ? '' : `-move-${move}`}.png`,
+  postcardSaved: 'Postcard saved.', postcardNotReady: 'the board isn’t drawn yet', postcardFailed: (m: string) => `Couldn’t save the postcard: ${m}`,
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
+    open_too_big: 'Larger than 5 MB: not a game record.',
+    open_unreadable: 'The file can’t be read.',
     invalid_name: 'Invalid network name.',
     url_rejected: 'Download address rejected.',
     unknown_network: 'Unknown network.',
@@ -249,7 +358,8 @@ export const en = {
     ogs_network: 'Couldn’t reach OGS.',
     ogs_cancelled: 'OGS sign-in cancelled.',
     ogs_not_square: 'Masame only shows square boards.',
-    ogs_placing_handicap: 'Handicap stones are still being placed on OGS.',
+    ogs_no_player: 'No OGS player by that name.',
+    ogs_no_game: 'OGS game not found, or private.',
     ogs_http: 'OGS answered with an error.',
     ogs_offline: 'Not connected to OGS.',
     ogs_refused: 'OGS refused this move.',

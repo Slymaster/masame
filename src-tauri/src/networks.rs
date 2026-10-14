@@ -12,7 +12,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::failure::{Failure, Res};
 
-pub const USER_AGENT: &str = "Masame/0.3"; // Cloudflare rejects some default user agents
+pub const USER_AGENT: &str = "Masame/0.4"; // Cloudflare rejects some default user agents
 const API: &str = "https://katagotraining.org/api/networks/";
 const MEDIA_HOST: &str = "media.katagotraining.org";
 const PAGES: u32 = 3;
@@ -160,15 +160,21 @@ pub fn client() -> reqwest::Client { builder().https_only(true).build().expect("
 
 async fn get_json(c: &reqwest::Client, url: &str) -> Res<Value> {
     let off = |e: &dyn ToString| Failure::with("catalog_offline", e.to_string());
-    let mut r = c.get(url).timeout(JSON_TIMEOUT).send().await.map_err(|e| off(&e))?;
+    let r = c.get(url).timeout(JSON_TIMEOUT).send().await.map_err(|e| off(&e))?;
     if !r.status().is_success() { return Err(off(&r.status())) }
-    if r.content_length().is_some_and(|n| n > MAX_JSON as u64) { return Err(off(&"response too large")) }
+    let body = capped(r, MAX_JSON).await.map_err(|e| off(&e))?.ok_or_else(|| off(&"response too large"))?;
+    serde_json::from_slice(&body).map_err(|e| off(&e))
+}
+
+/// The whole body, or `None` once it would exceed `max` bytes.
+pub(crate) async fn capped(mut r: reqwest::Response, max: usize) -> reqwest::Result<Option<Vec<u8>>> {
+    if r.content_length().is_some_and(|n| n > max as u64) { return Ok(None) }
     let mut body = Vec::new();
-    while let Some(chunk) = r.chunk().await.map_err(|e| off(&e))? {
-        if body.len() + chunk.len() > MAX_JSON { return Err(off(&"response too large")) }
+    while let Some(chunk) = r.chunk().await? {
+        if body.len() + chunk.len() > max { return Ok(None) }
         body.extend_from_slice(&chunk);
     }
-    serde_json::from_slice(&body).map_err(|e| off(&e))
+    Ok(Some(body))
 }
 
 /// Recent pages (newest first) + details of the pinned kata1 presets, which may be older than those pages.

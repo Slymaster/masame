@@ -8,6 +8,12 @@ const tuningProgress = (step: number, done: number, total: number) => [step && `
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
 const lost = (x: number) => Math.round(x * 10) ? `−${pts(x)}` : '±0' // never "−0 points"
 
+// a result in two parts, as the caption's card shows it: who (or what) and how
+const ended = (winner: number, how: string, points?: number) => how === 'cancel' ? 'Partie annulée'
+  : how === 'score' && !winner && !points ? 'Égalité' : !winner ? 'Partie terminée' : `${color(winner)} gagne`
+const endedHow = (how: string, points?: number) =>
+  ({ resign: 'par abandon', time: 'au temps', score: `de ${pts(points ?? 0)}`, forfeit: 'par forfait' } as Record<string, string>)[how] ?? ''
+
 export const fr: Dict = {
   // card
   board: (n: number, komi: number) => `${n}×${n} · komi ${f.num(komi)} · règles japonaises`,
@@ -43,7 +49,7 @@ export const fr: Dict = {
   aiLevel: 'Niveau de l’IA', myLevel: 'Ton niveau',
   weaker: (label: string) => `${label} : plus faible`, stronger: (label: string) => `${label} : plus fort`,
   aiSettings: 'Réglages de l’IA',
-  autoAdjust: 'Ajustement automatique', thinkTime: 'Temps de réflexion',
+  autoAdjust: 'Ajustement automatique', thinkTime: 'Temps de réflexion', botResign: 'Le bot peut abandonner',
   aiOnlyInApp: 'L’adversaire IA est disponible dans l’application.',
   aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
     `Pour jouer contre l’IA, installe le réseau Humain${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' et un réseau d’analyse' : ''}.`,
@@ -51,7 +57,7 @@ export const fr: Dict = {
   display: 'Affichage', coords: 'Coordonnées', sound: 'Son', territory: 'Ombre et lumière', language: 'Langue',
   rendering: 'Rendu', render3d: 'Atelier vivant (3D)', render2d: 'Léger (2D)',
   view: 'Regard', study: 'Étude', contemplation: 'Contemplation',
-  contemplationHint: 'Clic droit et glisser pour tourner, molette ou pincement pour zoomer, R ou double-clic hors du plateau pour recentrer',
+  contemplationHint: 'Clic droit et glisser pour tourner, avec Maj ou clic molette pour déplacer, molette ou pincement pour zoomer, R ou double-clic hors du plateau pour recentrer',
   light: 'Lumière', lights: { auto: 'Auto', morning: 'Matin', afternoon: 'Après-midi', evening: 'Soir' },
   highContrast: 'Contraste élevé',
   decor: 'Décor',
@@ -81,7 +87,7 @@ export const fr: Dict = {
   updateDownloading: (p: number | null) => (p === null ? 'Téléchargement de la mise à jour…' : `Téléchargement de la mise à jour… ${f.pct(p)}`),
   updateInstalling: 'Installation de la mise à jour…',
   fullscreen: 'Plein écran', autoUpdate: 'Rechercher les mises à jour automatiquement',
-  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
+  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', exercises: 'exercices', today: 'aujourd’hui', candidates: 'coups candidats (maintenue)', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
   // barre de menus macOS (src-tauri/src/menu.rs)
   menu: {
     about: 'À propos de Masame', hide: 'Masquer Masame', hideOthers: 'Masquer les autres', showAll: 'Tout afficher', quit: 'Quitter Masame',
@@ -94,9 +100,16 @@ export const fr: Dict = {
   resigns: (loser: number) => `${color(loser)} abandonne. ${color(-loser)} gagne.`,
   botFailed: (m: string) => `L’IA n’arrive pas à jouer pour l’instant. ${m}`,
   retry: 'Réessayer',
-  rankAdjusted: (r: string) => `Niveau de l’IA ajusté : ${r} pour la prochaine partie.`,
   humanSilent: 'Le réseau Humain ne répond pas. Vérifie qu’il est installé.',
   badAnswer: 'Réponse de KataGo illisible.',
+  // handicap and the local clock
+  handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} pierres` : 'Aucun'),
+  fewerStones: 'Handicap : moins de pierres', moreStones: 'Handicap : plus de pierres',
+  handicapProposed: 'Proposé d’après l’écart de niveau.', handicapBlack: 'Avec un handicap, tu prends Noir.',
+  clock: 'Pendule', clockOff: 'Sans', clockNone: 'Sans pendule',
+  clockShort: (min: number, n: number, s: number) => `${min}′ + ${n}×${s}″`,
+  clockLong: (min: number, n: number, s: number) => `${min} minutes, puis ${n} périodes de ${s} secondes (byo-yomi)`,
+  losesOnTime: (loser: number) => `${color(loser)} perd au temps.`, onTime: 'perd au temps',
   // game review (p: the colour that punishes, s: the colour that made the mistake)
   review: 'Revue', reviewGame: 'Revoir la partie', backToGame: 'Retour à la partie',
   reviewNeedsNet: 'Installe un réseau d’analyse pour revoir une partie.',
@@ -123,6 +136,9 @@ export const fr: Dict = {
   betterLine: (s: number, v: string, loss: number) => `Mieux : ${color(s)} ${v}, qui garde ces ${pts(loss)}.`,
   betterHelp: '→ suit la ligne. Compare sa lumière avec celle de la punition. Joue où tu veux pour explorer : chaque coup reçoit une réponse. ↑ ↓ compare tes essais.',
   nextMoment: 'Moment suivant',
+  // analyse libre
+  anFor: (s: number) => `Coups candidats pour ${color(s)}`, anReading: 'Lecture de la position…', anPass: 'Passer',
+  anNeedsNet: 'Les coups candidats demandent un réseau d’analyse.', anFailed: (m: string) => `La position n’a pas pu être lue. ${m}`,
   // entraîneur de joseki
   joseki: 'Joseki', jLoading: 'Chargement des joseki…', jFailed: (m: string) => `Impossible de charger les joseki : ${m}`,
   jTabs: { explore: 'Explorer', practise: 'S’entraîner', programme: 'Programme' },
@@ -154,29 +170,112 @@ export const fr: Dict = {
   jProgrammeNote: 'Ton programme : les coins à apprendre en premier.',
   jProgrammeHelp: (rank: string) => `Classés selon la fréquence de chaque coin en ${rank} × les points qu’il y coûte.`,
   jMet: (n: number) => `environ 1 coin sur ${f.num(n)}`, jOpenFamily: (name: string) => `Explorer ${name}`,
+  // le rituel du jour
+  today: 'Aujourd’hui', tdIntro: 'Dix minutes par jour : tes exercices, quelques joseki, une partie rapide.',
+  tdSteps: { exercises: 'Exercices de tes parties', joseki: 'Joseki', game: 'Un 9×9 à ton niveau' },
+  tdGameAt: (rank: string) => `contre l’IA en ${rank}, sans handicap`,
+  tdLeft: (n: number) => `${f.num(n)} à faire`, tdDoneStep: 'fait', tdLoading: 'chargement…',
+  tdOff: { exercises: 'demande un réseau d’analyse', game: 'demande les réseaux de l’IA' },
+  tdStreak: (n: number) => f.plural(n, 'jour', 'jours'), tdStreakLab: 'Série',
+  tdStart: 'Commencer', tdContinue: 'Continuer', tdAllDone: 'Le rituel du jour est accompli. À demain.',
+  tdNothing: 'Rien à faire pour l’instant : installe un réseau d’analyse, ou travaille les joseki.',
+  ritualGo: 'Continuer le rituel', ritualDone: (n: number) => `Rituel du jour terminé · série de ${f.plural(n, 'jour', 'jours')}.`,
+  // exercices tirés de tes parties (s : la couleur qui a commis l’erreur)
+  exercises: 'Exercices',
+  exNeedsNet: 'Installe un réseau d’analyse pour t’entraîner : KataGo vérifie chaque réponse.',
+  exProgress: (due: number, fresh: number, later: number) =>
+    [due && `${f.plural(due, 'exercice', 'exercices')} à revoir`, fresh && `${f.plural(fresh, 'nouveau', 'nouveaux')} aujourd’hui`, later && `${f.num(later)} dès demain`].filter(Boolean).join(' · '),
+  exEmpty: 'Pas encore d’exercices. Revois une partie : ses moments clés deviennent des exercices dès le lendemain.',
+  exDone: 'Plus rien pour aujourd’hui. Reviens demain, ou revois une autre partie.',
+  exFrom: (vs: string, mv: number) => (vs ? `Tiré de la partie contre ${vs}, coup ${mv}.` : `Tiré d’une de tes parties, coup ${mv}.`),
+  exAsk: (s: number, v: string | null, loss: number) => `${color(s)} joue. ${v ? `${v} (×) a` : 'Passer a'} perdu ${pts(loss)} dans la partie : trouve mieux.`,
+  exChecking: 'KataGo examine ton coup…',
+  exFound: 'Trouvé : ce coup garde les points.',
+  exShort: (gap: number) => `Mieux, mais à ${pts(gap)} du meilleur coup.`,
+  exMissed: (gap: number) => `Pas mieux que le coup de la partie : ${lost(gap)}.`,
+  exNext: 'Exercice suivant',
+  exKept: (n: number) => (n === 1 ? 'Ce moment est gardé dans tes exercices (E).' : 'Ces moments sont gardés dans tes exercices (E).'),
+  exWhere: 'Où tu perds tes points', exGames: (n: number) => f.plural(n, 'partie', 'parties'),
+  exPhases: { opening: 'Ouverture', middle: 'Milieu de partie', endgame: 'Fin de partie' },
+  exPerGame: (x: number, share: number) => `−${f.plural(Math.round(x), 'point', 'points')} par partie · ${f.pct(share)} de ce que tu perds`,
+  exLost: (x: number) => (Math.round(x) ? `−${f.num(Math.round(x))}` : '0'),
+  exWhereNone: 'Revois une partie que tu as jouée (contre l’IA, sur OGS, ou un fichier en choisissant ta couleur) pour voir où tu perds tes points.',
+  exWhereHelp: (n: number) => `Points perdus par partie par tes coups, sur ${n === 1 ? 'ta dernière partie revue' : `tes ${f.num(n)} dernières parties revues`}. Ouverture : les 50 premiers coups ; fin de partie : à partir du coup 151 (19×19, proportionnellement sur les petits gobans).`,
+  exReset: 'Effacer les exercices', exResetAsk: 'Effacer tous tes exercices et leurs statistiques ?',
+  exReadOnly: 'Ces exercices viennent d’une version plus récente de Masame : l’entraînement ici ne sera pas enregistré.',
+  // revue automatique
+  autoDone: (n: number, rank?: string) => rank ? `Tu as joué comme un\u00a0${rank}\u00a0· ${n ? `${f.plural(n, 'moment', 'moments').replace(' ', '\u00a0')} pour tes exercices` : 'aucun moment décisif'}.`
+    : `Revue faite : ${n ? `${f.plural(n, 'moment rejoint', 'moments rejoignent')} tes exercices` : 'aucun moment décisif'}.`,
+  aiNext: (r: string) => `L’IA passe à\u00a0${r}.`,
+  autoPending: (n: number) => `Revue automatique : ${f.plural(n, 'partie', 'parties')} en attente`,
+  autoRunning: (pct: number) => `Revue automatique : en cours… ${f.pct(pct)}`,
+  // ton rang, lu dans tes coups
+  rankReading: (s: number) => (s ? `Lecture du rang de ${color(s)}…` : 'Lecture de ton rang…'),
+  rankPlayed: (s: number, r: string) => `${s ? `${color(s)} a joué` : 'Tu as joué'} comme un ${r}`,
+  autoAdjustHelp: 'L’IA monte d’un rang quand elle perd et descend quand elle gagne ; ton niveau suit le rang lu dans tes coups, et l’IA reste à 2 rangs au plus de lui.',
+  rankLab: 'Ton rang',
+  rankHelp: (n: number, follows: boolean) => `Lu dans tes coups par le réseau humain de KataGo, à l’échelle des niveaux de l’IA, sur ${n === 1 ? 'ta dernière partie' : `tes ${f.num(n)} dernières parties`}${follows ? ' ; ton niveau le suit' : ''}.`,
+  rankChartLabel: (from: string, to: string, n: number) => `Ton rang lu dans tes coups : de ${from} à ${to} sur ${f.plural(n, 'partie', 'parties')}`,
   // OGS (online-go.com)
+  // OGS sheet: tabs, play, my games, watch
+  ogsTabs: { play: 'Jouer', games: 'Mes parties', watch: 'Regarder' }, ogsTabsLabel: 'OGS',
+  ogsCorrShort: 'Corresp.',
+  ogsCorrSearch: (n: number) => `Recherche en correspondance · ${n}×${n}`,
+  ogsChallengeTitle: 'Défier un joueur', ogsUsername: 'Pseudo OGS',
+  ogsRanked: 'Classée', ogsAutoHandicap: 'Handicap automatique', ogsChallenge: 'Défier',
+  ogsChallengeHint: 'Taille et cadence : celles choisies plus haut.',
+  ogsReceived: 'Défis reçus', ogsSent: 'Défis envoyés', ogsRankedShort: 'classée', ogsFriendly: 'amicale',
+  ogsAccept: 'Accepter', ogsDecline: 'Refuser',
+  ogsYourTurn: 'à toi', ogsTheirTurn: 'à l’adversaire', ogsCounting: 'comptage',
+  ogsHours: (h: number) => `${h} h`, ogsMinutes: (m: number) => `${m} min`,
+  ogsMore: 'Voir plus', ogsRank: 'Classement', ogsNoRanked: 'Pas encore de partie classée',
+  ogsChartLabel: (from: string, to: string, months: number) => `Classement OGS : de ${from} à ${to} en ${months} mois`,
+  ogsOpenLink: 'Ouvrir un lien OGS', ogsLinkPlaceholder: 'online-go.com/game/…', ogsOpen: 'Ouvrir', ogsBadLink: 'Lien OGS non reconnu',
+  ogsLiveNow: 'En direct', ogsRefresh: 'Actualiser', ogsMoveN: (n: number) => `coup ${n}`,
   ogsBoard: (n: number, komi: number, rules: string) => `${n}×${n} · komi ${f.num(komi)} · ${rules} · OGS`,
   rules: { japanese: 'règles japonaises', chinese: 'règles chinoises', aga: 'règles AGA', korean: 'règles coréennes', nz: 'règles néo-zélandaises', ing: 'règles Ing' },
   ogsInAppOnly: 'Les parties OGS sont disponibles dans l’application.',
   ogsSignInHelp: 'La connexion se fait dans ton navigateur ; Masame ne voit jamais ton mot de passe.',
   ogsSignIn: 'Se connecter à OGS', ogsWaiting: 'En attente du navigateur…',
   ogsSignedIn: (who: string) => `Connecté : ${who}`, ogsSignOut: 'Se déconnecter',
-  pace: 'Cadence', paces: { blitz: 'Blitz', rapid: 'Rapide', live: 'Live' },
+  pace: 'Cadence', paces: { blitz: 'Blitz', rapid: 'Rapide', live: 'Live', correspondence: 'Correspondance' },
   ogsFind: 'Chercher un adversaire',
-  ogsGames: 'Mes parties OGS', ongoing: 'En cours', finished: 'Terminées', none: 'Aucune', ogsLoading: 'Chargement…',
+  ongoing: 'En cours', finished: 'Terminées', none: 'Aucune', ogsLoading: 'Chargement…',
   date: f.day,
   ogsSearching: (n: number, pace: string) => `Recherche d’un adversaire ${n}×${n} ${pace.toLowerCase()}…`,
   ogsUnavailable: 'Indisponible pendant une partie OGS',
   ogsReconnecting: 'Connexion à OGS perdue, reconnexion…',
   ogsLeaveAsk: 'La partie continue sur OGS et ta pendule tourne. Quitter quand même ?', ogsLeave: 'Quitter',
   ogsResignAsk: 'Abandonner cette partie ? Elle compte comme une défaite sur OGS.',
-  ogsResult: (winner: number, how: string, points?: number) => how === 'cancel' ? 'Partie annulée.'
-    : how === 'score' && !winner && !points ? 'Égalité.'
-    : !winner ? 'Partie terminée.'
-    : `${color(winner)} gagne ${how === 'resign' ? 'par abandon' : how === 'time' ? 'au temps' : how === 'score' ? `de ${pts(points ?? 0)}` : 'par forfait'}.`,
+  ogsResult: (winner: number, how: string, points?: number) => `${[ended(winner, how, points), winner && how !== 'cancel' && endedHow(how, points)].filter(Boolean).join(' ')}.`,
+  ended, endedHow,
   periods: (n: number, s: number) => `${n}×${s} s`,
   stones: (n: number) => f.plural(n, 'pierre', 'pierres'),
   days: (d: number, h: number) => `${d} j ${h} h`,
+  // OGS : notifications, commandes en partie, défis
+  ogsTurnTitle: 'À toi de jouer',
+  ogsTurnBody: (who: string, n: number) => [who && `Contre ${who}`, n && `${n}×${n}`].filter(Boolean).join(' · '),
+  ogsChallengeFrom: (who: string) => (who ? `Défi de ${who}` : 'Nouveau défi'),
+  ogsStartedVs: (who: string) => (who ? `Partie commencée contre ${who}` : 'Partie commencée'),
+  ogsEndedVs: (who: string) => (who ? `Partie terminée contre ${who}` : 'Partie terminée'),
+  ogsDeclined: (who: string) => (who ? `${who} a refusé ton défi` : 'Ton défi a été refusé'),
+  ogsWithdraw: 'Retirer', ogsRematch: 'Revanche',
+  ogsDotChallenge: 'un défi t’attend', ogsDotTurn: 'à toi de jouer',
+  ogsCancelGame: 'Annuler la partie', ogsCancelAsk: 'Annuler cette partie ? Elle ne comptera pas sur OGS.',
+  ogsUndoHelp: 'Demander à ton adversaire d’annuler ton dernier coup',
+  ogsUndoSent: 'Demande d’annulation envoyée',
+  ogsUndoAsked: (who: string) => `${who} demande d’annuler son dernier coup`,
+  ogsPause: 'Pause', ogsPaused: 'Partie en pause',
+  ogsPausesLeft: (n: number) => `Il te reste ${f.plural(n, 'pause', 'pauses')}`,
+  ogsPlaceMine: (n: number) => `Pose tes pierres de handicap : encore ${f.num(n)}`,
+  ogsPlaceTheirs: (who: string, n: number) => `${who} pose ses pierres de handicap : encore ${f.num(n)}`,
+  ogsScoringWait: 'OGS propose les pierres mortes…',
+  ogsScoringFailed: 'Pas de proposition d’OGS : clique sur les groupes morts, puis Valider.',
+  ogsWatching: (black: string, white: string) => `Tu regardes ${black} – ${white}`,
+  ogsChallengeSent: (who: string) => `Défi envoyé à ${who}`,
+  ogsChallengeWait: (who: string) => `Défi envoyé à ${who}, en attente…`,
+  ogsChallenged: (who: string, rank: string, n: number, pace: string, ranked: boolean) =>
+    `${who}${rank ? ` (${rank})` : ''} te défie · ${n}×${n} · ${pace.toLowerCase()} · ${ranked ? 'classée' : 'amicale'}`,
   // files
   sgfFilter: 'Partie SGF',
   openTitle: 'Ouvrir une partie', saveTitle: 'Enregistrer la partie',
@@ -188,6 +287,9 @@ export const fr: Dict = {
   sgfBadSize: (sz: string | undefined) => `Taille de goban non prise en charge : ${sz}`,
   sgfSetupOff: 'Pierre de handicap hors du goban',
   sgfMoveOff: (v: string) => `Coup hors du goban : ${v}`,
+  // opening files: drops, the OS (double-click), the size cap
+  dropHint: 'Dépose la partie pour l’ouvrir',
+  sgfTooBig: 'Plus de 5 Mo : ce n’est pas une partie',
   // networks sheet
   networks: 'Réseaux', close: 'Fermer', closeHint: 'Fermer (Échap)',
   humanRequired: 'Le réseau Humain est nécessaire pour jouer contre l’IA. Les autres servent à l’analyse et au territoire.',
@@ -207,8 +309,14 @@ export const fr: Dict = {
   progress: (p: number, got: string, total: string) => `${f.pct(p)} · ${got} / ${total}`,
   download: 'Télécharger', resume: 'Reprendre', cancel: 'Annuler', remove: 'Supprimer', useForAnalysis: 'Utiliser pour l’analyse',
   creditsKataGo: 'KataGo', creditsMid: '© David J Wu — licence MIT ; réseaux sous', creditsLicense: 'KataGo Neural Network License',
+  // postcard
+  postcard: 'Carte postale…', postcardHint: 'Enregistrer le goban en image (PNG), signée, pour la partager', postcardTitle: 'Enregistrer la carte postale',
+  postcardName: (n: number, move?: number) => `masame-${n}x${n}${move === undefined ? '' : `-coup-${move}`}.png`,
+  postcardSaved: 'Carte postale enregistrée.', postcardNotReady: 'le goban n’est pas encore dessiné', postcardFailed: (m: string) => `Impossible d’enregistrer la carte postale : ${m}`,
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
+    open_too_big: 'Plus de 5 Mo : ce n’est pas une partie.',
+    open_unreadable: 'Le fichier est illisible.',
     invalid_name: 'Nom de réseau invalide.',
     url_rejected: 'Adresse de téléchargement refusée.',
     unknown_network: 'Réseau inconnu.',
@@ -250,7 +358,8 @@ export const fr: Dict = {
     ogs_network: 'Impossible de joindre OGS.',
     ogs_cancelled: 'Connexion à OGS annulée.',
     ogs_not_square: 'Masame n’affiche que les gobans carrés.',
-    ogs_placing_handicap: 'Les pierres de handicap sont encore en cours de placement sur OGS.',
+    ogs_no_player: 'Aucun joueur OGS de ce nom.',
+    ogs_no_game: 'Partie OGS introuvable ou privée.',
     ogs_http: 'OGS a répondu par une erreur.',
     ogs_offline: 'Pas connecté à OGS.',
     ogs_refused: 'OGS a refusé ce coup.',

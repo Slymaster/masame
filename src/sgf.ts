@@ -6,6 +6,9 @@ import { LocalizedError } from './i18n'
 
 import { version } from '../package.json'
 
+/** Characters; far beyond any game record. The Rust side caps the files the OS opens at the same figure, in bytes. */
+export const MAX_SGF = 5 * 1024 * 1024
+
 const vertices = (values: string[] = []) => values.filter(Boolean).flatMap(v => sgf.parseCompressedVertices(v))
 const signOf = (pl?: string): Sign | undefined => (pl === 'W' ? -1 : pl === 'B' ? 1 : undefined)
 
@@ -82,3 +85,12 @@ export function saveSgf(game: Game): string {
 /** SGF RE values: a counted game ("B+3.5", "W+0.5", "0" for a draw) or a resignation ("W+R"). */
 export const scoreResult = (lead: number) => (round1(lead) === 0 ? '0' : `${lead > 0 ? 'B' : 'W'}+${Math.abs(round1(lead))}`)
 export const resignResult = (winner: Sign) => `${winner === 1 ? 'B' : 'W'}+R`
+export const timeResult = (winner: Sign) => `${winner === 1 ? 'B' : 'W'}+T`
+/** RE read back: who won and how ('' when RE says no more, as "B+" or "?"); a draw is a score of 0, "Void" a cancelled game. */
+export const readResult = (re: string): { winner: Sign | 0; how: string; points?: number } => {
+  const r = re.trim(), m = /^([BW])\+(.*)$/i.exec(r)
+  if (!m) return /^(0|draw|jigo)$/i.test(r) ? { winner: 0, how: 'score', points: 0 } : { winner: 0, how: /^void$/i.test(r) ? 'cancel' : '' }
+  const winner = m[1].toUpperCase() === 'B' ? 1 : -1, x = m[2].toUpperCase()
+  return x[0] === 'R' ? { winner, how: 'resign' } : x[0] === 'T' ? { winner, how: 'time' } : x[0] === 'F' ? { winner, how: 'forfeit' }
+    : x && Number.isFinite(+x) ? { winner, how: 'score', points: +x } : { winner, how: '' }
+}

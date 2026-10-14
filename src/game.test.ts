@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Game, type GameNode, type Vertex } from './game'
-import { loadSgf, resignResult, saveSgf, scoreResult } from './sgf'
+import { loadSgf, readResult, resignResult, saveSgf, scoreResult } from './sgf'
 
 /** Plays alternating moves starting with Black; null = pass. */
 function playAll(g: Game, moves: (Vertex | null)[]) {
@@ -43,6 +43,17 @@ describe('rules', () => {
 })
 
 describe('sgf', () => {
+  it('reads a result back: winner, how and points', () => {
+    expect(readResult('B+R')).toEqual({ winner: 1, how: 'resign' })
+    expect(readResult('W+Time')).toEqual({ winner: -1, how: 'time' })
+    expect(readResult('b+f')).toEqual({ winner: 1, how: 'forfeit' })
+    expect(readResult(scoreResult(-3.5))).toEqual({ winner: -1, how: 'score', points: 3.5 })
+    expect(readResult('0')).toEqual({ winner: 0, how: 'score', points: 0 })
+    expect(readResult('Draw')).toEqual({ winner: 0, how: 'score', points: 0 })
+    expect(readResult('Void')).toEqual({ winner: 0, how: 'cancel' })
+    expect(readResult('?')).toEqual({ winner: 0, how: '' })
+    expect(readResult('W+')).toEqual({ winner: -1, how: '' })
+  })
   it('round-trips size, komi, players, setup, moves and passes', () => {
     const g = new Game({ size: 13, komi: 0.5, playerBlack: 'Noir [test]', playerWhite: 'Blanc', setup: { black: [[3, 3], [9, 9]], white: [] }, firstSign: -1 })
     playAll(g, [[9, 3], [3, 9], null, [6, 6]])

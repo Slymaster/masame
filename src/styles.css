@@ -63,6 +63,7 @@ kbd { font-family: var(--f-ui); font-size: 10.5px; line-height: 1; border: 1px s
 .board-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; line-height: 0 }
 canvas { display: block; -webkit-tap-highlight-color: transparent }
 .board-wrap > canvas[data-r="3d"] { position: fixed; inset: 0 } /* the 3D scene runs full-bleed under the UI */
+.board-wrap > canvas[data-r="2d"] { position: relative; left: var(--shift, 0px) } /* --shift: see Goban */
 
 /* the floating card, top right: its own background, above the fixed 3D canvas; only the body scrolls */
 .card {
@@ -148,14 +149,68 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .act:focus-visible { outline-offset: -2px }
 
 .note { min-height: 2.9em; margin-top: 6px; font-family: var(--f-title); font-style: italic; font-size: 16px; line-height: 1.4; color: var(--muted) }
-/* caption under the board, in the stage's bottom padding: visible with the card hidden */
-.board-wrap > .note { position: absolute; left: 0; right: 0; bottom: -26px; min-height: 0; margin: 0; text-align: center; pointer-events: none }
-.board-wrap > .note > span { display: inline-flex; gap: .3em; max-width: 100%; padding: 1px 14px; border-radius: 999px; background: var(--card); white-space: nowrap; pointer-events: auto; animation: fade .3s ease-out }
-/* one line, inside the stage's bottom padding, so it never covers the board; the full text is in the title */
-.board-wrap > .note .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis }
-.board-wrap > .note .link { flex: none }
+/* caption under the board, in room of its own below .board-wrap (up to two lines), so it never covers the board and stays
+   visible with the card hidden; ink on the card's colour, larger than the card's notes: it is what the player reads */
+.board-wrap { margin-bottom: 36px }
+.board-wrap > .note { position: absolute; left: calc(2 * var(--shift, 0px)); right: 0; top: 100%; min-height: 0; margin: 4px 0 0; text-align: center; pointer-events: none; container-type: inline-size }
+.board-wrap > .note > span {
+  display: inline-block; max-width: min(100%, 600px); padding: 5px 20px 0; border-bottom: 7px solid transparent; border-radius: 19px; background: var(--card);
+  box-shadow: 0 4px 14px var(--shadow), 0 0 0 1px var(--rule); font-size: 18.5px; line-height: 1.25; color: var(--ink); text-wrap: balance;
+  /* two lines at most: overflow clips at the padding box, and the bottom room is a border, so a third line never peeks in;
+     the full text is in the title */
+  max-height: calc(2.5em + 12px); overflow: hidden;
+  pointer-events: auto; animation: fade .3s ease-out;
+}
+.board-wrap > .note .link { font: inherit; color: var(--accent); text-decoration-color: currentColor; white-space: nowrap; margin-left: .45em }
+.board-wrap > .note .link:hover { color: var(--accent-hover) }
+/* a narrow window beside the card: smaller type, and the links beside two lines of text at most, so they are never cut */
+@container (max-width: 460px) {
+  .board-wrap > .note > span { display: inline-flex; align-items: center; gap: .45em; font-size: 16.5px }
+  .board-wrap > .note > :not(.res) .txt { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden }
+  .board-wrap > .note .link { margin-left: 0 }
+}
+/* the result, as a score sheet: the winner's stone, who and how, the AI's next level, then the review as the one filled button;
+   at most 60px tall (the room under the board): the title never wraps nor shrinks, the sub line wraps in what is left, two
+   lines at most (the full sentence is in the title attribute) */
+.board-wrap > .note > .res {
+  display: inline-flex; align-items: center; gap: 12px; max-width: 100%; max-height: none; overflow: visible; padding: 5px 6px 5px 8px; border: 0;
+  border-radius: 999px; box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--rule); font: 500 12px/1.2 var(--f-ui); text-align: left
+}
+.res .stone { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; font: 600 9.5px var(--f-ui); letter-spacing: -.01em; box-shadow: 0 2px 4px rgba(0, 0, 0, .45) }
+.res .stone.b { background: var(--stone-b); color: var(--pb-ink) }
+.res .stone.w { background: var(--stone-w); color: var(--pw-ink) }
+.res .txt { flex: 1 1 auto; display: flex; flex-direction: column; gap: 1px } /* min-width auto: never narrower than the title */
+.res .txt b { font: 600 18px/1.1 var(--f-ui); letter-spacing: -.01em; white-space: nowrap }
+.res .txt small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.15; color: var(--muted) }
+.res .txt small:empty { display: none }
+.res .chip { flex: none; display: flex; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 1px solid var(--rule-2); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); white-space: nowrap }
+.res .chip b { font: 600 14px var(--f-ui); letter-spacing: 0; text-transform: none; color: var(--ink); font-variant-numeric: tabular-nums }
+.res .chip i { font-style: normal; font-weight: 500; color: var(--muted) }
+.board-wrap > .note > .res .link {
+  flex: none; display: inline-flex; align-items: center; gap: 7px; height: 36px; margin: 0; padding: 0 15px; border: 1px solid var(--accent); border-radius: 999px;
+  font: 600 13px var(--f-ui); text-decoration: none; transition: background .25s, color .25s
+}
+.board-wrap > .note > .res .link:hover { background: var(--hover); color: var(--accent) }
+.board-wrap > .note > .res .link[data-act=review] { padding-left: 13px; background: var(--accent); color: var(--sheet) }
+.board-wrap > .note > .res .link[data-act=review]:hover { background: var(--accent-hover); border-color: var(--accent-hover) }
+.res .link svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round }
+.res .link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+/* less room: the stone (it repeats the title) and the chip's label go (still read aloud: font-size 0 keeps it in the text) */
+@container (max-width: 600px) {
+  .res .stone { display: none }
+  .board-wrap > .note > .res { gap: 10px; padding-left: 14px }
+  .res .chip { gap: 0; padding-left: 10px; font-size: 0 }
+}
+/* narrow: smaller title and compact buttons */
+@container (max-width: 460px) {
+  .board-wrap > .note > .res { gap: 8px; padding-left: 12px }
+  .res .txt b { font-size: 16.5px }
+  .res .chip { padding-left: 8px }
+  .res .chip b { font-size: 13px }
+  .board-wrap > .note > .res .link { height: 32px; padding: 0 12px; gap: 5px; font-size: 12.5px }
+  .board-wrap > .note > .res .link[data-act=review] { padding-left: 10px }
+}
 .board-wrap > .note:focus { outline: none } /* a resting place for focus after a caption link, not a control */
-.board-wrap > .note .link + .link { margin-left: .5em }
 
 .lab { display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); padding-bottom: 11px; border-bottom: 1px solid var(--rule); margin-bottom: 10px }
 .lab span:last-child { letter-spacing: .06em; text-transform: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink) }
@@ -247,16 +302,49 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 
 .quiet.err { color: var(--accent) }
 .quiet .rk { margin-left: 6px; color: var(--ink) }
-/* OGS: my games, one button per row */
-.ogs-games { display: flex; flex-direction: column; gap: 14px; margin-top: 14px }
-.ogs-games .lab { margin-bottom: 0 }
-.games-title { font-size: 12.5px; color: var(--muted); margin-bottom: 2px }
+/* OGS: games, one button per row */
+.games-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 12.5px; color: var(--muted); margin-bottom: 2px }
 .game-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 10px; margin: 0 -10px; width: calc(100% + 20px); border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer; transition: background .25s }
 .game-row:hover { background: var(--hover) }
 .game-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px }
 .game-row .who { display: flex; align-items: baseline; font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.2; min-width: 0; white-space: nowrap }
 .game-row .rk { font-size: 14px }
 .game-row .dim { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+/* OGS sheet: tab panes, challenge form, list items with inline actions, the rank chart */
+.ogs-pane { display: flex; flex-direction: column; gap: 18px; margin-top: 6px }
+.ogs-pane > .lab { margin-bottom: -8px }
+.ogs-form { display: flex; flex-direction: column; gap: 6px }
+.ogs-form > .btn { margin-top: 4px }
+.ogs-hint { font-size: 12px }
+.ogs-inline { display: flex; gap: 8px }
+.ogs-input {
+  flex: 1; min-width: 0; padding: 10px 14px; font: inherit; font-size: 13.5px; color: var(--ink); border: 1px solid var(--rule-2); border-radius: 999px;
+  background: var(--well); outline: none; user-select: text; -webkit-user-select: text; cursor: text; transition: border-color .25s
+}
+.ogs-input::placeholder { color: var(--muted); opacity: .8 }
+.ogs-input:focus { border-color: var(--accent) }
+.ogs-input[aria-invalid=true] { border-color: var(--accent) }
+.ogs-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 12px; row-gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--rule) }
+.ogs-item:last-child { border-bottom: 0 }
+.ogs-item .who { display: flex; align-items: baseline; font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.2; min-width: 0; white-space: nowrap }
+.ogs-item .rk { font-size: 14px }
+.ogs-item .dim { grid-column: 1; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+.ogs-item > .dim:first-child { font-size: 13px }
+.ogs-acts { grid-column: 2; grid-row: 1; display: flex; gap: 14px }
+.ogs-acts .link.accent { margin-left: 0 }
+.who .to { margin-right: 6px; font-style: normal; font-size: 14px; color: var(--muted) }
+.who .vs { margin: 0 8px; color: var(--muted) }
+.game-row { position: relative }
+.game-row.turn-mine::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 0 2px 2px 0; background: var(--accent) }
+.ogs-more { align-self: flex-start; margin-top: 6px }
+.ogs-rank .games-title { margin-bottom: 4px }
+.ogs-rank-now { font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 22px; line-height: 1; color: var(--ink) }
+.rank-chart { display: block; width: 100%; height: auto; overflow: visible }
+.rc-rule { stroke: var(--rule); stroke-width: 1; shape-rendering: crispEdges }
+.rc-tick, .rc-date { fill: var(--muted); font-family: var(--f-ui); font-size: 10.5px; font-variant-numeric: tabular-nums; letter-spacing: .04em }
+.rc-line { fill: none; stroke: var(--ink); stroke-width: 1.25; stroke-linejoin: round; stroke-linecap: round; opacity: .85 }
+.rc-now { fill: var(--accent); stroke: var(--sheet); stroke-width: 2 }
+.rc-now-label { fill: var(--accent); font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 15px }
 .clock { font-variant-numeric: tabular-nums }
 .clock.low { color: var(--accent); font-weight: 600 }
 .pc.b .clock.low { color: var(--pb-bar) } /* the cards keep their colours in both skins */
@@ -283,5 +371,44 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .jfams .b { fill: #1E1E22 }
 .jfams .w { fill: #F4EFE4; stroke: rgba(43, 29, 14, .5); stroke-width: .5 }
 .jfams span { color: var(--muted) }
+.ex .state { color: var(--accent) }
+.ex .share { font-size: 13.5px; line-height: 1.45 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+
+/* free analysis: the candidates, read-only rows */
+.jrow.an { cursor: default }
+.jrow.an:hover { background: none }
+
+/* opening files: while files are dragged over the window, a faint veil in a hairline frame (html[data-drop]) and a
+   caption on a card-like pill (body[data-drop], its text in the attribute) */
+html[data-drop]::before, html[data-drop]::after {
+  content: ""; position: fixed; inset: 10px; z-index: 100; pointer-events: none; border-radius: 16px;
+}
+html[data-drop]::before { background: var(--hover) }
+html[data-drop]::after { border: 1.5px solid var(--accent); opacity: .45 }
+body[data-drop]::after {
+  content: attr(data-drop); position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 101;
+  pointer-events: none; padding: 9px 22px 11px; border-radius: 999px; background: var(--card); white-space: nowrap;
+  box-shadow: 0 4px 14px var(--shadow), 0 0 0 1px var(--rule);
+  font-family: var(--f-title); font-style: italic; font-size: 20px; color: var(--ink);
+}
+
+/* the daily ritual (Today) */
+.brand { gap: 2px } /* six header icons in the 336 px card */
+.td-rail { list-style: none; margin: 4px 0 0; padding: 0 }
+.td-rail li { position: relative; display: grid; grid-template-columns: 26px 1fr; column-gap: 12px; padding-bottom: 16px }
+.td-rail li:not(:last-child)::before { content: ""; position: absolute; left: 12.5px; top: 26px; bottom: 0; width: 1px; background: var(--rule-2) }
+.td-rail li.done:not(:last-child)::before { background: var(--accent) }
+.td-rail i { grid-row: span 2; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--rule-2); font-family: var(--f-title); font-style: italic; font-size: 15px; color: var(--muted) }
+.td-rail .done i { border-color: var(--accent); background: var(--accent); color: var(--card); font-style: normal; font-size: 12px }
+.td-rail .cur i { border-color: var(--accent); color: var(--accent) }
+.td-rail b { font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 19px; line-height: 1.1 }
+.td-rail span { font-size: 12px; color: var(--muted) }
+.td-rail .done b { color: var(--muted) }
+.td-rail .off { opacity: .5 }
+
+/* ---------- your rank, read in your moves ---------- */
+.rv-rank { display: flex; flex-direction: column; gap: 2px }
+.rv-rank .estimate { color: var(--ink) }
+.ex .rc-now { stroke: var(--card) }

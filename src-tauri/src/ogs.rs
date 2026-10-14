@@ -1,5 +1,6 @@
 // OGS login: OAuth2 authorization code + PKCE in the player's own browser, redirected to a loopback listener.
 // The refresh token never leaves this side; the webview only ever gets a short-lived access token.
+// Also the public OGS reads the webview cannot make itself (no CORS headers).
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
@@ -24,6 +25,8 @@ const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 const HEAD_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_HEAD: usize = 8192;
 const REFRESH_MARGIN: u64 = 86_400; // access tokens last 30 days; refresh in the last one
+const MAX_HISTORY: usize = 4_000_000; // a long career is a few hundred kB of TSV
+const HISTORY_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Tokens { access: String, refresh: String, expires_at: u64 }
@@ -297,6 +300,16 @@ async fn logout(c: &reqwest::Client, base: &str, v: &Vault, cache: &Mutex<Option
     }
 }
 
+/// A player's rating history, OGS's TSV as is. Public: sent without any token.
+async fn rating_history(c: &reqwest::Client, base: &str, player_id: u64) -> Res<String> {
+    let net = |e: &dyn ToString| Failure::with("ogs_network", e.to_string());
+    let r = c.get(format!("{base}/termination-api/player/{player_id}/v5-rating-history?speed=overall&size=0"))
+        .timeout(HISTORY_TIMEOUT).send().await.map_err(|e| net(&e))?;
+    if !r.status().is_success() { return Err(Failure::with("ogs_http", r.status())) }
+    let body = crate::networks::capped(r, MAX_HISTORY).await.map_err(|e| net(&e))?.ok_or_else(|| Failure::with("ogs_http", "response too large"))?;
+    String::from_utf8(body).map_err(|_| Failure::with("ogs_http", "invalid UTF-8"))
+}
+
 /// Signs in through the default browser; a new call or ogs_login_cancel rejects a pending one with ogs_cancelled.
 #[tauri::command]
 pub async fn ogs_login(app: AppHandle, s: State<'_, crate::App>) -> Res<()> {
@@ -320,6 +333,9 @@ pub async fn ogs_logout(app: AppHandle, s: State<'_, crate::App>) -> Res<()> {
     logout(&s.http, BASE, &Vault::new(&crate::data_dir(&app)?), &s.ogs.tokens).await;
     Ok(())
 }
+
+#[tauri::command]
+pub async fn ogs_rating_history(player_id: u64, s: State<'_, crate::App>) -> Res<String> { rating_history(&s.http, BASE, player_id).await }
 
 #[cfg(test)]
 mod tests {
@@ -369,7 +385,7 @@ mod tests {
     fn json(access: &str, refresh: &str) -> String { serde_json::to_string(&Tokens { access: access.into(), refresh: refresh.into(), expires_at: now() + 3600 }).unwrap() }
 
     /// Local token endpoint: answers each request with the next reply (the last one repeats) and records the requests.
-    fn endpoint(replies: Vec<(&'static str, &'static str)>) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+    fn endpoint<B: AsRef<[u8]> + Send + 'static>(replies: Vec<(&'static str, B)>) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!("http://{}", l.local_addr().unwrap());
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -387,8 +403,10 @@ mod tests {
             }
             log.lock().unwrap().push(String::from_utf8_lossy(&req).into_owned());
             std::thread::sleep(Duration::from_millis(100)); // a slow server, so concurrent callers overlap
-            let (status, body) = replies[i.min(replies.len() - 1)];
-            let _ = s.write_all(format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes());
+            let (status, body) = &replies[i.min(replies.len() - 1)];
+            let body = body.as_ref();
+            let _ = s.write_all(format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).as_bytes());
+            let _ = s.write_all(body);
         });
         (base, seen)
     }
@@ -650,6 +668,30 @@ mod tests {
         assert!(seen.lock().unwrap().is_empty());
         v.save(&Tokens { access: "a3".into(), refresh: "r3".into(), expires_at: now() + 2 * REFRESH_MARGIN }); // the next sign-in replaces it
         assert_eq!(token(&http(), &base, &v, &cache).await.unwrap(), "a3");
+    }
+
+    #[tokio::test]
+    async fn rating_history_is_public_and_verbatim() {
+        let tsv = "ended\tgame_id\tplayed_black\thandicap\trating\tdeviation\tvolatility\topponent_id\topponent_rating\topponent_deviation\toutcome\textra\n\
+            1700000000\t42\t1\t0\t1500.5\t60.1\t0.06\t7\t1480\t70\t1\t\n";
+        let (base, seen) = endpoint(vec![("200 OK", tsv)]);
+        assert_eq!(rating_history(&http(), &base, 1234).await.unwrap(), tsv);
+        let req = seen.lock().unwrap()[0].clone();
+        assert!(req.starts_with("GET /termination-api/player/1234/v5-rating-history?speed=overall&size=0 HTTP/1.1\r\n"), "{req}");
+        assert!(!req.to_ascii_lowercase().contains("authorization"), "{req}");
+    }
+
+    #[tokio::test]
+    async fn rating_history_failures() {
+        let http_err = |r: Res<String>| { let e = r.unwrap_err(); assert_eq!(e.code, "ogs_http", "{e:?}"); e.detail.unwrap() };
+        let (base, _) = endpoint(vec![("404 Not Found", b"nope".to_vec())]);
+        assert!(http_err(rating_history(&http(), &base, 1).await).starts_with("404"));
+        let (base, _) = endpoint(vec![("200 OK", vec![b'a'; MAX_HISTORY + 1])]);
+        assert_eq!(http_err(rating_history(&http(), &base, 1).await), "response too large");
+        let (base, _) = endpoint(vec![("200 OK", b"ok\tthen \xff\xfe".to_vec())]);
+        assert_eq!(http_err(rating_history(&http(), &base, 1).await), "invalid UTF-8");
+        let closed = { let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap(); format!("http://{}", l.local_addr().unwrap()) };
+        assert_eq!(rating_history(&http(), &closed, 1).await.unwrap_err().code, "ogs_network");
     }
 
     /// Real sign-in in the default browser, by hand: OGS_DIR=<dir> cargo test live_login -- --ignored --nocapture

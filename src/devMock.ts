@@ -10,7 +10,7 @@
 //     update_install: { err: { code: 'update_failed', detail: 'signature' }, delay: 5000 },
 //   } })); location.reload()
 //
-// Unlisted commands reject with { code: 'unmocked', detail: <command> }. From the console:
+// take_opened replies null unless listed. Other unlisted commands reject with { code: 'unmocked', detail: <command> }. From the console:
 // window.__badukMock.emit('network-progress', {...}) fires an event (update-progress: { received, total }, then update-installing);
 // window.__badukMock.calls lists every invoke.
 
@@ -31,7 +31,7 @@ async function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<
     return args.handler
   }
   if (cmd.startsWith('plugin:event|')) return null
-  const r = spec.commands?.[cmd]
+  const r = spec.commands?.[cmd] ?? (cmd === 'take_opened' ? { ok: null } : undefined) // asked at every start: no file by default
   if (!r) throw { code: 'unmocked', detail: cmd }
   const n = (count[cmd] = (count[cmd] ?? 0) + 1)
   const reply = Array.isArray(r) ? r[Math.min(n, r.length) - 1] : r

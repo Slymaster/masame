@@ -9,6 +9,7 @@ import { failureText, t } from '../i18n'
 import { Icon } from '../Icon'
 import { gtp } from '../katago'
 import { Seg } from '../Seg'
+import { deckStep } from '../today/ritual'
 import { loadJoseki, nearestProfile, reach, TAG, validate, type JosekiDb } from './db'
 import { review } from './fsrs'
 import {
@@ -32,11 +33,10 @@ const loadData = () => loadJoseki().catch(e => import.meta.env.DEV
 const randomOrient = (): Orient => ({ k: Math.floor(Math.random() * 8), swap: Math.random() < 0.5 })
 const signOf = (o: Orient, ply: number) => ((ply % 2 ? 1 : -1) * (o.swap ? -1 : 1)) as Sign // ply: moves after the context
 
-export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
-  view: RefObject<{ drop(v: Vertex, c: Sign): void } | null>; rank: string; setRank: (r: string) => void
-  blocked: boolean; playFrom: (moves: Move[]) => Promise<boolean>
+export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked, playFrom }: {
+  view: RefObject<{ drop(v: Vertex, c: Sign): void } | null>; open: boolean; preload: boolean; setOpen: (o: boolean) => void
+  rank: string; setRank: (r: string) => void; blocked: boolean; playFrom: (moves: Move[]) => Promise<boolean>
 }) {
-  const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('explore')
   const [db, setDb] = useState<JosekiDb | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -49,12 +49,12 @@ export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
   useEffect(() => { if (store !== loaded.current) save(store) }, [store]) // written on real changes only, never at launch
 
   useEffect(() => {
-    if (!open || db) return
+    if (!(open || preload) || db) return
     let live = true
     setError(null)
     loadData().then(d => live && setDb(d), e => live && setError(e))
     return () => { live = false }
-  }, [open, db])
+  }, [open, preload, db])
   useEffect(() => { if (blocked) setOpen(false) }, [blocked])
 
   const R = useMemo(() => db && reach(db), [db])
@@ -77,9 +77,20 @@ export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
     return () => clearTimeout(id)
   }, [open, db, line, replaying, p, view])
 
-  const toggle = () => { if (!blocked) { setOpen(o => !o); setSay(null) } }
+  const now = Date.now(), fresh = store.p.day === today(now) ? store.p.fresh : 0
+  const newLine = () => {
+    if (!db || !R) return
+    setReplaying(false); setSay(null)
+    const n = nextCard(db, R, p, store.p.cards, fresh, now)
+    setLine(n === null ? null : startLine(db, pathTo(db, R, p, n), randomOrient()))
+    if (n === null) setSay(t.jDone)
+  }
+  const toggle = () => { if (!blocked) { setOpen(!open); setSay(null) } }
   const close = () => setOpen(false)
-  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null }
+  /** The daily ritual's joseki step: the Practise tab, a line started at once. */
+  const practise = () => { setTab('practise'); newLine() }
+  const left = db && counts(db, store.p.cards, fresh, now), todayStep = left && deckStep(store.p.cards, left.due + left.fresh, now) // null until loaded
+  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, today: todayStep, practise }
   const button = (
     <button className="icon" aria-pressed={open} onClick={toggle} disabled={blocked} aria-label={t.joseki} title={`${t.joseki} (J)`}><Icon name="book" /></button>
   )
@@ -90,7 +101,6 @@ export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
     return { ...none, button, acts, note, body: <section className="rv"><p className="estimate">{note}</p></section> }
   }
 
-  const now = Date.now(), fresh = store.p.day === today(now) ? store.p.fresh : 0
   const lens = db.profiles[p]
   const pct = (f: number) => t.percent(f)
 
@@ -118,12 +128,6 @@ export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
   const loss = (x10: number) => x10 ? t.jLoss(x10 / 10) : t.jBest
 
   // ---------- Practise ----------
-  const newLine = () => {
-    setReplaying(false); setSay(null)
-    const n = nextCard(db, R, p, store.p.cards, fresh, now)
-    setLine(n === null ? null : startLine(db, pathTo(db, R, p, n), randomOrient()))
-    if (n === null) setSay(t.jDone)
-  }
   const fromHere = () => { setTab('practise'); setReplaying(false); setSay(null); setLine(startLine(db, ex.path, randomOrient())) }
   const graded = (l: Line) => {
     const c = l.last?.card
@@ -251,7 +255,7 @@ export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
     escape: close, ' ': undefined, arrowup: () => {}, arrowdown: () => {}, home: () => {}, end: () => {}, p: () => {},
     arrowleft: () => { if (tab === 'explore') back() }, arrowright: () => { if (tab === 'explore' && frequent >= 0) down(frequent) },
   }
-  return { open, toggle, close, play, board, note, links, body, acts, keys, button }
+  return { ...none, play, board, note, links, body, acts, keys, button }
 }
 
 /** A family's corner (the top-right 12×12 of the explorer's frame), as a small SVG diagram. */

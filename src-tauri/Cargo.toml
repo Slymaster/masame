@@ -1,6 +1,6 @@
 [package]
 name = "baduk"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 
 [lib]
@@ -14,6 +14,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-notification = "2"
 tauri-plugin-updater = { version = "~2.13", default-features = false, features = ["rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -33,6 +34,8 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Threading",
   "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging",
 ] }
+# A second launch (double-clicking an SGF) hands its files to the running window. Not on Linux, where it needs zbus (see keyring).
+tauri-plugin-single-instance = "2"
 
 # The mock runtime, for the (ignored) TLS test that runs the updater next to our own client.
 [dev-dependencies]

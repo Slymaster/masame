@@ -118,6 +118,27 @@ describe('game review', () => {
   })
 })
 
+describe('exercises', () => {
+  afterEach(() => setLang('fr'))
+  it('words progress, phases and help in both languages', () => {
+    setLang('en')
+    expect([t.exProgress(1, 0, 0), t.exProgress(2, 3, 4), t.exProgress(0, 0, 1)]).toEqual(['1 exercise due', '2 exercises due · 3 new today · 4 from tomorrow', '1 from tomorrow'])
+    expect([t.exLost(3.6), t.exLost(0.4)]).toEqual(['−4', '0'])
+    expect(t.exAsk(1, 'G4', 5)).toBe('Black to play. G4 (×) lost 5 points in the game: find better.')
+    expect(t.exWhereHelp(1)).toMatch(/over your last reviewed game\./)
+    expect([t.exPerGame(3.6, 47.4), t.exPerGame(1.2, 100)]).toEqual(['−4 points per game · 47% of what you lose', '−1 point per game · 100% of what you lose'])
+    expect([t.exKept(1), t.exKept(3)]).toEqual(['This moment is saved to your exercises (E).', 'These moments are saved to your exercises (E).'])
+    setLang('fr')
+    expect([t.exProgress(1, 1, 0), t.exProgress(2, 3, 4)]).toEqual(['1 exercice à revoir · 1 nouveau aujourd’hui', '2 exercices à revoir · 3 nouveaux aujourd’hui · 4 dès demain'])
+    expect(nb(t.exPerGame(3.6, 47.4))).toBe('−4 points par partie · 47 % de ce que tu perds')
+    expect(nb(t.exAsk(-1, null, 2))).toBe('Blanc joue. Passer a perdu 2 points dans la partie : trouve mieux.')
+    expect([t.exWhereHelp(1), t.exWhereHelp(5)].map(nb).map(s => s.split('.')[0]))
+      .toEqual(['Points perdus par partie par tes coups, sur ta dernière partie revue', 'Points perdus par partie par tes coups, sur tes 5 dernières parties revues'])
+    for (const s of [t.exNeedsNet, t.exEmpty, t.exAsk(1, 'G4', 5), t.exFound, t.exMissed(2), t.exWhereHelp(3), t.exResetAsk, t.exReadOnly])
+      expect(s).not.toMatch(/ [:;!?]/)
+  })
+})
+
 describe('OGS', () => {
   afterEach(() => setLang('fr'))
   it('words results, searches and clocks in both languages', () => {

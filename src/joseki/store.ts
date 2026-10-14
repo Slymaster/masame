@@ -11,7 +11,7 @@ type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem'>
 export const today = (now = Date.now()) => { const d = new Date(now); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` }
 const empty = (): Progress => ({ v: 1, cards: {}, day: today(), fresh: 0 })
 const num = (x: unknown) => typeof x === 'number' && Number.isFinite(x)
-const isCard = (c: unknown) => !!c && typeof c === 'object' && (['s', 'd', 'due', 'last', 'reps', 'lapses'] as const).every(k => num((c as Card)[k]))
+export const isCard = (c: unknown) => !!c && typeof c === 'object' && (['s', 'd', 'due', 'last', 'reps', 'lapses'] as const).every(k => num((c as Card)[k]))
 
 export function load(st: Storage = localStorage): Stored {
   let raw: string | null = null
@@ -37,7 +37,7 @@ export function save(s: Stored, st: Storage = localStorage) {
 }
 
 /** A review recorded on a new day restarts the daily count of new cards. */
-export function record(p: Progress, key: string, card: Card, now = Date.now()): Progress {
+export function record<P extends Progress>(p: P, key: string, card: Card, now = Date.now()): P {
   const day = today(now), fresh = (p.day === day ? p.fresh : 0) + (p.cards[key] ? 0 : 1)
   return { ...p, cards: { ...p.cards, [key]: card }, day, fresh }
 }

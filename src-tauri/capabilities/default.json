@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: core defaults except menus (built in Rust), drag region, full screen and window theme, SGF open/save dialogs, reading/writing the chosen file only.",
+  "description": "Main window: core defaults except menus (built in Rust), drag region, full screen and window theme, SGF open/save and postcard PNG save dialogs, reading/writing the chosen file only, desktop notifications (check, ask, show).",
   "windows": ["main"],
   "permissions": [
     "core:app:default",
@@ -20,6 +20,10 @@
     "dialog:allow-save",
     "dialog:allow-ask",
     "fs:allow-read-text-file",
-    "fs:allow-write-text-file"
+    "fs:allow-write-text-file",
+    "fs:allow-write-file",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "notification:allow-notify"
   ]
 }

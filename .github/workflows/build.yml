@@ -1,5 +1,5 @@
-# Tests and builds for macOS (Apple Silicon and Intel: .app + .dmg each; ad-hoc signed, Developer ID signed and notarized
-# on v* tags),
+# Tests and builds for macOS (Apple Silicon and Intel, the latter cross-compiled on Apple Silicon: .app + .dmg each;
+# ad-hoc signed, Developer ID signed and notarized on v* tags),
 # Windows x64 (NSIS installer, unsigned) and Linux x86_64 (AppImage, .deb, .rpm; built on Ubuntu 22.04 for a glibc 2.35
 # baseline) on every push and pull request.
 # On a v* tag push only, the packages are uploaded as workflow artifacts and the release job turns them into a draft
@@ -30,8 +30,10 @@ jobs:
         include:
           - os: macos-latest
             bundles: app,dmg
-          # Intel Macs: KataGo OpenCL + CPU sidecars instead of Metal (tauri.macos-x86_64.conf.json). GitHub's last Intel image.
-          - os: macos-15-intel
+          # Intel Macs: KataGo OpenCL + CPU sidecars instead of Metal (tauri.macos-x86_64.conf.json), cross-compiled on
+          # Apple Silicon and tested under Rosetta: faster and steadier than GitHub's Intel runners, now on their last image.
+          - os: macos-latest
+            target: x86_64-apple-darwin
             bundles: app,dmg
             config: --config src-tauri/tauri.macos-x86_64.conf.json
           - os: windows-latest
@@ -41,6 +43,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     # The updater and Apple signing secrets live in this environment; no environment (empty name) for other refs.
     environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
+    env:
+      # Cargo and Tauri put a --target build under target/<triple>/.
+      TARGET_ARGS: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+      BUNDLE: ${{ matrix.target && format('src-tauri/target/{0}/release/bundle', matrix.target) || 'src-tauri/target/release/bundle' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,9 +60,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch
         with:
           toolchain: stable
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.target }} # both Mac jobs run on the same runner image
 
       # Tauri 2's WebKitGTK stack (and patchelf for the AppImage), then the engine's build dependencies.
       - name: Install Linux packages
@@ -77,15 +85,19 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: vendor
-          key: katago-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-katago.sh', 'scripts/build-katago-macos-x86_64.sh') }}
+          key: katago-${{ runner.os }}-${{ matrix.target || runner.arch }}-${{ hashFiles('scripts/build-katago.sh', 'scripts/build-katago-macos-x86_64.sh') }}
       - name: Build KataGo (macOS, Metal)
-        if: runner.os == 'macOS' && runner.arch == 'ARM64'
+        if: runner.os == 'macOS' && !matrix.target
         run: |
           brew install ninja pkg-config
           scripts/build-katago.sh
+      # KataGo's build checks and the Rust tests run x86_64 code.
+      - name: Install Rosetta (Intel Mac)
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: arch -x86_64 /usr/bin/true || softwareupdate --install-rosetta --agree-to-license
       # Later steps (cargo test included) see the Intel sidecars through TAURI_CONFIG, which tauri-build merges.
       - name: Build KataGo (Intel Mac, OpenCL + CPU)
-        if: runner.os == 'macOS' && runner.arch == 'X64'
+        if: matrix.target == 'x86_64-apple-darwin'
         run: |
           brew install ninja
           scripts/build-katago-macos-x86_64.sh
@@ -106,7 +118,7 @@ jobs:
 
       - name: Rust tests
         working-directory: src-tauri
-        run: cargo test --locked
+        run: cargo test --locked ${{ env.TARGET_ARGS }}
 
       # Tags only: updater packages (.app.tar.gz, setup.exe, AppImage) signed with the key; without it the build fails.
       # macOS tag builds use the next step instead: Tauri reads APPLE_* variables even when empty, so ad-hoc builds
@@ -118,7 +130,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: pnpm tauri
-          args: --bundles ${{ matrix.bundles }} ${{ matrix.config }}${{ startsWith(github.ref, 'refs/tags/v') && ' --config ''{"bundle":{"createUpdaterArtifacts":true}}''' || '' }}
+          args: --bundles ${{ matrix.bundles }} ${{ matrix.config }} ${{ env.TARGET_ARGS }}${{ startsWith(github.ref, 'refs/tags/v') && ' --config ''{"bundle":{"createUpdaterArtifacts":true}}''' || '' }}
           # off: binaries leave CI only through the explicit tag-only upload below
           uploadWorkflowArtifacts: false
 
@@ -145,11 +157,11 @@ jobs:
           trap 'rm -f "$APPLE_API_KEY_PATH"' EXIT
           (umask 077 && printf '%s\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY_PATH")
           unset APPLE_API_KEY_P8
-          pnpm tauri build --bundles ${{ matrix.bundles }} ${{ matrix.config }} --config '{"bundle":{"createUpdaterArtifacts":true}}'
-          retry() { # Apple's ticket service (api.apple-cloudkit.com) drops connections now and then on the Intel runners
+          pnpm tauri build --bundles ${{ matrix.bundles }} ${{ matrix.config }} ${{ env.TARGET_ARGS }} --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          retry() { # Apple's ticket service (api.apple-cloudkit.com) drops connections now and then
             local n; for n in 1 2 3 4 5 6; do "$@" && return; echo "::warning::attempt $n failed: $*"; sleep $((n * 10)); done; return 1
           }
-          dmgs=(src-tauri/target/release/bundle/dmg/*.dmg)
+          dmgs=("$BUNDLE"/dmg/*.dmg)
           [ ${#dmgs[@]} -eq 1 ] || { echo "::error::expected one DMG, found ${#dmgs[@]}"; exit 1; }
           xcrun notarytool submit "${dmgs[0]}" --wait \
             --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER"
@@ -163,10 +175,10 @@ jobs:
           # Developer ID Application certificate of this team; -R="text" passes it as a requirement string, not a file.
           team='anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists'
           team+=' and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "CN9TKA949C"'
-          bundle=src-tauri/target/release/bundle
-          retry() { # Apple's ticket service (api.apple-cloudkit.com) drops connections now and then on the Intel runners
+          retry() { # Apple's ticket service (api.apple-cloudkit.com) drops connections now and then
             local n; for n in 1 2 3 4 5 6; do "$@" && return; echo "::warning::attempt $n failed: $*"; sleep $((n * 10)); done; return 1
           }
+          arch=${{ matrix.target == 'x86_64-apple-darwin' && 'x86_64' || 'arm64' }}
           check_app() { # app -> Developer ID, hardened runtime, notarized and stapled, each KataGo signed the same way
             codesign --verify --deep --strict --verbose=2 -R="$team" "$1"
             spctl --assess --type execute -vv "$1" 2>&1 | tee /dev/stderr | grep -qxF 'source=Notarized Developer ID'
@@ -175,16 +187,18 @@ jobs:
             [ -f "${engines[0]}" ] || { echo "::error::$1: no KataGo"; exit 1; }
             for code in "$1" "${engines[@]}"; do
               codesign --verify --strict --verbose=2 -R="$team" "$code"
+              [ -d "$code" ] && bin="$code/Contents/MacOS/masame" || bin=$code
+              [ "$(lipo -archs "$bin")" = "$arch" ] || { echo "::error::$bin is not $arch only: $(lipo -archs "$bin")"; exit 1; }
               codesign -dv "$code" 2>&1 | grep -q '^CodeDirectory .*flags=0x10000(runtime)' \
                 || { echo "::error::$code: hardened runtime is off"; exit 1; }
             done
           }
-          check_app "$bundle/macos/Masame.app"
-          tarballs=("$bundle"/macos/*.app.tar.gz)
+          check_app "$BUNDLE/macos/Masame.app"
+          tarballs=("$BUNDLE"/macos/*.app.tar.gz)
           [ ${#tarballs[@]} -eq 1 ] || { echo "::error::expected one .app.tar.gz, found ${#tarballs[@]}"; exit 1; }
           mkdir "$RUNNER_TEMP/updater" && tar -xzf "${tarballs[0]}" -C "$RUNNER_TEMP/updater"
           check_app "$RUNNER_TEMP/updater/Masame.app"
-          for dmg in "$bundle"/dmg/*.dmg; do
+          for dmg in "$BUNDLE"/dmg/*.dmg; do
             codesign --verify --strict --verbose=2 -R="$team" "$dmg"
             spctl --assess --type open --context context:primary-signature -vv "$dmg" 2>&1 | tee /dev/stderr \
               | grep -qxF 'source=Notarized Developer ID'
@@ -192,7 +206,7 @@ jobs:
           done
           # Both Macs' updater packages are Masame.app.tar.gz: name them after the architecture, like the DMGs.
           for f in "${tarballs[0]}" "${tarballs[0]}.sig"; do
-            mv "$f" "${f/Masame.app/Masame_${{ runner.arch == 'X64' && 'x64' || 'aarch64' }}.app}"
+            mv "$f" "${f/Masame.app/Masame_${{ matrix.target == 'x86_64-apple-darwin' && 'x64' || 'aarch64' }}.app}"
           done
 
       # The AppImage bundles Ubuntu's WebKitGTK, GTK, GLib...: list them with their packages, versions and licences.
@@ -207,11 +221,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'macOS'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: masame-macos-${{ runner.arch == 'X64' && 'x64' || 'aarch64' }}
+          name: masame-macos-${{ matrix.target == 'x86_64-apple-darwin' && 'x64' || 'aarch64' }}
           path: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+            ${{ env.BUNDLE }}/dmg/*.dmg
+            ${{ env.BUNDLE }}/macos/*.app.tar.gz
+            ${{ env.BUNDLE }}/macos/*.app.tar.gz.sig
           if-no-files-found: error
           retention-days: 7
       - name: Upload the installer (tags only)

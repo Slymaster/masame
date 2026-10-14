@@ -1,22 +1,27 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { BoardView } from './board/BoardView'
+import { centreShift } from './board/frame'
 import type { Board3D, Board3DOptions, Board3DState, FallbackReason, TimeMode } from './board3d/Board3D'
 import { rng } from './board/noise'
-import { adjustRank, clampRank, decide, DEFAULT_RANK, humanProfile, stepRank } from './bot'
-import { askFirst, confirmDiscard, openSgfFile, saveSgfFile } from './files'
+import { adjustRank, clampRank, decide, DEFAULT_RANK, humanProfile, RANKS, stepRank } from './bot'
+import { askFirst, confirmDiscard, openSgfFile, savePngFile, saveSgfFile } from './files'
 import { Game, type GameNode, type Move, type Sign, type Vertex } from './game'
-import { analyze, call, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
+import { analyze, call, candidates, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
+import { notify } from './notify'
 import { OgsSection } from './OgsSection'
 import { Clock } from './Clock'
+import { handicapStones, proposeHandicap, stepHandicap } from './handicap'
+import { CLOCKS, flagAt, read, sgfTime, startClock, sync, timeUp, type ClockSetting, type LocalClock } from './localClock'
 import { Seg } from './Seg'
+import { Switch } from './Switch'
 import * as ogs from './ogs'
 import { Sheet } from './Sheet'
 import { Icon } from './Icon'
 import { Timeline } from './Timeline'
 import { cardSkin } from './board3d/logic'
 import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
-import { loadSgf, resignResult, saveSgf, scoreResult } from './sgf'
+import { loadSgf, MAX_SGF, readResult, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import { DECORS, type Decor } from './board3d/decors'
 import { isMac, shortcut } from './platform'
@@ -25,6 +30,15 @@ import { getVersion } from '@tauri-apps/api/app'
 import { checkDue, updateSettings, type UpdateInfo } from './update'
 import { fromOf, gradeTry, lessonBoard, readGame, REPLY, verdict, type Moment, type Step } from './review'
 import { useJoseki } from './joseki/useJoseki'
+import { phaseLine, useExercises } from './exercises/useExercises'
+import { anchored, loadRanks, localRank, rankName, readRank, saveRanks, withReading, type Reading } from './rank'
+import { useAutoReview } from './exercises/useAutoReview'
+import { recordKey } from './exercises/deck'
+import { tone } from './joseki/practice'
+import { useToday } from './today/useToday'
+
+// free analysis: a near-instant read, then one that sharpens it
+const QUICK = { maxVisits: 80, overrideSettings: { maxTime: 0.3 } }, DEEP = { maxVisits: 800, overrideSettings: { maxTime: 2.5 } }
 
 const SIZES = [9, 13, 19]
 const HUMAN_BYTES = 99_066_230
@@ -37,16 +51,17 @@ type Renderer = '3d' | '2d'
 const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
 const AUTOPLAY = [0.5, 1, 2, 4] as const // seconds per move
 interface Settings {
-  lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; delay: boolean; territory: boolean
+  lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; botResign: boolean; delay: boolean; territory: boolean
   renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor
   langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number; autoplay: typeof AUTOPLAY[number]
+  handicap: number; clock: ClockSetting
 }
 const SETTINGS_KEY = 'baduk.settings'
 function loadSettings(): Settings {
   const d: Settings = {
-    lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, delay: true, territory: false,
+    lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, botResign: true, delay: true, territory: false,
     renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', langChosen: false, panelHidden: false,
-    autoUpdate: true, updateChecked: 0, autoplay: 1,
+    autoUpdate: true, updateChecked: 0, autoplay: 1, handicap: 0, clock: 'off',
   }
   let j: Partial<Settings> = {}
   try { j = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') ?? {} } catch { /* private mode or garbage: defaults */ }
@@ -54,11 +69,13 @@ function loadSettings(): Settings {
   return {
     ...s, lang: storedLang(j), langChosen: j.langChosen === true,
     opponent: (['human', 'ai', 'ogs'] as const).includes(s.opponent) ? s.opponent : 'ai',
-    ogsSpeed: (['blitz', 'rapid', 'live'] as const).includes(s.ogsSpeed) ? s.ogsSpeed : 'rapid', myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
+    ogsSpeed: (['blitz', 'rapid', 'live', 'correspondence'] as const).includes(s.ogsSpeed) ? s.ogsSpeed : 'rapid', myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: DECORS.includes(s.decor) ? s.decor : 'atelier', panelHidden: s.panelHidden === true, ...updateSettings(j),
-    autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1,
+    autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
+    handicap: Number.isInteger(s.handicap) && s.handicap >= 2 && s.handicap <= 9 ? s.handicap : 0,
+    clock: typeof s.clock === 'string' && Object.hasOwn(CLOCKS, s.clock) ? s.clock : 'off',
   }
 }
 
@@ -72,7 +89,7 @@ function webgl2() {
 }
 
 /** What App drives, whichever renderer is mounted: the Canvas2D BoardView ("light") or the lazily loaded Board3D. */
-type View = { update(s: Board3DState): void; drop(v: Vertex, c: Sign): void; pass?(c: Sign): void; resetCamera?(): void; destroy(): void }
+type View = { update(s: Board3DState): void; drop(v: Vertex, c: Sign): void; pass?(c: Sign): void; resetCamera?(): void; snapshot?(): Promise<Blob | null>; destroy(): void }
 
 function Goban({ state, onPlay, view, mode, options, thinking, onFallback, children }: {
   state: Board3DState; onPlay: (v: Vertex) => boolean; view: React.RefObject<View | null>
@@ -91,20 +108,26 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, child
       ro = new ResizeObserver(([e]) => fit(e.contentRect))
       ro.observe(wrap.current!)
     }
+    // --shift: how far right of .board-wrap's centre the board is drawn (centred on the window beside the card); the caption follows
+    const shift = (px: number) => wrap.current?.style.setProperty('--shift', `${px}px`)
     if (mode === '2d') {
       const b = new BoardView(canvas.current!, play)
-      mount(b, r => b.resize(Math.min(r.width, r.height)))
+      mount(b, () => {
+        const r = wrap.current!.getBoundingClientRect(), S = Math.min(r.width, r.height), l = r.left + (r.width - S) / 2
+        shift(centreShift(l, l + S, r.right, innerWidth / 2)) // before resize(), which snaps the canvas to the pixel grid
+        b.resize(S)
+      })
     } else {
       // three.js is a lazy chunk; until it boots the canvas stays empty and Board3D fades in on its first frame
       import('./board3d/Board3D').then(({ Board3D }) => {
         if (!live) return
-        const b = three.current = new Board3D(canvas.current!, play, { options: latest.current.options, onFallback: r => latest.current.onFallback(r) })
+        const b = three.current = new Board3D(canvas.current!, play, { options: latest.current.options, onFallback: r => latest.current.onFallback(r), onShift: shift })
         b.setThinking(latest.current.thinking)
         // full-bleed canvas (fixed, the whole window); the board stays framed in .board-wrap's rectangle
         mount(b, () => b.resize(innerWidth, innerHeight, wrap.current!.getBoundingClientRect()))
       }, () => live && latest.current.onFallback('webgl2'))
     }
-    return () => { live = false; ro?.disconnect(); v?.destroy(); view.current = three.current = null }
+    return () => { live = false; ro?.disconnect(); v?.destroy(); view.current = three.current = null; shift(0) }
   }, [mode, view])
   useEffect(() => { view.current?.update(state); if (import.meta.env.DEV) Object.assign(window, { __badukState: state }) })
   useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -113,29 +136,24 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, child
   return <div className="board-wrap" ref={wrap}><canvas key={mode} ref={canvas} data-r={mode} aria-label={t.boardLabel(state.signMap.length)} />{children}</div>
 }
 
+/** The signed-in OGS player's colour in an imported game, by name (OGS writes usernames in PB/PW). */
+const ogsSide = ({ info }: Game): Sign | 0 => !ogs.me ? 0 : info.playerBlack === ogs.me.username ? 1 : info.playerWhite === ogs.me.username ? -1 : 0
+
 /** State holding a Msg, rendered at display time (a bare function given to useState's setter would run as an updater). */
 function useMsg() {
   const [m, set] = useState<Msg | null>(null)
   return [m, useCallback((v: Msg | null) => set(() => v), [])] as const
 }
 
-function Switch({ label, k, on, toggle, disabled, title }: { label: string; k?: string; on: boolean; toggle: () => void; disabled?: boolean; title?: string }) {
-  return (
-    <div className="row" onClick={disabled ? undefined : toggle} title={title}>
-      <span>{label} {k && <kbd>{k}</kbd>}</span>
-      <button className="switch" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={e => { e.stopPropagation(); toggle() }} />
-    </div>
-  )
-}
-
-function Stepper({ label, value, set }: { label: string; value: string; set: (v: string) => void }) {
+/** ‹ steps by +1 (a rank: stronger), › by −1. */
+function Stepper({ label, value, step, names = [t.stronger(label), t.weaker(label)] }: { label: string; value: string; step: (d: number) => void; names?: string[] }) {
   return (
     <div className="row stepper">
       <span>{label}</span>
       <span className="step">
-        <button onClick={() => set(stepRank(value, 1))} aria-label={t.stronger(label)}>‹</button>
+        <button onClick={() => step(1)} aria-label={names[0]}>‹</button>
         <output aria-live="polite">{value}</output>
-        <button onClick={() => set(stepRank(value, -1))} aria-label={t.weaker(label)}>›</button>
+        <button onClick={() => step(-1)} aria-label={names[1]}>›</button>
       </span>
     </div>
   )
@@ -158,7 +176,7 @@ export function App() {
   useEffect(() => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch { /* private mode */ } }, [settings])
 
   // the current match against the bot (null = two players), the results by line (keyed by its leaf), the bot's winrates for resigning
-  const [bot, setBot] = useState<{ sign: Sign; rank: string } | null>(null)
+  const [bot, setBot] = useState<{ sign: Sign; rank: string; ritual?: true } | null>(null) // ritual: the daily 9×9, which never moves the AI level
   const outcomes = useRef(new WeakMap<GameNode, { msg: Msg; re: string }>())
   const outcome = outcomes.current.get(game.leaf), result = outcome?.msg ?? null
   const setResult = (g: Game, o: { msg: Msg; re: string } | null) => { if (o) outcomes.current.set(g.leaf, o); else outcomes.current.delete(g.leaf); rerender() }
@@ -175,6 +193,13 @@ export function App() {
   const [joining, setJoining] = useState(false) // followed, its first gamedata not here yet
   const searching = useRef<(() => void) | null>(null) // cancels the pending automatch
   const ogsStatus = useSyncExternalStore(ogs.onStatus, ogs.getStatus)
+  // a live challenge sent and not answered yet (its keepalive and wait stopped by stop), a game started meanwhile elsewhere
+  const [challengeWait, setChallengeWait] = useState<{ id: number; gameId: number; who: string } | null>(null)
+  const waiting = useRef<{ id: number; gameId: number; stop: () => void } | null>(null)
+  const [started, setStarted] = useState<{ id: number; who: string } | null>(null)
+  const challengeRows = useSyncExternalStore(ogs.challenges.subscribe, ogs.challenges.get)
+  const activeRows = useSyncExternalStore(ogs.active.subscribe, ogs.active.get)
+  useEffect(() => ogs.startBackground(), [])
   const [session2d, setSession2d] = useState(false) // 2D after a WebGL context loss, for this session only
   const renderer: Renderer = session2d ? '2d' : settings.renderer
   // the card's skin follows the scene's backdrop; set before paint, and crossfaded only once the first frame is shown
@@ -185,6 +210,7 @@ export function App() {
   useEffect(() => { requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '' })) }, [])
   // counting phase after two passes: which stones are dead (suggested by KataGo, toggled by the player)
   const [counting, setCounting] = useState<{ game: Game; dead: Dead; own: number[] | null } | null>(null)
+  const [clock, setClock] = useState<LocalClock | null>(null) // a local game's byo-yomi clock, dropped with its game
 
   const [engine, setEngine] = useState<EngineStatus>({ state: 'stopped' })
   const [nets, setNets] = useState<NetState | null>(null)
@@ -199,7 +225,7 @@ export function App() {
   const [own, setOwn] = useState<{ game: Game; data: number[] | null; score: number } | null>(null)
   // game review: null = off; moments null while reading; branch = the lesson's variation (null while reading or clean)
   const [review, setReview] = useState<{ side: Sign | 0; pct: number; error: unknown; moments: Moment[] | null; k: number; step: Step
-    branch: Game | null; ask: GameNode | null; gap: number | null; explored: boolean } | null>(null)
+    branch: Game | null; ask: GameNode | null; gap: number | null; explored: boolean; rank?: Reading | null } | null>(null) // rank: undefined while read
   const [reviewTry, retryReview] = useReducer((x: number) => x + 1, 0)
   const scan = useRef<{ last: Game['board']; leads: (number | undefined)[] } | null>(null) // scan leads of the record ending on `last`
   const scanRun = useRef<Promise<unknown>>(Promise.resolve()) // the last readGame or answer: the next one starts once it settles (2 queries at most)
@@ -268,13 +294,69 @@ export function App() {
 
   const changed = () => { setNote(null); setBotError(null); rerender() }
   const atEnd = game.cursor === game.moves.length
-  // OGS forbids engine help in an ongoing game: no KataGo query of any kind until it is finished
+  // OGS forbids engine help in an ongoing game: no KataGo query of any kind until it is finished (nor while joining one: `joining`)
   const ongoing = !!online && online.phase !== 'finished'
-  // the joseki trainer borrows the board and the card; the game waits underneath, untouched
-  const jt = useJoseki({ view, rank: settings.myRank, setRank: v => set('myRank', v), blocked: ongoing || !!review, playFrom: m => playFrom(m) })
+  const myGame = ongoing && online.me !== 0 ? online : null // an unfinished OGS game I play
+  const opponent = online && online.me !== 0 ? online.players[online.me === 1 ? 'white' : 'black'] : null
+  // the trainers (joseki, exercises) borrow the board and the card, one at a time; the game waits underneath, untouched
+  // (Today only takes the card: the game stays shown, not playable)
+  const [panel, setPanel] = useState<'joseki' | 'exercises' | 'today' | null>(null)
+  // Autoplay: the line being played, one move per settings.autoplay seconds, dropped like the bot's moves
+  const [auto, setAuto] = useState<Game | null>(null)
+  const [held, setHeld] = useState(false) // A held: free analysis of the shown position
+  // the automatic review reads only when nothing else wants the engine, nor a local game the player's attention
+  const playingLocal = !result && (!!bot || dirty)
+  // the player's rank read in their moves (src/rank.ts); with "Auto-adjust", it sets their level and anchors the AI's
+  const [ranks, setRanks] = useState(loadRanks)
+  const ranksRef = useRef(ranks) // the latest store, so two readings completing close together both count
+  // the AI level the next game will use, announced on the shown game's result line (finish()'s nudge, then the rank's anchoring)
+  const [nextAi, setNextAi] = useState<string | null>(null)
+  /** Stores a reading of the player's own moves; with "Auto-adjust", their level and the AI's follow. The AI level, when it changed. */
+  const keepRank = (k: string, r: Reading): string | null => {
+    const s = ranksRef.current = { ...ranksRef.current, p: withReading(ranksRef.current.p, k, r, Date.now()) }, local = localRank(s.p.games)!
+    setRanks(s); saveRanks(s)
+    if (!settings.autoAdjust) return null
+    const me = rankName(local), ai = RANKS[anchored(RANKS.indexOf(settings.aiRank), local)]
+    if (me !== settings.myRank || ai !== settings.aiRank) setSettings(x => ({ ...x, myRank: me, aiRank: ai }))
+    return ai !== settings.aiRank ? ai : null
+  }
+  const keep = useRef(keepRank)
+  keep.current = keepRank
+  const ar = useAutoReview({
+    free: canAnalyze && engine.state !== 'error' && !thinking && !review && !panel && !ongoing && !joining && !playingLocal && !auto && !held,
+    ask: (g, q) => analyze(g, { ...q, priority: -1 }), // KataGo serves higher priorities first: the bot, the trainers jump the queue
+    scanRun, add: (...x) => ex.add(...x),
+    done: (k, ms, r) => { // a job is always the player's own game
+      const prev = note, ai = r && keepRank(k, r)
+      if (ai) setNextAi(ai) // the next game's level, whichever game the line shows
+      if (!result || recordKey(game) !== k) return
+      setNote(d => [prev?.(d), d.autoDone(ms.length, r ? rankName(r.all) : undefined)].filter(Boolean).join(' '))
+    },
+    human: canPlayAI,
+  })
+  const jt = useJoseki({
+    view, open: panel === 'joseki', preload: panel === 'today', setOpen: o => setPanel(p => (o ? 'joseki' : p === 'joseki' ? null : p)),
+    rank: settings.myRank, setRank: v => set('myRank', v), blocked: ongoing || !!review, playFrom: m => playFrom(m),
+  })
+  const ex = useExercises({
+    view, open: panel === 'exercises', setOpen: o => setPanel(p => (o ? 'exercises' : p === 'exercises' ? null : p)), blocked: ongoing || !!review, canAnalyze, setThinking,
+    autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null, ranks: ranks.p.games, follows: settings.autoAdjust,
+    ask: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, REPLY)); scanRun.current = run; return run },
+  })
+  const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
+  useEffect(() => setRitualSaid(null), [panel])
+  const netsUnknown = inTauri() && !nets // at launch: the steps needing a net are neither done nor off yet
+  const td = useToday({
+    open: panel === 'today', setOpen: o => setPanel(p => (o ? 'today' : p === 'today' ? null : p)), blocked: ongoing || !!review,
+    decks: [netsUnknown ? { done: false, left: null } : canAnalyze ? ex.today : null, jt.today ?? { done: false, left: null }], canPlay: netsUnknown ? null : canPlayAI, rank: settings.myRank,
+    start: [() => setPanel('exercises'), () => { setPanel('joseki'); jt.practise() },
+      () => { setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
+    onDone: n => { if (panel) setRitualSaid(n); else setNote(d => d.ritualDone(n)) }, // a panel's note hides the game's
+  })
+  const tr = jt.open ? jt : td.open ? td : ex
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
-  const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && game.toPlay === online.me : !bot || game.toPlay !== bot.sign
-  const mine: Sign | 0 = bot ? -bot.sign as Sign : online?.me ?? 0 // the side a review looks at
+  const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && (online.placing ? online.me === 1 : game.toPlay === online.me) : !bot || game.toPlay !== bot.sign
+  const mine: Sign | 0 = bot ? -bot.sign as Sign : online?.me ?? ogsSide(game) // the side a review looks at
   const shown = review?.branch ?? game
   const m = review?.moments?.[review.k]
   const from = m ? fromOf(m, review!.step) : 0
@@ -284,10 +366,10 @@ export function App() {
   const countingNow = !review && counting?.game === game && game.ended && atEnd ? counting : null
   const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result) && !ongoing
   const canReview = reviewShown && canAnalyze
-  const live = ongoing || !!bot && !result || jt.open // a game being played (or the trainer shown): no autoplay
+  const live = ongoing || !!bot && !result || !!panel // a game being played (or a trainer shown): no autoplay
   const locked = !!result && atEnd // a decided line: playing from an earlier move opens a variation
   const play = (v: Vertex | null) => {
-    if (jt.open) return jt.play(v)
+    if (tr.open) return tr.play(v)
     if (countingNow) {
       if (v && !result) setCounting({ ...countingNow, dead: toggleDead(game.board.signMap, countingNow.dead, v) })
       return false
@@ -307,7 +389,11 @@ export function App() {
       if (r) send(() => ogs.setRemoved(removal.id, r.stones, r.removed))
       return false
     }
+    // free handicap placement: OGS echoes each stone back as a reload with the new setup
+    if (online?.placing) { if (v && humanTurn) send(() => ogs.move(online.id, v)); return false }
     if (locked || !humanTurn) return false
+    // a move after the flag fell (the timer late, after a sleep) is no move: the loss on time first
+    if (clock?.turn && !result && clock.turn !== bot?.sign && timeUp(clock, clock.turn, Date.now())) { loseOnTime(clock.turn); return false }
     const r = game.play(v)
     if (r === 'ok' && online) { changed(); if (!send(() => ogs.move(online.id, v))) game.undo() } // optimistic: OGS echoes it back
     else if (r === 'ok') { setDirty(true); setCounting(null); changed() }
@@ -315,7 +401,7 @@ export function App() {
     return r === 'ok'
   }
   const undo = async () => {
-    if (jt.open || review || bot && result || online || game.cursor === 0) return
+    if (panel || review || bot && result || online || game.cursor === 0) return
     // what goes: the subtree from the first move taken back (against the bot, back to the player's last move)
     let to = game.cursor - 1, n = 0
     if (bot) while (to > 0 && -game.moves[to - 1].sign === bot.sign) to--
@@ -338,8 +424,6 @@ export function App() {
     if (review && !review.branch) return
     setAuto(null); setCounting(null); f(shown); changed()
   }
-  // Autoplay: the line being played, one move per settings.autoplay seconds, dropped like the bot's moves
-  const [auto, setAuto] = useState<Game | null>(null)
   const toggleAuto = () => {
     if (auto) return setAuto(null)
     if (live || shown.moves.length === floor) return
@@ -360,39 +444,51 @@ export function App() {
   // online is cleared only here, and only with the board replaced: an unfinished OGS position never becomes a local
   // game open to KataGo (a finished one may stay, see signOut)
   const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null); setJoining(false) }
-  const start = (g: Game, b: typeof bot) => { cancelSearch(); stopOnline(); show(g, b) }
+  const start = (g: Game, b: typeof bot) => { abandon(); stopOnline(); show(g, b) }
   const show = (g: Game, b: typeof bot) => {
-    setGame(g); setBot(b); setNote(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null)
+    setGame(g); setBot(b); setNote(null); setStarted(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); setClock(null); setNextAi(null)
   }
   /** Leaving the shown game: an unfinished OGS game goes on without us; unsaved moves are lost. */
-  const canLeave = async () => ongoing ? askFirst(t.ogsLeaveAsk, t.ogsLeave) : !dirty || confirmDiscard()
-  // an action that may replace the game cancels a pending search before any picker, download or dialog: a match
-  // starting meanwhile would be abandoned without the leave question; backing out leaves the search cancelled
-  const newGame = async (size = nextSize) => {
-    cancelSearch()
+  // only a live game I play goes on with my clock running; spectated and correspondence games are left silently
+  const leaveAsked = !!myGame && !myGame.corr
+  const canLeave = async () => leaveAsked ? askFirst(t.ogsLeaveAsk, t.ogsLeave) : !dirty || confirmDiscard()
+  // an action that may replace the game cancels a pending search or live challenge before any picker, download or
+  // dialog: a match starting meanwhile would replace the game without the leave question; backing out leaves it cancelled
+  // o: the daily ritual's game (always against the AI, at your level, even)
+  const newGame = async (size = nextSize, o: { rank?: string; handicap?: number; ritual?: true } = {}) => {
+    if (o.ritual && !canPlayAI) return // never a two-player 9×9 in its place (the network state not known yet)
+    abandon()
     if (!(await canLeave())) return
-    setNextSize(size)
-    if (settings.opponent === 'ai' && canPlayAI) {
-      const me: Sign = settings.color === 'b' ? 1 : settings.color === 'w' ? -1 : random() < 0.5 ? 1 : -1
-      const rank = settings.aiRank, name = t.botName(rank)
-      start(new Game({ size, playerBlack: me === 1 ? '' : name, playerWhite: me === 1 ? name : '' }), { sign: -me as Sign, rank })
-    } else start(new Game({ size }), null)
+    resize(size)
+    let g: Game
+    if ((settings.opponent === 'ai' || o.ritual) && canPlayAI) {
+      const h = o.handicap ?? settings.handicap // with a handicap the player takes Black, White plays first
+      const me: Sign = h || settings.color === 'b' ? 1 : settings.color === 'w' ? -1 : random() < 0.5 ? 1 : -1
+      const rank = o.rank ?? settings.aiRank, name = t.botName(rank)
+      g = new Game({ size, playerBlack: me === 1 ? '' : name, playerWhite: me === 1 ? name : '',
+        ...h > 0 && { komi: 0.5, setup: { black: handicapStones(size, h), white: [] }, firstSign: -1 as Sign } })
+      if (h > 0) g.root.data.HA = [String(h)]
+      start(g, { sign: -me as Sign, rank, ...o.ritual && { ritual: true as const } })
+    } else start(g = new Game({ size }), null)
+    if (settings.clock !== 'off') { Object.assign(g.root.data, sgfTime(CLOCKS[settings.clock])); setClock(startClock(CLOCKS[settings.clock])) }
   }
-  const open = async (read: () => Promise<string | null> = openSgfFile, asked = false) => {
-    cancelSearch()
+  const open = async (read: () => Promise<string | null> = openSgfFile, asked = false, imported = false) => {
+    abandon()
     try {
       const text = await read()
       if (text === null) return
+      if (text.length > MAX_SGF) throw new LocalizedError(l => l.sgfTooBig)
       const g = loadSgf(text)
       if (!asked && !(await canLeave())) return
-      start(g, null); setNextSize(SIZES.includes(g.info.size) ? g.info.size : nextSize)
+      start(g, null); if (SIZES.includes(g.info.size)) resize(g.info.size)
+      if (imported) ar.enqueue(g, ogsSide(g)) // an ended OGS game of mine
     } catch (e) {
       setNote(d => d.openFailed(failureText(e, d)))
     }
   }
   /** The trainer's "Play a game from here": the bot takes the other side when it can play, else two players. */
   const playFrom = async (moves: Move[]) => {
-    cancelSearch()
+    abandon()
     if (!(await canLeave())) return false
     const me = -moves.at(-1)!.sign as Sign, ai = settings.opponent === 'ai' && canPlayAI, name = t.botName(settings.aiRank)
     start(Game.fromRecord({ size: 19, playerBlack: ai && me === -1 ? name : '', playerWhite: ai && me === 1 ? name : '' }, moves), ai ? { sign: -me as Sign, rank: settings.aiRank } : null)
@@ -404,6 +500,21 @@ export function App() {
       if (await saveSgfFile(saveSgf(game), t.fileName(game.info.size))) { setDirty(false); setNote(d => d.saved) }
     } catch (e) {
       setNote(d => d.saveFailed(failureText(e, d)))
+    }
+  }
+  const exporting = useRef(false) // a second click mustn't open a second save dialog
+  const postcard = async () => {
+    if (exporting.current) return
+    exporting.current = true
+    try {
+      const png = await view.current?.snapshot?.()
+      if (!png) throw new LocalizedError(d => d.postcardNotReady)
+      const lent = tr.open && tr.board && 'signMap' in tr.board ? tr.board.signMap : undefined // a trainer's board is what the picture shows
+      if (await savePngFile(png, lent ? t.postcardName(lent.length) : t.postcardName(shown.info.size, shown.moveNumber()))) setNote(d => d.postcardSaved)
+    } catch (e) {
+      setNote(d => d.postcardFailed(failureText(e, d)))
+    } finally {
+      exporting.current = false
     }
   }
 
@@ -430,46 +541,141 @@ export function App() {
         const r = s.result
         setOnline(s); setResult(s.game, r ? { msg: d => d.ogsResult(r.winner, r.how, r.points), re: r.re } : null)
       })
-    } catch (e) { setNote(d => failureText(e, d)) }
+    } catch (e) { setJoining(false); setNote(d => failureText(e, d)) }
   }
-  const resume = async (id: number) => { if (online?.id === id) return; cancelSearch(); if (await canLeave()) follow(id) }
-  const importGame = async (id: number) => { cancelSearch(); if (await canLeave()) open(() => ogs.sgf(id), true) }
+  // for callbacks that outlive the render they were made in (a match or a challenge starting later)
+  const latestFollow = useRef(follow)
+  latestFollow.current = follow
+  const resume = async (id: number) => { if (online?.id === id) return; abandon(); if (await canLeave()) follow(id) }
+  const importGame = async (id: number) => { abandon(); if (await canLeave()) open(() => ogs.sgf(id), true, true) }
   const find = async () => {
     if (!(await canLeave())) return // the shown game is left once a match starts
-    cancelSearch()
+    abandon()
     try {
       const size = nextSize as ogs.BoardSize, speed = settings.ogsSpeed, m = ogs.findMatch(size, speed)
       searching.current = m.cancel
       setSearch({ size, speed })
-      m.started.then(id => { searching.current = null; follow(id) })
+      m.started.then(id => { searching.current = null; latestFollow.current(id) })
     } catch (e) { setNote(d => failureText(e, d)) }
   }
   const cancelSearch = () => { searching.current?.(); searching.current = null; setSearch(null) }
+  /** Whatever would replace the shown game on its own later: a pending automatch, a live challenge's wait. */
+  const abandon = () => { cancelSearch(); cancelChallenge(true) }
   /** Before signing out: an unfinished OGS game is left (asked first) and its board replaced; a finished one stays. */
   const signOut = async () => {
-    if (ongoing && !(await askFirst(t.ogsLeaveAsk, t.ogsLeave))) return false
+    if (leaveAsked && !(await askFirst(t.ogsLeaveAsk, t.ogsLeave))) return false
+    stopWait()
     if (ongoing) start(new Game({ size: game.info.size }), null)
     else { cancelSearch(); stopOnline() }
     return true
   }
+  const stopWait = () => { waiting.current?.stop(); waiting.current = null; setChallengeWait(null) }
+  /** Ends the live challenge's wait and withdraws it; `quiet`: best effort, when something else replaces it. */
+  const cancelChallenge = (quiet = false) => {
+    const id = waiting.current?.id
+    stopWait()
+    if (id !== undefined) ogs.cancelChallenge(id).catch(e => { if (!quiet) setNote(d => failureText(e, d)) })
+  }
+  /** The sheet's Sent list: the waited challenge ends its wait too. */
+  const cancelSent = (id: number) => {
+    if (waiting.current?.id === id) cancelChallenge()
+    else ogs.cancelChallenge(id).catch(e => setNote(d => failureText(e, d)))
+  }
+  /** A challenge sent; a live one waits, with its keepalive, for the game to start without replacing the board. */
+  const sendChallenge = async (playerId: number, who: string, body: unknown, corr: boolean) => {
+    if (!corr) cancelSearch()
+    const { challengeId, gameId } = await ogs.challenge(playerId, body)
+    if (corr) return setNote(d => d.ogsChallengeSent(who))
+    cancelChallenge(true) // an earlier one still waiting
+    setNote(null)
+    let leave = () => {}
+    const stopKeep = ogs.keepAlive(challengeId, gameId), w = { id: challengeId, gameId, stop: () => { stopKeep(); leave() } }
+    waiting.current = w
+    setChallengeWait({ id: challengeId, gameId, who })
+    try {
+      // the wait ends before follow(), whose start() would otherwise withdraw this very challenge
+      leave = ogs.follow(gameId, (_, s) => { if (s && waiting.current === w) { stopWait(); latestFollow.current(gameId) } })
+    } catch (e) { stopWait(); setNote(d => failureText(e, d)) }
+  }
+  const challengePlayer = async (username: string, o: { ranked: boolean; handicap: boolean }) => {
+    const speed = settings.ogsSpeed, corr = speed === 'correspondence'
+    const p = await ogs.findPlayer(username) // an unknown name fails here, before any leave question
+    if (!corr && !(await canLeave())) return
+    await sendChallenge(p.id, p.username, ogs.challengeBody({ size: nextSize as ogs.BoardSize, speed, ...o }), corr)
+    if (!corr) closeSheet()
+  }
+  const rematch = () => {
+    if (!online || !opponent) return
+    sendChallenge(opponent.id, opponent.username, ogs.rematchBody(online), online.corr).catch(e => setNote(d => failureText(e, d)))
+  }
+  // asked for every pace: following the new game replaces the board
+  const accept = async (c: ogs.ChallengeRow) => {
+    abandon()
+    if (!(await canLeave())) return
+    try { const id = await ogs.acceptChallenge(c.id); closeSheet(); follow(id) } catch (e) { setNote(d => failureText(e, d)) }
+  }
+  const openLink = async (id: number) => {
+    closeSheet()
+    try { if ((await ogs.gameInfo(id)).ended) importGame(id); else resume(id) } catch (e) { setNote(d => failureText(e, d)) }
+  }
+  // OGS notices: a system notification in the background; in the app, only what the dot and the sheet don't show
+  const onNotice = useRef((_: ogs.Notice) => {})
+  onNotice.current = n => {
+    const who = n.who ?? ''
+    void notify(n.key, n.kind === 'yourTurn' ? t.ogsTurnTitle : n.kind === 'challenge' ? t.ogsChallengeFrom(who)
+      : n.kind === 'started' ? t.ogsStartedVs(who) : n.kind === 'ended' ? t.ogsEndedVs(who) : t.ogsDeclined(who),
+      n.kind === 'yourTurn' ? t.ogsTurnBody(who, n.size ?? 0) : undefined)
+    // newer OGS news supersedes a stale note, which would otherwise hide the ambient line (a result line wins anyway: its note stays)
+    if (n.kind === 'challenge' && !result) setNote(null)
+    if (n.gameId === undefined) return
+    // a game of mine that ended outside Masame (correspondence, the website): reviewed too, the game being over
+    if (n.kind === 'ended' && n.outcome !== 'Void') ogs.sgf(n.gameId).then(s => { const g = loadSgf(s); ar.enqueue(g, ogsSide(g)) }).catch(console.error)
+    if (n.kind === 'declined' && n.gameId === waiting.current?.gameId) { stopWait(); setNote(d => d.ogsDeclined(who)) }
+    else if (n.kind === 'started' && n.gameId !== online?.id && n.gameId !== waiting.current?.gameId && document.hasFocus()) { if (!result) setNote(null); setStarted({ id: n.gameId, who }) }
+  }
+  useEffect(() => ogs.onNotice(n => onNotice.current(n)), [])
+  // a followed OGS game of mine that finished (not cancelled): reviewed in the background, OGS's rules no longer apply
+  const ogsEnded = online?.phase === 'finished' && online.me !== 0 && !!online.result && online.result.re !== 'Void' && online.result.how !== 'cancel'
+  useEffect(() => { if (ogsEnded) ar.enqueue(online.game, online.me as Sign) }, [ogsEnded, online?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** End of a game: record the result (and, against the bot, nudge its rank toward a 50 % win rate, once). */
   const finish = (text: Msg, botWon: boolean | null, re: string) => {
     game.promote() // the decided line is the record's main line, which RE describes
     game.info.result = re
     setResult(game, { msg: text, re })
+    if (bot) ar.enqueue(game, -bot.sign as Sign)
+    if (bot?.ritual) td.played()
     if (!bot || scored.current === game || botWon === null) return
     scored.current = game
-    if (settings.autoAdjust) {
-      const next = adjustRank(bot.rank, botWon)
-      if (next !== bot.rank) { set('aiRank', next); setNote(d => d.rankAdjusted(next)) }
+    if (settings.autoAdjust && !bot.ritual) {
+      // a step toward 50 % wins, kept within BAND of the rank read in the player's moves (once there is one)
+      const step = adjustRank(bot.rank, botWon), local = localRank(ranksRef.current.p.games)
+      const next = local === null ? step : RANKS[anchored(RANKS.indexOf(step), local)]
+      if (next !== bot.rank) { set('aiRank', next); setNextAi(next) }
     }
   }
+  const cancellable = !!myGame && ogs.canCancel(myGame) // early in the game: cancelled instead, not counted
   const resign = async () => {
+    if (cancellable) { if (await askFirst(t.ogsCancelAsk, t.ogsCancelGame)) send(() => ogs.cancelGame(myGame.id)); return }
     if (online) { if (!result && await askFirst(t.ogsResignAsk, t.resign)) send(() => ogs.resign(online.id)); return }
     if (!bot || result) return
     finish(d => d.resigns(-bot.sign), true, resignResult(bot.sign))
   }
+  // the local clock runs for the side to move at the end of the line; stopped after two passes, once decided, under a trainer
+  const tail = game.moves.slice(-2), endTurn = (game.moves.length ? -game.moves.at(-1)!.sign : game.info.firstSign) as Sign
+  const clockTurn = result || panel || tail.length === 2 && tail.every(m => !m.vertex) ? null : endTurn
+  useEffect(() => { if (clock) { const c = sync(clock, clockTurn, Date.now(), game.moves.length); if (c !== clock) setClock(c) } })
+  // a human side out of time loses (checked late too, after a sleep); the bot's clock runs but it never loses on time
+  const loseOnTime = (s: Sign) => finish(d => d.losesOnTime(s), bot ? true : null, timeResult(-s as Sign))
+  useEffect(() => {
+    if (!clock || clock.turn === null || result) return
+    const late = ([1, -1] as const).find(s => s !== bot?.sign && timeUp(clock, s, Date.now()))
+    if (late) return loseOnTime(late)
+    const s = clock.turn
+    if (s === bot?.sign) return
+    const id = setTimeout(() => loseOnTime(s), flagAt(clock)! - Date.now())
+    return () => clearTimeout(id)
+  }, [clock, result]) // eslint-disable-line react-hooks/exhaustive-deps
   const final = countingNow && score(game.board.signMap, countingNow.dead, { black: game.board.getCaptures(1), white: game.board.getCaptures(-1) }, game.info.komi, countingNow.own)
   const validate = () => {
     if (!final || result) return
@@ -479,7 +685,7 @@ export function App() {
   // Game review: reading (scan + deep checks), then lessons on the branch boards
   const startReview = (side: Sign | 0) => {
     const last = game.boards.at(-1)!
-    if (scan.current?.last !== last) scan.current = { last, leads: [] }
+    if (scan.current?.last !== last) scan.current = { last, leads: ar.leadsOf(game) } // a background review's leads, if any
     setReview({ side, pct: 0, error: null, moments: null, k: 0, step: 'try', branch: null, ask: null, gap: null, explored: false })
     changed()
   }
@@ -494,7 +700,7 @@ export function App() {
   // The bot's turn: ask KataGo (human policy at the bot's rank + a small search), then play after a human-like pause.
   // A failed query is retried (the Rust side restarts a crashed engine and waits until it is warm); after the last
   // attempt the note offers "Réessayer" — undo and new game stay available throughout.
-  const botTurn = !!bot && !result && !game.ended && atEnd && game.toPlay === bot.sign && !jt.open
+  const botTurn = !!bot && !result && !game.ended && atEnd && game.toPlay === bot.sign && !panel
   useEffect(() => {
     if (!botTurn || !bot) return
     let live = true
@@ -521,7 +727,7 @@ export function App() {
       const history = game.moves.slice(0, game.cursor).flatMap(m => winrates.current.get(m) ?? []) // the bot's moves on this line
       const m = decide({
         humanPolicy: a.humanPolicy, topMove: a.topMove, botWinrate, history, ownership: a.ownership,
-        signMap: game.board.signMap, opponentPassed: !!game.lastMove && !game.lastMove.vertex, moveNumber: game.moveNumber(),
+        mayResign: settings.botResign, signMap: game.board.signMap, opponentPassed: !!game.lastMove && !game.lastMove.vertex, moveNumber: game.moveNumber(),
         legal: i => game.isLegal([i % n, Math.floor(i / n)]),
       }, random)
       if (m.kind === 'resign') return finish(d => d.resigns(bot.sign), false, resignResult(-bot.sign as Sign))
@@ -553,14 +759,14 @@ export function App() {
 
   // "Ombre et lumière": ownership of the displayed position, debounced, kept until the next estimate arrives.
   useEffect(() => {
-    if (!settings.territory || !canAnalyze || review || ongoing) return
+    if (!settings.territory || !canAnalyze || review || ongoing || joining) return
     let live = true
     const t = setTimeout(() => {
       analyze(game, { maxVisits: TERRITORY_VISITS, includeOwnership: true })
         .then(a => live && setOwn({ game, data: a.ownership, score: a.scoreLead }), e => live && setNote(d => failureText(e, d)))
     }, 250)
     return () => { live = false; clearTimeout(t) }
-  }, [settings.territory, ver, game, canAnalyze, !!review, ongoing]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [settings.territory, ver, game, canAnalyze, !!review, ongoing, joining]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reading: resumes from the scan cache after an error ("Try again") or a colour change.
   useEffect(() => {
@@ -570,9 +776,30 @@ export function App() {
     const run = scanRun.current.catch(() => {}).then(() => readGame(game, review.side, leads,
       (at, q) => analyze(game.branch(at), q as Record<string, unknown>), () => live, pct => live && setReview(x => x && { ...x, pct })))
     scanRun.current = run
-    run.then(ms => { if (live) openMoment(0, 'try', ms) }, e => live && setReview(x => x && { ...x, error: e }))
+    run.then(ms => {
+      if (!live) return
+      ex.add(game, ms, leads, mine || review.side)
+      if (!canPlayAI || !review.side || review.side !== mine) ar.reviewed(game) // else once the rank is read too
+      openMoment(0, 'try', ms)
+    }, e => live && setReview(x => x && { ...x, error: e }))
     return () => { live = false }
   }, [reading, review?.side, game, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The reviewed side's rank, once the moments are in: not behind scanRun (the lessons' answers don't wait for its many
+  // tiny queries), at a lower priority than them; stored only for the player's own side
+  const rankSide = review?.moments && review.side && canPlayAI ? review.side : 0
+  useEffect(() => {
+    if (!rankSide) return
+    let live = true
+    readRank(game, rankSide, ar.ranksOf(game), (g, q) => analyze(g, { ...q, priority: -1 }), () => live).then(r => {
+      if (!live) return
+      setReview(x => x && { ...x, rank: r })
+      if (rankSide !== mine) return
+      const ai = r && keep.current(recordKey(game), r) // no note: it would replace the lesson's caption
+      if (ai) setNextAi(ai)
+      ar.reviewed(game)
+    }, e => { if (live) { console.error('rank', e); setReview(x => x && { ...x, rank: null }) } })
+    return () => { live = false }
+  }, [rankSide, game]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // In a lesson, the engine answers each move played on the branch; a try from the lesson's start is graded.
   const lesson = review?.branch
@@ -597,6 +824,25 @@ export function App() {
     }).catch(e => live && setReview(x => x && { ...x, error: e })).finally(() => live && setThinking(false))
     return () => { live = false; setThinking(false) }
   }, [answering, ver, lesson, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Free analysis while A is held: a quick read, then a deep one, cached per position (the deep one replaces it)
+  const reads = useRef(new WeakMap<Game['board'], { a: Analysis; deep: boolean; toPlay: Sign }>()) // a PL pseudo-move keeps the board, not the side to move
+  const [anError, setAnError] = useState<unknown>(null)
+  const an = held && !ongoing && !joining && !panel && !countingNow && !removal && !reading // OGS forbids engine help in an ongoing game
+  const anRead = an ? [reads.current.get(shown.board)].find(r => r?.toPlay === shown.toPlay) : undefined
+  useEffect(() => {
+    if (!an || !canAnalyze || anRead?.deep) return
+    let live = true
+    const g = shown, b = g.board
+    setAnError(null)
+    const ask = (deep: boolean, extra: Record<string, unknown>) => {
+      const run = scanRun.current.catch(() => {}).then(() => { if (!live) throw null; return analyze(g, extra) }) // cancelled while queued: send nothing
+      scanRun.current = run
+      return run.then(a => { if (live) { reads.current.set(b, { a, deep, toPlay: g.toPlay }); rerender() } })
+    }
+    ;(anRead ? Promise.resolve() : ask(false, QUICK)).then(() => { if (live) return ask(true, DEEP) }).catch(e => live && e && setAnError(e))
+    return () => { live = false }
+  }, [an, canAnalyze, shown.board, shown.toPlay]) // eslint-disable-line react-hooks/exhaustive-deps
+  const cands = anRead ? candidates(anRead.a, shown.toPlay) : null
   // a caption link remounts the caption (keyed by its text): right after one is activated, focus the link with the same
   // action if it came back, else the caption itself, so a second Enter never changes step, moment or leaves the review
   const refocus = useRef<string | null>(null)
@@ -622,6 +868,50 @@ export function App() {
     const off = on<string>('menu', id => onMenu.current(id))
     return () => { off.then(f => f()) }
   }, [])
+  // Files from outside: dropped on the window, or handed over by the OS (double-click, Open with); a sheet closes first
+  const openFrom = useRef((_: () => Promise<string | null>) => {})
+  openFrom.current = async read => {
+    setSheet(null)
+    try { // read and checked before open() abandons anything: a stray file mustn't cancel an OGS search or challenge
+      const text = await read()
+      if (text === null) return
+      if (text.length > MAX_SGF) throw new LocalizedError(l => l.sgfTooBig)
+      loadSgf(text)
+      open(async () => text)
+    } catch (e) {
+      setNote(d => d.openFailed(failureText(e, d)))
+    }
+  }
+  useEffect(() => {
+    const files = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
+    let depth = 0 // dragenter/dragleave fire for every element crossed
+    const hint = (n: number) => {
+      depth = n
+      document.documentElement.toggleAttribute('data-drop', n > 0) // the frame
+      if (n > 0) document.body.dataset.drop = t.dropHint; else delete document.body.dataset.drop // the veil and its caption
+    }
+    const enter = (e: DragEvent) => { if (files(e)) hint(depth + 1) }
+    const leave = (e: DragEvent) => { if (files(e)) hint(Math.max(0, depth - 1)) }
+    const over = (e: DragEvent) => { if (files(e)) { e.preventDefault(); e.dataTransfer!.dropEffect = 'copy' } }
+    const drop = (e: DragEvent) => {
+      if (!files(e)) return
+      e.preventDefault(); hint(0)
+      const f = e.dataTransfer!.files[0] // one game at a time
+      if (f) openFrom.current(async () => { if (f.size > MAX_SGF) throw new LocalizedError(l => l.sgfTooBig); return f.text() })
+    }
+    const evs = { dragenter: enter, dragleave: leave, dragover: over, drop }
+    for (const [k, f] of Object.entries(evs)) window.addEventListener(k, f as EventListener)
+    return () => { for (const [k, f] of Object.entries(evs)) window.removeEventListener(k, f as EventListener) }
+  }, [])
+  useEffect(() => {
+    if (!inTauri()) return
+    // asked once listening, too: macOS may hand a file over before this page exists
+    const take = () => call<{ name: string; text: string } | null>('take_opened')
+      .then(f => { if (f) openFrom.current(async () => f.text) }, e => setNote(d => d.openFailed(failureText(e, d))))
+    const off = on<null>('files-opened', take)
+    off.then(take)
+    return () => { off.then(f => f()) }
+  }, [])
   // The macOS menu bar speaks the UI language (its labels live in the dictionaries)
   useEffect(() => { if (isMac && inTauri()) call('set_language', { labels: { ...t.menu, panel: settings.panelHidden ? t.menu.showPanel : t.menu.hidePanel } }).catch(console.error) }, [settings.lang, settings.panelHidden])
 
@@ -633,6 +923,7 @@ export function App() {
       // a window shortcut, so even over a sheet or a field; macOS keeps its menu's full screen only
       if (e.key === 'F11' && !isMac) { e.preventDefault(); return setFullscreen(!fullscreen) }
       if (blocked(e.target)) return
+      if (e.key.toLowerCase() === 'a' && !e.altKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (!e.repeat) setHeld(true); return }
       const cmd = isMac ? e.metaKey : e.ctrlKey, k = e.key.toLowerCase()
       const act = cmd
         ? menuKeys ? undefined : commands[({ z: 'undo', n: 'new', o: 'open', s: 'save', '\\': 'panel' } as Record<string, string>)[k]]
@@ -644,7 +935,7 @@ export function App() {
             home: () => goTo(0), end: () => goTo(shown.moves.length),
             ...(fullscreen && !isMac && { escape: () => setFullscreen(false) }), // after a sheet's Esc and before a review's
             ...(review && { escape: leaveReview }),
-            j: jt.toggle, ...jt.keys,
+            j: jt.toggle, e: ex.toggle, d: td.toggle, ...tr.keys,
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
             t: ongoing ? undefined : () => set('territory', !settings.territory), h: togglePanel,
             ...(renderer === '3d' && {
@@ -662,13 +953,18 @@ export function App() {
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
   })
+  useEffect(() => {
+    const up = (e: KeyboardEvent) => { if (e.key.toLowerCase() === 'a') setHeld(false) }, blur = () => setHeld(false)
+    addEventListener('keyup', up); addEventListener('blur', blur)
+    return () => { removeEventListener('keyup', up); removeEventListener('blur', blur) }
+  }, [])
 
   const { size, komi, playerBlack, playerWhite } = game.info
   const board = shown.board, toPlay = shown.toPlay, last = shown.lastMove
   const shownOwn = settings.territory && own?.game === game && !ongoing ? own : null
   const engineWait = engine.state === 'tuning' ? t.tuningCaption
-    : (thinking || reading) && engine.state === 'starting' ? t.engineStarting
-    : (thinking || reading) && engine.state === 'warming' ? t.engineWarming : null
+    : (thinking || reading || an) && engine.state === 'starting' ? t.engineStarting
+    : (thinking || reading || an) && engine.state === 'warming' ? t.engineWarming : null
   // the review's caption and its links (p: the colour that punishes, s: the one that made the mistake)
   const p = m ? -m.sign : 0, s = m?.sign ?? 0
   const graded = m && review?.step === 'try' && review.gap !== null ? verdict(m, review.gap) : null
@@ -680,21 +976,45 @@ export function App() {
     : t.betterLine(s, gtp(m.better[0]!, size), m.loss)
   const lastMoment = !!review?.moments && review.k === review.moments.length - 1
   // [action id, label, action]: the id tells refocus whether the same action is still offered
-  const links: [string, string, () => void][] = jt.open ? jt.links : review?.error ? [['retry', t.retry, retryLesson]]
-    : botError && !result ? [['retry', t.retry, retryBot]]
-    : !review ? search ? [['cancel', t.cancel, cancelSearch]] : result && canReview ? [['review', t.reviewGame, () => startReview(mine)]] : []
+  type Link = [string, string, () => void]
+  const withNote = (text: string) => [text, note?.(t)].filter(Boolean).join(' ')
+  const aiMoved = nextAi && nextAi !== bot?.rank ? nextAi : null
+  const resultLine = result && [result(t), note?.(t), aiMoved && t.aiNext(aiMoved)].filter(Boolean).join(' ')
+  const incoming = !myGame && challengeRows.find(c => !c.mine)
+  const undoAsk = myGame?.undo
+  // outside trainers and reviews, top first: search, OGS game prompts, challenge wait, OGS game states, result, the local
+  // game's lines; only when none has anything to say, a game started elsewhere or an incoming challenge
+  const [line, lineLinks]: [string | null | undefined, Link[]] = search ? [note?.(t) ?? t.ogsSearching(search.size, t.paces[search.speed]), [['cancel', t.cancel, cancelSearch]]]
+    : ongoing && ogsStatus !== 'online' ? [t.ogsReconnecting, []]
+    : myGame?.placing ? [withNote(myGame.me === 1 ? t.ogsPlaceMine(myGame.placing) : t.ogsPlaceTheirs(myGame.players.black.username, myGame.placing)), []]
+    : undoAsk && undoAsk.by === ogs.me?.id ? [withNote(t.ogsUndoSent), [['withdraw', t.ogsWithdraw, () => send(() => ogs.cancelUndo(myGame.id, undoAsk.move))]]]
+    : undoAsk && ogs.me && ogs.canAnswerUndo(myGame, ogs.me.id) ? [withNote(t.ogsUndoAsked(opponent!.username)), [['accept', t.ogsAccept, () => send(() => ogs.acceptUndo(myGame.id, undoAsk.move))]]]
+    : myGame?.pause ? [withNote(t.ogsPaused), ogs.canResume(myGame) ? [['resume', t.resume, () => send(() => ogs.resumeGame(myGame.id))]] : []]
+    : removal ? [withNote(removal.scoring === 'waiting' ? t.ogsScoringWait : removal.scoring === 'failed' ? t.ogsScoringFailed : t.countingHelp), []]
+    : challengeWait ? [t.ogsChallengeWait(challengeWait.who), [['cancel', t.cancel, () => cancelChallenge()]]]
+    : ongoing && online.me === 0 ? [withNote(t.ogsWatching(online.players.black.username, online.players.white.username)),
+      [['quit', t.ogsLeave, () => start(new Game({ size: game.info.size }), null)]]]
+    : result ? [resultLine, [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
+      ...(online && online.me !== 0 && online.phase === 'finished' ? [['rematch', t.ogsRematch, rematch] as Link] : [])]]
+    : countingNow ? [t.countingHelp, []]
+    : game.ended ? [t.countingWait, []]
+    : [(botError ?? note)?.(t) ?? engineWait ?? (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null),
+      botError ? [['retry', t.retry, retryBot]] : []]
+  const [gameLine, gameLinks]: [string | null | undefined, Link[]] = line ? [line, lineLinks]
+    : started ? [t.ogsStartedVs(started.who), [['open', t.ogsOpen, () => resume(started.id)]]]
+    : incoming ? [t.ogsChallenged(incoming.from.username, incoming.from.rank, incoming.size, t.paces[incoming.speed], incoming.ranked),
+      [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
+    : [line, lineLinks]
+  const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open ? 1 : ex.open ? 0 : -1)] : review?.error ? [['retry', t.retry, retryLesson]]
+    : !review ? gameLinks
     : !m ? [['back', t.backToGame, leaveReview]]
-    : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as [string, string, () => void]] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
+    : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as Link] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
     : review.step === 'punish' ? [['better', t.seeBetter, () => openMoment(review.k, 'better')]]
     : lastMoment ? [['back', t.backToGame, leaveReview]] : [['next', t.nextMoment, () => openMoment(review.k + 1, 'try')]]
-  const message = jt.open ? jt.note : review ?(review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
-    : search ? note?.(t) ?? t.ogsSearching(search.size, t.paces[search.speed])
-    : ongoing && ogsStatus !== 'online' ? t.ogsReconnecting
-    : result ? [result(t), note?.(t)].filter(Boolean).join(' ')
-    : countingNow || removal ? t.countingHelp
-    : game.ended ? t.countingWait
-    : (botError ?? note)?.(t) ?? engineWait
-      ?? (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null)
+  const anLine = !an ? null : !canAnalyze ? t.anNeedsNet : anError ? t.anFailed(failureText(anError)) : engineWait
+    ?? (cands ? t.anFor(toPlay) : t.anReading)
+  const message = anLine ?? (tr.open ? (thinking && engineWait) || [tr.note, !td.open && ritualSaid && t.ritualDone(ritualSaid)].filter(Boolean).join(' ') : review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
+    : gameLine)
   // tuning progress: outside the key (no re-fade per update) and aria-hidden (announced once)
   const tuned = message === t.tuningCaption && engine.state === 'tuning' ? t.tuningProgress(engine.step, engine.done, engine.total)
     : review && message === t.reading ? t.percent(review.pct) : ''
@@ -730,23 +1050,31 @@ export function App() {
   const playing = review ? !!review.branch : !game.ended && !result && (!online || online.phase === 'play') // whose turn it is means something
   const floor = review?.branch ? from : 0
   const re = outcome?.re ?? '' // "B+R", "W+4.5", "0"
-  const resignation = re.endsWith('+R'), countingOpen = !!final && !result
+  const res = readResult(re) // the caption's card reads the result from RE
+  const resignation = re.endsWith('+R'), timeout = re.endsWith('+T'), countingOpen = !!final && !result
   // the count, shown while counting and, once validated, at every cursor position (scored on the final board)
   const end = game.boards.at(-1)!
-  const count = counting?.game === game && (countingOpen || (!!re && !resignation))
+  const count = counting?.game === game && (countingOpen || (!!re && !resignation && !timeout))
     ? score(end.signMap, counting.dead, { black: end.getCaptures(1), white: end.getCaptures(-1) }, komi, counting.own) : null
   const sideOf = (s: Sign) => count ? s === 1 ? count.black : count.white : null
   const tallyOf = (s: Sign) => { const c = sideOf(s)!; return t.tally(c.territory, c.prisoners, s === -1 ? komi : undefined) }
   // counting: points over the tally; counted: "wins" over points and tally; a draw: the points alone
   const subOf = (s: Sign) => !count || re === '0' ? null : countingOpen ? tallyOf(s) : `${t.points(sideOf(s)!.total)} · ${tallyOf(s)}`
   const stateOf = (s: Sign) => count && (countingOpen || re === '0') ? t.points(sideOf(s)!.total)
-    : re ? re[0] === (s === 1 ? 'B' : 'W') ? t.wins : resignation ? t.resigned : ''
+    : re ? re[0] === (s === 1 ? 'B' : 'W') ? t.wins : resignation ? t.resigned : timeout ? t.onTime : ''
     : last && !last.vertex && last.sign === s ? t.passed
     : !playing ? ''
     : toPlay === s ? bot?.sign === s ? thinking ? t.thinking : t.waiting : online && online.me !== s ? t.thinking : t.yourMove
     : t.waiting
+  const gameHint = challengeRows.some(c => !c.mine) ? t.ogsDotChallenge : activeRows?.some(r => r.myTurn && r.corr) ? t.ogsDotTurn : null
+  const gameLabel = gameHint ? `${t.game} · ${gameHint}` : t.game
   const alert = upd.s === 'available' ? t.updateAvailable(upd.version) : engine.state === 'error' ? failureText(engine.error) : null
   const closeSheet = () => setSheet(null)
+  /** The player's own changes in the Game sheet re-propose the handicap (the bot's auto-adjusted level does not). */
+  const propose = ({ size = nextSize, ...c }: Partial<Pick<Settings, 'myRank' | 'aiRank'>> & { size?: number }) =>
+    setSettings(s => { const n = { ...s, ...c }; return { ...n, handicap: proposeHandicap(n.myRank, n.aiRank, size) } })
+  /** The next game's size changed (the sheet, a game of another size started or opened): its handicap is proposed again. */
+  const resize = (n: number) => { if (n !== nextSize) { setNextSize(n); propose({ size: n }) } }
   // Networks opened from Settings closes back to Settings, on its link
   const closeNets = () => setSheet(netsFromSettings.current ? 'settings' : null)
   useEffect(() => { if (sheet === 'view') document.getElementById('display')?.scrollIntoView({ block: 'start' }) }, [sheet])
@@ -777,14 +1105,22 @@ export function App() {
             counting: final ? { dead: countingNow!.dead, territory: final.territory }
               : removal ? { dead: ogs.deadOf(board.signMap, removal.removed), territory: board.signMap.map(r => r.map(() => 0 as Sign)) } : null, // OGS scores
             captures: { black: board.getCaptures(1), white: board.getCaptures(-1) }, // the 3D lids: prisoners taken by each
-            ...jt.board,
+            ...tr.board,
+            ...(cands && { marks: cands.flatMap(c => c.v ? [{ v: c.v, label: c.label, tone: tone(c.loss) }] : []) }),
           }}
           onPlay={play}
         >
           <p className="note" aria-live="polite" tabIndex={-1}>
-            {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message}>
-              <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>
-              {links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>{label}</button>)}
+            {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message} className={message === resultLine ? 'res' : undefined}>
+              {message === resultLine ? <>
+                {/* the result as a score sheet: winner's stone, who and how, the AI's next level; read in that order */}
+                {res.winner !== 0 && <span className={`stone ${res.winner === 1 ? 'b' : 'w'}`} aria-hidden="true">{re}</span>}
+                <span className="txt"><b>{t.ended(res.winner, res.how, res.points)}</b>{' '}
+                  <small>{[res.winner !== 0 && t.endedHow(res.how, res.points), note?.(t)].filter(Boolean).join(' · ')}</small></span>
+                {aiMoved && <span className="chip">{t.aiLevel}{' '}<b>{bot && <i>{bot.rank} →</i>} {aiMoved}</b></span>}
+              </> : <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>}
+              {!anLine && links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>
+                {id === 'review' && message === resultLine && <Icon name="review" />}{label}</button>)}
             </span>}
           </p>
         </Goban>
@@ -793,8 +1129,8 @@ export function App() {
             {!settings.panelHidden && <>
               <span className="seal" aria-hidden="true">柾</span>
               <h1>Masame</h1>
-              {jt.button}
-              <button className="icon" onClick={openSheet('game')} aria-label={t.game} title={t.game}><Icon name="plus" /></button>
+              {td.button}{jt.button}{ex.button}
+              <button className="icon" onClick={openSheet('game')} aria-label={gameLabel} title={gameLabel}><Icon name="plus" />{gameHint && <i className="dot" />}</button>
               <button className="icon" onClick={openSheet('settings')} aria-label={alert ? `${t.settings} · ${alert}` : t.settings}
                 title={alert ? `${t.settings} · ${alert}` : t.settings}><Icon name="adjustments" />{alert && <i className="dot" />}</button>
             </>}
@@ -818,7 +1154,11 @@ export function App() {
                 aria-label={t.render3d} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
             </div>
             <div className="body">
-              {jt.body ?? <>{review ? (
+              {tr.body ?? <>{cands ? ( // while A is held, the candidates in place of the players (or the review)
+                <ul className="jrows" aria-label={t.anFor(toPlay)}>
+                  {cands.map((c, i) => <li key={i}><div className={`jrow an ${tone(c.loss)}`}><b>{c.v ? `${c.label} · ${gtp(c.v, size)}` : t.anPass}</b><span>{c.loss ? t.jLoss(c.loss) : t.jBest}</span><span /></div></li>)}
+                </ul>
+              ) : review ? (
                 <section className="rv">
                   <div className="lab"><span>{t.review}</span><span>{reading ? t.percent(review.pct) : ''}</span></div>
                   {!bot && (
@@ -840,7 +1180,14 @@ export function App() {
                     <Seg label={t.lesson} value={review.step} options={[['try', t.steps.try], ['punish', t.steps.punish], ['better', t.steps.better]]}
                       set={step => openMoment(review.k, step)} />
                     <p className="quiet">{review.step === 'try' ? t.tryHelp(p, s, m.loss) : review.step === 'punish' ? t.punishHelp : t.betterHelp}</p>
+                    <p className="quiet">{t.exKept(review.moments!.length)}</p>
                   </>}
+                  {rankSide !== 0 && <div className="rv-rank" aria-live="polite">
+                    {review.rank === undefined ? <p className="quiet">{t.rankReading(rankSide === mine ? 0 : rankSide)}</p> : review.rank && <>
+                      <p className="estimate">{t.rankPlayed(rankSide === mine ? 0 : rankSide, rankName(review.rank.all))}</p>
+                      {review.rank.phases.some(x => x !== null) && <p className="quiet">{phaseLine(review.rank.phases)}</p>}
+                    </>}
+                  </div>}
                 </section>
               ) : ([1, -1] as const).map(c => {
                 const n = board.getCaptures(c), sub = subOf(c)
@@ -851,7 +1198,10 @@ export function App() {
                     <div className="lbl"><span className="nm">{bot ? c === bot.sign ? t.ai : t.you : (c === 1 ? playerBlack : playerWhite) || t.color(c)}</span>{rank && <span className="rk">{rank}</span>}</div>
                     <div aria-live={countingOpen ? 'polite' : undefined}>
                       <div className="state" aria-live={online ? 'polite' : undefined}>{stateOf(c)}</div>
-                      {online?.clock && !result ? <div className="sub"><Clock clock={online.clock} tc={online.tc} color={c} pausedSince={online.pausedSince} /></div> : sub && <div className="sub">{sub}</div>}
+                      {online?.clock && !result ? <div className="sub"><Clock read={now => ogs.clockOf(online.clock!, c, now, ogs.drift(), online.pausedSince)}
+                        period={online.tc?.system === 'byoyomi' ? online.tc.period_time : undefined} /></div>
+                        : clock && !result && !sub ? <div className="sub"><Clock read={now => read(clock, c, now)} period={clock.spec.period / 1000} /></div>
+                        : sub && <div className="sub">{sub}</div>}
                     </div>
                     <span className="cap" role="img" aria-label={t.captures(n)}>{n}</span>
                     <span className="wm" aria-hidden="true">{c === 1 ? '黒' : '白'}</span>
@@ -867,16 +1217,22 @@ export function App() {
               )}</>}
             </div>
             <div className="acts">
-              {jt.acts ?? (review ? <button className="act" onClick={leaveReview} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button> : <>
+              {tr.acts ?? (review ? <button className="act" onClick={leaveReview} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button> : <>
                 {(final || removal) && !result
                   ? <button className="act accent" onClick={removal ? () => send(() => ogs.acceptRemoved(removal.id, removal.removed)) : validate}><Icon name="hand-stop" />{t.validate}</button>
-                  : <button className="act" onClick={() => play(null)} disabled={game.ended || locked || !humanTurn} title="P"><Icon name="hand-stop" />{t.pass}</button>}
-                <button className="act" onClick={undo} disabled={game.cursor === 0 || (!!bot && !!result) || !!online} title={ongoing ? t.ogsUnavailable : shortcut('Z')}><Icon name="arrow-back-up" />{t.undo}</button>
-                <button className="act" aria-pressed={settings.territory} onClick={() => set('territory', !settings.territory)} disabled={ongoing}
-                  title={ongoing ? t.ogsUnavailable : 'T'}><Icon name="sun-low" />{t.territory}</button>
+                  : <button className="act" onClick={() => play(null)} disabled={game.ended || locked || !humanTurn || !!online?.placing} title="P"><Icon name="hand-stop" />{t.pass}</button>}
+                {online ? <button className="act" onClick={() => send(() => ogs.requestUndo(online.id, ogs.moveNumber(online)))} disabled={!atEnd || !ogs.canRequestUndo(online)}
+                  title={t.ogsUndoHelp}><Icon name="arrow-back-up" />{t.undo}</button>
+                  : <button className="act" onClick={undo} disabled={game.cursor === 0 || (!!bot && !!result)} title={shortcut('Z')}><Icon name="arrow-back-up" />{t.undo}</button>}
+                {myGame ? myGame.pause?.player
+                  ? <button key="resume" className="act" onClick={() => send(() => ogs.resumeGame(myGame.id))} disabled={!ogs.canResume(myGame)}><Icon name="play" />{t.resume}</button>
+                  : <button key="pause" className="act" onClick={() => send(() => ogs.pauseGame(myGame.id))} disabled={!ogs.canPause(myGame)}
+                    title={myGame.pausesLeft === undefined ? undefined : t.ogsPausesLeft(myGame.pausesLeft)}><Icon name="pause" />{t.ogsPause}</button>
+                  : <button className="act" aria-pressed={settings.territory} onClick={() => set('territory', !settings.territory)} disabled={ongoing}
+                    title={ongoing ? t.ogsUnavailable : 'T'}><Icon name="sun-low" />{t.territory}</button>}
                 {reviewShown ? <button key="review" className={`act${result ? ' accent' : ''}`} onClick={() => startReview(mine)}
                   disabled={!canAnalyze} title={canAnalyze ? undefined : t.reviewNeedsNet}><Icon name="review" />{t.reviewGame}</button>
-                  : (bot || online) && <button className="act" onClick={resign} disabled={!!result}><Icon name="flag" />{t.resign}</button>}
+                  : (bot || online && online.me !== 0) && <button className="act" onClick={resign} disabled={!!result}><Icon name="flag" />{cancellable ? t.ogsCancelGame : t.resign}</button>}
               </>)}
             </div>
           </div>
@@ -888,22 +1244,35 @@ export function App() {
           <section>
             <div className="lab"><span>{t.newGame}</span><span /></div>
             <div className="opts">
-              <Seg label={t.size} value={nextSize} options={SIZES.map(n => [n, `${n}×${n}`])} set={setNextSize} />
+              <Seg label={t.size} value={nextSize} options={SIZES.map(n => [n, `${n}×${n}`])} set={resize} />
               <Seg label={t.opponent} value={settings.opponent} options={[['human', t.twoPlayers], ['ai', t.ai], ['ogs', 'OGS']]} set={v => set('opponent', v)} />
               {settings.opponent === 'ogs' ? (
-                <OgsSection speed={settings.ogsSpeed} setSpeed={v => set('ogsSpeed', v)} onFind={() => { closeSheet(); find() }}
-                  onResume={id => { closeSheet(); resume(id) }} onImport={id => { closeSheet(); importGame(id) }} onSignOut={signOut} />
+                <OgsSection speed={settings.ogsSpeed} setSpeed={v => set('ogsSpeed', v)}
+                  // correspondence: the search is listed in the sheet, and its start told by a notice
+                  onFind={() => { if (settings.ogsSpeed === 'correspondence') send(() => void ogs.findMatch(nextSize as ogs.BoardSize, 'correspondence')); else { closeSheet(); find() } }}
+                  onResume={id => { closeSheet(); resume(id) }} onImport={id => { closeSheet(); importGame(id) }} onSignOut={signOut}
+                  onChallenge={challengePlayer} onAccept={accept} onCancelChallenge={cancelSent} onWatch={id => { closeSheet(); resume(id) }} onOpenLink={openLink}
+                  onSignedIn={() => { if (online && online.me === 0) follow(online.id) }} />
               ) : <>
               {settings.opponent === 'ai' && (canPlayAI ? <>
-                <Seg label={t.yourColor} value={settings.color} options={[['b', t.black], ['w', t.white], ['r', t.random]]} set={v => set('color', v)} />
-                <Stepper label={t.aiLevel} value={settings.aiRank} set={v => set('aiRank', v)} />
+                <Seg label={t.yourColor} value={settings.handicap ? 'b' : settings.color} options={[['b', t.black], ['w', t.white], ['r', t.random]]} set={v => set('color', v)}
+                  disabled={!!settings.handicap} title={settings.handicap ? t.handicapBlack : undefined} />
+                <Stepper label={t.aiLevel} value={settings.aiRank} step={d => propose({ aiRank: stepRank(settings.aiRank, d) })} />
+                <Stepper label={t.handicap} value={t.handicapStones(settings.handicap)} step={d => set('handicap', stepHandicap(settings.handicap, -d))} names={[t.fewerStones, t.moreStones]} />
+                {settings.handicap > 0 && settings.handicap === proposeHandicap(settings.myRank, settings.aiRank, nextSize) && <p className="quiet">{t.handicapProposed}</p>}
                 <details className="more">
                   <summary>{t.aiSettings}</summary>
-                  <Stepper label={t.myLevel} value={settings.myRank} set={v => setSettings(s => ({ ...s, myRank: v, aiRank: v }))} />
-                  <Switch label={t.autoAdjust} on={settings.autoAdjust} toggle={() => set('autoAdjust', !settings.autoAdjust)} />
+                  <Stepper label={t.myLevel} value={settings.myRank} step={d => { const v = stepRank(settings.myRank, d); propose({ myRank: v, aiRank: v }) }} />
+                  <Switch label={t.autoAdjust} on={settings.autoAdjust} toggle={() => set('autoAdjust', !settings.autoAdjust)} title={t.autoAdjustHelp} />
                   <Switch label={t.thinkTime} on={settings.delay} toggle={() => set('delay', !settings.delay)} />
+                  <Switch label={t.botResign} on={settings.botResign} toggle={() => set('botResign', !settings.botResign)} />
                 </details>
               </> : cta)}
+              <div className="field">
+                <span>{t.clock}</span>
+                <Seg label={t.clock} value={settings.clock} set={v => set('clock', v)} options={[['off', t.clockOff, t.clockNone],
+                  ...Object.entries(CLOCKS).map(([k, c]) => [k, t.clockShort(c.main / 60_000, c.periods, c.period / 1000), t.clockLong(c.main / 60_000, c.periods, c.period / 1000)] as [ClockSetting, string, string])]} />
+              </div>
               <button className="btn accent" onClick={() => { closeSheet(); newGame() }} title={shortcut('N')} disabled={settings.opponent === 'ai' && !canPlayAI}>{t.begin}</button>
               </>}
             </div>
@@ -911,6 +1280,7 @@ export function App() {
           <section className="opts">
             <button className="btn" onClick={() => { closeSheet(); open() }} title={shortcut('O')}>{t.open}</button>
             <button className="btn" onClick={() => { closeSheet(); save() }} title={shortcut('S')}>{t.save}</button>
+            <button className="btn" onClick={() => { closeSheet(); postcard() }} title={t.postcardHint}>{t.postcard}</button>
           </section>
         </Sheet>
       )}
@@ -984,7 +1354,7 @@ export function App() {
 
           <section>
             <div className="lab"><span>{t.keyboard}</span><span /></div>
-            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
+            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki} · <kbd>E</kbd> {t.footer.exercises} · <kbd>D</kbd> {t.footer.today} · <kbd>A</kbd> {t.footer.candidates}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
           </section>
         </Sheet>
       )}

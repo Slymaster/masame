@@ -59,6 +59,7 @@ export interface BotInput {
   signMap: number[][]
   opponentPassed: boolean
   moveNumber: number
+  mayResign: boolean
   legal: (i: number) => boolean
 }
 
@@ -67,7 +68,7 @@ export type BotMove = { kind: 'play'; index: number; delay: number } | { kind: '
 export function decide(b: BotInput, rand: () => number): BotMove {
   const size = b.signMap.length
   const wr = [...b.history, b.botWinrate].slice(-3)
-  if (b.moveNumber >= resignFrom(size) && wr.length === 3 && wr.every(w => w < 0.03)) return { kind: 'resign' }
+  if (b.mayResign && b.moveNumber >= resignFrom(size) && wr.length === 3 && wr.every(w => w < 0.03)) return { kind: 'resign' }
   const dist = humanDistribution(b.humanPolicy, b.legal)
   const delay = thinkDelay(entropy(dist), rand)
   if (b.topMove === 'pass' && (b.opponentPassed || settled(b.ownership, b.signMap))) return { kind: 'pass', delay: 600 }
