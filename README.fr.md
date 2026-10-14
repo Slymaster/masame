@@ -43,6 +43,10 @@
     <td width="50%"><img src="docs/images/joseki-fr.jpg" alt="Entraîneur de joseki" width="100%"><br><sub><b>Joseki.</b> Les coups candidats marqués d'une lettre sur le goban, avec les points que chacun perd et la fréquence à laquelle les joueurs de ton niveau le choisissent.</sub></td>
     <td width="50%"><img src="docs/images/variations-fr.jpg" alt="Partie avec une variante" width="100%"><br><sub><b>Variantes.</b> Joue depuis un coup antérieur et la partie garde les deux suites ; ↑ ↓ passent de l'une à l'autre.</sub></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/today-fr.jpg" alt="Aujourd'hui, le rituel du jour" width="100%"><br><sub><b>Aujourd'hui.</b> Le rituel du jour : tes exercices, quelques joseki, puis un 9×9 à ton niveau.</sub></td>
+    <td width="50%"></td>
+  </tr>
 </table>
 
 ## Fonctions
@@ -53,8 +57,8 @@
 - **Comptage.** Le moteur propose les pierres mortes ; tu les corriges d'un clic.
 - **Revue de partie.** Jusqu'à trois moments où un coup a coûté le plus de points, chacun une courte leçon : trouve toi-même la punition, vois-la, puis vois le bon coup. Après une partie contre l'IA, ou à tout moment dans une partie à deux joueurs ou un SGF. Elle tourne en local, en une minute environ. À partir d'un moment clé, tu peux aussi essayer ta propre suite, et KataGo répond. Chaque partie terminée est aussi lue en arrière-plan, sur ta machine, dès que le moteur est libre : les parties contre l'IA et tes parties OGS, jouées ou importées. Ses moments clés rejoignent tes exercices sans un clic.
 - **Exercices tirés de tes parties.** Les moments clés de chaque revue reviennent en exercices, en répétition espacée : trouve un meilleur coup, KataGo le note. Masame te dit aussi où tu perds tes points : à l'ouverture, en milieu de partie ou en fin de partie.
-- **Ton rang, lu dans tes coups.** Le réseau humain de KataGo dit à quel rang ressemblent tes coups, partie par partie et phase par phase (« tu as joué comme un 7k : ouverture 4k, fin de partie 12k »), à l'échelle des niveaux de l'IA. Avec l'ajustement automatique, il règle ton niveau et garde l'IA à deux rangs au plus de lui ; ton rang local est tracé au fil du temps.
-- **Aujourd'hui.** Un rituel quotidien d'une dizaine de minutes : tes exercices dus, tes joseki dus, puis une 9×9 contre l'IA à ton niveau, avec une série de jours.
+- **Ton rang, lu dans tes coups.** Le réseau humain de KataGo dit à quel rang ressemblent tes coups, partie par partie et phase par phase (« tu as joué comme un 7k : ouverture 4k, fin de partie 12k »), à l'échelle des niveaux de l'IA. Cette échelle lit les kyu plus forts qu'OGS : environ deux rangs pour les simples kyu, environ cinq pour les doubles kyu. Avec l'ajustement automatique, il règle ton niveau et garde l'IA à deux rangs au plus de lui ; ton rang local est tracé au fil du temps.
+- **Aujourd'hui.** Un rituel quotidien d'une dizaine de minutes : tes exercices dus, tes joseki dus, puis un 9×9 contre l'IA à ton niveau, avec une série de jours.
 - **Analyse libre.** Maintiens A sur n'importe quelle position, hors partie OGS en cours : les coups candidats de KataGo apparaissent lettrés sur le goban, avec les points que chacun perd. Pas de courbe de taux de victoire.
 - **Entraîneur de joseki.** Explore les coups candidats avec les points que chacun perd, la fréquence à laquelle les joueurs de ton niveau le jouent, et son origine (classique, pro, IA, vérifié par KataGo, contesté). Entraîne-toi en répétition espacée, dans des orientations et des couleurs au hasard, contre un adversaire qui sort du livre comme les joueurs de ton niveau. Un programme classe les coins selon la fréquence à laquelle tu les rencontreras × les points qu'ils te coûtent. Les joseki sont générés par nous avec KataGo et son réseau humain (SL).
 - **Jouer en ligne sur OGS.** Des parties classées et des défis sur [online-go.com](https://online-go.com), avec pendules, correspondance comprise ; regarde les meilleures parties en direct ; retrouve tes parties terminées et ta courbe de rang ; tes parties OGS terminées sont revues automatiquement.
@@ -68,7 +72,7 @@
 Masame est jeune, et le dit franchement.
 
 - **macOS, Apple Silicon** marche aujourd'hui. Le moteur est un KataGo 1.18.2 (Metal) autonome, aux dépendances statiques ; il faut macOS 13 ou plus récent, et aucune bibliothèque Homebrew à l'exécution.
-- **macOS, Intel** est nouveau : la même application, avec KataGo 1.18.2 compilé pour OpenCL et repli automatique sur le processeur ; macOS 13 ou plus récent. En préversion.
+- **macOS, Intel** : la même application, avec KataGo 1.18.2 compilé pour OpenCL et repli automatique sur le processeur ; macOS 13 ou plus récent. En préversion.
 - **Windows** est écrit — le code, l'installeur NSIS et une compilation KataGo OpenCL avec repli automatique sur le processeur — et compilé par GitHub Actions. L'installeur est disponible en préversion, pas encore testé sur du vrai matériel.
 - **Linux, x86_64** : une AppImage, un .deb et un .rpm, compilés sur Ubuntu 22.04 par GitHub Actions, avec KataGo 1.18.2 compilé depuis les sources (OpenCL, avec repli automatique sur le processeur). En préversion aussi.
 

@@ -74,7 +74,7 @@ The licence page lists exceptions. Older `g170` networks are CC0. The "zhizi" ne
 ## 3. Application framework and Rust crates (bundled)
 
 ### Tauri 2
-- https://github.com/tauri-apps/tauri. Licence: MIT OR Apache-2.0 (`tauri`, `tauri-plugin-dialog`, `tauri-plugin-fs`, `tauri-plugin-notification`, `tauri-plugin-updater`, `wry`; `tao` is Apache-2.0).
+- https://github.com/tauri-apps/tauri. Licence: MIT OR Apache-2.0 (`tauri`, `tauri-plugin-dialog`, `tauri-plugin-fs`, `tauri-plugin-notification`, `tauri-plugin-single-instance` (Windows), `tauri-plugin-updater`, `wry`; `tao` is Apache-2.0).
 
 ### Rust dependencies
 About 300 crates are resolved for the macOS build (`src-tauri/Cargo.lock`). Direct dependencies:
@@ -83,6 +83,7 @@ About 300 crates are resolved for the macOS build (`src-tauri/Cargo.lock`). Dire
 |---|---|
 | tauri, tauri-plugin-dialog, tauri-plugin-fs, tauri-plugin-notification | Apache-2.0 OR MIT |
 | tauri-plugin-updater | Apache-2.0 OR MIT |
+| tauri-plugin-single-instance (Windows only) | Apache-2.0 OR MIT |
 | serde, serde_json | MIT OR Apache-2.0 |
 | reqwest | MIT OR Apache-2.0 |
 | futures-util | MIT OR Apache-2.0 |
@@ -104,7 +105,9 @@ Notable transitive dependencies:
 
 `keyring` brings `zeroize_derive` and, on Linux, `dbus-secret-service`, `dbus` and `libdbus-sys` (all MIT OR Apache-2.0); on macOS and Windows it reuses `security-framework` and `windows-sys`, already in the lock.
 
-`tauri-plugin-notification` brings `notify-rust` (MIT OR Apache-2.0), with `mac-notification-sys` (MIT/Apache-2.0) on macOS, `tauri-winrt-notification` (MIT OR Apache-2.0) on Windows, and on Linux `zbus` and `zvariant` (MIT) with the smol async crates (`async-io`, `polling`, …: Apache-2.0 OR MIT).
+`tauri-plugin-notification` brings `notify-rust` (MIT OR Apache-2.0), with `mac-notification-sys` (MIT/Apache-2.0) on macOS, `tauri-winrt-notification` (MIT OR Apache-2.0) on Windows, and on Linux `zbus` and `zvariant` (MIT) with the smol async crates (`async-io`, `polling`, …: Apache-2.0 OR MIT); it also brings `rand` 0.9 (MIT OR Apache-2.0) and its `zerocopy` (BSD-2-Clause OR Apache-2.0 OR MIT).
+
+`tauri-plugin-single-instance` is built on Windows only; there it reuses `windows-sys` and `tokio`, already in the lock.
 
 The rest are MIT, Apache-2.0, BSD-3-Clause, Zlib, Unlicense or 0BSD, mostly dual-licensed. Each release build generates the complete list with its licence texts (`scripts/third-party-licenses.mjs`, from `cargo metadata`) and ships it as `THIRD_PARTY_LICENSES.txt` in the app's `resources/licenses/` folder.
 
