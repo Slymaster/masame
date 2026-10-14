@@ -12,12 +12,13 @@ export type ClockSetting = 'off' | keyof typeof CLOCKS
 
 /** main: main time left; periods: byo-yomi periods left, the current one included; period: what is left of it. */
 export interface Side { main: number; periods: number; period: number }
-export interface LocalClock { spec: Spec; b: Side; w: Side; turn: Sign | null; since: number }
+/** len: the line's length at the last sync. */
+export interface LocalClock { spec: Spec; b: Side; w: Side; turn: Sign | null; since: number; len: number }
 
 const key = (s: Sign) => (s === 1 ? 'b' : 'w')
 export function startClock(spec: Spec): LocalClock {
   const s = { main: spec.main, periods: spec.periods, period: spec.period }
-  return { spec, b: s, w: s, turn: null, since: 0 }
+  return { spec, b: s, w: s, turn: null, since: 0, len: 0 }
 }
 
 /** Main time first, then the periods: each one fully elapsed is used up; none left is a loss on time. */
@@ -45,13 +46,14 @@ export function flagAt(c: LocalClock): number | null {
   return c.since + s.main + (s.periods ? s.period + (s.periods - 1) * c.spec.period : 0)
 }
 
-/** Charges the running side and starts `turn` (null: stopped); handing the turn over starts a fresh period. Same object when nothing changes. */
-export function sync(c: LocalClock, turn: Sign | null, now: number): LocalClock {
-  if (turn === c.turn) return c
-  const next = { ...c, turn, since: now }
+/** Charges the running side and starts `turn` (null: stopped) for a line of `len` moves; a move handing the turn over
+ * starts a fresh period (an undo doesn't). Same object when nothing changes. */
+export function sync(c: LocalClock, turn: Sign | null, now: number, len: number): LocalClock {
+  if (turn === c.turn) return len === c.len ? c : { ...c, len }
+  const next = { ...c, turn, since: now, len }
   if (c.turn !== null) {
     const s = spend(c[key(c.turn)], now - c.since, c.spec.period)
-    next[key(c.turn)] = turn === -c.turn && s.periods ? { ...s, period: c.spec.period } : s
+    next[key(c.turn)] = turn === -c.turn && len > c.len && s.periods ? { ...s, period: c.spec.period } : s
   }
   return next
 }

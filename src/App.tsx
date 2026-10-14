@@ -631,7 +631,7 @@ export function App() {
   // the local clock runs for the side to move at the end of the line; stopped after two passes, once decided, under a trainer
   const tail = game.moves.slice(-2), endTurn = (game.moves.length ? -game.moves.at(-1)!.sign : game.info.firstSign) as Sign
   const clockTurn = result || panel || tail.length === 2 && tail.every(m => !m.vertex) ? null : endTurn
-  useEffect(() => { if (clock) { const c = sync(clock, clockTurn, Date.now()); if (c !== clock) setClock(c) } })
+  useEffect(() => { if (clock) { const c = sync(clock, clockTurn, Date.now(), game.moves.length); if (c !== clock) setClock(c) } })
   // a human side out of time loses (checked late too, after a sleep); the bot's clock runs but it never loses on time
   const loseOnTime = (s: Sign) => finish(d => d.losesOnTime(s), bot ? true : null, timeResult(-s as Sign))
   useEffect(() => {
