@@ -42,7 +42,7 @@ export const en = {
   aiLevel: 'AI level', myLevel: 'Your level',
   weaker: (label: string) => `${label}: weaker`, stronger: (label: string) => `${label}: stronger`,
   aiSettings: 'AI settings',
-  autoAdjust: 'Auto-adjust level', thinkTime: 'Thinking time',
+  autoAdjust: 'Auto-adjust level', thinkTime: 'Thinking time', botResign: 'Bot may resign',
   aiOnlyInApp: 'The AI opponent is available in the app.',
   aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
     `To play against the AI, install the Human network${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' and an analysis network' : ''}.`,
