@@ -788,7 +788,7 @@ export function App() {
     }
     ;(anRead ? Promise.resolve() : ask(false, QUICK)).then(() => { if (live) return ask(true, DEEP) }).catch(e => live && e && setAnError(e))
     return () => { live = false }
-  }, [an, canAnalyze, shown.board]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [an, canAnalyze, shown.board, shown.toPlay]) // eslint-disable-line react-hooks/exhaustive-deps
   const cands = anRead ? candidates(anRead.a, shown.toPlay) : null
   // a caption link remounts the caption (keyed by its text): right after one is activated, focus the link with the same
   // action if it came back, else the caption itself, so a second Enter never changes step, moment or leaves the review
