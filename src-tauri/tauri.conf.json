@@ -20,6 +20,7 @@
         "minWidth": 900,
         "minHeight": 640,
         "center": true,
+        "dragDropEnabled": false,
         "backgroundColor": "#ECE4D6"
       }
     ],
@@ -30,6 +31,15 @@
   "bundle": {
     "active": true,
     "category": "BoardGame",
+    "fileAssociations": [
+      {
+        "ext": ["sgf"],
+        "name": "SGF",
+        "description": "Go game record",
+        "mimeType": "application/x-go-sgf",
+        "role": "Editor"
+      }
+    ],
     "targets": [
       "app"
     ],

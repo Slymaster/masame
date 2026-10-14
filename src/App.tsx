@@ -19,7 +19,7 @@ import { Icon } from './Icon'
 import { Timeline } from './Timeline'
 import { cardSkin } from './board3d/logic'
 import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
-import { loadSgf, resignResult, saveSgf, scoreResult } from './sgf'
+import { loadSgf, MAX_SGF, resignResult, saveSgf, scoreResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import { DECORS, type Decor } from './board3d/decors'
 import { isMac, shortcut } from './platform'
@@ -409,6 +409,7 @@ export function App() {
     try {
       const text = await read()
       if (text === null) return
+      if (text.length > MAX_SGF) throw new LocalizedError(l => l.sgfTooBig)
       const g = loadSgf(text)
       if (!asked && !(await canLeave())) return
       start(g, null); setNextSize(SIZES.includes(g.info.size) ? g.info.size : nextSize)
@@ -717,6 +718,36 @@ export function App() {
   useEffect(() => {
     if (!inTauri()) return
     const off = on<string>('menu', id => onMenu.current(id))
+    return () => { off.then(f => f()) }
+  }, [])
+  // Files from outside: dropped on the window, or handed over by the OS (double-click, Open with); a sheet closes first
+  const openFrom = useRef((_: () => Promise<string | null>) => {})
+  openFrom.current = read => { setSheet(null); open(read) }
+  useEffect(() => {
+    const files = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
+    const root = document.documentElement
+    let depth = 0 // dragenter/dragleave fire for every element crossed
+    const hint = (n: number) => { depth = n; root.toggleAttribute('data-drop', n > 0) }
+    const enter = (e: DragEvent) => { if (files(e)) hint(depth + 1) }
+    const leave = (e: DragEvent) => { if (files(e)) hint(Math.max(0, depth - 1)) }
+    const over = (e: DragEvent) => { if (files(e)) { e.preventDefault(); e.dataTransfer!.dropEffect = 'copy' } }
+    const drop = (e: DragEvent) => {
+      if (!files(e)) return
+      e.preventDefault(); hint(0)
+      const f = e.dataTransfer!.files[0] // one game at a time
+      if (f) openFrom.current(async () => { if (f.size > MAX_SGF) throw new LocalizedError(l => l.sgfTooBig); return f.text() })
+    }
+    const evs = { dragenter: enter, dragleave: leave, dragover: over, drop }
+    for (const [k, f] of Object.entries(evs)) window.addEventListener(k, f as EventListener)
+    return () => { for (const [k, f] of Object.entries(evs)) window.removeEventListener(k, f as EventListener) }
+  }, [])
+  useEffect(() => {
+    if (!inTauri()) return
+    // asked once listening, too: macOS may hand a file over before this page exists
+    const take = () => call<{ name: string; text: string } | null>('take_opened')
+      .then(f => { if (f) openFrom.current(async () => f.text) }, e => setNote(d => d.openFailed(failureText(e, d))))
+    const off = on<null>('files-opened', take)
+    off.then(take)
     return () => { off.then(f => f()) }
   }, [])
   // The macOS menu bar speaks the UI language (its labels live in the dictionaries)

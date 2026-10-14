@@ -250,6 +250,8 @@ export const fr: Dict = {
   sgfBadSize: (sz: string | undefined) => `Taille de goban non prise en charge : ${sz}`,
   sgfSetupOff: 'Pierre de handicap hors du goban',
   sgfMoveOff: (v: string) => `Coup hors du goban : ${v}`,
+  // opening files: drops, the OS (double-click), the size cap
+  sgfTooBig: 'Plus de 5 Mo : ce n’est pas une partie',
   // networks sheet
   networks: 'Réseaux', close: 'Fermer', closeHint: 'Fermer (Échap)',
   humanRequired: 'Le réseau Humain est nécessaire pour jouer contre l’IA. Les autres servent à l’analyse et au territoire.',
@@ -271,6 +273,8 @@ export const fr: Dict = {
   creditsKataGo: 'KataGo', creditsMid: '© David J Wu — licence MIT ; réseaux sous', creditsLicense: 'KataGo Neural Network License',
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
+    open_too_big: 'Plus de 5 Mo : ce n’est pas une partie.',
+    open_unreadable: 'Le fichier est illisible.',
     invalid_name: 'Nom de réseau invalide.',
     url_rejected: 'Adresse de téléchargement refusée.',
     unknown_network: 'Réseau inconnu.',

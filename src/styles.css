@@ -321,3 +321,9 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .ex .share { font-size: 13.5px; line-height: 1.45 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+
+/* opening files: the window while files are dragged over it (html[data-drop]) */
+html[data-drop] body::after {
+  content: ""; position: fixed; inset: 10px; z-index: 100; pointer-events: none;
+  border: 2px dashed var(--accent); border-radius: 14px; background: var(--hover);
+}
