@@ -43,6 +43,10 @@
     <td width="50%"><img src="docs/images/joseki-en.jpg" alt="Joseki trainer" width="100%"><br><sub><b>Joseki.</b> Candidate moves lettered on the board, with the points each loses and how often players of your level choose it.</sub></td>
     <td width="50%"><img src="docs/images/variations-en.jpg" alt="Game record with a variation" width="100%"><br><sub><b>Variations.</b> Play from an earlier move and the game keeps both lines; ↑ ↓ switch between them.</sub></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/today-en.jpg" alt="Today, the daily ritual" width="100%"><br><sub><b>Today.</b> The daily ritual: your exercises, a few joseki, then a 9×9 at your level.</sub></td>
+    <td width="50%"></td>
+  </tr>
 </table>
 
 ## Features

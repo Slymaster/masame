@@ -43,6 +43,10 @@
     <td width="50%"><img src="docs/images/joseki-fr.jpg" alt="Entraîneur de joseki" width="100%"><br><sub><b>Joseki.</b> Les coups candidats marqués d'une lettre sur le goban, avec les points que chacun perd et la fréquence à laquelle les joueurs de ton niveau le choisissent.</sub></td>
     <td width="50%"><img src="docs/images/variations-fr.jpg" alt="Partie avec une variante" width="100%"><br><sub><b>Variantes.</b> Joue depuis un coup antérieur et la partie garde les deux suites ; ↑ ↓ passent de l'une à l'autre.</sub></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/today-fr.jpg" alt="Aujourd'hui, le rituel du jour" width="100%"><br><sub><b>Aujourd'hui.</b> Le rituel du jour : tes exercices, quelques joseki, puis un 9×9 à ton niveau.</sub></td>
+    <td width="50%"></td>
+  </tr>
 </table>
 
 ## Fonctions
