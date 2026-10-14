@@ -540,9 +540,11 @@ export function App() {
     void notify(n.key, n.kind === 'yourTurn' ? t.ogsTurnTitle : n.kind === 'challenge' ? t.ogsChallengeFrom(who)
       : n.kind === 'started' ? t.ogsStartedVs(who) : n.kind === 'ended' ? t.ogsEndedVs(who) : t.ogsDeclined(who),
       n.kind === 'yourTurn' ? t.ogsTurnBody(who, n.size ?? 0) : undefined)
+    // newer OGS news supersedes a stale note, which would otherwise hide the ambient line
+    if (n.kind === 'challenge') setNote(null)
     if (n.gameId === undefined) return
     if (n.kind === 'declined' && n.gameId === waiting.current?.gameId) { stopWait(); setNote(d => d.ogsDeclined(who)) }
-    else if (n.kind === 'started' && n.gameId !== online?.id && n.gameId !== waiting.current?.gameId && document.hasFocus()) setStarted({ id: n.gameId, who })
+    else if (n.kind === 'started' && n.gameId !== online?.id && n.gameId !== waiting.current?.gameId && document.hasFocus()) { setNote(null); setStarted({ id: n.gameId, who }) }
   }
   useEffect(() => ogs.onNotice(n => onNotice.current(n)), [])
 
