@@ -53,15 +53,19 @@ export function positionOf(x: Exercise): Game {
     moves.map((vertex, i) => ({ sign: (i % 2 ? -firstSign : firstSign) as Sign, vertex })))
 }
 
+/** A reviewed record: the same game, from any file or source, reviewed once (its readable range only). */
+export function recordKey(game: Game): string {
+  const { size, komi, setup } = game.info, moves = game.moves.slice(0, reviewEnd(game))
+  return hash64(`${size}|${komi}|${codes(setup.black)}|${codes(setup.white)}|${moves.find(m => !m.setup)?.sign ?? 0}|${real(moves)}`)
+}
+
 /** New exercises for a review's moments (known ones untouched) and, when `me` is known, where its moves lost points. */
 export function addReview(d: Deck, game: Game, moments: Moment[], leads: (number | undefined)[], me: Sign | 0, now: number): Deck {
   const items = { ...d.items }
   for (const m of moments) { const x = exerciseOf(game, m, now); const k = keyOf(x); if (!Object.hasOwn(items, k)) items[k] = x }
   if (!me) return { ...d, items }
-  const { size, komi, setup } = game.info, moves = game.moves.slice(0, reviewEnd(game))
-  const first = moves.find(m => !m.setup)?.sign ?? 0
-  const k = hash64(`${size}|${komi}|${codes(setup.black)}|${codes(setup.white)}|${first}|${real(moves)}`)
-  return { ...d, items, games: [...d.games.filter(g => g.k !== k), { k, t: now, loss: phaseLosses(leads, moves, me, size) }].slice(-GAMES) }
+  const k = recordKey(game), moves = game.moves.slice(0, reviewEnd(game))
+  return { ...d, items, games: [...d.games.filter(g => g.k !== k), { k, t: now, loss: phaseLosses(leads, moves, me, game.info.size) }].slice(-GAMES) }
 }
 
 const fresh = (d: Deck, now: number) => (d.day === today(now) ? d.fresh : 0)

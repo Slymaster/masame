@@ -188,6 +188,10 @@ export const fr: Dict = {
   exWhereHelp: (n: number) => `Points perdus par partie par tes coups, sur ${n === 1 ? 'ta dernière partie revue' : `tes ${f.num(n)} dernières parties revues`}. Ouverture : les 50 premiers coups ; fin de partie : à partir du coup 151 (19×19, proportionnellement sur les petits gobans).`,
   exReset: 'Effacer les exercices', exResetAsk: 'Effacer tous tes exercices et leurs statistiques ?',
   exReadOnly: 'Ces exercices viennent d’une version plus récente de Masame : l’entraînement ici ne sera pas enregistré.',
+  // revue automatique
+  autoDone: (n: number) => (n ? `Revue faite : ${f.plural(n, 'moment rejoint', 'moments rejoignent')} tes exercices.` : 'Revue faite : aucun moment décisif.'),
+  autoPending: (n: number) => `Revue automatique : ${f.plural(n, 'partie', 'parties')} en attente`,
+  autoRunning: (pct: number) => `Revue automatique : en cours… ${f.pct(pct)}`,
   // OGS (online-go.com)
   // OGS sheet: tabs, play, my games, watch
   ogsTabs: { play: 'Jouer', games: 'Mes parties', watch: 'Regarder' }, ogsTabsLabel: 'OGS',

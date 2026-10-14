@@ -31,6 +31,8 @@ import { checkDue, updateSettings, type UpdateInfo } from './update'
 import { fromOf, gradeTry, lessonBoard, readGame, REPLY, verdict, type Moment, type Step } from './review'
 import { useJoseki } from './joseki/useJoseki'
 import { useExercises } from './exercises/useExercises'
+import { useAutoReview } from './exercises/useAutoReview'
+import { recordKey } from './exercises/deck'
 import { tone } from './joseki/practice'
 
 // free analysis: a near-instant read, then one that sharpens it
@@ -296,12 +298,24 @@ export function App() {
   const opponent = online && online.me !== 0 ? online.players[online.me === 1 ? 'white' : 'black'] : null
   // the trainers (joseki, exercises) borrow the board and the card, one at a time; the game waits underneath, untouched
   const [panel, setPanel] = useState<'joseki' | 'exercises' | null>(null)
+  // Autoplay: the line being played, one move per settings.autoplay seconds, dropped like the bot's moves
+  const [auto, setAuto] = useState<Game | null>(null)
+  const [held, setHeld] = useState(false) // A held: free analysis of the shown position
+  // the automatic review reads only when nothing else wants the engine, nor a local game the player's attention
+  const playingLocal = !result && (!!bot || dirty)
+  const ar = useAutoReview({
+    free: canAnalyze && engine.state !== 'error' && !thinking && !review && !panel && !ongoing && !playingLocal && !auto && !held,
+    ask: (g, q) => analyze(g, { ...q, priority: -1 }), // KataGo serves higher priorities first: the bot, the trainers jump the queue
+    scanRun, add: (...x) => ex.add(...x),
+    done: (k, ms) => { const prev = note; if (result && recordKey(game) === k) setNote(d => [prev?.(d), d.autoDone(ms.length)].filter(Boolean).join(' ')) },
+  })
   const jt = useJoseki({
     view, open: panel === 'joseki', setOpen: o => setPanel(p => (o ? 'joseki' : p === 'joseki' ? null : p)),
     rank: settings.myRank, setRank: v => set('myRank', v), blocked: ongoing || !!review, playFrom: m => playFrom(m),
   })
   const ex = useExercises({
     view, open: panel === 'exercises', setOpen: o => setPanel(p => (o ? 'exercises' : p === 'exercises' ? null : p)), blocked: ongoing || !!review, canAnalyze, setThinking,
+    autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null,
     ask: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, REPLY)); scanRun.current = run; return run },
   })
   const tr = jt.open ? jt : ex
@@ -373,8 +387,6 @@ export function App() {
     if (review && !review.branch) return
     setAuto(null); setCounting(null); f(shown); changed()
   }
-  // Autoplay: the line being played, one move per settings.autoplay seconds, dropped like the bot's moves
-  const [auto, setAuto] = useState<Game | null>(null)
   const toggleAuto = () => {
     if (auto) return setAuto(null)
     if (live || shown.moves.length === floor) return
@@ -421,7 +433,7 @@ export function App() {
     } else start(g = new Game({ size }), null)
     if (settings.clock !== 'off') { Object.assign(g.root.data, sgfTime(CLOCKS[settings.clock])); setClock(startClock(CLOCKS[settings.clock])) }
   }
-  const open = async (read: () => Promise<string | null> = openSgfFile, asked = false) => {
+  const open = async (read: () => Promise<string | null> = openSgfFile, asked = false, imported = false) => {
     abandon()
     try {
       const text = await read()
@@ -429,6 +441,7 @@ export function App() {
       const g = loadSgf(text)
       if (!asked && !(await canLeave())) return
       start(g, null); setNextSize(SIZES.includes(g.info.size) ? g.info.size : nextSize)
+      if (imported) ar.enqueue(g, ogsSide(g)) // an ended OGS game of mine
     } catch (e) {
       setNote(d => d.openFailed(failureText(e, d)))
     }
@@ -479,7 +492,7 @@ export function App() {
   const latestFollow = useRef(follow)
   latestFollow.current = follow
   const resume = async (id: number) => { if (online?.id === id) return; abandon(); if (await canLeave()) follow(id) }
-  const importGame = async (id: number) => { abandon(); if (await canLeave()) open(() => ogs.sgf(id), true) }
+  const importGame = async (id: number) => { abandon(); if (await canLeave()) open(() => ogs.sgf(id), true, true) }
   const find = async () => {
     if (!(await canLeave())) return // the shown game is left once a match starts
     abandon()
@@ -560,16 +573,22 @@ export function App() {
     // newer OGS news supersedes a stale note, which would otherwise hide the ambient line (a result line wins anyway: its note stays)
     if (n.kind === 'challenge' && !result) setNote(null)
     if (n.gameId === undefined) return
+    // a game of mine that ended outside Masame (correspondence, the website): reviewed too, the game being over
+    if (n.kind === 'ended' && n.outcome !== 'Void') ogs.sgf(n.gameId).then(s => { const g = loadSgf(s); ar.enqueue(g, ogsSide(g)) }).catch(console.error)
     if (n.kind === 'declined' && n.gameId === waiting.current?.gameId) { stopWait(); setNote(d => d.ogsDeclined(who)) }
     else if (n.kind === 'started' && n.gameId !== online?.id && n.gameId !== waiting.current?.gameId && document.hasFocus()) { if (!result) setNote(null); setStarted({ id: n.gameId, who }) }
   }
   useEffect(() => ogs.onNotice(n => onNotice.current(n)), [])
+  // a followed OGS game of mine that finished (not cancelled): reviewed in the background, OGS's rules no longer apply
+  const ogsEnded = online?.phase === 'finished' && online.me !== 0 && !!online.result && online.result.re !== 'Void' && online.result.how !== 'cancel'
+  useEffect(() => { if (ogsEnded) ar.enqueue(online.game, online.me as Sign) }, [ogsEnded, online?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** End of a game: record the result (and, against the bot, nudge its rank toward a 50 % win rate, once). */
   const finish = (text: Msg, botWon: boolean | null, re: string) => {
     game.promote() // the decided line is the record's main line, which RE describes
     game.info.result = re
     setResult(game, { msg: text, re })
+    if (bot) ar.enqueue(game, -bot.sign as Sign)
     if (!bot || scored.current === game || botWon === null) return
     scored.current = game
     if (settings.autoAdjust) {
@@ -608,7 +627,7 @@ export function App() {
   // Game review: reading (scan + deep checks), then lessons on the branch boards
   const startReview = (side: Sign | 0) => {
     const last = game.boards.at(-1)!
-    if (scan.current?.last !== last) scan.current = { last, leads: [] }
+    if (scan.current?.last !== last) scan.current = { last, leads: ar.leadsOf(game) } // a background review's leads, if any
     setReview({ side, pct: 0, error: null, moments: null, k: 0, step: 'try', branch: null, ask: null, gap: null, explored: false })
     changed()
   }
@@ -699,7 +718,7 @@ export function App() {
     const run = scanRun.current.catch(() => {}).then(() => readGame(game, review.side, leads,
       (at, q) => analyze(game.branch(at), q as Record<string, unknown>), () => live, pct => live && setReview(x => x && { ...x, pct })))
     scanRun.current = run
-    run.then(ms => { if (live) { ex.add(game, ms, leads, mine || review.side); openMoment(0, 'try', ms) } }, e => live && setReview(x => x && { ...x, error: e }))
+    run.then(ms => { if (live) { ex.add(game, ms, leads, mine || review.side); ar.reviewed(game); openMoment(0, 'try', ms) } }, e => live && setReview(x => x && { ...x, error: e }))
     return () => { live = false }
   }, [reading, review?.side, game, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -727,11 +746,10 @@ export function App() {
     return () => { live = false; setThinking(false) }
   }, [answering, ver, lesson, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
   // Free analysis while A is held: a quick read, then a deep one, cached per position (the deep one replaces it)
-  const [held, setHeld] = useState(false)
-  const reads = useRef(new WeakMap<Game['board'], { a: Analysis; deep: boolean }>())
+  const reads = useRef(new WeakMap<Game['board'], { a: Analysis; deep: boolean; toPlay: Sign }>()) // a PL pseudo-move keeps the board, not the side to move
   const [anError, setAnError] = useState<unknown>(null)
   const an = held && !ongoing && !panel && !countingNow && !removal && !reading // OGS forbids engine help in an ongoing game
-  const anRead = an ? reads.current.get(shown.board) : undefined
+  const anRead = an ? [reads.current.get(shown.board)].find(r => r?.toPlay === shown.toPlay) : undefined
   useEffect(() => {
     if (!an || !canAnalyze || anRead?.deep) return
     let live = true
@@ -740,7 +758,7 @@ export function App() {
     const ask = (deep: boolean, extra: Record<string, unknown>) => {
       const run = scanRun.current.catch(() => {}).then(() => { if (!live) throw null; return analyze(g, extra) }) // cancelled while queued: send nothing
       scanRun.current = run
-      return run.then(a => { if (live) { reads.current.set(b, { a, deep }); rerender() } })
+      return run.then(a => { if (live) { reads.current.set(b, { a, deep, toPlay: g.toPlay }); rerender() } })
     }
     ;(anRead ? Promise.resolve() : ask(false, QUICK)).then(() => { if (live) return ask(true, DEEP) }).catch(e => live && e && setAnError(e))
     return () => { live = false }
