@@ -11,6 +11,7 @@ import { review } from '../joseki/fsrs'
 import { record } from '../joseki/store'
 import { gtp, type Analysis } from '../katago'
 import type { Moment } from '../review'
+import { deckStep } from '../today/ritual'
 import { addReview, counts, emptyDeck, gapOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save, verdictOf, whereLost, type Exercise, type StoredDeck } from './deck'
 
 const REPLAY_MS = 650
@@ -83,7 +84,8 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
       <Icon name="target" />{waiting && <i className="dot" />}
     </button>
   )
-  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, button, add }
+  const today = deckStep(store.p.cards, c.due + c.fresh, now) // the daily ritual's first step
+  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, button, add, today }
   if (!open) return none
 
   // ---------- the board, the note and its links ----------

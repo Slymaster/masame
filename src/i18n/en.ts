@@ -80,7 +80,7 @@ export const en = {
   updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
   updateInstalling: 'Installing the update…',
   fullscreen: 'Full screen', autoUpdate: 'Check for updates automatically',
-  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', candidates: 'candidate moves (hold)', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
+  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', today: 'today', candidates: 'candidate moves (hold)', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
     about: 'About Masame', hide: 'Hide Masame', hideOthers: 'Hide Others', showAll: 'Show All', quit: 'Quit Masame',
@@ -164,6 +164,16 @@ export const en = {
   jProgrammeNote: 'Your programme: the corners worth learning first.',
   jProgrammeHelp: (rank: string) => `Ordered by how often you meet each corner at ${rank} × the points it costs there.`,
   jMet: (n: number) => `met about 1 corner in ${f.num(n)}`, jOpenFamily: (name: string) => `Explore ${name}`,
+  // the daily ritual
+  today: 'Today', tdIntro: 'Ten minutes a day: your exercises, a few joseki, a quick game.',
+  tdSteps: { exercises: 'Exercises from your games', joseki: 'Joseki', game: 'A 9×9 at your level' },
+  tdGameAt: (rank: string) => `against the AI at ${rank}, even`,
+  tdLeft: (n: number) => `${f.num(n)} to do`, tdDoneStep: 'done', tdLoading: 'loading…',
+  tdOff: { exercises: 'needs an analysis network', game: 'needs the AI networks' },
+  tdStreak: (n: number) => f.plural(n, 'day', 'days'), tdStreakLab: 'Streak',
+  tdStart: 'Start', tdContinue: 'Continue', tdAllDone: 'Today’s ritual is done. See you tomorrow.',
+  tdNothing: 'Nothing to do yet: install an analysis network, or practise the joseki.',
+  ritualGo: 'Continue the ritual', ritualDone: (n: number) => `Today’s ritual done · ${f.plural(n, 'day', 'days')} in a row.`,
   // exercises from your own games (s: the colour that made the mistake)
   exercises: 'Exercises',
   exNeedsNet: 'Install an analysis network to practise: KataGo checks each answer.',

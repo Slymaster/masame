@@ -34,6 +34,7 @@ import { useExercises } from './exercises/useExercises'
 import { useAutoReview } from './exercises/useAutoReview'
 import { recordKey } from './exercises/deck'
 import { tone } from './joseki/practice'
+import { useToday } from './today/useToday'
 
 // free analysis: a near-instant read, then one that sharpens it
 const QUICK = { maxVisits: 80, overrideSettings: { maxTime: 0.3 } }, DEEP = { maxVisits: 800, overrideSettings: { maxTime: 2.5 } }
@@ -174,7 +175,7 @@ export function App() {
   useEffect(() => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch { /* private mode */ } }, [settings])
 
   // the current match against the bot (null = two players), the results by line (keyed by its leaf), the bot's winrates for resigning
-  const [bot, setBot] = useState<{ sign: Sign; rank: string } | null>(null)
+  const [bot, setBot] = useState<{ sign: Sign; rank: string; ritual?: true } | null>(null) // ritual: the daily 9×9, which never moves the AI level
   const outcomes = useRef(new WeakMap<GameNode, { msg: Msg; re: string }>())
   const outcome = outcomes.current.get(game.leaf), result = outcome?.msg ?? null
   const setResult = (g: Game, o: { msg: Msg; re: string } | null) => { if (o) outcomes.current.set(g.leaf, o); else outcomes.current.delete(g.leaf); rerender() }
@@ -297,7 +298,8 @@ export function App() {
   const myGame = ongoing && online.me !== 0 ? online : null // an unfinished OGS game I play
   const opponent = online && online.me !== 0 ? online.players[online.me === 1 ? 'white' : 'black'] : null
   // the trainers (joseki, exercises) borrow the board and the card, one at a time; the game waits underneath, untouched
-  const [panel, setPanel] = useState<'joseki' | 'exercises' | null>(null)
+  // (Today only takes the card: the game stays shown, not playable)
+  const [panel, setPanel] = useState<'joseki' | 'exercises' | 'today' | null>(null)
   // Autoplay: the line being played, one move per settings.autoplay seconds, dropped like the bot's moves
   const [auto, setAuto] = useState<Game | null>(null)
   const [held, setHeld] = useState(false) // A held: free analysis of the shown position
@@ -310,7 +312,7 @@ export function App() {
     done: (k, ms) => { const prev = note; if (result && recordKey(game) === k) setNote(d => [prev?.(d), d.autoDone(ms.length)].filter(Boolean).join(' ')) },
   })
   const jt = useJoseki({
-    view, open: panel === 'joseki', setOpen: o => setPanel(p => (o ? 'joseki' : p === 'joseki' ? null : p)),
+    view, open: panel === 'joseki', preload: panel === 'today', setOpen: o => setPanel(p => (o ? 'joseki' : p === 'joseki' ? null : p)),
     rank: settings.myRank, setRank: v => set('myRank', v), blocked: ongoing || !!review, playFrom: m => playFrom(m),
   })
   const ex = useExercises({
@@ -318,7 +320,16 @@ export function App() {
     autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null,
     ask: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, REPLY)); scanRun.current = run; return run },
   })
-  const tr = jt.open ? jt : ex
+  const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
+  useEffect(() => setRitualSaid(null), [panel])
+  const td = useToday({
+    open: panel === 'today', setOpen: o => setPanel(p => (o ? 'today' : p === 'today' ? null : p)), blocked: ongoing || !!review,
+    decks: [canAnalyze ? ex.today : null, jt.today ?? { done: false, left: null }], canPlay: canPlayAI, rank: settings.myRank,
+    start: [() => setPanel('exercises'), () => { setPanel('joseki'); jt.practise() },
+      () => { setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
+    onDone: n => { if (panel) setRitualSaid(n); else setNote(d => d.ritualDone(n)) }, // a panel's note hides the game's
+  })
+  const tr = jt.open ? jt : td.open ? td : ex
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
   const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && (online.placing ? online.me === 1 : game.toPlay === online.me) : !bot || game.toPlay !== bot.sign
   const mine: Sign | 0 = bot ? -bot.sign as Sign : online?.me ?? ogsSide(game) // the side a review looks at
@@ -417,19 +428,20 @@ export function App() {
   const canLeave = async () => leaveAsked ? askFirst(t.ogsLeaveAsk, t.ogsLeave) : !dirty || confirmDiscard()
   // an action that may replace the game cancels a pending search or live challenge before any picker, download or
   // dialog: a match starting meanwhile would replace the game without the leave question; backing out leaves it cancelled
-  const newGame = async (size = nextSize, o: { handicap?: number } = {}) => {
+  // o: the daily ritual's game (always against the AI, at your level, even)
+  const newGame = async (size = nextSize, o: { rank?: string; handicap?: number; ritual?: true } = {}) => {
     abandon()
     if (!(await canLeave())) return
     setNextSize(size)
     let g: Game
-    if (settings.opponent === 'ai' && canPlayAI) {
+    if ((settings.opponent === 'ai' || o.ritual) && canPlayAI) {
       const h = o.handicap ?? settings.handicap // with a handicap the player takes Black, White plays first
       const me: Sign = h || settings.color === 'b' ? 1 : settings.color === 'w' ? -1 : random() < 0.5 ? 1 : -1
-      const rank = settings.aiRank, name = t.botName(rank)
+      const rank = o.rank ?? settings.aiRank, name = t.botName(rank)
       g = new Game({ size, playerBlack: me === 1 ? '' : name, playerWhite: me === 1 ? name : '',
         ...h > 0 && { komi: 0.5, setup: { black: handicapStones(size, h), white: [] }, firstSign: -1 as Sign } })
       if (h > 0) g.root.data.HA = [String(h)]
-      start(g, { sign: -me as Sign, rank })
+      start(g, { sign: -me as Sign, rank, ...o.ritual && { ritual: true as const } })
     } else start(g = new Game({ size }), null)
     if (settings.clock !== 'off') { Object.assign(g.root.data, sgfTime(CLOCKS[settings.clock])); setClock(startClock(CLOCKS[settings.clock])) }
   }
@@ -590,9 +602,10 @@ export function App() {
     game.info.result = re
     setResult(game, { msg: text, re })
     if (bot) ar.enqueue(game, -bot.sign as Sign)
+    if (bot?.ritual) td.played()
     if (!bot || scored.current === game || botWon === null) return
     scored.current = game
-    if (settings.autoAdjust) {
+    if (settings.autoAdjust && !bot.ritual) {
       const next = adjustRank(bot.rank, botWon)
       if (next !== bot.rank) { set('aiRank', next); setNote(d => d.rankAdjusted(next)) }
     }
@@ -846,7 +859,7 @@ export function App() {
             home: () => goTo(0), end: () => goTo(shown.moves.length),
             ...(fullscreen && !isMac && { escape: () => setFullscreen(false) }), // after a sheet's Esc and before a review's
             ...(review && { escape: leaveReview }),
-            j: jt.toggle, e: ex.toggle, ...tr.keys,
+            j: jt.toggle, e: ex.toggle, d: td.toggle, ...tr.keys,
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
             t: ongoing ? undefined : () => set('territory', !settings.territory), h: togglePanel,
             ...(renderer === '3d' && {
@@ -914,7 +927,7 @@ export function App() {
     : incoming ? [t.ogsChallenged(incoming.from.username, incoming.from.rank, incoming.size, t.paces[incoming.speed], incoming.ranked),
       [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
     : [line, lineLinks]
-  const links: Link[] = tr.open ? tr.links : review?.error ? [['retry', t.retry, retryLesson]]
+  const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open ? 1 : ex.open ? 0 : -1)] : review?.error ? [['retry', t.retry, retryLesson]]
     : !review ? gameLinks
     : !m ? [['back', t.backToGame, leaveReview]]
     : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as Link] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
@@ -922,7 +935,7 @@ export function App() {
     : lastMoment ? [['back', t.backToGame, leaveReview]] : [['next', t.nextMoment, () => openMoment(review.k + 1, 'try')]]
   const anLine = !an ? null : !canAnalyze ? t.anNeedsNet : anError ? t.anFailed(failureText(anError)) : engineWait
     ?? (cands ? t.anFor(toPlay) : t.anReading)
-  const message = anLine ?? (tr.open ? (thinking && engineWait) || tr.note : review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
+  const message = anLine ?? (tr.open ? (thinking && engineWait) || [tr.note, !td.open && ritualSaid && t.ritualDone(ritualSaid)].filter(Boolean).join(' ') : review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
     : gameLine)
   // tuning progress: outside the key (no re-fade per update) and aria-hidden (announced once)
   const tuned = message === t.tuningCaption && engine.state === 'tuning' ? t.tuningProgress(engine.step, engine.done, engine.total)
@@ -1028,7 +1041,7 @@ export function App() {
             {!settings.panelHidden && <>
               <span className="seal" aria-hidden="true">柾</span>
               <h1>Masame</h1>
-              {jt.button}{ex.button}
+              {td.button}{jt.button}{ex.button}
               <button className="icon" onClick={openSheet('game')} aria-label={gameLabel} title={gameLabel}><Icon name="plus" />{gameHint && <i className="dot" />}</button>
               <button className="icon" onClick={openSheet('settings')} aria-label={alert ? `${t.settings} · ${alert}` : t.settings}
                 title={alert ? `${t.settings} · ${alert}` : t.settings}><Icon name="adjustments" />{alert && <i className="dot" />}</button>
@@ -1246,7 +1259,7 @@ export function App() {
 
           <section>
             <div className="lab"><span>{t.keyboard}</span><span /></div>
-            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki} · <kbd>E</kbd> {t.footer.exercises} · <kbd>A</kbd> {t.footer.candidates}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
+            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki} · <kbd>E</kbd> {t.footer.exercises} · <kbd>D</kbd> {t.footer.today} · <kbd>A</kbd> {t.footer.candidates}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
           </section>
         </Sheet>
       )}
