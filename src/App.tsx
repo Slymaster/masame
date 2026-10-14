@@ -725,9 +725,12 @@ export function App() {
   openFrom.current = read => { setSheet(null); open(read) }
   useEffect(() => {
     const files = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
-    const root = document.documentElement
     let depth = 0 // dragenter/dragleave fire for every element crossed
-    const hint = (n: number) => { depth = n; root.toggleAttribute('data-drop', n > 0) }
+    const hint = (n: number) => {
+      depth = n
+      document.documentElement.toggleAttribute('data-drop', n > 0) // the frame
+      if (n > 0) document.body.dataset.drop = t.dropHint; else delete document.body.dataset.drop // the veil and its caption
+    }
     const enter = (e: DragEvent) => { if (files(e)) hint(depth + 1) }
     const leave = (e: DragEvent) => { if (files(e)) hint(Math.max(0, depth - 1)) }
     const over = (e: DragEvent) => { if (files(e)) { e.preventDefault(); e.dataTransfer!.dropEffect = 'copy' } }

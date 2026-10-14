@@ -251,6 +251,7 @@ export const fr: Dict = {
   sgfSetupOff: 'Pierre de handicap hors du goban',
   sgfMoveOff: (v: string) => `Coup hors du goban : ${v}`,
   // opening files: drops, the OS (double-click), the size cap
+  dropHint: 'Dépose la partie pour l’ouvrir',
   sgfTooBig: 'Plus de 5 Mo : ce n’est pas une partie',
   // networks sheet
   networks: 'Réseaux', close: 'Fermer', closeHint: 'Fermer (Échap)',

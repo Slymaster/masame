@@ -26,7 +26,6 @@ struct App {
     downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
     update: Mutex<Option<Update>>, // the newer release update_check found, for update_install
     ogs: ogs::Ogs,
-    opened: Mutex<Vec<PathBuf>>, // files the OS asked us to open (Finder, Explorer, a launch's arguments), until take_opened
     #[cfg(engine_variants)]
     failed_variants: Mutex<Vec<&'static str>>, // engine builds that failed to start in this session
 }
@@ -435,9 +434,14 @@ fn read_sgf(path: &Path) -> Res<String> {
 }
 
 #[cfg_attr(target_os = "linux", allow(dead_code))]
+/// Files the OS asked us to open (Finder, Explorer, a launch's arguments), until take_opened. Not in App: macOS hands
+/// over a double-clicked document before `setup` runs, so this is managed on the Builder.
+struct OpenedFiles(Mutex<Vec<PathBuf>>);
+
 fn queue_opened(app: &AppHandle, files: Vec<PathBuf>) {
     if files.is_empty() { return }
-    if let Some(s) = app.try_state::<App>() { s.opened.lock().unwrap().extend(files); let _ = app.emit("files-opened", ()); }
+    app.state::<OpenedFiles>().0.lock().unwrap().extend(files);
+    let _ = app.emit("files-opened", ()); // before the page listens it is lost, but take_opened at mount gets the file
 }
 
 #[derive(serde::Serialize)]
@@ -446,14 +450,15 @@ struct Opened { name: String, text: String }
 /// The last file the OS asked us to open (earlier ones are dropped: one game at a time), read here so the webview never
 /// names a path.
 #[tauri::command]
-fn take_opened(app: State<'_, App>) -> Res<Option<Opened>> {
-    let Some(path) = std::mem::take(&mut *app.opened.lock().unwrap()).pop() else { return Ok(None) };
+fn take_opened(opened: State<'_, OpenedFiles>) -> Res<Option<Opened>> {
+    let Some(path) = std::mem::take(&mut *opened.0.lock().unwrap()).pop() else { return Ok(None) };
     Ok(Some(Opened { name: path.file_name().unwrap_or_default().to_string_lossy().into_owned(), text: read_sgf(&path)? }))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default()
+        .manage(OpenedFiles(Mutex::new(arg_files(std::env::args_os(), &std::env::current_dir().unwrap_or_default()))));
     // Linux has no single instance (the plugin needs zbus, see keyring in Cargo.toml): a second launch opens its own window.
     #[cfg(windows)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
@@ -477,7 +482,6 @@ pub fn run() {
             if let Err(e) = install_config(app.handle()) { eprintln!("[katago] config not installed: {e:?}") }
             app.manage(App {
                 engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), update: Default::default(), ogs: Default::default(),
-                opened: Mutex::new(arg_files(std::env::args_os(), &std::env::current_dir().unwrap_or_default())),
                 #[cfg(engine_variants)]
                 failed_variants: Default::default(),
             });

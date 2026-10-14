@@ -250,6 +250,7 @@ export const en = {
   sgfSetupOff: 'Handicap stone off the board',
   sgfMoveOff: (v: string) => `Move off the board: ${v}`,
   // opening files: drops, the OS (double-click), the size cap
+  dropHint: 'Drop the game to open it',
   sgfTooBig: 'Larger than 5 MB: not a game record',
   // networks sheet
   networks: 'Networks', close: 'Close', closeHint: 'Close (Esc)',
