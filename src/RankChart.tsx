@@ -1,7 +1,7 @@
 import { t } from './i18n'
 import { rankLabel } from './ogs'
 
-export interface RankPoint { t: number; rank: number; lo?: number; hi?: number }
+export interface RankPoint { t: number; rank: number }
 
 // drawn at the sheet's content width (460 − 2 × 36), so text keeps its size
 const W = 388, H = 92, L = 30, R = 40, TOP = 8, BOTTOM = 18
@@ -16,11 +16,10 @@ export function rankTicks(lo: number, hi: number): { lo: number; hi: number; tic
   return { lo, hi, ticks: ints.filter(i => (i - ints[0]) % step === 0) }
 }
 
-/** My OGS rank over time: a line, a ± deviation band, or a dot per game; the current rank stands out at the end. */
-export function RankChart({ points, variant = 'line' }: { points: RankPoint[]; variant?: 'line' | 'band' | 'dots' }) {
+/** My OGS rank over time: a line; the current rank stands out at the end. */
+export function RankChart({ points }: { points: RankPoint[] }) {
   if (!points.length) return null
-  const band = variant === 'band'
-  const ys = points.flatMap(p => (band ? [p.rank, p.lo ?? p.rank, p.hi ?? p.rank] : [p.rank]))
+  const ys = points.map(p => p.rank)
   const min = Math.min(...ys), max = Math.max(...ys), pad = Math.max(0.4, (max - min) * 0.12)
   const { lo, hi, ticks } = rankTicks(min - pad, max + pad)
   const t0 = points[0].t, t1 = points.at(-1)!.t, span = t1 - t0
@@ -38,10 +37,7 @@ export function RankChart({ points, variant = 'line' }: { points: RankPoint[]; v
         <line className="rc-rule" x1={L} x2={W - R} y1={y(r)} y2={y(r)} />
         <text className="rc-tick" x={L - 6} y={y(r)} dy="0.35em" textAnchor="end">{rankLabel(r)}</text>
       </g>)}
-      {band && <polygon className="rc-band" points={[...points.map(p => xy(p.t, p.hi ?? p.rank)), ...points.map(p => xy(p.t, p.lo ?? p.rank)).reverse()].join(' ')} />}
-      {variant === 'dots'
-        ? points.map((p, i) => <circle key={i} className="rc-dot" cx={x(p.t)} cy={y(p.rank)} r={1.6} />)
-        : <polyline className="rc-line" points={line} />}
+      <polyline className="rc-line" points={line} />
       <circle className="rc-now" cx={x(last.t)} cy={y(last.rank)} r={3} />
       <text className="rc-now-label" x={x(last.t) + 7} y={y(last.rank)} dy="0.35em">{rankLabel(last.rank)}</text>
       <text className="rc-date" x={L} y={H - 3}>{date(t0)}</text>

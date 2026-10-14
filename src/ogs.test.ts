@@ -865,8 +865,8 @@ describe('session', () => {
     expect(await ogs.history(3)).toEqual({ rows: [expect.objectContaining({ id: 9, result: 'W+R' })], more: false })
     host.tsv = 'ended\trating\tdeviation\n1700000000\t1917\t60\n1600000000\t1500\t350'
     expect(await ogs.ratingHistory()).toEqual([
-      { t: 1600000000_000, rank: ogs.rankOf(1500), lo: ogs.rankOf(1150), hi: ogs.rankOf(1850) },
-      { t: 1700000000_000, rank: ogs.rankOf(1917), lo: ogs.rankOf(1857), hi: ogs.rankOf(1977) },
+      { t: 1600000000_000, rank: ogs.rankOf(1500) },
+      { t: 1700000000_000, rank: ogs.rankOf(1917) },
     ])
   })
 })

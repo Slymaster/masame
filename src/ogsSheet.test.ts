@@ -36,14 +36,12 @@ describe('OGS sheet helpers', () => {
     setLang('en')
     expect(t.ogsChartLabel('8k', '3k', 14)).toBe('OGS rank: from 8k to 3k over 14 months')
   })
-  it('draws the rank chart in each variant, with a summary for screen readers', () => {
+  it('draws the rank chart as a line, with a summary for screen readers', () => {
     setLang('en')
-    const points = [{ t: 0, rank: 22.5, lo: 21.9, hi: 23.1 }, { t: 400 * 86400e3, rank: 27.2, lo: 26.8, hi: 27.6 }]
-    const svg = (variant: 'line' | 'band' | 'dots') => renderToStaticMarkup(createElement(RankChart, { points, variant }))
-    expect(svg('line')).toContain('aria-label="OGS rank: from 8k to 3k over 13 months"')
-    expect(svg('line')).toContain('<polyline')
-    expect(svg('band')).toContain('<polygon')
-    expect(svg('dots').match(/rc-dot/g)).toHaveLength(2)
+    const points = [{ t: 0, rank: 22.5 }, { t: 400 * 86400e3, rank: 27.2 }]
+    const svg = () => renderToStaticMarkup(createElement(RankChart, { points }))
+    expect(svg()).toContain('aria-label="OGS rank: from 8k to 3k over 13 months"')
+    expect(svg()).toContain('<polyline')
     expect(renderToStaticMarkup(createElement(RankChart, { points: [points[0]] }))).not.toContain('NaN')
   })
 })

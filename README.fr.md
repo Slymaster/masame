@@ -53,7 +53,7 @@
 - **Comptage.** Le moteur propose les pierres mortes ; tu les corriges d'un clic.
 - **Revue de partie.** Jusqu'à trois moments où un coup a coûté le plus de points, chacun une courte leçon : trouve toi-même la punition, vois-la, puis vois le bon coup. Après une partie contre l'IA, ou à tout moment dans une partie à deux joueurs ou un SGF. Elle tourne en local, en une minute environ. À partir d'un moment clé, tu peux aussi essayer ta propre suite, et KataGo répond.
 - **Entraîneur de joseki.** Explore les coups candidats avec les points que chacun perd, la fréquence à laquelle les joueurs de ton niveau le jouent, et son origine (classique, pro, IA, vérifié par KataGo, contesté). Entraîne-toi en répétition espacée, dans des orientations et des couleurs au hasard, contre un adversaire qui sort du livre comme les joueurs de ton niveau. Un programme classe les coins selon la fréquence à laquelle tu les rencontreras × les points qu'ils te coûtent. Les joseki sont générés par nous avec KataGo et son réseau humain (SL).
-- **Jouer en ligne sur OGS.** Des parties classées sur [online-go.com](https://online-go.com) contre des joueurs, sur le goban de Masame, avec pendules ; tes parties OGS terminées s'ouvrent pour la revue.
+- **Jouer en ligne sur OGS.** Des parties classées et des défis sur [online-go.com](https://online-go.com), avec pendules, correspondance comprise ; regarde les meilleures parties en direct ; retrouve tes parties terminées et ta courbe de rang ; tes parties OGS terminées s'ouvrent pour la revue.
 - **Règles et parties.** Captures, ko, suicide, passe, annulation, navigation dans les coups, variantes, lecture automatique, et ouverture et enregistrement SGF qui gardent les variantes et les commentaires.
 - **Deux langues.** Entièrement en français et en anglais ; suit la langue du système et se change dans l'app.
 - **Un mode léger 2D.** Un goban Canvas, utilisé automatiquement quand le rendu 3D n'est pas disponible.
@@ -104,16 +104,19 @@ Les réseaux sont publiés par le projet KataGo sous la [KataGo Neural Network L
 
 Masame est un client OGS. Choisis OGS comme adversaire dans le panneau Partie et connecte-toi : la connexion se fait dans ton navigateur, et Masame ne voit jamais ton mot de passe. Ensuite :
 
-- **Cherche un adversaire** pour une partie classée en 9×9, 13×13 ou 19×19, en cadence blitz, rapide ou live (appariement automatique, comme sur le site).
-- **Reprends** tes parties en cours depuis *Mes parties OGS* ; en quitter une ne l'arrête pas, et ta pendule continue de tourner sur OGS.
-- **Importe** une partie terminée d'un clic, puis passe-la en revue comme les autres.
+- **Cherche un adversaire** (appariement automatique) en 9×9, 13×13 ou 19×19, en cadence blitz, rapide, live ou par correspondance. Une recherche par correspondance continue en arrière-plan.
+- **Défie un joueur** par son pseudo OGS (classée ou non, handicap automatique ou partie égale) ; accepte ou refuse les défis que tu reçois ; propose une revanche après une partie.
+- **Pendant une partie :** annule-la dans les premiers coups, demande à ton adversaire de reprendre un coup (ou accepte sa demande), mets en pause et reprends. Le placement libre du handicap est géré. Quand OGS ne peut pas proposer lui-même les pierres mortes, Masame interroge le compteur d'OGS.
+- **Mes parties :** toutes tes parties en cours, celles où c'est à toi de jouer en premier ; tes parties terminées page par page ; ton rang OGS au fil du temps.
+- **Regarder :** les meilleures parties en direct, ou n'importe quelle partie depuis un lien OGS, même sans être connecté. L'aide du moteur reste coupée jusqu'à la fin de la partie.
+- **Notifications :** quand Masame est ouvert en arrière-plan, une notification système t'avertit quand c'est à toi de jouer dans une partie par correspondance, quand un défi arrive, et quand une partie commence ou se termine.
 
 OGS n'autorise aucune aide d'un moteur pendant une partie : tant qu'une partie OGS est en cours, Ombre et lumière, les suggestions de comptage du moteur et la revue sont coupées. Elles reviennent dès la fin de la partie.
 
 ## Vie privée
 
 - Aucune télémétrie, aucune mesure d'audience, aucun compte Masame.
-- Les requêtes réseau vont à katagotraining.org (le catalogue des réseaux et leur téléchargement) et à GitHub pour les mises à jour (github.com et ses serveurs de fichiers). Si tu te connectes à OGS, Masame échange avec online-go.com.
+- Les requêtes réseau vont à katagotraining.org (le catalogue des réseaux et leur téléchargement) et à GitHub pour les mises à jour (github.com et ses serveurs de fichiers). Si tu te connectes à OGS, Masame se connecte à online-go.com dès son démarrage, donc tu apparais en ligne là-bas tant qu'il est ouvert. Pour proposer les pierres mortes quand la proposition d'OGS échoue, il peut envoyer la position finale à ai.online-go.com (le compteur d'OGS). Regarder des parties sans compte passe par une connexion OGS anonyme.
 - Au plus une fois par jour, Masame demande à GitHub si une nouvelle version existe (tu peux le désactiver dans les Réglages). Une mise à jour n'est téléchargée que si tu cliques sur Installer, et elle est vérifiée avec la clé de signature de Masame avant d'être installée.
 - Tes parties restent sur ta machine ; les fichiers SGF sont enregistrés là où tu le choisis.
 
