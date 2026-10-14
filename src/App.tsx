@@ -293,7 +293,7 @@ export function App() {
 
   const changed = () => { setNote(null); setBotError(null); rerender() }
   const atEnd = game.cursor === game.moves.length
-  // OGS forbids engine help in an ongoing game: no KataGo query of any kind until it is finished
+  // OGS forbids engine help in an ongoing game: no KataGo query of any kind until it is finished (nor while joining one: `joining`)
   const ongoing = !!online && online.phase !== 'finished'
   const myGame = ongoing && online.me !== 0 ? online : null // an unfinished OGS game I play
   const opponent = online && online.me !== 0 ? online.players[online.me === 1 ? 'white' : 'black'] : null
@@ -306,7 +306,7 @@ export function App() {
   // the automatic review reads only when nothing else wants the engine, nor a local game the player's attention
   const playingLocal = !result && (!!bot || dirty)
   const ar = useAutoReview({
-    free: canAnalyze && engine.state !== 'error' && !thinking && !review && !panel && !ongoing && !playingLocal && !auto && !held,
+    free: canAnalyze && engine.state !== 'error' && !thinking && !review && !panel && !ongoing && !joining && !playingLocal && !auto && !held,
     ask: (g, q) => analyze(g, { ...q, priority: -1 }), // KataGo serves higher priorities first: the bot, the trainers jump the queue
     scanRun, add: (...x) => ex.add(...x),
     done: (k, ms) => { const prev = note; if (result && recordKey(game) === k) setNote(d => [prev?.(d), d.autoDone(ms.length)].filter(Boolean).join(' ')) },
@@ -727,14 +727,14 @@ export function App() {
 
   // "Ombre et lumière": ownership of the displayed position, debounced, kept until the next estimate arrives.
   useEffect(() => {
-    if (!settings.territory || !canAnalyze || review || ongoing) return
+    if (!settings.territory || !canAnalyze || review || ongoing || joining) return
     let live = true
     const t = setTimeout(() => {
       analyze(game, { maxVisits: TERRITORY_VISITS, includeOwnership: true })
         .then(a => live && setOwn({ game, data: a.ownership, score: a.scoreLead }), e => live && setNote(d => failureText(e, d)))
     }, 250)
     return () => { live = false; clearTimeout(t) }
-  }, [settings.territory, ver, game, canAnalyze, !!review, ongoing]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [settings.territory, ver, game, canAnalyze, !!review, ongoing, joining]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reading: resumes from the scan cache after an error ("Try again") or a colour change.
   useEffect(() => {
@@ -774,7 +774,7 @@ export function App() {
   // Free analysis while A is held: a quick read, then a deep one, cached per position (the deep one replaces it)
   const reads = useRef(new WeakMap<Game['board'], { a: Analysis; deep: boolean; toPlay: Sign }>()) // a PL pseudo-move keeps the board, not the side to move
   const [anError, setAnError] = useState<unknown>(null)
-  const an = held && !ongoing && !panel && !countingNow && !removal && !reading // OGS forbids engine help in an ongoing game
+  const an = held && !ongoing && !joining && !panel && !countingNow && !removal && !reading // OGS forbids engine help in an ongoing game
   const anRead = an ? [reads.current.get(shown.board)].find(r => r?.toPlay === shown.toPlay) : undefined
   useEffect(() => {
     if (!an || !canAnalyze || anRead?.deep) return
