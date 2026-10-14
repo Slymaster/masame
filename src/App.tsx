@@ -766,7 +766,7 @@ export function App() {
   const withNote = (text: string) => [text, note?.(t)].filter(Boolean).join(' ')
   const incoming = !myGame && challengeRows.find(c => !c.mine)
   const undoAsk = myGame?.undo
-  // outside trainers and reviews, top first: search, challenge wait, OGS game states, incoming challenge, result, the rest
+  // outside trainers and reviews, top first: search, challenge wait, OGS game states, result, incoming challenge, the rest
   const [gameLine, gameLinks]: [string | null | undefined, Link[]] = search ? [note?.(t) ?? t.ogsSearching(search.size, t.paces[search.speed]), [['cancel', t.cancel, cancelSearch]]]
     : challengeWait ? [withNote(t.ogsChallengeWait(challengeWait.who)), [['cancel', t.cancel, cancelChallenge]]]
     : ongoing && ogsStatus !== 'online' ? [t.ogsReconnecting, []]
@@ -777,11 +777,11 @@ export function App() {
     : removal ? [withNote(removal.scoring === 'waiting' ? t.ogsScoringWait : removal.scoring === 'failed' ? t.ogsScoringFailed : t.countingHelp), []]
     : ongoing && online.me === 0 ? [withNote(t.ogsWatching(online.players.black.username, online.players.white.username)),
       [['quit', t.ogsLeave, () => start(new Game({ size: game.info.size }), null)]]]
-    : incoming ? [withNote(t.ogsChallenged(incoming.from.username, incoming.from.rank, incoming.size, t.paces[incoming.speed], incoming.ranked)),
-      [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
     : started ? [withNote(t.ogsStartedVs(started.who)), [['open', t.ogsOpen, () => resume(started.id)]]]
     : result ? [withNote(result(t)), [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
       ...(online && online.me !== 0 && online.phase === 'finished' ? [['rematch', t.ogsRematch, rematch] as Link] : [])]]
+    : incoming ? [withNote(t.ogsChallenged(incoming.from.username, incoming.from.rank, incoming.size, t.paces[incoming.speed], incoming.ranked)),
+      [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
     : countingNow ? [t.countingHelp, []]
     : game.ended ? [t.countingWait, []]
     : [(botError ?? note)?.(t) ?? engineWait ?? (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null),

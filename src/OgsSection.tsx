@@ -142,7 +142,7 @@ function Play({ speed, setSpeed, onFind, onChallenge, onAccept, main }: OgsSecti
             <button className="link accent" onClick={() => onAccept(c)}>{t.ogsAccept}</button>
             <button className="link" onClick={() => act(() => ogs.declineChallenge(c.id))}>{t.ogsDecline}</button>
           </span>
-          <span className="dim">{[size(c.size), t.paces[c.speed], c.ranked ? t.ogsRankedShort : t.ogsFriendly].join(' · ')}</span>
+          <span className="dim">{[size(c.size), t.paces[c.speed].toLowerCase(), c.ranked ? t.ogsRankedShort : t.ogsFriendly].join(' · ')}</span>
         </div>
       ))}
     </div>}
@@ -152,7 +152,7 @@ function Play({ speed, setSpeed, onFind, onChallenge, onAccept, main }: OgsSecti
         <div key={c.id} className="ogs-item">
           <span className="who"><span className="to" aria-hidden>→</span><span className="nm">{c.to.username}</span>{c.to.rank && <span className="rk">{c.to.rank}</span>}</span>
           <span className="ogs-acts"><button className="link" onClick={() => act(() => ogs.cancelChallenge(c.id))}>{t.cancel}</button></span>
-          <span className="dim">{[size(c.size), t.paces[c.speed]].join(' · ')}</span>
+          <span className="dim">{[size(c.size), t.paces[c.speed].toLowerCase()].join(' · ')}</span>
         </div>
       ))}
     </div>}

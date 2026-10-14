@@ -794,11 +794,11 @@ export async function history(page: number): Promise<{ rows: GameRow[]; more: bo
   return { rows: r.results.map(g => gameRow(g, id)), more: !!r.next }
 }
 
-/** My rating over time, as ranking floats for rankLabel; lo and hi: the rating ± its deviation. */
-export async function ratingHistory(): Promise<{ t: number; rank: number; lo: number; hi: number }[]> {
+/** My rating over time, as ranking floats for rankLabel. */
+export async function ratingHistory(): Promise<{ t: number; rank: number }[]> {
   const { id } = await mine()
   return ratingPoints(await call<string>('ogs_rating_history', { playerId: id }))
-    .map(p => ({ t: p.t, rank: rankOf(p.rating), lo: rankOf(p.rating - p.deviation), hi: rankOf(p.rating + p.deviation) }))
+    .map(p => ({ t: p.t, rank: rankOf(p.rating) }))
 }
 
 export const sgf = async (id: number) => (await rest(`/api/v1/games/${id}/sgf`, { anon: true })).text()
