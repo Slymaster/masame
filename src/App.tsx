@@ -6,7 +6,7 @@ import { rng } from './board/noise'
 import { adjustRank, clampRank, decide, DEFAULT_RANK, humanProfile, stepRank } from './bot'
 import { askFirst, confirmDiscard, openSgfFile, saveSgfFile } from './files'
 import { Game, type GameNode, type Move, type Sign, type Vertex } from './game'
-import { analyze, call, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
+import { analyze, call, candidates, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
 import { notify } from './notify'
 import { OgsSection } from './OgsSection'
@@ -29,6 +29,10 @@ import { checkDue, updateSettings, type UpdateInfo } from './update'
 import { fromOf, gradeTry, lessonBoard, readGame, REPLY, verdict, type Moment, type Step } from './review'
 import { useJoseki } from './joseki/useJoseki'
 import { useExercises } from './exercises/useExercises'
+import { tone } from './joseki/practice'
+
+// free analysis: a near-instant read, then one that sharpens it
+const QUICK = { maxVisits: 80, overrideSettings: { maxTime: 0.3 } }, DEEP = { maxVisits: 800, overrideSettings: { maxTime: 2.5 } }
 
 const SIZES = [9, 13, 19]
 const HUMAN_BYTES = 99_066_230
@@ -694,6 +698,26 @@ export function App() {
     }).catch(e => live && setReview(x => x && { ...x, error: e })).finally(() => live && setThinking(false))
     return () => { live = false; setThinking(false) }
   }, [answering, ver, lesson, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Free analysis while A is held: a quick read, then a deep one, cached per position (the deep one replaces it)
+  const [held, setHeld] = useState(false)
+  const reads = useRef(new WeakMap<Game['board'], { a: Analysis; deep: boolean }>())
+  const [anError, setAnError] = useState<unknown>(null)
+  const an = held && !ongoing && !panel && !countingNow && !removal && !reading // OGS forbids engine help in an ongoing game
+  const anRead = an ? reads.current.get(shown.board) : undefined
+  useEffect(() => {
+    if (!an || !canAnalyze || anRead?.deep) return
+    let live = true
+    const g = shown, b = g.board
+    setAnError(null)
+    const ask = (deep: boolean, extra: Record<string, unknown>) => {
+      const run = scanRun.current.catch(() => {}).then(() => { if (!live) throw null; return analyze(g, extra) }) // cancelled while queued: send nothing
+      scanRun.current = run
+      return run.then(a => { if (live) { reads.current.set(b, { a, deep }); rerender() } })
+    }
+    ;(anRead ? Promise.resolve() : ask(false, QUICK)).then(() => { if (live) return ask(true, DEEP) }).catch(e => live && e && setAnError(e))
+    return () => { live = false }
+  }, [an, canAnalyze, shown.board]) // eslint-disable-line react-hooks/exhaustive-deps
+  const cands = anRead ? candidates(anRead.a, shown.toPlay) : null
   // a caption link remounts the caption (keyed by its text): right after one is activated, focus the link with the same
   // action if it came back, else the caption itself, so a second Enter never changes step, moment or leaves the review
   const refocus = useRef<string | null>(null)
@@ -730,6 +754,7 @@ export function App() {
       // a window shortcut, so even over a sheet or a field; macOS keeps its menu's full screen only
       if (e.key === 'F11' && !isMac) { e.preventDefault(); return setFullscreen(!fullscreen) }
       if (blocked(e.target)) return
+      if (e.key.toLowerCase() === 'a' && !e.altKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (!e.repeat) setHeld(true); return }
       const cmd = isMac ? e.metaKey : e.ctrlKey, k = e.key.toLowerCase()
       const act = cmd
         ? menuKeys ? undefined : commands[({ z: 'undo', n: 'new', o: 'open', s: 'save', '\\': 'panel' } as Record<string, string>)[k]]
@@ -759,13 +784,18 @@ export function App() {
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
   })
+  useEffect(() => {
+    const up = (e: KeyboardEvent) => { if (e.key.toLowerCase() === 'a') setHeld(false) }, blur = () => setHeld(false)
+    addEventListener('keyup', up); addEventListener('blur', blur)
+    return () => { removeEventListener('keyup', up); removeEventListener('blur', blur) }
+  }, [])
 
   const { size, komi, playerBlack, playerWhite } = game.info
   const board = shown.board, toPlay = shown.toPlay, last = shown.lastMove
   const shownOwn = settings.territory && own?.game === game && !ongoing ? own : null
   const engineWait = engine.state === 'tuning' ? t.tuningCaption
-    : (thinking || reading) && engine.state === 'starting' ? t.engineStarting
-    : (thinking || reading) && engine.state === 'warming' ? t.engineWarming : null
+    : (thinking || reading || an) && engine.state === 'starting' ? t.engineStarting
+    : (thinking || reading || an) && engine.state === 'warming' ? t.engineWarming : null
   // the review's caption and its links (p: the colour that punishes, s: the one that made the mistake)
   const p = m ? -m.sign : 0, s = m?.sign ?? 0
   const graded = m && review?.step === 'try' && review.gap !== null ? verdict(m, review.gap) : null
@@ -810,8 +840,10 @@ export function App() {
     : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as Link] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
     : review.step === 'punish' ? [['better', t.seeBetter, () => openMoment(review.k, 'better')]]
     : lastMoment ? [['back', t.backToGame, leaveReview]] : [['next', t.nextMoment, () => openMoment(review.k + 1, 'try')]]
-  const message = tr.open ? (thinking && engineWait) || tr.note : review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
-    : gameLine
+  const anLine = !an ? null : !canAnalyze ? t.anNeedsNet : anError ? t.anFailed(failureText(anError)) : engineWait
+    ?? (cands ? t.anFor(toPlay) : t.anReading)
+  const message = anLine ?? (tr.open ? (thinking && engineWait) || tr.note : review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
+    : gameLine)
   // tuning progress: outside the key (no re-fade per update) and aria-hidden (announced once)
   const tuned = message === t.tuningCaption && engine.state === 'tuning' ? t.tuningProgress(engine.step, engine.done, engine.total)
     : review && message === t.reading ? t.percent(review.pct) : ''
@@ -897,13 +929,14 @@ export function App() {
               : removal ? { dead: ogs.deadOf(board.signMap, removal.removed), territory: board.signMap.map(r => r.map(() => 0 as Sign)) } : null, // OGS scores
             captures: { black: board.getCaptures(1), white: board.getCaptures(-1) }, // the 3D lids: prisoners taken by each
             ...tr.board,
+            ...(cands && { marks: cands.flatMap(c => c.v ? [{ v: c.v, label: c.label, tone: tone(c.loss) }] : []) }),
           }}
           onPlay={play}
         >
           <p className="note" aria-live="polite" tabIndex={-1}>
             {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message}>
               <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>
-              {links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>{label}</button>)}
+              {!anLine && links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>{label}</button>)}
             </span>}
           </p>
         </Goban>
@@ -937,7 +970,11 @@ export function App() {
                 aria-label={t.render3d} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
             </div>
             <div className="body">
-              {tr.body ?? <>{review ? (
+              {tr.body ?? <>{cands ? ( // while A is held, the candidates in place of the players (or the review)
+                <ul className="jrows" aria-label={t.anFor(toPlay)}>
+                  {cands.map((c, i) => <li key={i}><div className={`jrow an ${tone(c.loss)}`}><b>{c.v ? `${c.label} · ${gtp(c.v, size)}` : t.anPass}</b><span>{c.loss ? t.jLoss(c.loss) : t.jBest}</span><span /></div></li>)}
+                </ul>
+              ) : review ? (
                 <section className="rv">
                   <div className="lab"><span>{t.review}</span><span>{reading ? t.percent(review.pct) : ''}</span></div>
                   {!bot && (
@@ -1115,7 +1152,7 @@ export function App() {
 
           <section>
             <div className="lab"><span>{t.keyboard}</span><span /></div>
-            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki} · <kbd>E</kbd> {t.footer.exercises}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
+            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki} · <kbd>E</kbd> {t.footer.exercises} · <kbd>A</kbd> {t.footer.candidates}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
           </section>
         </Sheet>
       )}

@@ -1,7 +1,7 @@
 // Bridge to the Rust side (network manager + KataGo analysis engine).
 // Outside Tauri (plain Vite dev server) every call rejects and listeners are no-ops, so the UI degrades quietly.
 
-import type { Game, Vertex } from './game'
+import type { Game, Sign, Vertex } from './game'
 import { LocalizedError } from './i18n'
 
 /** Checked per call (not at import) so a browser preview can install a stand-in before opening a view. */
@@ -52,6 +52,7 @@ export interface Analysis {
   pv: (Vertex | null)[] // [0] is the best move itself
   ownership: number[] | null // row-major from the top-left, +1 = Black
   humanPolicy: number[] | null // row-major + pass, -1 = illegal
+  moves: { v: Vertex | null; scoreLead: number; visits: number }[] // the candidates, in KataGo's order
 }
 
 const nums = (v: unknown, len: number): number[] | null =>
@@ -59,7 +60,7 @@ const nums = (v: unknown, len: number): number[] | null =>
 
 /** Engine output is untrusted: keep only well-formed fields of the expected sizes. */
 export function parseAnalysis(raw: unknown, n: number): Analysis {
-  const r = raw as { rootInfo?: { winrate?: unknown; scoreLead?: unknown }; moveInfos?: { move?: unknown; order?: unknown; pv?: unknown }[]; ownership?: unknown; humanPolicy?: unknown }
+  const r = raw as { rootInfo?: { winrate?: unknown; scoreLead?: unknown }; moveInfos?: { move?: unknown; order?: unknown; pv?: unknown; scoreLead?: unknown; visits?: unknown }[]; ownership?: unknown; humanPolicy?: unknown }
   const { winrate, scoreLead } = r?.rootInfo ?? {}
   if (typeof winrate !== 'number' || typeof scoreLead !== 'number') throw new LocalizedError(d => d.badAnswer)
   const top = Array.isArray(r.moveInfos) ? r.moveInfos.find(m => m?.order === 0) : undefined
@@ -72,8 +73,25 @@ export function parseAnalysis(raw: unknown, n: number): Analysis {
   return {
     winrate, scoreLead, topMove: typeof top?.move === 'string' ? top.move.toLowerCase() === 'pass' ? 'pass' : top.move : '', pv,
     ownership: nums(r.ownership, n * n), humanPolicy: nums(r.humanPolicy, n * n + 1),
+    moves: (Array.isArray(r.moveInfos) ? r.moveInfos : []).flatMap(m => {
+      const v = vertex(m?.move, n), { order, scoreLead, visits } = m ?? {}
+      return v !== undefined && typeof order === 'number' && Number.isFinite(scoreLead) && Number.isFinite(visits) && (visits as number) > 0
+        ? [{ order, v, scoreLead: scoreLead as number, visits: visits as number }] : []
+    }).sort((a, b) => a.order - b.order).map(({ v, scoreLead, visits }) => ({ v, scoreLead, visits })),
   }
 }
+
+export interface Candidate { v: Vertex | null; label: string; loss: number }
+/** The engine's candidates for `toPlay` (the side to move in `a`), lettered in its order: points lost against the best, rare reads (noise) left out. */
+export function candidates(a: Analysis, toPlay: Sign, max = 8): Candidate[] {
+  const best = a.moves[0]
+  if (!best) return []
+  const top = Math.max(...a.moves.map(m => m.visits))
+  let k = 0 // a pass takes no letter: it is never marked
+  return a.moves.filter(m => m === best || m.visits * 10 >= top).slice(0, max)
+    .map(m => ({ v: m.v, label: m.v ? LETTERS[k++] : '', loss: Math.max(0, toPlay * (best.scoreLead - m.scoreLead)) }))
+}
+const LETTERS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
 
 /** The displayed position: the last position with setup stones at or before the cursor (the root otherwise) as the initial stones, then the moves. */
 export function positionQuery(game: Game) {

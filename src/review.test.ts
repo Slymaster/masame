@@ -159,7 +159,7 @@ function fakeEngine(leads: number[], opts: { failAt?: number; deep?: Record<numb
     inFlight--
     if (id === opts.failAt) throw new Error('engine_stopped')
     const deep = 'includeOwnership' in query ? opts.deep?.[at] : undefined
-    return { winrate: 0.5, scoreLead: leads[at], topMove: '', pv: [[at % 9, 8]], ownership: [at % 2 ? 0.9 : -0.9, 0.1], humanPolicy: null, ...deep }
+    return { winrate: 0.5, scoreLead: leads[at], topMove: '', pv: [[at % 9, 8]], ownership: [at % 2 ? 0.9 : -0.9, 0.1], humanPolicy: null, moves: [], ...deep }
   }
   return { ask, calls, max: () => max }
 }

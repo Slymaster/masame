@@ -81,7 +81,7 @@ export const fr: Dict = {
   updateDownloading: (p: number | null) => (p === null ? 'Téléchargement de la mise à jour…' : `Téléchargement de la mise à jour… ${f.pct(p)}`),
   updateInstalling: 'Installation de la mise à jour…',
   fullscreen: 'Plein écran', autoUpdate: 'Rechercher les mises à jour automatiquement',
-  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', exercises: 'exercices', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
+  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', exercises: 'exercices', candidates: 'coups candidats (maintenue)', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
   // barre de menus macOS (src-tauri/src/menu.rs)
   menu: {
     about: 'À propos de Masame', hide: 'Masquer Masame', hideOthers: 'Masquer les autres', showAll: 'Tout afficher', quit: 'Quitter Masame',
@@ -123,6 +123,9 @@ export const fr: Dict = {
   betterLine: (s: number, v: string, loss: number) => `Mieux : ${color(s)} ${v}, qui garde ces ${pts(loss)}.`,
   betterHelp: '→ suit la ligne. Compare sa lumière avec celle de la punition. Joue où tu veux pour explorer : chaque coup reçoit une réponse. ↑ ↓ compare tes essais.',
   nextMoment: 'Moment suivant',
+  // analyse libre
+  anFor: (s: number) => `Coups candidats pour ${color(s)}`, anReading: 'Lecture de la position…', anPass: 'Passer',
+  anNeedsNet: 'Les coups candidats demandent un réseau d’analyse.', anFailed: (m: string) => `La position n’a pas pu être lue. ${m}`,
   // entraîneur de joseki
   joseki: 'Joseki', jLoading: 'Chargement des joseki…', jFailed: (m: string) => `Impossible de charger les joseki : ${m}`,
   jTabs: { explore: 'Explorer', practise: 'S’entraîner', programme: 'Programme' },
