@@ -56,7 +56,7 @@ function loadSettings(): Settings {
   return {
     ...s, lang: storedLang(j), langChosen: j.langChosen === true,
     opponent: (['human', 'ai', 'ogs'] as const).includes(s.opponent) ? s.opponent : 'ai',
-    ogsSpeed: (['blitz', 'rapid', 'live'] as const).includes(s.ogsSpeed) ? s.ogsSpeed : 'rapid', myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
+    ogsSpeed: (['blitz', 'rapid', 'live'] as ogs.Speed[]).includes(s.ogsSpeed) ? s.ogsSpeed : 'rapid', myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: DECORS.includes(s.decor) ? s.decor : 'atelier', panelHidden: s.panelHidden === true, ...updateSettings(j),
@@ -708,7 +708,7 @@ export function App() {
     : review.step === 'punish' ? [['better', t.seeBetter, () => openMoment(review.k, 'better')]]
     : lastMoment ? [['back', t.backToGame, leaveReview]] : [['next', t.nextMoment, () => openMoment(review.k + 1, 'try')]]
   const message = tr.open ? (thinking && engineWait) || tr.note : review ?(review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
-    : search ? note?.(t) ?? t.ogsSearching(search.size, t.paces[search.speed])
+    : search ? note?.(t) ?? t.ogsSearching(search.size, t.paces[search.speed as keyof typeof t.paces])
     : ongoing && ogsStatus !== 'online' ? t.ogsReconnecting
     : result ? [result(t), note?.(t)].filter(Boolean).join(' ')
     : countingNow || removal ? t.countingHelp
