@@ -990,7 +990,7 @@ export function App() {
     : challengeWait ? [t.ogsChallengeWait(challengeWait.who), [['cancel', t.cancel, () => cancelChallenge()]]]
     : ongoing && online.me === 0 ? [withNote(t.ogsWatching(online.players.black.username, online.players.white.username)),
       [['quit', t.ogsLeave, () => start(new Game({ size: game.info.size }), null)]]]
-    : result ? [[result(t), note?.(t), nextAi && nextAi !== bot?.rank ? t.rankAdjusted(nextAi) : null].filter(Boolean).join(' '), [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
+    : result ? [[result(t), note?.(t), nextAi && nextAi !== bot?.rank ? t.aiNext(nextAi) : null].filter(Boolean).join(' '), [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
       ...(online && online.me !== 0 && online.phase === 'finished' ? [['rematch', t.ogsRematch, rematch] as Link] : [])]]
     : countingNow ? [t.countingHelp, []]
     : game.ended ? [t.countingWait, []]

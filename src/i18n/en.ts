@@ -94,7 +94,6 @@ export const en = {
   resigns: (loser: number) => `${color(loser)} resigns. ${color(-loser)} wins.`,
   botFailed: (m: string) => `The AI can’t play right now. ${m}`,
   retry: 'Try again',
-  rankAdjusted: (r: string) => `AI level adjusted to ${r} for the next game.`,
   humanSilent: 'The Human network isn’t responding. Check that it’s installed.',
   badAnswer: 'Unreadable answer from KataGo.',
   // handicap and the local clock
@@ -199,7 +198,9 @@ export const en = {
   exReset: 'Delete the exercises', exResetAsk: 'Delete all your exercises and their statistics?',
   exReadOnly: 'These exercises were saved by a newer Masame: practice here won’t be recorded.',
   // automatic review
-  autoDone: (n: number, rank?: string) => `Review done: ${rank ? `you played like ${aRank(rank)}; ` : ''}${n ? `${f.plural(n, 'key moment joins', 'key moments join')} your exercises` : 'no decisive moment'}.`,
+  autoDone: (n: number, rank?: string) => rank ? `You played like ${aRank(rank)} · ${n ? `${f.plural(n, 'key moment', 'key moments')} for your exercises` : 'no decisive moment'}.`
+    : `Review done: ${n ? `${f.plural(n, 'key moment joins', 'key moments join')} your exercises` : 'no decisive moment'}.`,
+  aiNext: (r: string) => `AI moves to ${r}.`,
   autoPending: (n: number) => `Automatic review: ${f.plural(n, 'game', 'games')} waiting`,
   autoRunning: (pct: number) => `Automatic review: in progress… ${f.pct(pct)}`,
   // your rank, read in your moves
