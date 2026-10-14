@@ -7,10 +7,25 @@ import { Seg } from './Seg'
 const silent = (e: unknown) => (e as { code?: string })?.code === 'ogs_cancelled'
 
 /** The Game sheet's OGS part: sign-in, automatch and my games. Whether we're signed in is asked when it appears. */
-export function OgsSection({ speed, setSpeed, onFind, onResume, onImport, onSignOut }: {
-  speed: ogs.Speed; setSpeed: (s: ogs.Speed) => void; onFind: () => void
-  onResume: (id: number) => void; onImport: (id: number) => void; onSignOut: () => Promise<boolean>
-}) {
+/** What the App does for the OGS section; the section itself only talks to ogs.ts for lists and stores. */
+export interface OgsSectionProps {
+  speed: ogs.Speed
+  setSpeed: (s: ogs.Speed) => void
+  /** Automatch at the sheet's size and pace: a live pace closes the sheet and waits under the board; correspondence stays listed here. */
+  onFind: () => void
+  /** A challenge at the sheet's size and pace; rejects with an error to show in the form (ogs_no_player…). */
+  onChallenge: (username: string, o: { ranked: boolean; handicap: boolean }) => Promise<void>
+  onAccept: (c: ogs.ChallengeRow) => void
+  onResume: (id: number) => void // one of my ongoing games
+  onImport: (id: number) => void // a finished game, as SGF
+  onWatch: (id: number) => void // someone else's live game
+  onOpenLink: (id: number) => void // a game id from a pasted OGS link
+  onSignOut: () => Promise<boolean>
+  /** Signed in: a game watched as a guest must be followed again on the new connection. */
+  onSignedIn: () => void
+}
+
+export function OgsSection({ speed, setSpeed, onFind, onResume, onImport, onSignOut }: OgsSectionProps) {
   const [me, setMe] = useState<ogs.Player | null | undefined>(ogs.me ?? undefined) // undefined: not known yet
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState<string | null>(null)
