@@ -479,13 +479,19 @@ export function App() {
       setNote(d => d.saveFailed(failureText(e, d)))
     }
   }
+  const exporting = useRef(false) // a second click mustn't open a second save dialog
   const postcard = async () => {
+    if (exporting.current) return
+    exporting.current = true
     try {
       const png = await view.current?.snapshot?.()
       if (!png) throw new LocalizedError(d => d.postcardNotReady)
-      if (await savePngFile(png, t.postcardName(shown.info.size, shown.moveNumber()))) setNote(d => d.postcardSaved)
+      const lent = tr.open && tr.board && 'signMap' in tr.board ? tr.board.signMap : undefined // a trainer's board is what the picture shows
+      if (await savePngFile(png, lent ? t.postcardName(lent.length) : t.postcardName(shown.info.size, shown.moveNumber()))) setNote(d => d.postcardSaved)
     } catch (e) {
       setNote(d => d.postcardFailed(failureText(e, d)))
+    } finally {
+      exporting.current = false
     }
   }
 
@@ -818,7 +824,18 @@ export function App() {
   }, [])
   // Files from outside: dropped on the window, or handed over by the OS (double-click, Open with); a sheet closes first
   const openFrom = useRef((_: () => Promise<string | null>) => {})
-  openFrom.current = read => { setSheet(null); open(read) }
+  openFrom.current = async read => {
+    setSheet(null)
+    try { // read and checked before open() abandons anything: a stray file mustn't cancel an OGS search or challenge
+      const text = await read()
+      if (text === null) return
+      if (text.length > MAX_SGF) throw new LocalizedError(l => l.sgfTooBig)
+      loadSgf(text)
+      open(async () => text)
+    } catch (e) {
+      setNote(d => d.openFailed(failureText(e, d)))
+    }
+  }
   useEffect(() => {
     const files = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
     let depth = 0 // dragenter/dragleave fire for every element crossed
@@ -1076,7 +1093,6 @@ export function App() {
               <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
                 <Icon name={sound ? 'volume' : 'volume-off'} />
               </button>
-              <button className="icon sm" onClick={postcard} aria-label={t.postcard} title={t.postcardHint}><Icon name="camera" /></button>
               <button className="icon sm" onClick={openSheet('view')} aria-label={t.display} title={t.display}><Icon name="view" /></button>
               <button className="icon sm" aria-pressed={renderer === '3d'} onClick={() => { setSession2d(false); set('renderer', renderer === '3d' ? '2d' : '3d') }}
                 aria-label={t.render3d} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
@@ -1202,6 +1218,7 @@ export function App() {
           <section className="opts">
             <button className="btn" onClick={() => { closeSheet(); open() }} title={shortcut('O')}>{t.open}</button>
             <button className="btn" onClick={() => { closeSheet(); save() }} title={shortcut('S')}>{t.save}</button>
+            <button className="btn" onClick={() => { closeSheet(); postcard() }} title={t.postcardHint}>{t.postcard}</button>
           </section>
         </Sheet>
       )}

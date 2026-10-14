@@ -22,5 +22,6 @@ describe('postcard file name', () => {
   it('names the size and the move, in each language', () => {
     expect(en.postcardName(19, 123)).toBe('masame-19x19-move-123.png')
     expect(fr.postcardName(9, 0)).toBe('masame-9x9-coup-0.png')
+    expect(fr.postcardName(19)).toBe('masame-19x19.png') // a trainer's board
   })
 })

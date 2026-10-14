@@ -298,8 +298,8 @@ export const fr: Dict = {
   download: 'Télécharger', resume: 'Reprendre', cancel: 'Annuler', remove: 'Supprimer', useForAnalysis: 'Utiliser pour l’analyse',
   creditsKataGo: 'KataGo', creditsMid: '© David J Wu — licence MIT ; réseaux sous', creditsLicense: 'KataGo Neural Network License',
   // postcard
-  postcard: 'Carte postale', postcardHint: 'Enregistrer le goban en image (PNG), signée, pour la partager', postcardTitle: 'Enregistrer la carte postale',
-  postcardName: (n: number, move: number) => `masame-${n}x${n}-coup-${move}.png`,
+  postcard: 'Carte postale…', postcardHint: 'Enregistrer le goban en image (PNG), signée, pour la partager', postcardTitle: 'Enregistrer la carte postale',
+  postcardName: (n: number, move?: number) => `masame-${n}x${n}${move === undefined ? '' : `-coup-${move}`}.png`,
   postcardSaved: 'Carte postale enregistrée.', postcardNotReady: 'le goban n’est pas encore dessiné', postcardFailed: (m: string) => `Impossible d’enregistrer la carte postale : ${m}`,
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {

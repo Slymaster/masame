@@ -433,11 +433,11 @@ fn read_sgf(path: &Path) -> Res<String> {
     Ok(String::from_utf8_lossy(&bytes).into_owned()) // lossy like the dialog's readTextFile
 }
 
-#[cfg_attr(target_os = "linux", allow(dead_code))]
 /// Files the OS asked us to open (Finder, Explorer, a launch's arguments), until take_opened. Not in App: macOS hands
 /// over a double-clicked document before `setup` runs, so this is managed on the Builder.
 struct OpenedFiles(Mutex<Vec<PathBuf>>);
 
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))] // Linux: no single instance, no Opened event
 fn queue_opened(app: &AppHandle, files: Vec<PathBuf>) {
     if files.is_empty() { return }
     app.state::<OpenedFiles>().0.lock().unwrap().extend(files);
