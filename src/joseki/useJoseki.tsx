@@ -32,11 +32,10 @@ const loadData = () => loadJoseki().catch(e => import.meta.env.DEV
 const randomOrient = (): Orient => ({ k: Math.floor(Math.random() * 8), swap: Math.random() < 0.5 })
 const signOf = (o: Orient, ply: number) => ((ply % 2 ? 1 : -1) * (o.swap ? -1 : 1)) as Sign // ply: moves after the context
 
-export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
-  view: RefObject<{ drop(v: Vertex, c: Sign): void } | null>; rank: string; setRank: (r: string) => void
-  blocked: boolean; playFrom: (moves: Move[]) => Promise<boolean>
+export function useJoseki({ view, open, setOpen, rank, setRank, blocked, playFrom }: {
+  view: RefObject<{ drop(v: Vertex, c: Sign): void } | null>; open: boolean; setOpen: (o: boolean) => void
+  rank: string; setRank: (r: string) => void; blocked: boolean; playFrom: (moves: Move[]) => Promise<boolean>
 }) {
-  const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('explore')
   const [db, setDb] = useState<JosekiDb | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -77,7 +76,7 @@ export function useJoseki({ view, rank, setRank, blocked, playFrom }: {
     return () => clearTimeout(id)
   }, [open, db, line, replaying, p, view])
 
-  const toggle = () => { if (!blocked) { setOpen(o => !o); setSay(null) } }
+  const toggle = () => { if (!blocked) { setOpen(!open); setSay(null) } }
   const close = () => setOpen(false)
   const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null }
   const button = (

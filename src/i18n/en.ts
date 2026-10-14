@@ -80,7 +80,7 @@ export const en = {
   updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
   updateInstalling: 'Installing the update…',
   fullscreen: 'Full screen', autoUpdate: 'Check for updates automatically',
-  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
+  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
     about: 'About Masame', hide: 'Hide Masame', hideOthers: 'Hide Others', showAll: 'Show All', quit: 'Quit Masame',
@@ -153,6 +153,29 @@ export const en = {
   jProgrammeNote: 'Your programme: the corners worth learning first.',
   jProgrammeHelp: (rank: string) => `Ordered by how often you meet each corner at ${rank} × the points it costs there.`,
   jMet: (n: number) => `met about 1 corner in ${f.num(n)}`, jOpenFamily: (name: string) => `Explore ${name}`,
+  // exercises from your own games (s: the colour that made the mistake)
+  exercises: 'Exercises',
+  exNeedsNet: 'Install an analysis network to practise: KataGo checks each answer.',
+  exProgress: (due: number, fresh: number, later: number) =>
+    [due && `${f.plural(due, 'exercise', 'exercises')} due`, fresh && `${f.num(fresh)} new today`, later && `${f.num(later)} from tomorrow`].filter(Boolean).join(' · '),
+  exEmpty: 'No exercises yet. Review a game: its key moments become exercises from the next day.',
+  exDone: 'Nothing left for today. Come back tomorrow, or review another game.',
+  exFrom: (vs: string, mv: number) => (vs ? `From the game against ${vs}, move ${mv}.` : `From one of your games, move ${mv}.`),
+  exAsk: (s: number, v: string | null, loss: number) => `${color(s)} to play. ${v ? `${v} (×)` : 'Passing'} lost ${pts(loss)} in the game: find better.`,
+  exChecking: 'Checking your move…',
+  exFound: 'Found it: that keeps the points.',
+  exShort: (gap: number) => `Better, but ${pts(gap)} short of the best.`,
+  exMissed: (gap: number) => `No better than the game move: ${lost(gap)}.`,
+  exNext: 'Next exercise',
+  exKept: (n: number): string => (n === 1 ? 'This moment is saved to your exercises (E).' : 'These moments are saved to your exercises (E).'),
+  exWhere: 'Where you lose points', exGames: (n: number) => f.plural(n, 'game', 'games'),
+  exPhases: { opening: 'Opening', middle: 'Middle game', endgame: 'Endgame' },
+  exPerGame: (x: number, share: number) => `−${f.plural(Math.round(x), 'point', 'points')} per game · ${f.pct(share)} of what you lose`,
+  exLost: (x: number) => (Math.round(x) ? `−${f.num(Math.round(x))}` : '0'),
+  exWhereNone: 'Review a game you played (against the AI, on OGS, or a file with your colour picked) to see where you lose points.',
+  exWhereHelp: (n: number) => `Points lost per game by your moves, over your last ${n === 1 ? 'reviewed game' : `${f.num(n)} reviewed games`}. Opening: the first 50 moves; endgame: from move 151 (19×19, scaled on smaller boards).`,
+  exReset: 'Delete the exercises', exResetAsk: 'Delete all your exercises and their statistics?',
+  exReadOnly: 'These exercises were saved by a newer Masame: practice here won’t be recorded.',
   // OGS (online-go.com)
   ogsBoard: (n: number, komi: number, rules: string) => `${n}×${n} · komi ${f.num(komi)} · ${rules} · OGS`,
   rules: { japanese: 'Japanese rules', chinese: 'Chinese rules', aga: 'AGA rules', korean: 'Korean rules', nz: 'New Zealand rules', ing: 'Ing rules' },

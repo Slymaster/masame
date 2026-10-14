@@ -81,7 +81,7 @@ export const fr: Dict = {
   updateDownloading: (p: number | null) => (p === null ? 'Téléchargement de la mise à jour…' : `Téléchargement de la mise à jour… ${f.pct(p)}`),
   updateInstalling: 'Installation de la mise à jour…',
   fullscreen: 'Plein écran', autoUpdate: 'Rechercher les mises à jour automatiquement',
-  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
+  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', exercises: 'exercices', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
   // barre de menus macOS (src-tauri/src/menu.rs)
   menu: {
     about: 'À propos de Masame', hide: 'Masquer Masame', hideOthers: 'Masquer les autres', showAll: 'Tout afficher', quit: 'Quitter Masame',
@@ -154,6 +154,29 @@ export const fr: Dict = {
   jProgrammeNote: 'Ton programme : les coins à apprendre en premier.',
   jProgrammeHelp: (rank: string) => `Classés selon la fréquence de chaque coin en ${rank} × les points qu’il y coûte.`,
   jMet: (n: number) => `environ 1 coin sur ${f.num(n)}`, jOpenFamily: (name: string) => `Explorer ${name}`,
+  // exercices tirés de tes parties (s : la couleur qui a commis l’erreur)
+  exercises: 'Exercices',
+  exNeedsNet: 'Installe un réseau d’analyse pour t’entraîner : KataGo vérifie chaque réponse.',
+  exProgress: (due: number, fresh: number, later: number) =>
+    [due && `${f.plural(due, 'exercice', 'exercices')} à revoir`, fresh && `${f.plural(fresh, 'nouveau', 'nouveaux')} aujourd’hui`, later && `${f.num(later)} dès demain`].filter(Boolean).join(' · '),
+  exEmpty: 'Pas encore d’exercices. Revois une partie : ses moments clés deviennent des exercices dès le lendemain.',
+  exDone: 'Plus rien pour aujourd’hui. Reviens demain, ou revois une autre partie.',
+  exFrom: (vs: string, mv: number) => (vs ? `Tiré de la partie contre ${vs}, coup ${mv}.` : `Tiré d’une de tes parties, coup ${mv}.`),
+  exAsk: (s: number, v: string | null, loss: number) => `${color(s)} joue. ${v ? `${v} (×) a` : 'Passer a'} perdu ${pts(loss)} dans la partie : trouve mieux.`,
+  exChecking: 'KataGo examine ton coup…',
+  exFound: 'Trouvé : ce coup garde les points.',
+  exShort: (gap: number) => `Mieux, mais à ${pts(gap)} du meilleur coup.`,
+  exMissed: (gap: number) => `Pas mieux que le coup de la partie : ${lost(gap)}.`,
+  exNext: 'Exercice suivant',
+  exKept: (n: number) => (n === 1 ? 'Ce moment est gardé dans tes exercices (E).' : 'Ces moments sont gardés dans tes exercices (E).'),
+  exWhere: 'Où tu perds tes points', exGames: (n: number) => f.plural(n, 'partie', 'parties'),
+  exPhases: { opening: 'Ouverture', middle: 'Milieu de partie', endgame: 'Fin de partie' },
+  exPerGame: (x: number, share: number) => `−${f.plural(Math.round(x), 'point', 'points')} par partie · ${f.pct(share)} de ce que tu perds`,
+  exLost: (x: number) => (Math.round(x) ? `−${f.num(Math.round(x))}` : '0'),
+  exWhereNone: 'Revois une partie que tu as jouée (contre l’IA, sur OGS, ou un fichier en choisissant ta couleur) pour voir où tu perds tes points.',
+  exWhereHelp: (n: number) => `Points perdus par partie par tes coups, sur ${n === 1 ? 'ta dernière partie revue' : `tes ${f.num(n)} dernières parties revues`}. Ouverture : les 50 premiers coups ; fin de partie : à partir du coup 151 (19×19, proportionnellement sur les petits gobans).`,
+  exReset: 'Effacer les exercices', exResetAsk: 'Effacer tous tes exercices et leurs statistiques ?',
+  exReadOnly: 'Ces exercices viennent d’une version plus récente de Masame : l’entraînement ici ne sera pas enregistré.',
   // OGS (online-go.com)
   ogsBoard: (n: number, komi: number, rules: string) => `${n}×${n} · komi ${f.num(komi)} · ${rules} · OGS`,
   rules: { japanese: 'règles japonaises', chinese: 'règles chinoises', aga: 'règles AGA', korean: 'règles coréennes', nz: 'règles néo-zélandaises', ing: 'règles Ing' },

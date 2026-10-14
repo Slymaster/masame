@@ -48,11 +48,9 @@ function fnv32(s: string, reverse = false) {
   return h >>> 0
 }
 export const fnv = (s: string) => fnv32(s).toString(16).padStart(8, '0')
-/** 64 bits in base 36: FNV-1a forward and backward, so thousands of nodes stay far from a collision. */
-export const nodeKey = (ply: number, stones: string) => {
-  const t = `${ply}|${ply % 2 ? 'B' : 'W'}|${stones}`
-  return (BigInt(fnv32(t)) << 32n | BigInt(fnv32(t, true))).toString(36)
-}
+/** 64 bits in base 36: FNV-1a forward and backward, so thousands of keys stay far from a collision. */
+export const hash64 = (s: string) => (BigInt(fnv32(s)) << 32n | BigInt(fnv32(s, true))).toString(36)
+export const nodeKey = (ply: number, stones: string) => hash64(`${ply}|${ply % 2 ? 'B' : 'W'}|${stones}`)
 /**
  * Key of a position `ply` moves after the context (odd = Black to play); transpositions and mirror images share it.
  * shortcut: the ko ban is not part of the key, so a position with and without a pending ko merge; add it if ko-heavy lines ever matter.
