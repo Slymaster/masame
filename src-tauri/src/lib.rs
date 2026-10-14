@@ -412,9 +412,60 @@ fn set_language(app: AppHandle, labels: menu::Labels) -> Res<()> {
     Ok(())
 }
 
+/// The SGF size cap, in bytes; the webview caps the text it opens at the same figure (MAX_SGF in src/sgf.ts).
+const MAX_SGF: u64 = 5 * 1024 * 1024;
+
+/// The existing files among a launch's arguments (how Windows and Linux pass an associated file), relative ones
+/// resolved against the launch's directory.
+fn arg_files(args: impl IntoIterator<Item = impl Into<PathBuf>>, cwd: &Path) -> Vec<PathBuf> {
+    args.into_iter().skip(1).map(|a| cwd.join(a.into())).filter(|p| p.is_file()).collect()
+}
+
+/// macOS hands opened documents over as URLs: only file ones are ours.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn url_file(u: &tauri::Url) -> Option<PathBuf> { if u.scheme() == "file" { u.to_file_path().ok() } else { None } }
+
+fn read_sgf(path: &Path) -> Res<String> {
+    use std::io::Read;
+    let mut bytes = vec![];
+    std::fs::File::open(path).and_then(|f| f.take(MAX_SGF + 1).read_to_end(&mut bytes)).map_err(|e| Failure::with("open_unreadable", e))?;
+    if bytes.len() as u64 > MAX_SGF { return Err(Failure::new("open_too_big")) }
+    Ok(String::from_utf8_lossy(&bytes).into_owned()) // lossy like the dialog's readTextFile
+}
+
+/// Files the OS asked us to open (Finder, Explorer, a launch's arguments), until take_opened. Not in App: macOS hands
+/// over a double-clicked document before `setup` runs, so this is managed on the Builder.
+struct OpenedFiles(Mutex<Vec<PathBuf>>);
+
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))] // Linux: no single instance, no Opened event
+fn queue_opened(app: &AppHandle, files: Vec<PathBuf>) {
+    if files.is_empty() { return }
+    app.state::<OpenedFiles>().0.lock().unwrap().extend(files);
+    let _ = app.emit("files-opened", ()); // before the page listens it is lost, but take_opened at mount gets the file
+}
+
+#[derive(serde::Serialize)]
+struct Opened { name: String, text: String }
+
+/// The last file the OS asked us to open (earlier ones are dropped: one game at a time), read here so the webview never
+/// names a path.
+#[tauri::command]
+fn take_opened(opened: State<'_, OpenedFiles>) -> Res<Option<Opened>> {
+    let Some(path) = std::mem::take(&mut *opened.0.lock().unwrap()).pop() else { return Ok(None) };
+    Ok(Some(Opened { name: path.file_name().unwrap_or_default().to_string_lossy().into_owned(), text: read_sgf(&path)? }))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
+        .manage(OpenedFiles(Mutex::new(arg_files(std::env::args_os(), &std::env::current_dir().unwrap_or_default()))));
+    // Linux has no single instance (the plugin needs zbus, see keyring in Cargo.toml): a second launch opens its own window.
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+        queue_opened(app, arg_files(argv, Path::new(&cwd)));
+        if let Some(w) = app.get_webview_window("main") { let _ = w.unminimize(); let _ = w.set_focus(); }
+    }));
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
@@ -440,12 +491,17 @@ pub fn run() {
         .on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); })
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
-            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, update_check, update_install,
+            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, update_check, update_install, take_opened,
             ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, ev| if let RunEvent::Exit = ev { app.state::<App>().engine.kill() });
+        .run(|app, ev| match ev {
+            RunEvent::Exit => app.state::<App>().engine.kill(),
+            #[cfg(target_os = "macos")]
+            RunEvent::Opened { urls } => queue_opened(app, urls.iter().filter_map(url_file).collect()),
+            _ => {}
+        });
 }
 
 #[cfg(test)]
@@ -460,6 +516,36 @@ mod tests {
             v["activeNetwork"] = json!("n"); // would panic on an array, number or string
             assert_eq!(v, json!({"activeNetwork": "n"}));
         }
+    }
+
+    #[test]
+    fn launch_arguments_keep_existing_files() {
+        let dir = std::env::temp_dir().join(format!("masame-args-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.sgf"), "(;)").unwrap();
+        let abs = dir.join("a.sgf");
+        // the executable itself, a missing file and a directory are skipped; relative paths resolve against the launch's directory
+        assert_eq!(arg_files([PathBuf::from("masame"), abs.clone(), "missing.sgf".into(), dir.clone(), "a.sgf".into()], &dir), vec![abs.clone(), abs.clone()]);
+        assert_eq!(arg_files([abs], &dir), Vec::<PathBuf>::new());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")] // url_file serves macOS only; a drive-less file URL is no path on Windows
+    fn only_file_urls_are_files() {
+        assert_eq!(url_file(&"file:///tmp/a%20b.sgf".parse().unwrap()), Some(PathBuf::from("/tmp/a b.sgf")));
+        assert_eq!(url_file(&"https://example.com/a.sgf".parse().unwrap()), None);
+    }
+
+    #[test]
+    fn sgf_reads_are_capped() {
+        let p = std::env::temp_dir().join(format!("masame-cap-{}.sgf", std::process::id()));
+        std::fs::write(&p, vec![b'x'; MAX_SGF as usize]).unwrap();
+        assert_eq!(read_sgf(&p).unwrap().len() as u64, MAX_SGF);
+        std::fs::write(&p, vec![b'x'; MAX_SGF as usize + 1]).unwrap();
+        assert_eq!(read_sgf(&p).unwrap_err().code, "open_too_big");
+        std::fs::remove_file(&p).unwrap();
+        assert_eq!(read_sgf(&p).unwrap_err().code, "open_unreadable");
     }
 
     /// Our catalogue client and the updater plugin's own reqwest clients in one process: both must complete a TLS

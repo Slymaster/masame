@@ -3,6 +3,7 @@ import { fmt } from './format'
 
 const f = fmt('en-US')
 const color = (s: number): string => (s === 1 ? 'Black' : 'White')
+const aRank = (r: string) => `${/^(8|11|18)\D/.test(r) ? 'an' : 'a'} ${r}` // an 8k, an 11k, an 18k
 const tuningProgress = (step: number, done: number, total: number) => [step && `step ${step}`, total && `${done}/${total}`].filter(Boolean).join(' · ')
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
 const lost = (x: number) => Math.round(x * 10) ? `−${pts(x)}` : '±0' // never "−0 points"
@@ -80,7 +81,7 @@ export const en = {
   updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
   updateInstalling: 'Installing the update…',
   fullscreen: 'Full screen', autoUpdate: 'Check for updates automatically',
-  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
+  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', today: 'today', candidates: 'candidate moves (hold)', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
     about: 'About Masame', hide: 'Hide Masame', hideOthers: 'Hide Others', showAll: 'Show All', quit: 'Quit Masame',
@@ -93,9 +94,16 @@ export const en = {
   resigns: (loser: number) => `${color(loser)} resigns. ${color(-loser)} wins.`,
   botFailed: (m: string) => `The AI can’t play right now. ${m}`,
   retry: 'Try again',
-  rankAdjusted: (r: string) => `AI level adjusted to ${r} for the next game.`,
   humanSilent: 'The Human network isn’t responding. Check that it’s installed.',
   badAnswer: 'Unreadable answer from KataGo.',
+  // handicap and the local clock
+  handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} stones` : 'None'),
+  fewerStones: 'Handicap: fewer stones', moreStones: 'Handicap: more stones',
+  handicapProposed: 'Suggested by the level gap.', handicapBlack: 'With a handicap, you take Black.',
+  clock: 'Clock', clockOff: 'Off', clockNone: 'No clock',
+  clockShort: (min: number, n: number, s: number) => `${min}′ + ${n}×${s}″`,
+  clockLong: (min: number, n: number, s: number) => `${min} minutes, then ${n} periods of ${s} seconds (byo-yomi)`,
+  losesOnTime: (loser: number) => `${color(loser)} loses on time.`, onTime: 'lost on time',
   // game review (p: the colour that punishes, s: the colour that made the mistake)
   review: 'Review', reviewGame: 'Review the game', backToGame: 'Back to the game',
   reviewNeedsNet: 'Install an analysis network to review a game.',
@@ -122,6 +130,9 @@ export const en = {
   betterLine: (s: number, v: string, loss: number) => `Better: ${color(s)} ${v}, which keeps those ${pts(loss)}.`,
   betterHelp: '→ follows the line. Compare its light with the punishment’s. Play anywhere to explore: each move gets an answer. ↑ ↓ compare your tries.',
   nextMoment: 'Next moment',
+  // free analysis
+  anFor: (s: number) => `Candidate moves for ${color(s)}`, anReading: 'Reading the position…', anPass: 'Pass',
+  anNeedsNet: 'Candidate moves need an analysis network.', anFailed: (m: string) => `The position could not be read. ${m}`,
   // joseki trainer
   joseki: 'Joseki', jLoading: 'Loading the joseki…', jFailed: (m: string) => `Couldn’t load the joseki: ${m}`,
   jTabs: { explore: 'Explore', practise: 'Practise', programme: 'Programme' },
@@ -153,6 +164,16 @@ export const en = {
   jProgrammeNote: 'Your programme: the corners worth learning first.',
   jProgrammeHelp: (rank: string) => `Ordered by how often you meet each corner at ${rank} × the points it costs there.`,
   jMet: (n: number) => `met about 1 corner in ${f.num(n)}`, jOpenFamily: (name: string) => `Explore ${name}`,
+  // the daily ritual
+  today: 'Today', tdIntro: 'Ten minutes a day: your exercises, a few joseki, a quick game.',
+  tdSteps: { exercises: 'Exercises from your games', joseki: 'Joseki', game: 'A 9×9 at your level' },
+  tdGameAt: (rank: string) => `against the AI at ${rank}, even`,
+  tdLeft: (n: number) => `${f.num(n)} to do`, tdDoneStep: 'done', tdLoading: 'loading…',
+  tdOff: { exercises: 'needs an analysis network', game: 'needs the AI networks' },
+  tdStreak: (n: number) => f.plural(n, 'day', 'days'), tdStreakLab: 'Streak',
+  tdStart: 'Start', tdContinue: 'Continue', tdAllDone: 'Today’s ritual is done. See you tomorrow.',
+  tdNothing: 'Nothing to do yet: install an analysis network, or practise the joseki.',
+  ritualGo: 'Continue the ritual', ritualDone: (n: number) => `Today’s ritual done · ${f.plural(n, 'day', 'days')} in a row.`,
   // exercises from your own games (s: the colour that made the mistake)
   exercises: 'Exercises',
   exNeedsNet: 'Install an analysis network to practise: KataGo checks each answer.',
@@ -176,6 +197,19 @@ export const en = {
   exWhereHelp: (n: number) => `Points lost per game by your moves, over your last ${n === 1 ? 'reviewed game' : `${f.num(n)} reviewed games`}. Opening: the first 50 moves; endgame: from move 151 (19×19, scaled on smaller boards).`,
   exReset: 'Delete the exercises', exResetAsk: 'Delete all your exercises and their statistics?',
   exReadOnly: 'These exercises were saved by a newer Masame: practice here won’t be recorded.',
+  // automatic review
+  autoDone: (n: number, rank?: string) => rank ? `You played like ${aRank(rank).replace(' ', '\u00a0')}\u00a0· ${n ? `${f.plural(n, 'key moment', 'key moments').replace(' ', '\u00a0')} for your exercises` : 'no decisive moment'}.`
+    : `Review done: ${n ? `${f.plural(n, 'key moment joins', 'key moments join')} your exercises` : 'no decisive moment'}.`,
+  aiNext: (r: string) => `AI moves to\u00a0${r}.`,
+  autoPending: (n: number) => `Automatic review: ${f.plural(n, 'game', 'games')} waiting`,
+  autoRunning: (pct: number) => `Automatic review: in progress… ${f.pct(pct)}`,
+  // your rank, read in your moves
+  rankReading: (s: number) => (s ? `Reading ${color(s)}’s rank…` : 'Reading your rank…'),
+  rankPlayed: (s: number, r: string) => `${s ? `${color(s)} played` : 'You played'} like ${aRank(r)}`,
+  autoAdjustHelp: 'The AI goes up a rank when it loses and down when it wins; your level follows the rank read in your moves, and the AI stays within 2 ranks of it.',
+  rankLab: 'Your rank',
+  rankHelp: (n: number, follows: boolean) => `Read in your moves by KataGo’s human network, on the AI levels’ scale, over your last ${n === 1 ? 'game' : `${f.num(n)} games`}${follows ? '; your level follows it' : ''}.`,
+  rankChartLabel: (from: string, to: string, n: number) => `Your rank read in your moves: from ${from} to ${to} over ${f.plural(n, 'game', 'games')}`,
   // OGS (online-go.com)
   // OGS sheet: tabs, play, my games, watch
   ogsTabs: { play: 'Play', games: 'My games', watch: 'Watch' }, ogsTabsLabel: 'OGS',
@@ -249,6 +283,9 @@ export const en = {
   sgfBadSize: (sz: string | undefined) => `Unsupported board size: ${sz}`,
   sgfSetupOff: 'Handicap stone off the board',
   sgfMoveOff: (v: string) => `Move off the board: ${v}`,
+  // opening files: drops, the OS (double-click), the size cap
+  dropHint: 'Drop the game to open it',
+  sgfTooBig: 'Larger than 5 MB: not a game record',
   // networks sheet
   networks: 'Networks', close: 'Close', closeHint: 'Close (Esc)',
   humanRequired: 'The Human network is required to play against the AI. The others power analysis and territory.',
@@ -268,8 +305,14 @@ export const en = {
   progress: (p: number, got: string, total: string) => `${f.pct(p)} · ${got} / ${total}`,
   download: 'Download', resume: 'Resume', cancel: 'Cancel', remove: 'Delete', useForAnalysis: 'Use for analysis',
   creditsKataGo: 'KataGo', creditsMid: '© David J Wu — MIT license; networks under the', creditsLicense: 'KataGo Neural Network License',
+  // postcard
+  postcard: 'Postcard…', postcardHint: 'Save the board as a picture (PNG), signed, to share', postcardTitle: 'Save the postcard',
+  postcardName: (n: number, move?: number) => `masame-${n}x${n}${move === undefined ? '' : `-move-${move}`}.png`,
+  postcardSaved: 'Postcard saved.', postcardNotReady: 'the board isn’t drawn yet', postcardFailed: (m: string) => `Couldn’t save the postcard: ${m}`,
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
+    open_too_big: 'Larger than 5 MB: not a game record.',
+    open_unreadable: 'The file can’t be read.',
     invalid_name: 'Invalid network name.',
     url_rejected: 'Download address rejected.',
     unknown_network: 'Unknown network.',

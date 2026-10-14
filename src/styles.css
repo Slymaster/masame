@@ -149,14 +149,27 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .act:focus-visible { outline-offset: -2px }
 
 .note { min-height: 2.9em; margin-top: 6px; font-family: var(--f-title); font-style: italic; font-size: 16px; line-height: 1.4; color: var(--muted) }
-/* caption under the board, in the stage's bottom padding: visible with the card hidden */
-.board-wrap > .note { position: absolute; left: calc(2 * var(--shift, 0px)); right: 0; bottom: -26px; min-height: 0; margin: 0; text-align: center; pointer-events: none }
-.board-wrap > .note > span { display: inline-flex; gap: .3em; max-width: 100%; padding: 1px 14px; border-radius: 999px; background: var(--card); white-space: nowrap; pointer-events: auto; animation: fade .3s ease-out }
-/* one line, inside the stage's bottom padding, so it never covers the board; the full text is in the title */
-.board-wrap > .note .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis }
-.board-wrap > .note .link { flex: none }
+/* caption under the board, in room of its own below .board-wrap (up to two lines), so it never covers the board and stays
+   visible with the card hidden; ink on the card's colour, larger than the card's notes: it is what the player reads */
+.board-wrap { margin-bottom: 36px }
+.board-wrap > .note { position: absolute; left: calc(2 * var(--shift, 0px)); right: 0; top: 100%; min-height: 0; margin: 4px 0 0; text-align: center; pointer-events: none; container-type: inline-size }
+.board-wrap > .note > span {
+  display: inline-block; max-width: min(100%, 600px); padding: 5px 20px 0; border-bottom: 7px solid transparent; border-radius: 19px; background: var(--card);
+  box-shadow: 0 4px 14px var(--shadow), 0 0 0 1px var(--rule); font-size: 18.5px; line-height: 1.25; color: var(--ink); text-wrap: balance;
+  /* two lines at most: overflow clips at the padding box, and the bottom room is a border, so a third line never peeks in;
+     the full text is in the title */
+  max-height: calc(2.5em + 12px); overflow: hidden;
+  pointer-events: auto; animation: fade .3s ease-out;
+}
+.board-wrap > .note .link { font: inherit; color: var(--accent); text-decoration-color: currentColor; white-space: nowrap; margin-left: .45em }
+.board-wrap > .note .link:hover { color: var(--accent-hover) }
+/* a narrow window beside the card: smaller type, and the links beside two lines of text at most, so they are never cut */
+@container (max-width: 460px) {
+  .board-wrap > .note > span { display: inline-flex; align-items: center; gap: .45em; font-size: 16.5px }
+  .board-wrap > .note .txt { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden }
+  .board-wrap > .note .link { margin-left: 0 }
+}
 .board-wrap > .note:focus { outline: none } /* a resting place for focus after a caption link, not a control */
-.board-wrap > .note .link + .link { margin-left: .5em }
 
 .lab { display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); padding-bottom: 11px; border-bottom: 1px solid var(--rule); margin-bottom: 10px }
 .lab span:last-child { letter-spacing: .06em; text-transform: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink) }
@@ -321,3 +334,40 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .ex .share { font-size: 13.5px; line-height: 1.45 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+
+/* free analysis: the candidates, read-only rows */
+.jrow.an { cursor: default }
+.jrow.an:hover { background: none }
+
+/* opening files: while files are dragged over the window, a faint veil in a hairline frame (html[data-drop]) and a
+   caption on a card-like pill (body[data-drop], its text in the attribute) */
+html[data-drop]::before, html[data-drop]::after {
+  content: ""; position: fixed; inset: 10px; z-index: 100; pointer-events: none; border-radius: 16px;
+}
+html[data-drop]::before { background: var(--hover) }
+html[data-drop]::after { border: 1.5px solid var(--accent); opacity: .45 }
+body[data-drop]::after {
+  content: attr(data-drop); position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 101;
+  pointer-events: none; padding: 9px 22px 11px; border-radius: 999px; background: var(--card); white-space: nowrap;
+  box-shadow: 0 4px 14px var(--shadow), 0 0 0 1px var(--rule);
+  font-family: var(--f-title); font-style: italic; font-size: 20px; color: var(--ink);
+}
+
+/* the daily ritual (Today) */
+.brand { gap: 2px } /* six header icons in the 336 px card */
+.td-rail { list-style: none; margin: 4px 0 0; padding: 0 }
+.td-rail li { position: relative; display: grid; grid-template-columns: 26px 1fr; column-gap: 12px; padding-bottom: 16px }
+.td-rail li:not(:last-child)::before { content: ""; position: absolute; left: 12.5px; top: 26px; bottom: 0; width: 1px; background: var(--rule-2) }
+.td-rail li.done:not(:last-child)::before { background: var(--accent) }
+.td-rail i { grid-row: span 2; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--rule-2); font-family: var(--f-title); font-style: italic; font-size: 15px; color: var(--muted) }
+.td-rail .done i { border-color: var(--accent); background: var(--accent); color: var(--card); font-style: normal; font-size: 12px }
+.td-rail .cur i { border-color: var(--accent); color: var(--accent) }
+.td-rail b { font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 19px; line-height: 1.1 }
+.td-rail span { font-size: 12px; color: var(--muted) }
+.td-rail .done b { color: var(--muted) }
+.td-rail .off { opacity: .5 }
+
+/* ---------- your rank, read in your moves ---------- */
+.rv-rank { display: flex; flex-direction: column; gap: 2px }
+.rv-rank .estimate { color: var(--ink) }
+.ex .rc-now { stroke: var(--card) }

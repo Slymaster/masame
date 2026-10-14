@@ -34,6 +34,8 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Threading",
   "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging",
 ] }
+# A second launch (double-clicking an SGF) hands its files to the running window. Not on Linux, where it needs zbus (see keyring).
+tauri-plugin-single-instance = "2"
 
 # The mock runtime, for the (ignored) TLS test that runs the updater next to our own client.
 [dev-dependencies]

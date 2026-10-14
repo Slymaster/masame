@@ -81,7 +81,7 @@ export const fr: Dict = {
   updateDownloading: (p: number | null) => (p === null ? 'Téléchargement de la mise à jour…' : `Téléchargement de la mise à jour… ${f.pct(p)}`),
   updateInstalling: 'Installation de la mise à jour…',
   fullscreen: 'Plein écran', autoUpdate: 'Rechercher les mises à jour automatiquement',
-  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', exercises: 'exercices', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
+  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', exercises: 'exercices', today: 'aujourd’hui', candidates: 'coups candidats (maintenue)', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
   // barre de menus macOS (src-tauri/src/menu.rs)
   menu: {
     about: 'À propos de Masame', hide: 'Masquer Masame', hideOthers: 'Masquer les autres', showAll: 'Tout afficher', quit: 'Quitter Masame',
@@ -94,9 +94,16 @@ export const fr: Dict = {
   resigns: (loser: number) => `${color(loser)} abandonne. ${color(-loser)} gagne.`,
   botFailed: (m: string) => `L’IA n’arrive pas à jouer pour l’instant. ${m}`,
   retry: 'Réessayer',
-  rankAdjusted: (r: string) => `Niveau de l’IA ajusté : ${r} pour la prochaine partie.`,
   humanSilent: 'Le réseau Humain ne répond pas. Vérifie qu’il est installé.',
   badAnswer: 'Réponse de KataGo illisible.',
+  // handicap and the local clock
+  handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} pierres` : 'Aucun'),
+  fewerStones: 'Handicap : moins de pierres', moreStones: 'Handicap : plus de pierres',
+  handicapProposed: 'Proposé d’après l’écart de niveau.', handicapBlack: 'Avec un handicap, tu prends Noir.',
+  clock: 'Pendule', clockOff: 'Sans', clockNone: 'Sans pendule',
+  clockShort: (min: number, n: number, s: number) => `${min}′ + ${n}×${s}″`,
+  clockLong: (min: number, n: number, s: number) => `${min} minutes, puis ${n} périodes de ${s} secondes (byo-yomi)`,
+  losesOnTime: (loser: number) => `${color(loser)} perd au temps.`, onTime: 'perd au temps',
   // game review (p: the colour that punishes, s: the colour that made the mistake)
   review: 'Revue', reviewGame: 'Revoir la partie', backToGame: 'Retour à la partie',
   reviewNeedsNet: 'Installe un réseau d’analyse pour revoir une partie.',
@@ -123,6 +130,9 @@ export const fr: Dict = {
   betterLine: (s: number, v: string, loss: number) => `Mieux : ${color(s)} ${v}, qui garde ces ${pts(loss)}.`,
   betterHelp: '→ suit la ligne. Compare sa lumière avec celle de la punition. Joue où tu veux pour explorer : chaque coup reçoit une réponse. ↑ ↓ compare tes essais.',
   nextMoment: 'Moment suivant',
+  // analyse libre
+  anFor: (s: number) => `Coups candidats pour ${color(s)}`, anReading: 'Lecture de la position…', anPass: 'Passer',
+  anNeedsNet: 'Les coups candidats demandent un réseau d’analyse.', anFailed: (m: string) => `La position n’a pas pu être lue. ${m}`,
   // entraîneur de joseki
   joseki: 'Joseki', jLoading: 'Chargement des joseki…', jFailed: (m: string) => `Impossible de charger les joseki : ${m}`,
   jTabs: { explore: 'Explorer', practise: 'S’entraîner', programme: 'Programme' },
@@ -154,6 +164,16 @@ export const fr: Dict = {
   jProgrammeNote: 'Ton programme : les coins à apprendre en premier.',
   jProgrammeHelp: (rank: string) => `Classés selon la fréquence de chaque coin en ${rank} × les points qu’il y coûte.`,
   jMet: (n: number) => `environ 1 coin sur ${f.num(n)}`, jOpenFamily: (name: string) => `Explorer ${name}`,
+  // le rituel du jour
+  today: 'Aujourd’hui', tdIntro: 'Dix minutes par jour : tes exercices, quelques joseki, une partie rapide.',
+  tdSteps: { exercises: 'Exercices de tes parties', joseki: 'Joseki', game: 'Un 9×9 à ton niveau' },
+  tdGameAt: (rank: string) => `contre l’IA en ${rank}, sans handicap`,
+  tdLeft: (n: number) => `${f.num(n)} à faire`, tdDoneStep: 'fait', tdLoading: 'chargement…',
+  tdOff: { exercises: 'demande un réseau d’analyse', game: 'demande les réseaux de l’IA' },
+  tdStreak: (n: number) => f.plural(n, 'jour', 'jours'), tdStreakLab: 'Série',
+  tdStart: 'Commencer', tdContinue: 'Continuer', tdAllDone: 'Le rituel du jour est accompli. À demain.',
+  tdNothing: 'Rien à faire pour l’instant : installe un réseau d’analyse, ou travaille les joseki.',
+  ritualGo: 'Continuer le rituel', ritualDone: (n: number) => `Rituel du jour terminé · série de ${f.plural(n, 'jour', 'jours')}.`,
   // exercices tirés de tes parties (s : la couleur qui a commis l’erreur)
   exercises: 'Exercices',
   exNeedsNet: 'Installe un réseau d’analyse pour t’entraîner : KataGo vérifie chaque réponse.',
@@ -177,6 +197,19 @@ export const fr: Dict = {
   exWhereHelp: (n: number) => `Points perdus par partie par tes coups, sur ${n === 1 ? 'ta dernière partie revue' : `tes ${f.num(n)} dernières parties revues`}. Ouverture : les 50 premiers coups ; fin de partie : à partir du coup 151 (19×19, proportionnellement sur les petits gobans).`,
   exReset: 'Effacer les exercices', exResetAsk: 'Effacer tous tes exercices et leurs statistiques ?',
   exReadOnly: 'Ces exercices viennent d’une version plus récente de Masame : l’entraînement ici ne sera pas enregistré.',
+  // revue automatique
+  autoDone: (n: number, rank?: string) => rank ? `Tu as joué comme un\u00a0${rank}\u00a0· ${n ? `${f.plural(n, 'moment', 'moments').replace(' ', '\u00a0')} pour tes exercices` : 'aucun moment décisif'}.`
+    : `Revue faite : ${n ? `${f.plural(n, 'moment rejoint', 'moments rejoignent')} tes exercices` : 'aucun moment décisif'}.`,
+  aiNext: (r: string) => `L’IA passe à\u00a0${r}.`,
+  autoPending: (n: number) => `Revue automatique : ${f.plural(n, 'partie', 'parties')} en attente`,
+  autoRunning: (pct: number) => `Revue automatique : en cours… ${f.pct(pct)}`,
+  // ton rang, lu dans tes coups
+  rankReading: (s: number) => (s ? `Lecture du rang de ${color(s)}…` : 'Lecture de ton rang…'),
+  rankPlayed: (s: number, r: string) => `${s ? `${color(s)} a joué` : 'Tu as joué'} comme un ${r}`,
+  autoAdjustHelp: 'L’IA monte d’un rang quand elle perd et descend quand elle gagne ; ton niveau suit le rang lu dans tes coups, et l’IA reste à 2 rangs au plus de lui.',
+  rankLab: 'Ton rang',
+  rankHelp: (n: number, follows: boolean) => `Lu dans tes coups par le réseau humain de KataGo, à l’échelle des niveaux de l’IA, sur ${n === 1 ? 'ta dernière partie' : `tes ${f.num(n)} dernières parties`}${follows ? ' ; ton niveau le suit' : ''}.`,
+  rankChartLabel: (from: string, to: string, n: number) => `Ton rang lu dans tes coups : de ${from} à ${to} sur ${f.plural(n, 'partie', 'parties')}`,
   // OGS (online-go.com)
   // OGS sheet: tabs, play, my games, watch
   ogsTabs: { play: 'Jouer', games: 'Mes parties', watch: 'Regarder' }, ogsTabsLabel: 'OGS',
@@ -250,6 +283,9 @@ export const fr: Dict = {
   sgfBadSize: (sz: string | undefined) => `Taille de goban non prise en charge : ${sz}`,
   sgfSetupOff: 'Pierre de handicap hors du goban',
   sgfMoveOff: (v: string) => `Coup hors du goban : ${v}`,
+  // opening files: drops, the OS (double-click), the size cap
+  dropHint: 'Dépose la partie pour l’ouvrir',
+  sgfTooBig: 'Plus de 5 Mo : ce n’est pas une partie',
   // networks sheet
   networks: 'Réseaux', close: 'Fermer', closeHint: 'Fermer (Échap)',
   humanRequired: 'Le réseau Humain est nécessaire pour jouer contre l’IA. Les autres servent à l’analyse et au territoire.',
@@ -269,8 +305,14 @@ export const fr: Dict = {
   progress: (p: number, got: string, total: string) => `${f.pct(p)} · ${got} / ${total}`,
   download: 'Télécharger', resume: 'Reprendre', cancel: 'Annuler', remove: 'Supprimer', useForAnalysis: 'Utiliser pour l’analyse',
   creditsKataGo: 'KataGo', creditsMid: '© David J Wu — licence MIT ; réseaux sous', creditsLicense: 'KataGo Neural Network License',
+  // postcard
+  postcard: 'Carte postale…', postcardHint: 'Enregistrer le goban en image (PNG), signée, pour la partager', postcardTitle: 'Enregistrer la carte postale',
+  postcardName: (n: number, move?: number) => `masame-${n}x${n}${move === undefined ? '' : `-coup-${move}`}.png`,
+  postcardSaved: 'Carte postale enregistrée.', postcardNotReady: 'le goban n’est pas encore dessiné', postcardFailed: (m: string) => `Impossible d’enregistrer la carte postale : ${m}`,
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
+    open_too_big: 'Plus de 5 Mo : ce n’est pas une partie.',
+    open_unreadable: 'Le fichier est illisible.',
     invalid_name: 'Nom de réseau invalide.',
     url_rejected: 'Adresse de téléchargement refusée.',
     unknown_network: 'Réseau inconnu.',

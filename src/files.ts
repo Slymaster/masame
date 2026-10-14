@@ -1,6 +1,6 @@
 import { t } from './i18n'
 
-// SGF file I/O: native dialogs + fs plugin inside Tauri, file picker / download fallback in a plain browser.
+// SGF (and postcard PNG) file I/O: native dialogs + fs plugin inside Tauri, file picker / download fallback in a plain browser.
 
 const isTauri = () => '__TAURI_INTERNALS__' in window
 const filters = () => [{ name: t.sgfFilter, extensions: ['sgf'] }]
@@ -30,6 +30,21 @@ export async function saveSgfFile(text: string, defaultName: string, ext: 'sgf' 
     return true
   }
   const url = URL.createObjectURL(new Blob([text], { type: ext === 'sgf' ? 'application/x-go-sgf' : 'application/json' }))
+  Object.assign(document.createElement('a'), { href: url, download: defaultName }).click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return true
+}
+
+/** The postcard PNG; returns false if the user cancelled. */
+export async function savePngFile(png: Blob, defaultName: string): Promise<boolean> {
+  if (isTauri()) {
+    const [{ save }, { writeFile }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs')])
+    const path = await save({ title: t.postcardTitle, filters: [{ name: 'PNG', extensions: ['png'] }], defaultPath: defaultName })
+    if (!path) return false
+    await writeFile(path, new Uint8Array(await png.arrayBuffer()))
+    return true
+  }
+  const url = URL.createObjectURL(png)
   Object.assign(document.createElement('a'), { href: url, download: defaultName }).click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
   return true
