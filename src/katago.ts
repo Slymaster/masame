@@ -93,12 +93,15 @@ export function candidates(a: Analysis, toPlay: Sign, max = 8): Candidate[] {
 }
 const LETTERS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
 
-/** The displayed position: the last position with setup stones at or before the cursor (the root otherwise) as the initial stones, then the moves. */
+/** The displayed position: the last position at or before the cursor (the root otherwise) with setup stones or a new side
+ * to play (PL) as the initial stones and player, then the moves. */
 export function positionQuery(game: Game) {
   const { size, komi, firstSign } = game.info
   const color = (s: number) => (s === 1 ? 'B' : 'W')
+  // a pseudo-move's sign is the side that does not play next: it changes the side when it differs from the move before
+  const cut = (i: number) => { const m = game.moves[i - 1]; return !!game.nodes[i].stones || !!m.setup && (i > 1 ? m.sign !== game.moves[i - 2].sign : -m.sign !== firstSign) }
   let at = game.cursor
-  while (at > 0 && !game.nodes[at].stones) at--
+  while (at > 0 && !cut(at)) at--
   return {
     rules: 'japanese', komi, boardXSize: size, boardYSize: size,
     initialStones: game.boards[at].signMap.flatMap((row, y) => row.flatMap((c, x) => (c ? [[color(c), gtp([x, y], size)]] : []))),

@@ -36,6 +36,21 @@ describe('positionQuery', () => {
     g.goTo(2)
     expect([positionQuery(g).initialStones, positionQuery(g).initialPlayer, positionQuery(g).moves]).toEqual([[['B', 'A9']], 'W', [['W', 'E5'], ['B', 'C7']]])
   })
+  const PL = '(;GM[1]FF[4]SZ[9]KM[6.5];B[cc];W[gg];PL[W];W[cg];B[gc];W[];B[ee])'
+  const q = (g: ReturnType<typeof loadSgf>, i: number) => { g.goTo(i); const { initialStones, initialPlayer, moves } = positionQuery(g); return [initialStones, initialPlayer, moves] }
+  it('starts from a node that changes the side to play (PL)', () => {
+    const g = loadSgf(PL), stones = [['B', 'C7'], ['W', 'G3']]
+    expect(q(g, 3)).toEqual([stones, 'W', []])
+    expect(q(g, 7)).toEqual([stones, 'W', [['W', 'C3'], ['B', 'G7'], ['W', 'pass'], ['B', 'E5']]])
+    expect(q(g, 2)).toEqual([[], 'B', [['B', 'C7'], ['W', 'G3']]])
+  })
+  it('keeps the whole history over a comment or a PL that changes nothing', () => {
+    const all = [['B', 'C7'], ['W', 'G3'], ['B', 'E5']]
+    expect(q(loadSgf('(;SZ[9];B[cc];W[gg];C[x];B[ee])'), 4)).toEqual([[], 'B', all])
+    expect(q(loadSgf('(;SZ[9];B[cc];W[gg];PL[B];B[ee])'), 4)).toEqual([[], 'B', all])
+    expect(q(loadSgf('(;SZ[9]PL[W];C[x];W[cc])'), 2)).toEqual([[], 'W', [['W', 'C7']]])
+    expect(q(loadSgf('(;SZ[9];PL[W];W[cc])'), 2)).toEqual([[], 'W', [['W', 'C7']]]) // the root's first player is already White
+  })
 })
 
 describe('candidates', () => {
