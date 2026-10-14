@@ -198,9 +198,9 @@ export const fr: Dict = {
   exReset: 'Effacer les exercices', exResetAsk: 'Effacer tous tes exercices et leurs statistiques ?',
   exReadOnly: 'Ces exercices viennent d’une version plus récente de Masame : l’entraînement ici ne sera pas enregistré.',
   // revue automatique
-  autoDone: (n: number, rank?: string) => rank ? `Tu as joué comme un ${rank} · ${n ? `${f.plural(n, 'moment', 'moments')} pour tes exercices` : 'aucun moment décisif'}.`
+  autoDone: (n: number, rank?: string) => rank ? `Tu as joué comme un\u00a0${rank}\u00a0· ${n ? `${f.plural(n, 'moment', 'moments').replace(' ', '\u00a0')} pour tes exercices` : 'aucun moment décisif'}.`
     : `Revue faite : ${n ? `${f.plural(n, 'moment rejoint', 'moments rejoignent')} tes exercices` : 'aucun moment décisif'}.`,
-  aiNext: (r: string) => `L’IA passe à ${r}.`,
+  aiNext: (r: string) => `L’IA passe à\u00a0${r}.`,
   autoPending: (n: number) => `Revue automatique : ${f.plural(n, 'partie', 'parties')} en attente`,
   autoRunning: (pct: number) => `Revue automatique : en cours… ${f.pct(pct)}`,
   // ton rang, lu dans tes coups
