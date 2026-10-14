@@ -322,9 +322,10 @@ export function App() {
   })
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
   useEffect(() => setRitualSaid(null), [panel])
+  const netsUnknown = inTauri() && !nets // at launch: the steps needing a net are neither done nor off yet
   const td = useToday({
     open: panel === 'today', setOpen: o => setPanel(p => (o ? 'today' : p === 'today' ? null : p)), blocked: ongoing || !!review,
-    decks: [canAnalyze ? ex.today : null, jt.today ?? { done: false, left: null }], canPlay: canPlayAI, rank: settings.myRank,
+    decks: [netsUnknown ? { done: false, left: null } : canAnalyze ? ex.today : null, jt.today ?? { done: false, left: null }], canPlay: netsUnknown ? null : canPlayAI, rank: settings.myRank,
     start: [() => setPanel('exercises'), () => { setPanel('joseki'); jt.practise() },
       () => { setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
     onDone: n => { if (panel) setRitualSaid(n); else setNote(d => d.ritualDone(n)) }, // a panel's note hides the game's

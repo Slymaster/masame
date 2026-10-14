@@ -12,14 +12,14 @@ const NAMES = ['exercises', 'joseki', 'game'] as const
 export function useToday({ open, setOpen, blocked, decks, canPlay, rank, start, onDone }: {
   open: boolean; setOpen: (o: boolean) => void; blocked: boolean
   decks: [Step, Step] // exercises (null without an analysis net), joseki ({ done: false, left: null } while loading)
-  canPlay: boolean; rank: string // the AI can play; the ritual game's rank (your level)
+  canPlay: boolean | null; rank: string // the AI can play (null: not known yet); the ritual game's rank (your level)
   start: [() => void, () => void, () => void] // opens each step: the exercises, a joseki line, the 9×9
   onDone: (streak: number) => void // the ritual just got done today
 }) {
   const [r, setR] = useState(load)
   const [flow, setFlow] = useState(false) // the player is going through the steps: the trainers offer the next one
   useEffect(() => { if (blocked) setOpen(false) }, [blocked]) // eslint-disable-line react-hooks/exhaustive-deps
-  const now = Date.now(), steps: Step[] = [...decks, canPlay ? gameStep(r, now) : null]
+  const now = Date.now(), steps: Step[] = [...decks, canPlay === null ? { done: false, left: null } : canPlay ? gameStep(r, now) : null]
   const done = allDone(steps), finished = done || r.last === today(now)
   useEffect(() => {
     const n = complete(r, Date.now())
