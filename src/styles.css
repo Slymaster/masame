@@ -248,16 +248,51 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 
 .quiet.err { color: var(--accent) }
 .quiet .rk { margin-left: 6px; color: var(--ink) }
-/* OGS: my games, one button per row */
-.ogs-games { display: flex; flex-direction: column; gap: 14px; margin-top: 14px }
-.ogs-games .lab { margin-bottom: 0 }
-.games-title { font-size: 12.5px; color: var(--muted); margin-bottom: 2px }
+/* OGS: games, one button per row */
+.games-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 12.5px; color: var(--muted); margin-bottom: 2px }
 .game-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 10px; margin: 0 -10px; width: calc(100% + 20px); border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer; transition: background .25s }
 .game-row:hover { background: var(--hover) }
 .game-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px }
 .game-row .who { display: flex; align-items: baseline; font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.2; min-width: 0; white-space: nowrap }
 .game-row .rk { font-size: 14px }
 .game-row .dim { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+/* OGS sheet: tab panes, challenge form, list items with inline actions, the rank chart */
+.ogs-pane { display: flex; flex-direction: column; gap: 18px; margin-top: 6px }
+.ogs-pane > .lab { margin-bottom: -8px }
+.ogs-form { display: flex; flex-direction: column; gap: 6px }
+.ogs-form > .btn { margin-top: 4px }
+.ogs-hint { font-size: 12px }
+.ogs-inline { display: flex; gap: 8px }
+.ogs-input {
+  flex: 1; min-width: 0; padding: 10px 14px; font: inherit; font-size: 13.5px; color: var(--ink); border: 1px solid var(--rule-2); border-radius: 999px;
+  background: var(--well); outline: none; user-select: text; -webkit-user-select: text; cursor: text; transition: border-color .25s
+}
+.ogs-input::placeholder { color: var(--muted); opacity: .8 }
+.ogs-input:focus { border-color: var(--accent) }
+.ogs-input[aria-invalid=true] { border-color: var(--accent) }
+.ogs-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 12px; row-gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--rule) }
+.ogs-item:last-child { border-bottom: 0 }
+.ogs-item .who { display: flex; align-items: baseline; font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.2; min-width: 0; white-space: nowrap }
+.ogs-item .rk { font-size: 14px }
+.ogs-item .dim { grid-column: 1; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+.ogs-item > .dim:first-child { font-size: 13px }
+.ogs-acts { grid-column: 2; grid-row: 1; display: flex; gap: 14px }
+.ogs-acts .link.accent { margin-left: 0 }
+.who .to { margin-right: 6px; font-style: normal; font-size: 14px; color: var(--muted) }
+.who .vs { margin: 0 8px; color: var(--muted) }
+.game-row { position: relative }
+.game-row.turn-mine::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 0 2px 2px 0; background: var(--accent) }
+.ogs-more { align-self: flex-start; margin-top: 6px }
+.ogs-rank .games-title { margin-bottom: 4px }
+.ogs-rank-now { font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 22px; line-height: 1; color: var(--ink) }
+.rank-chart { display: block; width: 100%; height: auto; overflow: visible }
+.rc-rule { stroke: var(--rule); stroke-width: 1; shape-rendering: crispEdges }
+.rc-tick, .rc-date { fill: var(--muted); font-family: var(--f-ui); font-size: 10.5px; font-variant-numeric: tabular-nums; letter-spacing: .04em }
+.rc-line { fill: none; stroke: var(--ink); stroke-width: 1.25; stroke-linejoin: round; stroke-linecap: round; opacity: .85 }
+.rc-band { fill: var(--accent); opacity: .14 }
+.rc-dot { fill: var(--ink); opacity: .55 }
+.rc-now { fill: var(--accent); stroke: var(--sheet); stroke-width: 2 }
+.rc-now-label { fill: var(--accent); font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 15px }
 .clock { font-variant-numeric: tabular-nums }
 .clock.low { color: var(--accent); font-weight: 600 }
 .pc.b .clock.low { color: var(--pb-bar) } /* the cards keep their colours in both skins */
