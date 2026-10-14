@@ -149,14 +149,19 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .act:focus-visible { outline-offset: -2px }
 
 .note { min-height: 2.9em; margin-top: 6px; font-family: var(--f-title); font-style: italic; font-size: 16px; line-height: 1.4; color: var(--muted) }
-/* caption under the board, in the stage's bottom padding: visible with the card hidden */
-.board-wrap > .note { position: absolute; left: calc(2 * var(--shift, 0px)); right: 0; bottom: -26px; min-height: 0; margin: 0; text-align: center; pointer-events: none }
-.board-wrap > .note > span { display: inline-flex; gap: .3em; max-width: 100%; padding: 1px 14px; border-radius: 999px; background: var(--card); white-space: nowrap; pointer-events: auto; animation: fade .3s ease-out }
-/* one line, inside the stage's bottom padding, so it never covers the board; the full text is in the title */
-.board-wrap > .note .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis }
-.board-wrap > .note .link { flex: none }
+/* caption under the board, in room of its own below .board-wrap (up to two lines), so it never covers the board and stays
+   visible with the card hidden; ink on the card's colour, larger than the card's notes: it is what the player reads */
+.board-wrap { margin-bottom: 36px }
+.board-wrap > .note { position: absolute; left: calc(2 * var(--shift, 0px)); right: 0; top: 100%; min-height: 0; margin: 4px 0 0; text-align: center; pointer-events: none }
+.board-wrap > .note > span {
+  display: inline-block; max-width: min(100%, 600px); padding: 5px 20px 7px; border-radius: 19px; background: var(--card);
+  box-shadow: 0 4px 14px var(--shadow), 0 0 0 1px var(--rule); font-size: 18.5px; line-height: 1.25; color: var(--ink); text-wrap: balance;
+  max-height: calc(2.5em + 12px); overflow: hidden; /* shortcut: a third line is cut, not ellipsed (the full text is in the title); clamp if messages grow */
+  pointer-events: auto; animation: fade .3s ease-out;
+}
+.board-wrap > .note .link { font: inherit; color: var(--accent); text-decoration-color: currentColor; white-space: nowrap; margin-left: .45em }
+.board-wrap > .note .link:hover { color: var(--accent-hover) }
 .board-wrap > .note:focus { outline: none } /* a resting place for focus after a caption link, not a control */
-.board-wrap > .note .link + .link { margin-left: .5em }
 
 .lab { display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); padding-bottom: 11px; border-bottom: 1px solid var(--rule); margin-bottom: 10px }
 .lab span:last-child { letter-spacing: .06em; text-transform: none; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink) }
