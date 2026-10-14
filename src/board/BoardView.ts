@@ -6,6 +6,7 @@ import type { Sign, SignMap, Vertex } from '@sabaki/go-board'
 import { clamp01, easeOut, hash, n1, rng, sstep, stoneRng, TAU, vn2 } from './noise'
 import { playClack, playTap } from './sound'
 import { gx, gz, jitter, settle, type Placed } from '../board3d/logic'
+import { postcardCanvas, signatureFonts, toPng } from '../postcard'
 
 export interface BoardState {
   signMap: SignMap
@@ -93,14 +94,18 @@ function geom(S: number, N: number, coords: boolean, dpr: number): Geom {
 }
 
 /* ---------- board ---------- */
+/** Cast + contact shadow on the linen: colour, blur and offset along SUN, in device px. */
+const boardShadows = (S: number, dpr: number) => [['rgba(70,44,18,0.32)', S * 0.03 * dpr, S * 0.0161 * dpr], ['rgba(40,24,8,0.45)', 3 * dpr, 1.8 * dpr]] as const
+const shade = (x: CanvasRenderingContext2D, [c, blur, d]: readonly [string, number, number]) => {
+  x.shadowColor = c; x.shadowBlur = blur; x.shadowOffsetX = SUN[0] * d; x.shadowOffsetY = SUN[1] * d
+}
+/** The board's outline (top face, right and front thickness), CSS px. */
+function boardPath(x: CanvasRenderingContext2D, { bx, by, bw }: Geom, t: number) {
+  x.beginPath(); x.moveTo(bx, by); x.lineTo(bx + bw, by); x.lineTo(bx + bw + t * 0.45, by + t * 0.5); x.lineTo(bx + bw + t * 0.45, by + bw + t); x.lineTo(bx, by + bw + t); x.closePath()
+}
 function drawBoard(x: CanvasRenderingContext2D, g: Geom, S: number, dpr: number) {
   const { bx, by, bw } = g, t = S * 0.016
-  // cast + contact shadow on the linen
-  const cast = S * 0.0161 * dpr, touch = 1.8 * dpr
-  x.save(); x.shadowColor = 'rgba(70,44,18,0.32)'; x.shadowBlur = S * 0.03 * dpr; x.shadowOffsetX = SUN[0] * cast; x.shadowOffsetY = SUN[1] * cast
-  x.fillStyle = '#8a5a28'; x.fillRect(bx, by, bw + t * 0.45, bw + t); x.restore()
-  x.save(); x.shadowColor = 'rgba(40,24,8,0.45)'; x.shadowBlur = 3 * dpr; x.shadowOffsetX = SUN[0] * touch; x.shadowOffsetY = SUN[1] * touch
-  x.fillStyle = '#8a5a28'; x.fillRect(bx, by, bw + t * 0.45, bw + t); x.restore()
+  for (const sh of boardShadows(S, dpr)) { x.save(); shade(x, sh); x.fillStyle = '#8a5a28'; x.fillRect(bx, by, bw + t * 0.45, bw + t); x.restore() }
   // thickness: front (bottom) and right side faces
   let gr = x.createLinearGradient(0, by + bw, 0, by + bw + t)
   gr.addColorStop(0, '#A8763A'); gr.addColorStop(1, '#7A4F22')
@@ -428,6 +433,25 @@ export class BoardView {
     this.canvas.style.transform = ''
     const r = this.canvas.getBoundingClientRect()
     this.canvas.style.transform = `translate(${Math.round(r.left) - r.left}px, ${Math.round(r.top) - r.top}px)`
+  }
+
+  /** The board as drawn, without the hover ghost or a drop in flight, signed like the 3D postcard. */
+  async snapshot(): Promise<Blob | null> {
+    await signatureFonts()
+    if (!this.state || !this.S) return null
+    const h = this.hover
+    this.hover = null; this.anim = null; this.frame(performance.now())
+    // the canvas ends inside the board's cast shadow: cut the board out and cast its shadows again, whole, on a larger sheet
+    const { S, dpr: d } = this, g = this.g!, t = S * 0.016, pad = Math.ceil(S * 0.07 * d)
+    const ox = Math.floor(g.bx * d), oy = Math.floor(g.by * d), w = Math.ceil((g.bx + g.bw + t * 0.45) * d) - ox, hh = Math.ceil((g.by + g.bw + t) * d) - oy
+    const board = mk(w, hh), y = board.getContext('2d')!
+    y.setTransform(d, 0, 0, d, -ox, -oy); boardPath(y, g, t); y.clip()
+    y.setTransform(1, 0, 0, 1, 0, 0); y.drawImage(this.canvas, -ox, -oy)
+    this.hover = h; this.req()
+    const sheet = mk(w + 2 * pad, hh + 2 * pad), x = sheet.getContext('2d')!
+    for (const sh of boardShadows(S, d)) { x.save(); shade(x, sh); x.drawImage(board, pad, pad); x.restore() }
+    x.drawImage(board, pad, pad)
+    return toPng(postcardCanvas(sheet, { x: 0, y: 0, w: sheet.width, h: sheet.height }))
   }
 
   private req() { if (!this.raf) this.raf = requestAnimationFrame(t => this.frame(t)) }

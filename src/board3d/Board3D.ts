@@ -20,6 +20,7 @@ import type { Decor } from './decors'
 import { centreShift } from '../board/frame'
 import { bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, todAt, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
+import { cropRect, postcardCanvas, signatureFonts, toPng } from '../postcard'
 
 export interface Board3DState extends BoardState {
   /** Prisoners shown on each lid in Contemplation (black = white stones taken by Black). Optional: without it the view counts the captures it animates. */
@@ -913,7 +914,7 @@ export class Board3D {
    */
   private async transition(change: () => void, ms = FADE_MS) {
     if (!this.ready || this.dead) { change(); return }
-    const snap = this.instant() ? null : this.snapshot()
+    const snap = this.instant() ? null : this.grabFrame()
     change()
     this.applyPendingQuality() // a step down the governor asked for lands under the fade, never on a still board
     this.holding = true
@@ -927,7 +928,7 @@ export class Board3D {
   }
 
   /** The current look, rendered now and copied off the canvas. */
-  private snapshot() {
+  private grabFrame() {
     const r = this.renderer, size = r.getDrawingBufferSize(new THREE.Vector2()), tex = new THREE.FramebufferTexture(size.x, size.y)
     this.updateScene(performance.now()); this.render(); this.drawFade(performance.now())
     r.setRenderTarget(null)
@@ -1506,6 +1507,21 @@ export class Board3D {
     if (this.drawFade(now)) busy = true
     this.lastFrame = busy ? now : 0
     if (busy) this.invalidate()
+  }
+
+  /** The board's frame as the camera shows it, animations settled, at a pixel ratio of at least 2, signed; null until ready. */
+  async snapshot(): Promise<Blob | null> {
+    await signatureFonts()
+    if (!this.ready || this.dead || this.holding) return null
+    const r0 = this.renderer.getPixelRatio(), r = Math.max(2, r0), up = r !== r0
+    if (up) { this.renderer.setPixelRatio(r); this.composer.setPixelRatio(r) }
+    this.updateScene(performance.now() + 1e5)
+    this.render()
+    // the drawing buffer isn't preserved: copy it in the task that drew it; restoring re-renders before the page is composited
+    const c = cropRect(this.fr, this.W, this.H, r), out = c && postcardCanvas(this.canvas, c)
+    if (up) { this.renderer.setPixelRatio(r0); this.composer.setPixelRatio(r0); this.render() }
+    this.invalidate()
+    return out ? toPng(out) : null
   }
 
   /* ---------- dev helpers (demo page, measurements, screenshots) ---------- */
