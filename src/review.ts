@@ -42,19 +42,40 @@ export function reviewEnd(g: Game): number {
 
 const lossOf = (leads: (number | undefined)[], moves: Move[], i: number) => moves[i].sign * (leads[i]! - leads[i + 1]!)
 
+/**
+ * [index, points lost] for every real move by `side` (0 = both) whose two leads are known, until both players have passed:
+ * not the game-ending pass, nor a move after two passes (a game resumed after a dispute), whose position is over.
+ */
+export function losses(leads: (number | undefined)[], moves: Move[], side: Sign | 0): [number, number][] {
+  const real = moves.map((m, i) => (m.setup ? -1 : i)).filter(i => i >= 0) // pseudo-moves are no one's mistake
+  const passed = (k: number) => k >= 0 && !moves[real[k]].vertex
+  return real.filter((i, k) =>
+    leads[i] !== undefined && leads[i + 1] !== undefined && (side === 0 || moves[i].sign === side)
+    && !(passed(k - 1) && (!moves[i].vertex || passed(k - 2))))
+    .map(i => [i, lossOf(leads, moves, i)])
+}
+
 /** Candidate mistakes (indices into moves), worst first, at least half a board width apart. */
 export function pickMoments(leads: (number | undefined)[], moves: Move[], side: Sign | 0, size: number, max = 5): number[] {
   const gap = Math.ceil(size / 2), picked: number[] = []
-  const real = moves.map((m, i) => (m.setup ? -1 : i)).filter(i => i >= 0) // pseudo-moves are no one's mistake
-  const ok = real.filter((i, k) =>
-    leads[i] !== undefined && leads[i + 1] !== undefined && (side === 0 || moves[i].sign === side)
-    && !(!moves[i].vertex && k > 0 && !moves[real[k - 1]].vertex) // the game-ending pass
-    && lossOf(leads, moves, i) >= MIN_LOSS)
-  for (const i of ok.sort((a, b) => lossOf(leads, moves, b) - lossOf(leads, moves, a))) {
+  for (const [i] of losses(leads, moves, side).filter(([, x]) => x >= MIN_LOSS).sort((a, b) => b[1] - a[1])) {
     if (picked.length >= max) break
     if (picked.every(j => Math.abs(i - j) >= gap)) picked.push(i)
   }
   return picked
+}
+
+/** Opening, middle game, endgame: moves 1–50, 51–150 and later on 19×19, scaled by board area (like resignFrom). */
+export const phaseOf = (mv: number, size: number): 0 | 1 | 2 =>
+  mv <= Math.round(50 * size * size / 361) ? 0 : mv <= Math.round(150 * size * size / 361) ? 1 : 2
+
+/** Points lost by `side` in each phase; move numbers count real moves only. */
+export function phaseLosses(leads: (number | undefined)[], moves: Move[], side: Sign, size: number): number[] {
+  let n = 0
+  const mv = moves.map(m => (m.setup ? n : ++n)), sums = [0, 0, 0]
+  // signed on purpose: the scan's noise (a move "gaining" points) cancels out over a game
+  for (const [i, x] of losses(leads, moves, side)) sums[phaseOf(mv[i], size)] += x
+  return sums
 }
 
 /** "What changed hands": both maps keep only the points whose ownership moved by SHIFT_MIN or more. */

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Game, type Move, type Sign, type Vertex } from './game'
 import type { Analysis } from './katago'
 import { loadSgf } from './sgf'
-import { gradeTry, lessonBoard, MIN_LOSS, pickMoments, readGame, reviewEnd, scanQuery, shift, verdict, type Moment } from './review'
+import { gradeTry, lessonBoard, MIN_LOSS, phaseLosses, phaseOf, pickMoments, readGame, reviewEnd, scanQuery, shift, verdict, type Moment } from './review'
 
 /** Alternating moves from Black; null = pass. */
 const record = (vs: (Vertex | null)[]): Move[] => vs.map((vertex, i) => ({ sign: (i % 2 ? -1 : 1) as Sign, vertex }))
@@ -36,6 +36,36 @@ describe('pickMoments', () => {
     expect(pickMoments([0, 0, 0, -9], passes, 0, 3)).toEqual([]) // Black's game-ending pass
     expect(pickMoments([0, undefined, 9, 9], passes, 0, 3)).toEqual([])
     expect(pickMoments([0, -MIN_LOSS + 0.1, 0, 0], passes, 0, 3)).toEqual([])
+  })
+  it('counts no move once both players have passed (a game resumed after a dispute)', () => {
+    const g = loadSgf('(;SZ[9];B[cc];W[gg];B[];W[];B[ee];W[ff])'), leads = [0, 0, 0, 0, 10, 0, 0]
+    expect(pickMoments(leads, g.moves, 0, 3)).toEqual([])
+    expect(phaseLosses(leads, g.moves, 1, 9)).toEqual([0, 0, 0]) // Black's E5 would lose 10
+    expect(phaseLosses(leads, g.moves, -1, 9)).toEqual([0, 0, 0]) // so would White's game-ending pass
+  })
+})
+
+describe('phases', () => {
+  it('scales the opening and the endgame by board area', () => {
+    expect([50, 51, 150, 151].map(mv => phaseOf(mv, 19))).toEqual([0, 1, 1, 2])
+    expect([23, 24, 70, 71].map(mv => phaseOf(mv, 13))).toEqual([0, 1, 1, 2])
+    expect([11, 12, 34, 35].map(mv => phaseOf(mv, 9))).toEqual([0, 1, 1, 2])
+  })
+  it('sums one side’s signed losses per phase, by real move number', () => {
+    // 9×9: moves 1–11 opening, 12–34 middle game; a pseudo-move at index 10 does not count as a move
+    const moves: Move[] = [...record(row(10)), { sign: 1, vertex: null, setup: true }, ...record(row(30).slice(10)).map(m => ({ ...m, sign: -m.sign as Sign }))]
+    moves.push({ sign: -moves.at(-1)!.sign as Sign, vertex: null }, { sign: moves.at(-1)!.sign, vertex: null })
+    const leads = moves.map(() => 0).concat(0)
+    const at = (i: number, by: number) => { for (let j = i + 1; j < leads.length; j++) leads[j] += moves[i].sign * -by }
+    at(0, 3) // Black, move 1: opening
+    at(10, 9) // the pseudo-move: no one's
+    at(11, 2) // White, move 11: opening
+    at(12, 4) // Black, move 12: middle game
+    at(14, -1.5) // Black, move 14: a "gain" stays signed
+    at(moves.length - 1, 5) // Black's game-ending pass
+    expect(moves[12].sign).toBe(1)
+    expect(phaseLosses(leads, moves, 1, 9)).toEqual([3, 2.5, 0])
+    expect(phaseLosses(leads, moves, -1, 9)).toEqual([2, 0, 0])
   })
 })
 

@@ -284,5 +284,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .jfams .b { fill: #1E1E22 }
 .jfams .w { fill: #F4EFE4; stroke: rgba(43, 29, 14, .5); stroke-width: .5 }
 .jfams span { color: var(--muted) }
+.ex .state { color: var(--accent) }
+.ex .share { font-size: 13.5px; line-height: 1.45 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
