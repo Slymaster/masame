@@ -321,3 +321,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .ex .share { font-size: 13.5px; line-height: 1.45 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+
+/* free analysis: the candidates, read-only rows */
+.jrow.an { cursor: default }
+.jrow.an:hover { background: none }

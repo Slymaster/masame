@@ -80,7 +80,7 @@ export const en = {
   updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
   updateInstalling: 'Installing the update…',
   fullscreen: 'Full screen', autoUpdate: 'Check for updates automatically',
-  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
+  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', candidates: 'candidate moves (hold)', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
     about: 'About Masame', hide: 'Hide Masame', hideOthers: 'Hide Others', showAll: 'Show All', quit: 'Quit Masame',
@@ -130,6 +130,9 @@ export const en = {
   betterLine: (s: number, v: string, loss: number) => `Better: ${color(s)} ${v}, which keeps those ${pts(loss)}.`,
   betterHelp: '→ follows the line. Compare its light with the punishment’s. Play anywhere to explore: each move gets an answer. ↑ ↓ compare your tries.',
   nextMoment: 'Next moment',
+  // free analysis
+  anFor: (s: number) => `Candidate moves for ${color(s)}`, anReading: 'Reading the position…', anPass: 'Pass',
+  anNeedsNet: 'Candidate moves need an analysis network.', anFailed: (m: string) => `The position could not be read. ${m}`,
   // joseki trainer
   joseki: 'Joseki', jLoading: 'Loading the joseki…', jFailed: (m: string) => `Couldn’t load the joseki: ${m}`,
   jTabs: { explore: 'Explore', practise: 'Practise', programme: 'Programme' },
