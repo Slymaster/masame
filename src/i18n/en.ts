@@ -8,6 +8,12 @@ const tuningProgress = (step: number, done: number, total: number) => [step && `
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
 const lost = (x: number) => Math.round(x * 10) ? `−${pts(x)}` : '±0' // never "−0 points"
 
+// a result in two parts, as the caption's card shows it: who (or what) and how
+const ended = (winner: number, how: string, points?: number) => how === 'cancel' ? 'Game cancelled'
+  : how === 'score' && !winner && !points ? 'Draw' : !winner ? 'Game over' /* no winner named */ : `${color(winner)} wins`
+const endedHow = (how: string, points?: number): string =>
+  ({ resign: 'by resignation', time: 'on time', score: `by ${pts(points ?? 0)}`, forfeit: 'by forfeit' } as Record<string, string>)[how] ?? ''
+
 export const en = {
   // card
   board: (n: number, komi: number) => `${n}×${n} · komi ${f.num(komi)} · Japanese rules`,
@@ -241,10 +247,8 @@ export const en = {
   ogsReconnecting: 'Connection to OGS lost, reconnecting…',
   ogsLeaveAsk: 'The game goes on at OGS and your clock keeps running. Leave anyway?', ogsLeave: 'Leave',
   ogsResignAsk: 'Resign this game? It counts as a loss on OGS.',
-  ogsResult: (winner: number, how: string, points?: number) => how === 'cancel' ? 'Game cancelled.'
-    : how === 'score' && !winner && !points ? 'Draw.'
-    : !winner ? 'Game over.' // OGS named no winner
-    : `${color(winner)} wins ${how === 'resign' ? 'by resignation' : how === 'time' ? 'on time' : how === 'score' ? `by ${pts(points ?? 0)}` : 'by forfeit'}.`,
+  ogsResult: (winner: number, how: string, points?: number) => `${[ended(winner, how, points), winner && how !== 'cancel' && endedHow(how, points)].filter(Boolean).join(' ')}.`,
+  ended, endedHow,
   periods: (n: number, s: number) => `${n}×${s} s`,
   stones: (n: number) => f.plural(n, 'stone', 'stones'),
   days: (d: number, h: number) => `${d} d ${h} h`,

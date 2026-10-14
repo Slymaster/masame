@@ -8,6 +8,12 @@ const tuningProgress = (step: number, done: number, total: number) => [step && `
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
 const lost = (x: number) => Math.round(x * 10) ? `−${pts(x)}` : '±0' // never "−0 points"
 
+// a result in two parts, as the caption's card shows it: who (or what) and how
+const ended = (winner: number, how: string, points?: number) => how === 'cancel' ? 'Partie annulée'
+  : how === 'score' && !winner && !points ? 'Égalité' : !winner ? 'Partie terminée' : `${color(winner)} gagne`
+const endedHow = (how: string, points?: number) =>
+  ({ resign: 'par abandon', time: 'au temps', score: `de ${pts(points ?? 0)}`, forfeit: 'par forfait' } as Record<string, string>)[how] ?? ''
+
 export const fr: Dict = {
   // card
   board: (n: number, komi: number) => `${n}×${n} · komi ${f.num(komi)} · règles japonaises`,
@@ -241,10 +247,8 @@ export const fr: Dict = {
   ogsReconnecting: 'Connexion à OGS perdue, reconnexion…',
   ogsLeaveAsk: 'La partie continue sur OGS et ta pendule tourne. Quitter quand même ?', ogsLeave: 'Quitter',
   ogsResignAsk: 'Abandonner cette partie ? Elle compte comme une défaite sur OGS.',
-  ogsResult: (winner: number, how: string, points?: number) => how === 'cancel' ? 'Partie annulée.'
-    : how === 'score' && !winner && !points ? 'Égalité.'
-    : !winner ? 'Partie terminée.'
-    : `${color(winner)} gagne ${how === 'resign' ? 'par abandon' : how === 'time' ? 'au temps' : how === 'score' ? `de ${pts(points ?? 0)}` : 'par forfait'}.`,
+  ogsResult: (winner: number, how: string, points?: number) => `${[ended(winner, how, points), winner && how !== 'cancel' && endedHow(how, points)].filter(Boolean).join(' ')}.`,
+  ended, endedHow,
   periods: (n: number, s: number) => `${n}×${s} s`,
   stones: (n: number) => f.plural(n, 'pierre', 'pierres'),
   days: (d: number, h: number) => `${d} j ${h} h`,

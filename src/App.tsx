@@ -21,7 +21,7 @@ import { Icon } from './Icon'
 import { Timeline } from './Timeline'
 import { cardSkin } from './board3d/logic'
 import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
-import { loadSgf, MAX_SGF, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
+import { loadSgf, MAX_SGF, readResult, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import { DECORS, type Decor } from './board3d/decors'
 import { isMac, shortcut } from './platform'
@@ -978,6 +978,8 @@ export function App() {
   // [action id, label, action]: the id tells refocus whether the same action is still offered
   type Link = [string, string, () => void]
   const withNote = (text: string) => [text, note?.(t)].filter(Boolean).join(' ')
+  const aiMoved = nextAi && nextAi !== bot?.rank ? nextAi : null
+  const resultLine = result && [result(t), note?.(t), aiMoved && t.aiNext(aiMoved)].filter(Boolean).join(' ')
   const incoming = !myGame && challengeRows.find(c => !c.mine)
   const undoAsk = myGame?.undo
   // outside trainers and reviews, top first: search, OGS game prompts, challenge wait, OGS game states, result, the local
@@ -992,7 +994,7 @@ export function App() {
     : challengeWait ? [t.ogsChallengeWait(challengeWait.who), [['cancel', t.cancel, () => cancelChallenge()]]]
     : ongoing && online.me === 0 ? [withNote(t.ogsWatching(online.players.black.username, online.players.white.username)),
       [['quit', t.ogsLeave, () => start(new Game({ size: game.info.size }), null)]]]
-    : result ? [[result(t), note?.(t), nextAi && nextAi !== bot?.rank ? t.aiNext(nextAi) : null].filter(Boolean).join(' '), [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
+    : result ? [resultLine, [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
       ...(online && online.me !== 0 && online.phase === 'finished' ? [['rematch', t.ogsRematch, rematch] as Link] : [])]]
     : countingNow ? [t.countingHelp, []]
     : game.ended ? [t.countingWait, []]
@@ -1048,6 +1050,7 @@ export function App() {
   const playing = review ? !!review.branch : !game.ended && !result && (!online || online.phase === 'play') // whose turn it is means something
   const floor = review?.branch ? from : 0
   const re = outcome?.re ?? '' // "B+R", "W+4.5", "0"
+  const res = readResult(re) // the caption's card reads the result from RE
   const resignation = re.endsWith('+R'), timeout = re.endsWith('+T'), countingOpen = !!final && !result
   // the count, shown while counting and, once validated, at every cursor position (scored on the final board)
   const end = game.boards.at(-1)!
@@ -1108,9 +1111,16 @@ export function App() {
           onPlay={play}
         >
           <p className="note" aria-live="polite" tabIndex={-1}>
-            {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message}>
-              <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>
-              {!anLine && links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>{label}</button>)}
+            {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message} className={message === resultLine ? 'res' : undefined}>
+              {message === resultLine ? <>
+                {/* the result as a score sheet: winner's stone, who and how, the AI's next level; read in that order */}
+                {res.winner !== 0 && <span className={`stone ${res.winner === 1 ? 'b' : 'w'}`} aria-hidden="true">{re}</span>}
+                <span className="txt"><b>{t.ended(res.winner, res.how, res.points)}</b>{' '}
+                  <small>{[res.winner !== 0 && t.endedHow(res.how, res.points), note?.(t)].filter(Boolean).join(' · ')}</small></span>
+                {aiMoved && <span className="chip">{t.aiLevel}{' '}<b>{bot && <i>{bot.rank} →</i>} {aiMoved}</b></span>}
+              </> : <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>}
+              {!anLine && links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>
+                {id === 'review' && message === resultLine && <Icon name="review" />}{label}</button>)}
             </span>}
           </p>
         </Goban>
