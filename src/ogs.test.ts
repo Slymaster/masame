@@ -273,10 +273,12 @@ describe('game controls', () => {
     expect(ogs.canCancel(at(live, 0, { phase: 'stone removal' }))).toBe(false)
   })
   it('tracks undo requests, both ways', () => {
-    let s = at(live, 116)
+    let s = at(live, 115) // fixed handicap: White's 58th move is the last
     expect(ogs.canRequestUndo(s)).toBe(true)
+    expect(ogs.canRequestUndo(at(live, 116))).toBe(false) // the last move is theirs
     expect(ogs.canRequestUndo(at(live, 0))).toBe(false) // no move of mine yet
-    expect(ogs.canRequestUndo(at(live, 116, {}, 5))).toBe(false) // a spectator
+    expect(ogs.canRequestUndo(at(live, 115, {}, 5))).toBe(false) // a spectator
+    expect(ogs.canRequestUndo(at(live, 115, { rengo: true }))).toBe(false)
     s = apply(s, ['undo_requested', { move_number: 116, requested_by: 1001 }])!
     expect(s.undo).toEqual({ by: 1001, move: 116 })
     expect(ogs.canRequestUndo(s)).toBe(false)
@@ -289,6 +291,10 @@ describe('game controls', () => {
     expect(apply(at(live, 116), ['undo_requested', 116])!.undo).toEqual({ by: 1001, move: 116 })
     expect(apply(at(live, 115), ['undo_requested', { move_number: '115' }])!.undo).toEqual({ by: 1002, move: 115 })
     expect(at(live, 116, { undo_requested: 116 }).undo).toEqual({ by: 1001, move: 116 })
+    // legacy: a numeric string
+    expect(apply(at(live, 116), ['undo_requested', '116'])!.undo).toEqual({ by: 1001, move: 116 })
+    expect(at(live, 116, { undo_requested: '116' }).undo).toEqual({ by: 1001, move: 116 })
+    expect(apply(at(live, 116), ['undo_requested', 'x'])!.undo).toBeUndefined()
   })
   it('tells pause kinds apart and counts my pauses', () => {
     const since = live.clock.last_move
@@ -306,11 +312,24 @@ describe('game controls', () => {
     s = at(live, 116)
     expect(ogs.canPause(s)).toBe(true)
     expect(ogs.canPause(at(live, 116, {}, 5))).toBe(false)
+    // as the official usePauseControl: never with vacation disabled, in any phase but finished, through non-player pauses
+    expect(ogs.canPause(at(live, 116, { disable_vacation: true }))).toBe(false)
+    expect(ogs.canPause(at(live, 116, { phase: 'stone removal' }))).toBe(true)
+    expect(ogs.canPause(at(live, 116, { phase: 'finished' }))).toBe(false)
+    for (const key of ['weekend', 'system', 'vacation-1001']) expect(ogs.canPause(at(live, 116, { pause_control: { [key]: true }, paused_since: since }))).toBe(true)
     s = apply(s, ['clock', { ...live.clock, pause: { paused: true, paused_since: since, pause_control: { paused: { pausing_player_id: 1002, pauses_left: 1 } } } }], 1002)!
     expect(s).toMatchObject({ pause: { player: true, by: 1002 }, pausesLeft: 1 })
     s = apply(s, ['clock', { ...live.clock, pause: { paused: false } }], 1002)!
     expect(s.pause).toBeUndefined()
     expect(s.pausesLeft).toBe(1)
+  })
+  it('takes free placement from goban defaults, as the board does', () => {
+    const d = { ...clone(fixture.freeHandicap), rules: 'chinese' } as Partial<GobanEngineConfig>
+    delete d.free_handicap_placement // Chinese rules: free by default
+    const s = at(d as GobanEngineConfig, 10, {}, 1001)
+    expect(s).toMatchObject({ free: true, handicap: 3, offset: 3, placing: 0 })
+    expect(s.game.moves).toHaveLength(7)
+    expect(ogs.moveNumber(s)).toBe(10)
   })
   it('reads the competition, correspondence and rematch settings', () => {
     const s = at(live, 10)
@@ -588,11 +607,33 @@ describe('session', () => {
     expect(last().sent[last().sent.length - 1]).toEqual(['automatch/cancel', { uuid: last().sent[last().sent.length - 2][1].uuid }])
   })
 
+  it('forgets a search cancelled by uuid: a reconnect does not ask for it again', async () => {
+    const a = await online()
+    const finds = () => last().sent.filter(m => m[0] === 'automatch/find_match').length
+    const reconnect = () => { last().end(1006); vi.advanceTimersByTime(1000); last().open() }
+    vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('c9-0-0-0-0')
+    a.receive(['automatch/entry', findMatchRequest(9, 'correspondence', 'c9-0-0-0-0')]) // the server's list first: one row all the same
+    ogs.findMatch(9, 'correspondence')
+    expect(ogs.searches.get()).toEqual([{ uuid: 'c9-0-0-0-0', size: 9, speed: 'correspondence' }])
+    ogs.cancelSearch('c9-0-0-0-0')
+    reconnect()
+    expect(finds()).toBe(0)
+    ogs.findMatch(13, 'correspondence') // cancelled elsewhere: the server says so
+    last().receive(['automatch/cancel', { uuid: last().sent.at(-1)![1].uuid }])
+    reconnect()
+    expect(finds()).toBe(0)
+    ogs.findMatch(19, 'correspondence')
+    ogs.disconnect()
+    await ogs.connect()
+    last().open()
+    expect(finds()).toBe(0)
+  })
+
   it('lists finished games from my side', async () => {
     expect((await ogs.history(1)).rows).toEqual([{
       id: 9, size: 19, color: -1, opponent: { id: 1001, username: 'them', rank: '3k' }, result: 'W+R', date: Date.parse('2026-10-12T22:42:02Z'),
     }])
-    expect(fetches[1]).toBe('https://online-go.com/api/v1/players/1002/game_history/?page_size=20&page=1&ordering=-ended Bearer token')
+    expect(fetches[1]).toBe('https://online-go.com/api/v1/me/games/?ended__isnull=false&ordering=-ended&page_size=20&page=1 Bearer token')
     lost = true // both sides marked lost: no winner to show
     expect((await ogs.history(1)).rows[0].result).toBe('?')
   })
@@ -768,6 +809,8 @@ describe('session', () => {
     it('stands down when a proposal arrives, or when the game already has one', async () => {
       const { a, scoring } = await start()
       a.receive(['game/1/phase', 'stone removal'])
+      a.receive(['game/1/removed_stones', { removed: true, stones: 'jc', all_removed: 'jc' }]) // a player's mark: no proposal
+      expect(scoring()).toBe('waiting')
       a.receive(['game/1/removed_stones', { removed: true, stones: 'jc', all_removed: 'jc', auto_scored: true }])
       expect(scoring()).toBeUndefined()
       vi.advanceTimersByTime(20_000)
@@ -848,7 +891,7 @@ describe('session', () => {
     reply = url => url.endsWith('/games/404') ? new Response('', { status: 404 })
       : url.endsWith('/games/7') ? { id: 7, ended: '2026-01-01T00:00:00Z', players: { black: { id: 1002 }, white: { id: 3 } } }
       : url.endsWith('/sgf') ? new Response('(;GM[1])')
-      : url.includes('/game_history/') ? { results: [], next: url.endsWith('page=1&ordering=-ended') ? 'https://online-go.com/x' : null } : undefined
+      : url.includes('ended__isnull=false') ? { results: [], next: url.endsWith('&page=1') ? 'https://online-go.com/x' : null } : undefined
     host.signedIn = false
     expect(await ogs.sgf(4)).toBe('(;GM[1])')
     expect(calls.at(-1)).toMatchObject({ url: 'https://online-go.com/api/v1/games/4/sgf', auth: undefined })
@@ -858,7 +901,7 @@ describe('session', () => {
     await ogs.connect()
     expect(await ogs.gameInfo(7)).toEqual({ id: 7, ended: true, mine: true })
     expect(await ogs.history(1)).toEqual({ rows: [], more: true })
-    expect(calls.at(-1)!.url).toBe('https://online-go.com/api/v1/players/1002/game_history/?page_size=20&page=1&ordering=-ended')
+    expect(calls.at(-1)).toMatchObject({ url: 'https://online-go.com/api/v1/me/games/?ended__isnull=false&ordering=-ended&page_size=20&page=1', auth: 'Bearer token' })
     expect(await ogs.history(2)).toEqual({ rows: [], more: false })
     lost = false
     reply = () => undefined

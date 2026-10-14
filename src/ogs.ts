@@ -39,8 +39,10 @@ export const hms = (ms: number) => {
 const freeStones = (d: GobanEngineConfig) => (d.free_handicap_placement && (d.handicap ?? 0) > 1 ? d.handicap! : 0)
 
 /** The game so far; during a free placement, the stones placed yet are setup and Black is to play. */
-export function gameFrom(data: GobanEngineConfig): Game {
-  const d = GobanEngine.fillDefaults(structuredClone(data)) // places fixed handicap stones when initial_state is missing
+export const gameFrom = (data: GobanEngineConfig) => gameOf(filled(data))
+// places fixed handicap stones when initial_state is missing; Chinese rules default to free placement
+const filled = (data: GobanEngineConfig) => GobanEngine.fillDefaults(structuredClone(data))
+function gameOf(d: GobanEngineConfig): Game {
   const size = d.width!
   if (d.height !== size) throw fail('ogs_not_square', `${d.width}×${d.height}`)
   const moves = (d.moves ?? []) as AdHocPackedMove[], free = freeStones(d)
@@ -238,6 +240,8 @@ export interface Followed {
   pausesLeft?: number // mine, when OGS tells
   undo?: { by: number; move: number } // a pending request: the requester's id, the OGS move number
   competition: boolean // tournament, ladder, casual rengo: no cancel
+  rengo: boolean // no undo
+  noPause: boolean // disable_vacation: players may not pause
   corr: boolean
   scoring?: 'waiting' | 'failed' // dead stones: waiting for a proposal, or none came
   free: boolean
@@ -252,9 +256,11 @@ export type GameEvent = [string, any]
 export const moveNumber = (s: Followed) => s.offset - s.placing + s.game.moves.length
 // GobanEngine.gameCanBeCancelled
 export const canCancel = (s: Followed) => s.phase === 'play' && !s.competition && moveNumber(s) < 5 + (s.free ? s.handicap : 1)
-export const canRequestUndo = (s: Followed) => s.me !== 0 && s.phase === 'play' && !s.placing && !s.undo && s.game.moves.some(m => m.sign === s.me)
+// my own last move only, as the button says (and notToMove assumes)
+export const canRequestUndo = (s: Followed) => s.me !== 0 && s.phase === 'play' && !s.placing && !s.undo && !s.rengo && s.game.moves.at(-1)?.sign === s.me
 export const canAnswerUndo = (s: Followed, myId: number) => s.me !== 0 && s.phase === 'play' && !!s.undo && s.undo.by !== myId
-export const canPause = (s: Followed) => s.me !== 0 && s.phase === 'play' && !s.pause && !s.placing && s.pausesLeft !== 0
+// the official usePauseControl: any phase but finished; a weekend, vacation or server pause does not block it
+export const canPause = (s: Followed) => s.me !== 0 && s.phase !== 'finished' && !s.noPause && !s.pause?.player && !s.placing && s.pausesLeft !== 0
 export const canResume = (s: Followed) => s.me !== 0 && !!s.pause?.player
 
 const player = (p: { id: number; username: string; rank?: number }): Player => ({ id: p.id, username: p.username, rank: rankLabel(p.rank) })
@@ -263,32 +269,35 @@ const same = (a: Vertex | null, b: Vertex | null) => a === b || (!!a && !!b && a
 type Data = GobanEngineConfig & { [key: string]: any }
 // whoever is not to move asked: undo requests come right after one's own move
 const notToMove = (s: Followed) => (s.game.toPlay === 1 ? s.players.white.id : s.players.black.id)
+// a move number, also as a numeric string (legacy)
+const moveOf = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' ? parseInt(v, 10) : NaN)
 
 /** The next state of a followed game; nothing until the first gamedata. Throws (gameFrom) on a game Masame cannot show. */
 export function apply(s: Followed | null, [event, data]: GameEvent, myId?: number): Followed | null {
   if (event === 'gamedata') {
     const d = data as Data, players = { black: player(d.players!.black), white: player(d.players!.white) }
-    const game = gameFrom(d), result = d.phase === 'finished' ? resultOf(d) : undefined
+    const f = filled(d), game = gameOf(f), result = d.phase === 'finished' ? resultOf(d) : undefined
     if (result) game.info.result = result.re
-    const pc = d.pause_control as PauseControl | undefined, free = freeStones(d)
+    const pc = d.pause_control as PauseControl | undefined, free = freeStones(f)
     const n: Followed = {
       id: +d.game_id!, game, players, phase: d.phase ?? 'play', clock: d.clock, tc: d.time_control, rules: d.rules ?? 'japanese', result, offset: free,
-      placing: Math.max(0, free - (d.moves?.length ?? 0)),
+      placing: Math.max(0, free - (f.moves?.length ?? 0)),
       me: myId === undefined ? 0 : myId === players.black.id ? 1 : myId === players.white.id ? -1 : 0,
       removed: typeof d.removed === 'string' ? stonesOf(d.removed) : [],
       pausedSince: pauseOf(pc, d.paused_since ?? d.clock?.paused_since),
       pause: pauseFrom(pc),
       pausesLeft: myId === undefined ? undefined : d[`pauses_left_${myId}`] ?? (pc?.paused?.pausing_player_id === myId ? pc.paused.pauses_left : undefined),
-      competition: !!(d.tournament_id || d.ladder_id || (d.rengo && d.rengo_casual_mode)),
+      competition: !!(d.tournament_id || d.ladder_id || (d.rengo && d.rengo_casual_mode)), rengo: !!d.rengo, noPause: !!d.disable_vacation,
       corr: d.time_control?.speed === 'correspondence' || (d.time_per_move ?? 0) > 3600,
-      free: !!d.free_handicap_placement, handicap: d.handicap ?? 0,
+      free: !!f.free_handicap_placement, handicap: f.handicap ?? 0,
       settings: {
         rules: d.rules ?? 'japanese', ranked: !!d.ranked, width: d.width!, height: d.height!, handicap: d.handicap ?? 0, komi: d.komi ?? 0,
         time_control: d.time_control ?? ({ system: 'none', speed: 'correspondence', pause_on_weekends: false } as JGOFTimeControl),
         disable_analysis: !!d.disable_analysis, pause_on_weekends: !!d.pause_on_weekends, private: !!d.private,
       },
     }
-    if (typeof d.undo_requested === 'number') n.undo = { by: d.undo_requested_by ?? notToMove(n), move: d.undo_requested }
+    const undo = moveOf(d.undo_requested)
+    if (Number.isFinite(undo)) n.undo = { by: d.undo_requested_by ?? notToMove(n), move: undo }
     return n
   }
   if (!s) return s
@@ -315,7 +324,7 @@ export function apply(s: Followed | null, [event, data]: GameEvent, myId?: numbe
       return data === 'finished' && !s.result ? { ...n, reload: true } : n
     }
     case 'undo_requested': {
-      const move = typeof data === 'number' ? data : parseInt(data?.move_number, 10)
+      const move = moveOf(data && typeof data === 'object' ? data.move_number : data)
       if (!Number.isFinite(move)) return s
       return { ...s, undo: { by: typeof data?.requested_by === 'number' ? data.requested_by : notToMove(s), move } }
     }
@@ -438,6 +447,7 @@ const json = async <T>(path: string, init?: Parameters<typeof rest>[1]) =>
   (await rest(path, init)).json().catch(() => { throw fail('ogs_http', 'unreadable body') }) as Promise<T>
 const httpStatus = (e: unknown) => ((e as { code?: string }).code === 'ogs_http' ? (e as { detail?: string }).detail : undefined)
 
+const asking = new Map<string, () => void>() // findMatch searches by uuid: stops their listeners
 let generation = 0 // bumped by disconnect(): a connect() still awaiting gives up
 
 /**
@@ -516,7 +526,7 @@ function listen(s: GobanSocket) {
   })
   s.on('automatch/entry', e => {
     const o = e.size_speed_options.find(x => x.speed === 'correspondence')
-    if (o && !searchStore.get().some(x => x.uuid === e.uuid)) searchStore.set([...searchStore.get(), { uuid: e.uuid, size: parseInt(o.size) as BoardSize, speed: 'correspondence' }])
+    if (o) addSearch({ uuid: e.uuid, size: parseInt(o.size) as BoardSize, speed: 'correspondence' })
   })
   s.on('automatch/start', d => {
     if (searchStore.get().some(x => x.uuid === d.uuid)) notify({ kind: 'started', key: `started-${d.game_id}`, gameId: d.game_id })
@@ -528,7 +538,11 @@ function listen(s: GobanSocket) {
     notify(notificationNotice(n, Date.now(), followed))
   })
 }
+const addSearch = (row: SearchRow) => { if (!searchStore.get().some(x => x.uuid === row.uuid)) searchStore.set([...searchStore.get(), row]) }
+// a search over (started, cancelled here or elsewhere; null: all of them): its findMatch listeners go too, or a
+// reconnect would ask for it again
 const dropSearch = (uuid: string | null) => {
+  for (const [u, stop] of asking) if (!uuid || u === uuid) stop()
   const list = searchStore.get(), next = uuid ? list.filter(x => x.uuid !== uuid) : []
   if (next.length !== list.length) searchStore.set(next)
 }
@@ -595,6 +609,7 @@ export function disconnect() {
   generation++
   socket = null; session = null; me = null; guest = false; jwt = ''
   followed.clear()
+  for (const stop of asking.values()) stop()
   clearSession()
   s?.disconnect()
   setStatus('offline')
@@ -620,7 +635,8 @@ const SCORED: number[] = [9, 13, 19] // the scorer's sizes
 export function follow(id: number, onEvent: (ev: GameEvent, state: Followed | null) => void): () => void {
   const s = live(), ee = s as unknown as Loose
   let state: Followed | null = null, asked = false // a reload is requested once, until the gamedata answers it
-  // dead stones: OGS proposes them; without a proposal after a while (or on its failure), ask its scorer as goban does
+  // dead stones: OGS proposes them; without a proposal after a while (or on its failure), ask OGS's own scorer, as the
+  // site's Auto-score button does (the official client falls back to its local WASM estimator instead)
   let scoring: Followed['scoring'], wait: ReturnType<typeof setTimeout> | undefined, tried = false, left = false
   const join = () => s.send('game/connect', { game_id: id, chat: false })
   const stopWait = () => { if (wait) { clearTimeout(wait); timers.delete(wait); wait = undefined } }
@@ -649,7 +665,8 @@ export function follow(id: number, onEvent: (ev: GameEvent, state: Followed | nu
     if (!state || state.me === 0) return
     if (state.phase !== 'stone removal') { stopWait(); scoring = undefined; tried = false; return }
     if (name === 'phase') { stopWait(); tried = false } // a fresh stone removal
-    const proposal = (name === 'removed_stones' && (data?.auto_scored || !!data?.all_removed)) || (name === 'gamedata' && data.auto_scoring_done)
+    // OGS's proposal only: a player's manual mark (all_removed without auto_scored) keeps the wait
+    const proposal = (name === 'removed_stones' && !!data?.auto_scored) || (name === 'gamedata' && !!data.auto_scoring_done)
     if (proposal) { stopWait(); scoring = undefined; tried = true }
     else if (name === 'auto_scoring_failed' && scoring === 'waiting' && wait) void score()
     else if (!tried && (name === 'phase' || name === 'gamedata')) {
@@ -706,10 +723,11 @@ export function findMatch(size: BoardSize, speed: Speed): { cancel(): void; star
     const on = (d: { uuid: string; game_id: number }) => { if (d.uuid === uuid) { stop(); resolve(d.game_id) } }
     s.on('automatch/start', on)
     s.on('connect', ask)
-    stop = () => { s.off('automatch/start', on); s.off('connect', ask) }
+    stop = () => { s.off('automatch/start', on); s.off('connect', ask); asking.delete(uuid) }
   })
+  asking.set(uuid, stop)
   if (s.connected) ask() // otherwise the connect handler asks
-  if (speed === 'correspondence') searchStore.set([...searchStore.get(), { uuid, size, speed }])
+  if (speed === 'correspondence') addSearch({ uuid, size, speed })
   return { cancel: () => { stop(); s.send('automatch/cancel', { uuid }); dropSearch(uuid) }, started }
 }
 export const cancelSearch = (uuid: string) => { live().send('automatch/cancel', { uuid }); dropSearch(uuid) }
@@ -790,7 +808,8 @@ const gameRow = (g: GameRestRow, myId: number): GameRow => ({
 /** My finished games, newest first, 20 a page (from 1). */
 export async function history(page: number): Promise<{ rows: GameRow[]; more: boolean }> {
   const { id } = await mine()
-  const r = await json<{ results: GameRestRow[]; next?: string | null }>(`/api/v1/players/${id}/game_history/?page_size=20&page=${page}&ordering=-ended`, { anon: true })
+  // not players/{id}/game_history/, which leaves bot games out without the official bot_game filter
+  const r = await json<{ results: GameRestRow[]; next?: string | null }>(`/api/v1/me/games/?ended__isnull=false&ordering=-ended&page_size=20&page=${page}`)
   return { rows: r.results.map(g => gameRow(g, id)), more: !!r.next }
 }
 
