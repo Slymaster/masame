@@ -436,7 +436,7 @@ export function App() {
     try {
       const png = await view.current?.snapshot?.()
       if (!png) throw new LocalizedError(d => d.postcardNotReady)
-      if (await savePngFile(png, t.postcardName(shown.info.size, shown.cursor))) setNote(d => d.postcardSaved)
+      if (await savePngFile(png, t.postcardName(shown.info.size, shown.moveNumber()))) setNote(d => d.postcardSaved)
     } catch (e) {
       setNote(d => d.postcardFailed(failureText(e, d)))
     }
