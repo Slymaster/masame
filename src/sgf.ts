@@ -82,3 +82,4 @@ export function saveSgf(game: Game): string {
 /** SGF RE values: a counted game ("B+3.5", "W+0.5", "0" for a draw) or a resignation ("W+R"). */
 export const scoreResult = (lead: number) => (round1(lead) === 0 ? '0' : `${lead > 0 ? 'B' : 'W'}+${Math.abs(round1(lead))}`)
 export const resignResult = (winner: Sign) => `${winner === 1 ? 'B' : 'W'}+R`
+export const timeResult = (winner: Sign) => `${winner === 1 ? 'B' : 'W'}+T`
