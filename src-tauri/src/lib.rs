@@ -531,6 +531,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")] // url_file serves macOS only; a drive-less file URL is no path on Windows
     fn only_file_urls_are_files() {
         assert_eq!(url_file(&"file:///tmp/a%20b.sgf".parse().unwrap()), Some(PathBuf::from("/tmp/a b.sgf")));
         assert_eq!(url_file(&"https://example.com/a.sgf".parse().unwrap()), None);
