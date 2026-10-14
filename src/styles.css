@@ -166,8 +166,49 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 /* a narrow window beside the card: smaller type, and the links beside two lines of text at most, so they are never cut */
 @container (max-width: 460px) {
   .board-wrap > .note > span { display: inline-flex; align-items: center; gap: .45em; font-size: 16.5px }
-  .board-wrap > .note .txt { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden }
+  .board-wrap > .note > :not(.res) .txt { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden }
   .board-wrap > .note .link { margin-left: 0 }
+}
+/* the result, as a score sheet: the winner's stone, who and how, the AI's next level, then the review as the one filled button;
+   at most 60px tall (the room under the board): the title never wraps nor shrinks, the sub line wraps in what is left, two
+   lines at most (the full sentence is in the title attribute) */
+.board-wrap > .note > .res {
+  display: inline-flex; align-items: center; gap: 12px; max-width: 100%; max-height: none; overflow: visible; padding: 5px 6px 5px 8px; border: 0;
+  border-radius: 999px; box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--rule); font: 500 12px/1.2 var(--f-ui); text-align: left
+}
+.res .stone { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; font: 600 9.5px var(--f-ui); letter-spacing: -.01em; box-shadow: 0 2px 4px rgba(0, 0, 0, .45) }
+.res .stone.b { background: var(--stone-b); color: var(--pb-ink) }
+.res .stone.w { background: var(--stone-w); color: var(--pw-ink) }
+.res .txt { flex: 1 1 auto; display: flex; flex-direction: column; gap: 1px } /* min-width auto: never narrower than the title */
+.res .txt b { font: 600 18px/1.1 var(--f-ui); letter-spacing: -.01em; white-space: nowrap }
+.res .txt small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.15; color: var(--muted) }
+.res .txt small:empty { display: none }
+.res .chip { flex: none; display: flex; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 1px solid var(--rule-2); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); white-space: nowrap }
+.res .chip b { font: 600 14px var(--f-ui); letter-spacing: 0; text-transform: none; color: var(--ink); font-variant-numeric: tabular-nums }
+.res .chip i { font-style: normal; font-weight: 500; color: var(--muted) }
+.board-wrap > .note > .res .link {
+  flex: none; display: inline-flex; align-items: center; gap: 7px; height: 36px; margin: 0; padding: 0 15px; border: 1px solid var(--accent); border-radius: 999px;
+  font: 600 13px var(--f-ui); text-decoration: none; transition: background .25s, color .25s
+}
+.board-wrap > .note > .res .link:hover { background: var(--hover); color: var(--accent) }
+.board-wrap > .note > .res .link[data-act=review] { padding-left: 13px; background: var(--accent); color: var(--sheet) }
+.board-wrap > .note > .res .link[data-act=review]:hover { background: var(--accent-hover); border-color: var(--accent-hover) }
+.res .link svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round }
+.res .link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+/* less room: the stone (it repeats the title) and the chip's label go (still read aloud: font-size 0 keeps it in the text) */
+@container (max-width: 600px) {
+  .res .stone { display: none }
+  .board-wrap > .note > .res { gap: 10px; padding-left: 14px }
+  .res .chip { gap: 0; padding-left: 10px; font-size: 0 }
+}
+/* narrow: smaller title and compact buttons */
+@container (max-width: 460px) {
+  .board-wrap > .note > .res { gap: 8px; padding-left: 12px }
+  .res .txt b { font-size: 16.5px }
+  .res .chip { padding-left: 8px }
+  .res .chip b { font-size: 13px }
+  .board-wrap > .note > .res .link { height: 32px; padding: 0 12px; gap: 5px; font-size: 12.5px }
+  .board-wrap > .note > .res .link[data-act=review] { padding-left: 10px }
 }
 .board-wrap > .note:focus { outline: none } /* a resting place for focus after a caption link, not a control */
 
