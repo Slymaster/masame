@@ -3,7 +3,7 @@ import { RANKS } from './bot'
 import { Game, type Sign, type Vertex } from './game'
 import type { Analysis } from './katago'
 import { rankLabel } from './ogs'
-import { anchored, BAD, BAND, CAP, curve, FLOOR, KEY, loadRanks, localRank, MIN_PHASE, peak, phaseRanks, PROFILES, rankName, readRank, reading,
+import { anchored, BAD, BAND, CAP, curve, FLOOR, KEY, loadRanks, localRank, MIN_GAME, MIN_PHASE, peak, phaseRanks, PROFILES, rankName, readRank, reading,
   saveRanks, WINDOW, withReading, type Read } from './rank'
 import { loadSgf } from './sgf'
 
@@ -35,8 +35,9 @@ describe('peak', () => {
 
 describe('reading', () => {
   const at = (j: number) => PROFILES.map((_, i) => (i === j ? 0.5 : 0.05))
-  it('is null without moves; reads the likeliest profile; phases need MIN_PHASE moves', () => {
+  it('is null under MIN_GAME moves; reads the likeliest profile; phases need MIN_PHASE moves', () => {
     expect(reading([], [])).toBeNull()
+    expect(reading(Array(MIN_GAME - 1).fill(at(1)), Array(MIN_GAME - 1).fill(1))).toBeNull()
     const probs = [...Array(MIN_PHASE).fill(at(1)), ...Array(MIN_PHASE - 1).fill(at(4))]
     const r = reading(probs, [...Array(MIN_PHASE).fill(0), ...Array(MIN_PHASE - 1).fill(2)])!
     expect(r.n).toBe(2 * MIN_PHASE - 1)
@@ -44,8 +45,8 @@ describe('reading', () => {
     expect(r.phases.slice(1)).toEqual([null, null])
   })
   it('floors a move’s probability: one unthinkable move does not decide', () => {
-    const probs = [...Array(20).fill(at(2)), PROFILES.map((_, i) => (i === 2 ? 0 : 0.5))]
-    expect(Math.round(reading(probs, Array(21).fill(1))!.all)).toBe(10)
+    const probs = [...Array(MIN_GAME).fill(at(2)), PROFILES.map((_, i) => (i === 2 ? 0 : 0.5))]
+    expect(Math.round(reading(probs, Array(MIN_GAME + 1).fill(1))!.all)).toBe(10)
     expect(FLOOR).toBeGreaterThan(0)
   })
 })
@@ -73,16 +74,16 @@ function fakeEngine(g: Game, best: string | ((at: number) => string), opts: { fa
 }
 
 describe('readRank', () => {
-  const g = game(30)
+  const g = game(60) // 30 moves a side: MIN_GAME
   it('asks each of the side’s moves with each profile, two at a time, and reads the favoured profile', async () => {
     const e = fakeEngine(g, '5k')
     const r = await readRank(g, -1, new Map(), e.ask, () => true)
     expect(e.max()).toBe(2)
-    expect(e.calls.length).toBe(15 * PROFILES.length)
-    expect(new Set(e.calls.map(c => c.at))).toEqual(new Set(Array.from({ length: 15 }, (_, i) => 2 * i + 1)))
+    expect(e.calls.length).toBe(30 * PROFILES.length)
+    expect(new Set(e.calls.map(c => c.at))).toEqual(new Set(Array.from({ length: 30 }, (_, i) => 2 * i + 1)))
     expect(e.calls[0].q).toEqual({ maxVisits: 1, includePolicy: true, overrideSettings: { humanSLProfile: 'rank_20k', ignorePreRootHistory: false } })
-    expect([r!.all, r!.n]).toEqual([15, 15])
-    expect(r!.phases).toEqual([null, 15, null]) // 9×9: White's moves 2–10 in the opening (too few), 12–30 in the middle game
+    expect([r!.all, r!.n]).toEqual([15, 30])
+    expect(r!.phases).toEqual([null, null, null]) // 9×9: 5, 12 and 13 of White's moves by phase, all under MIN_PHASE
   })
   it('splits moves by phase on real move numbers', async () => {
     const big = Game.fromRecord({ size: 19 }, Array.from({ length: 200 }, (_, i) => ({ sign: (i % 2 ? -1 : 1) as Sign, vertex: [i % 19, Math.floor(i / 19)] as Vertex })))
@@ -93,10 +94,11 @@ describe('readRank', () => {
   })
   it('skips passes, pseudo-moves and moves without a human policy', async () => {
     const s = loadSgf('(;SZ[9];B[aa];W[ba];B[ca];C[x];W[];B[ea];W[fa])')
-    const e = fakeEngine(s, '10k', { noPolicyAt: 6 })
-    const r = await readRank(s, -1, new Map(), (b, q) => (s.moves[b.moves.length].vertex ? e.ask(b, q) : Promise.reject(new Error('pass asked'))), () => true)
+    const e = fakeEngine(s, '10k', { noPolicyAt: 6 }), cache = new Map<string, number>()
+    const r = await readRank(s, -1, cache, (b, q) => (s.moves[b.moves.length].vertex ? e.ask(b, q) : Promise.reject(new Error('pass asked'))), () => true)
     expect(new Set(e.calls.map(c => c.at))).toEqual(new Set([1, 6])) // W[ba]; W[fa] (index 6 after the pseudo-move); not the pass
-    expect(r!.n).toBe(1)
+    expect(PROFILES.every(p => Number.isNaN(cache.get(`6|${p}`)) && cache.get(`1|${p}`)! > 0)).toBe(true) // no human policy: skipped
+    expect(r).toBeNull() // one move read: under MIN_GAME
   })
   it('resumes from the cache, and returns null when interrupted', async () => {
     const cache = new Map<string, number>()
@@ -107,7 +109,7 @@ describe('readRank', () => {
     expect(known).toBeGreaterThan(0)
     const e2 = fakeEngine(g, '10k')
     expect((await readRank(g, 1, cache, e2.ask, () => true))!.all).toBe(10)
-    expect(e2.calls.length).toBe(15 * PROFILES.length - known)
+    expect(e2.calls.length).toBe(30 * PROFILES.length - known)
   })
   it('throws on an engine error once nothing is in flight', async () => {
     const e = fakeEngine(g, '10k', { failAt: 3 })

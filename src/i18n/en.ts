@@ -208,7 +208,7 @@ export const en = {
   rankPlayed: (s: number, r: string) => `${s ? `${color(s)} played` : 'You played'} like ${aRank(r)}`,
   autoAdjustHelp: 'The AI goes up a rank when it loses and down when it wins; your level follows the rank read in your moves, and the AI stays within 2 ranks of it.',
   rankLab: 'Your rank',
-  rankHelp: (n: number, follows: boolean) => `Read in your moves by KataGo’s human network, over your last ${n === 1 ? 'game' : `${f.num(n)} games`}${follows ? '; your level follows it' : ''}.`,
+  rankHelp: (n: number, follows: boolean) => `Read in your moves by KataGo’s human network, on the AI levels’ scale, over your last ${n === 1 ? 'game' : `${f.num(n)} games`}${follows ? '; your level follows it' : ''}.`,
   rankChartLabel: (from: string, to: string, n: number) => `Your rank read in your moves: from ${from} to ${to} over ${f.plural(n, 'game', 'games')}`,
   // OGS (online-go.com)
   // OGS sheet: tabs, play, my games, watch

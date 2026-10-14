@@ -208,7 +208,7 @@ export const fr: Dict = {
   rankPlayed: (s: number, r: string) => `${s ? `${color(s)} a joué` : 'Tu as joué'} comme un ${r}`,
   autoAdjustHelp: 'L’IA monte d’un rang quand elle perd et descend quand elle gagne ; ton niveau suit le rang lu dans tes coups, et l’IA reste à 2 rangs au plus de lui.',
   rankLab: 'Ton rang',
-  rankHelp: (n: number, follows: boolean) => `Lu dans tes coups par le réseau humain de KataGo, sur ${n === 1 ? 'ta dernière partie' : `tes ${f.num(n)} dernières parties`}${follows ? ' ; ton niveau le suit' : ''}.`,
+  rankHelp: (n: number, follows: boolean) => `Lu dans tes coups par le réseau humain de KataGo, à l’échelle des niveaux de l’IA, sur ${n === 1 ? 'ta dernière partie' : `tes ${f.num(n)} dernières parties`}${follows ? ' ; ton niveau le suit' : ''}.`,
   rankChartLabel: (from: string, to: string, n: number) => `Ton rang lu dans tes coups : de ${from} à ${to} sur ${f.plural(n, 'partie', 'parties')}`,
   // OGS (online-go.com)
   // OGS sheet: tabs, play, my games, watch

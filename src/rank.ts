@@ -9,9 +9,10 @@ import { phaseOf, reviewEnd } from './review'
 /** The profiles asked (indices into RANKS: 20k = 0 … 9d = 28). */
 export const PROFILES = ['20k', '15k', '10k', '5k', '1d', '5d']
 /** A move's probability is floored before the log: one unthinkable move can't decide. */
-export const FLOOR = 1e-3
-/** Fewer of the player's moves in a phase: no rank for that phase. */
-export const MIN_PHASE = 10
+export const FLOOR = 1e-4
+/** Fewer of the player's moves in a phase: no rank for that phase; in a game: no reading (calibrated on 113 OGS players: the
+ * reading's spread vs the whole game is 3.5 ranks at 25 moves, 2.5 at 60; the opening gives 25, the endgame is the noisiest). */
+export const MIN_PHASE = 25, MIN_GAME = 30
 /** Readings in the local rank. */
 export const WINDOW = 10
 /** The AI level stays within BAND ranks of the local rank. */
@@ -37,9 +38,9 @@ export function peak(xs: number[], ls: number[]): number {
 
 const sums = (probs: number[][]) => XS.map((_, j) => probs.reduce((s, p) => s + Math.log(Math.max(FLOOR, p[j])), 0))
 
-/** The rank (index, fractional) of these moves, overall and per phase (null under MIN_PHASE moves); null without moves. */
+/** The rank (index, fractional) of these moves, overall and per phase (null under MIN_PHASE moves); null under MIN_GAME moves. */
 export function reading(probs: number[][], phases: (0 | 1 | 2)[]): Reading | null {
-  if (!probs.length) return null
+  if (probs.length < MIN_GAME) return null
   return {
     all: peak(XS, sums(probs)), n: probs.length,
     phases: [0, 1, 2].map(ph => { const ps = probs.filter((_, i) => phases[i] === ph); return ps.length < MIN_PHASE ? null : peak(XS, sums(ps)) }),

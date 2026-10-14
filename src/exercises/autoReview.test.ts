@@ -70,8 +70,8 @@ describe('a background run', () => {
     const humanPolicy = p && Array.from({ length: 82 }, () => (p === 'rank_5k' ? 0.5 : 0.1))
     return { scoreLead: leadAt(g.moves.length), pv: [[8, 8], [7, 7]], ownership: null, humanPolicy } as unknown as Analysis
   }
-  const setup = () => {
-    const a = newAuto([]); a.queue = enqueue(a, game(12), 1, 0)
+  const setup = (n = 12) => {
+    const a = newAuto([]); a.queue = enqueue(a, game(n), 1, 0)
     const added: unknown[][] = []
     return { a, j: a.queue[0], added, add: (...x: unknown[]) => void added.push(x) }
   }
@@ -109,22 +109,21 @@ describe('a background run', () => {
     expect([a.queue, added.length]).toEqual([[j], 0])
   })
   it('reads the rank after the moments, reports it, then drops the job', async () => {
-    const { a, j, added, add } = setup(), asked: number[] = [], got: unknown[] = []
+    const { a, j, added, add } = setup(60), asked: number[] = [], got: unknown[] = [] // Black's 30 moves: MIN_GAME
     const ms = await runJob(a, j, fake(asked), () => true, () => {}, add, r => got.push(r))
     expect(Array.isArray(ms)).toBe(true)
-    expect(got).toEqual([{ all: 15, n: 6, phases: [null, null, null] }]) // Black's 6 moves, all read as 5k
-    expect(asked.length).toBe(13 + 2 + 6 * PROFILES.length) // the scan, one deep pair, the rank
+    expect(got).toEqual([{ all: 15, n: 30, phases: [null, null, null] }]) // all read as 5k; on 9×9 each phase has under MIN_PHASE
+    expect(asked.length).toBe(61 + 2 + 30 * PROFILES.length) // the scan, one deep pair, the rank
     expect([added.length, a.queue, a.ranks.size, a.read.size]).toEqual([1, [], 0, 0])
   })
   it('keeps a job interrupted while ranking, and resumes without reading the moments again', async () => {
-    const { a, j, added, add } = setup(), asked: number[] = [], got: unknown[] = []
-    let n = 0
-    expect(await runJob(a, j, fake(asked), () => n++ < 30, () => {}, add, r => got.push(r))).toBe('paused')
+    const { a, j, added, add } = setup(60), asked: number[] = [], got: unknown[] = []
+    expect(await runJob(a, j, fake(asked), () => asked.length < 61 + 2 + 20, () => {}, add, r => got.push(r))).toBe('paused') // 20 rank queries in
     expect([added.length, got.length, a.queue.length]).toEqual([1, 0, 1])
     const known = ranksOf(a, j.k).size
     expect(known).toBeGreaterThan(0)
     asked.length = 0
     expect(Array.isArray(await runJob(a, j, fake(asked), () => true, () => {}, add, r => got.push(r)))).toBe(true)
-    expect([asked.length, added.length, got.length, a.queue.length]).toEqual([6 * PROFILES.length - known, 1, 1, 0])
+    expect([asked.length, added.length, got.length, a.queue.length]).toEqual([30 * PROFILES.length - known, 1, 1, 0])
   })
 })
