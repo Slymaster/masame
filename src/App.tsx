@@ -4,7 +4,7 @@ import { centreShift } from './board/frame'
 import type { Board3D, Board3DOptions, Board3DState, FallbackReason, TimeMode } from './board3d/Board3D'
 import { rng } from './board/noise'
 import { adjustRank, clampRank, decide, DEFAULT_RANK, humanProfile, stepRank } from './bot'
-import { askFirst, confirmDiscard, openSgfFile, saveSgfFile } from './files'
+import { askFirst, confirmDiscard, openSgfFile, savePngFile, saveSgfFile } from './files'
 import { Game, type GameNode, type Move, type Sign, type Vertex } from './game'
 import { analyze, call, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
@@ -76,7 +76,7 @@ function webgl2() {
 }
 
 /** What App drives, whichever renderer is mounted: the Canvas2D BoardView ("light") or the lazily loaded Board3D. */
-type View = { update(s: Board3DState): void; drop(v: Vertex, c: Sign): void; pass?(c: Sign): void; resetCamera?(): void; destroy(): void }
+type View = { update(s: Board3DState): void; drop(v: Vertex, c: Sign): void; pass?(c: Sign): void; resetCamera?(): void; snapshot?(): Promise<Blob | null>; destroy(): void }
 
 function Goban({ state, onPlay, view, mode, options, thinking, onFallback, children }: {
   state: Board3DState; onPlay: (v: Vertex) => boolean; view: React.RefObject<View | null>
@@ -430,6 +430,15 @@ export function App() {
       if (await saveSgfFile(saveSgf(game), t.fileName(game.info.size))) { setDirty(false); setNote(d => d.saved) }
     } catch (e) {
       setNote(d => d.saveFailed(failureText(e, d)))
+    }
+  }
+  const postcard = async () => {
+    try {
+      const png = await view.current?.snapshot?.()
+      if (!png) throw new LocalizedError(d => d.postcardNotReady)
+      if (await savePngFile(png, t.postcardName(shown.info.size, shown.cursor))) setNote(d => d.postcardSaved)
+    } catch (e) {
+      setNote(d => d.postcardFailed(failureText(e, d)))
     }
   }
 
@@ -932,6 +941,7 @@ export function App() {
               <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
                 <Icon name={sound ? 'volume' : 'volume-off'} />
               </button>
+              <button className="icon sm" onClick={postcard} aria-label={t.postcard} title={t.postcardHint}><Icon name="camera" /></button>
               <button className="icon sm" onClick={openSheet('view')} aria-label={t.display} title={t.display}><Icon name="view" /></button>
               <button className="icon sm" aria-pressed={renderer === '3d'} onClick={() => { setSession2d(false); set('renderer', renderer === '3d' ? '2d' : '3d') }}
                 aria-label={t.render3d} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>

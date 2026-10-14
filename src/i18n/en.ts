@@ -268,6 +268,10 @@ export const en = {
   progress: (p: number, got: string, total: string) => `${f.pct(p)} · ${got} / ${total}`,
   download: 'Download', resume: 'Resume', cancel: 'Cancel', remove: 'Delete', useForAnalysis: 'Use for analysis',
   creditsKataGo: 'KataGo', creditsMid: '© David J Wu — MIT license; networks under the', creditsLicense: 'KataGo Neural Network License',
+  // postcard
+  postcard: 'Postcard', postcardHint: 'Save the board as a picture (PNG), signed, to share', postcardTitle: 'Save the postcard',
+  postcardName: (n: number, move: number) => `masame-${n}x${n}-move-${move}.png`,
+  postcardSaved: 'Postcard saved.', postcardNotReady: 'the board isn’t drawn yet', postcardFailed: (m: string) => `Couldn’t save the postcard: ${m}`,
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
     invalid_name: 'Invalid network name.',

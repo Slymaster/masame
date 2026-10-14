@@ -6,6 +6,7 @@ import type { Sign, SignMap, Vertex } from '@sabaki/go-board'
 import { clamp01, easeOut, hash, n1, rng, sstep, stoneRng, TAU, vn2 } from './noise'
 import { playClack, playTap } from './sound'
 import { gx, gz, jitter, settle, type Placed } from '../board3d/logic'
+import { postcardCanvas, signatureFonts, toPng } from '../postcard'
 
 export interface BoardState {
   signMap: SignMap
@@ -428,6 +429,17 @@ export class BoardView {
     this.canvas.style.transform = ''
     const r = this.canvas.getBoundingClientRect()
     this.canvas.style.transform = `translate(${Math.round(r.left) - r.left}px, ${Math.round(r.top) - r.top}px)`
+  }
+
+  /** The board as drawn, without the hover ghost or a drop in flight, signed like the 3D postcard. */
+  async snapshot(): Promise<Blob | null> {
+    await signatureFonts()
+    if (!this.state || !this.S) return null
+    const h = this.hover
+    this.hover = null; this.anim = null; this.frame(performance.now())
+    const c = this.canvas, out = postcardCanvas(c, { x: 0, y: 0, w: c.width, h: c.height })
+    this.hover = h; this.req()
+    return toPng(out)
   }
 
   private req() { if (!this.raf) this.raf = requestAnimationFrame(t => this.frame(t)) }
