@@ -3,6 +3,7 @@ import { fmt } from './format'
 
 const f = fmt('en-US')
 const color = (s: number): string => (s === 1 ? 'Black' : 'White')
+const aRank = (r: string) => `${/^(8|11|18)\D/.test(r) ? 'an' : 'a'} ${r}` // an 8k, an 11k, an 18k
 const tuningProgress = (step: number, done: number, total: number) => [step && `step ${step}`, total && `${done}/${total}`].filter(Boolean).join(' · ')
 const pts = (x: number) => f.plural(Math.round(Math.abs(x) * 10) / 10, 'point', 'points')
 const lost = (x: number) => Math.round(x * 10) ? `−${pts(x)}` : '±0' // never "−0 points"
@@ -198,16 +199,15 @@ export const en = {
   exReset: 'Delete the exercises', exResetAsk: 'Delete all your exercises and their statistics?',
   exReadOnly: 'These exercises were saved by a newer Masame: practice here won’t be recorded.',
   // automatic review
-  autoDone: (n: number) => (n ? `Review done: ${f.plural(n, 'key moment joins', 'key moments join')} your exercises.` : 'Review done: no decisive moment.'),
+  autoDone: (n: number, rank?: string) => `Review done: ${rank ? `you played like ${aRank(rank)}; ` : ''}${n ? `${f.plural(n, 'key moment joins', 'key moments join')} your exercises` : 'no decisive moment'}.`,
   autoPending: (n: number) => `Automatic review: ${f.plural(n, 'game', 'games')} waiting`,
   autoRunning: (pct: number) => `Automatic review: in progress… ${f.pct(pct)}`,
   // your rank, read in your moves
   rankReading: (s: number) => (s ? `Reading ${color(s)}’s rank…` : 'Reading your rank…'),
-  rankPlayed: (s: number, r: string) => `${s ? `${color(s)} played` : 'You played'} like ${/^(8|11|18)\D/.test(r) ? 'an' : 'a'} ${r}`,
-  rankSet: (me: string | null, ai: string | null) => [me && `Your level: ${me}, read in your moves.`, ai && `AI level: ${ai}.`].filter(Boolean).join(' '),
+  rankPlayed: (s: number, r: string) => `${s ? `${color(s)} played` : 'You played'} like ${aRank(r)}`,
   autoAdjustHelp: 'The AI goes up a rank when it loses and down when it wins; your level follows the rank read in your moves, and the AI stays within 2 ranks of it.',
   rankLab: 'Your rank',
-  rankHelp: (n: number) => `Read in your moves by KataGo’s human network, over your last ${n === 1 ? 'game' : `${f.num(n)} games`}.`,
+  rankHelp: (n: number, follows: boolean) => `Read in your moves by KataGo’s human network, over your last ${n === 1 ? 'game' : `${f.num(n)} games`}${follows ? '; your level follows it' : ''}.`,
   rankChartLabel: (from: string, to: string, n: number) => `Your rank read in your moves: from ${from} to ${to} over ${f.plural(n, 'game', 'games')}`,
   // OGS (online-go.com)
   // OGS sheet: tabs, play, my games, watch

@@ -26,7 +26,7 @@ interface Run { k: string; tried: Vertex | null; gap: number | null; shown: Line
 /** The exercise's position, then `line` played with rule checks. */
 const after = (x: Exercise, line: Line) => { const g = positionOf(x); return g.branch(g.moves.length, line) }
 
-export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, setThinking, autoLine, ranks }: {
+export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, setThinking, autoLine, ranks, follows }: {
   view: RefObject<{ drop(v: Vertex, c: Sign): void; pass?(c: Sign): void } | null>
   open: boolean; setOpen: (o: boolean) => void; blocked: boolean
   canAnalyze: boolean // an analysis network is active (KataGo grades each answer)
@@ -34,6 +34,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
   setThinking: (on: boolean) => void // App's "thinking" (board animation, engine-start captions)
   autoLine: string | null // the automatic review's state, while games wait
   ranks: Read[] // the player's rank read in each reviewed game (src/rank.ts), oldest first
+  follows: boolean // "Auto-adjust": the player's level follows that rank
 }) {
   const [store, setStore] = useState<StoredDeck>(load)
   const loaded = useRef(store)
@@ -157,7 +158,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
         <p className="state">{rankName(localRank(ranks)!)}</p>
         <p className="quiet">{phaseLine(phaseRanks(ranks))}</p>
         <RankChart points={curve(ranks)} label={(a, b) => t.rankChartLabel(a, b, ranks.length)} width={308} />
-        <p className="quiet">{t.rankHelp(Math.min(WINDOW, ranks.length))}</p>
+        <p className="quiet">{t.rankHelp(Math.min(WINDOW, ranks.length), follows)}</p>
       </>}
       <p className="quiet"><button className="link" onClick={resetAll} disabled={store.readOnly}>{t.exReset}</button></p>
     </section>

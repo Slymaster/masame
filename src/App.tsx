@@ -308,14 +308,17 @@ export function App() {
   const playingLocal = !result && (!!bot || dirty)
   // the player's rank read in their moves (src/rank.ts); with "Auto-adjust", it sets their level and anchors the AI's
   const [ranks, setRanks] = useState(loadRanks)
-  const keepRank = (k: string, r: Reading): Msg | null => {
-    const s = { ...ranks, p: withReading(ranks.p, k, r, Date.now()) }, local = localRank(s.p.games)!
+  const ranksRef = useRef(ranks) // the latest store, so two readings completing close together both count
+  // the AI level the next game will use, announced on the shown game's result line (finish()'s nudge, then the rank's anchoring)
+  const [nextAi, setNextAi] = useState<string | null>(null)
+  /** Stores a reading of the player's own moves; with "Auto-adjust", their level and the AI's follow. The AI level, when it changed. */
+  const keepRank = (k: string, r: Reading): string | null => {
+    const s = ranksRef.current = { ...ranksRef.current, p: withReading(ranksRef.current.p, k, r, Date.now()) }, local = localRank(s.p.games)!
     setRanks(s); saveRanks(s)
     if (!settings.autoAdjust) return null
     const me = rankName(local), ai = RANKS[anchored(RANKS.indexOf(settings.aiRank), local)]
-    if (me === settings.myRank && ai === settings.aiRank) return null
-    setSettings(x => ({ ...x, myRank: me, aiRank: ai }))
-    return d => d.rankSet(me !== settings.myRank ? me : null, ai !== settings.aiRank ? ai : null)
+    if (me !== settings.myRank || ai !== settings.aiRank) setSettings(x => ({ ...x, myRank: me, aiRank: ai }))
+    return ai !== settings.aiRank ? ai : null
   }
   const keep = useRef(keepRank)
   keep.current = keepRank
@@ -324,9 +327,10 @@ export function App() {
     ask: (g, q) => analyze(g, { ...q, priority: -1 }), // KataGo serves higher priorities first: the bot, the trainers jump the queue
     scanRun, add: (...x) => ex.add(...x),
     done: (k, ms, r) => { // a job is always the player's own game
-      const prev = note, adj = r && keepRank(k, r)
-      if (result && recordKey(game) === k) setNote(d => [prev?.(d), d.autoDone(ms.length), r && `${d.rankPlayed(0, rankName(r.all))}.`, adj?.(d)].filter(Boolean).join(' '))
-      else if (adj) setNote(adj)
+      const prev = note, ai = r && keepRank(k, r)
+      if (!result || recordKey(game) !== k) return
+      setNote(d => [prev?.(d), d.autoDone(ms.length, r ? rankName(r.all) : undefined)].filter(Boolean).join(' '))
+      if (ai) setNextAi(ai)
     },
     human: canPlayAI,
   })
@@ -336,7 +340,7 @@ export function App() {
   })
   const ex = useExercises({
     view, open: panel === 'exercises', setOpen: o => setPanel(p => (o ? 'exercises' : p === 'exercises' ? null : p)), blocked: ongoing || !!review, canAnalyze, setThinking,
-    autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null, ranks: ranks.p.games,
+    autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null, ranks: ranks.p.games, follows: settings.autoAdjust,
     ask: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, REPLY)); scanRun.current = run; return run },
   })
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
@@ -442,7 +446,7 @@ export function App() {
   const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null); setJoining(false) }
   const start = (g: Game, b: typeof bot) => { abandon(); stopOnline(); show(g, b) }
   const show = (g: Game, b: typeof bot) => {
-    setGame(g); setBot(b); setNote(null); setStarted(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); setClock(null)
+    setGame(g); setBot(b); setNote(null); setStarted(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); setClock(null); setNextAi(null)
   }
   /** Leaving the shown game: an unfinished OGS game goes on without us; unsaved moves are lost. */
   // only a live game I play goes on with my clock running; spectated and correspondence games are left silently
@@ -645,7 +649,7 @@ export function App() {
     scored.current = game
     if (settings.autoAdjust && !bot.ritual) {
       const next = adjustRank(bot.rank, botWon)
-      if (next !== bot.rank) { set('aiRank', next); setNote(d => d.rankAdjusted(next)) }
+      if (next !== bot.rank) { set('aiRank', next); setNextAi(next) }
     }
   }
   const cancellable = !!myGame && ogs.canCancel(myGame) // early in the game: cancelled instead, not counted
@@ -788,8 +792,8 @@ export function App() {
       if (!live) return
       setReview(x => x && { ...x, rank: r })
       if (rankSide !== mine) return
-      const adj = r && keep.current(recordKey(game), r)
-      if (adj) setNote(adj)
+      const ai = r && keep.current(recordKey(game), r) // no note: it would replace the lesson's caption
+      if (ai) setNextAi(ai)
       ar.reviewed(game)
     }, e => { if (live) { console.error('rank', e); setReview(x => x && { ...x, rank: null }) } })
     return () => { live = false }
@@ -986,7 +990,7 @@ export function App() {
     : challengeWait ? [t.ogsChallengeWait(challengeWait.who), [['cancel', t.cancel, () => cancelChallenge()]]]
     : ongoing && online.me === 0 ? [withNote(t.ogsWatching(online.players.black.username, online.players.white.username)),
       [['quit', t.ogsLeave, () => start(new Game({ size: game.info.size }), null)]]]
-    : result ? [withNote(result(t)), [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
+    : result ? [[result(t), note?.(t), nextAi && nextAi !== bot?.rank ? t.rankAdjusted(nextAi) : null].filter(Boolean).join(' '), [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
       ...(online && online.me !== 0 && online.phase === 'finished' ? [['rematch', t.ogsRematch, rematch] as Link] : [])]]
     : countingNow ? [t.countingHelp, []]
     : game.ended ? [t.countingWait, []]
