@@ -11,6 +11,8 @@ import { Networks } from './Networks'
 import { notify } from './notify'
 import { OgsSection } from './OgsSection'
 import { Clock } from './Clock'
+import { handicapStones, proposeHandicap, stepHandicap } from './handicap'
+import { CLOCKS, flagAt, read, sgfTime, startClock, sync, timeUp, type ClockSetting, type LocalClock } from './localClock'
 import { Seg } from './Seg'
 import { Switch } from './Switch'
 import * as ogs from './ogs'
@@ -19,7 +21,7 @@ import { Icon } from './Icon'
 import { Timeline } from './Timeline'
 import { cardSkin } from './board3d/logic'
 import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
-import { loadSgf, resignResult, saveSgf, scoreResult } from './sgf'
+import { loadSgf, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import { DECORS, type Decor } from './board3d/decors'
 import { isMac, shortcut } from './platform'
@@ -44,13 +46,14 @@ interface Settings {
   lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; botResign: boolean; delay: boolean; territory: boolean
   renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor
   langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number; autoplay: typeof AUTOPLAY[number]
+  handicap: number; clock: ClockSetting
 }
 const SETTINGS_KEY = 'baduk.settings'
 function loadSettings(): Settings {
   const d: Settings = {
     lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, botResign: true, delay: true, territory: false,
     renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', langChosen: false, panelHidden: false,
-    autoUpdate: true, updateChecked: 0, autoplay: 1,
+    autoUpdate: true, updateChecked: 0, autoplay: 1, handicap: 0, clock: 'off',
   }
   let j: Partial<Settings> = {}
   try { j = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') ?? {} } catch { /* private mode or garbage: defaults */ }
@@ -63,6 +66,8 @@ function loadSettings(): Settings {
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: DECORS.includes(s.decor) ? s.decor : 'atelier', panelHidden: s.panelHidden === true, ...updateSettings(j),
     autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
+    handicap: Number.isInteger(s.handicap) && s.handicap >= 2 && s.handicap <= 9 ? s.handicap : 0,
+    clock: typeof s.clock === 'string' && Object.hasOwn(CLOCKS, s.clock) ? s.clock : 'off',
   }
 }
 
@@ -132,14 +137,15 @@ function useMsg() {
   return [m, useCallback((v: Msg | null) => set(() => v), [])] as const
 }
 
-function Stepper({ label, value, set }: { label: string; value: string; set: (v: string) => void }) {
+/** ‹ steps by +1 (a rank: stronger), › by −1. */
+function Stepper({ label, value, step, names = [t.stronger(label), t.weaker(label)] }: { label: string; value: string; step: (d: number) => void; names?: string[] }) {
   return (
     <div className="row stepper">
       <span>{label}</span>
       <span className="step">
-        <button onClick={() => set(stepRank(value, 1))} aria-label={t.stronger(label)}>‹</button>
+        <button onClick={() => step(1)} aria-label={names[0]}>‹</button>
         <output aria-live="polite">{value}</output>
-        <button onClick={() => set(stepRank(value, -1))} aria-label={t.weaker(label)}>›</button>
+        <button onClick={() => step(-1)} aria-label={names[1]}>›</button>
       </span>
     </div>
   )
@@ -196,6 +202,7 @@ export function App() {
   useEffect(() => { requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '' })) }, [])
   // counting phase after two passes: which stones are dead (suggested by KataGo, toggled by the player)
   const [counting, setCounting] = useState<{ game: Game; dead: Dead; own: number[] | null } | null>(null)
+  const [clock, setClock] = useState<LocalClock | null>(null) // a local game's byo-yomi clock, dropped with its game
 
   const [engine, setEngine] = useState<EngineStatus>({ state: 'stopped' })
   const [nets, setNets] = useState<NetState | null>(null)
@@ -386,7 +393,7 @@ export function App() {
   const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null); setJoining(false) }
   const start = (g: Game, b: typeof bot) => { abandon(); stopOnline(); show(g, b) }
   const show = (g: Game, b: typeof bot) => {
-    setGame(g); setBot(b); setNote(null); setStarted(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null)
+    setGame(g); setBot(b); setNote(null); setStarted(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); setClock(null)
   }
   /** Leaving the shown game: an unfinished OGS game goes on without us; unsaved moves are lost. */
   // only a live game I play goes on with my clock running; spectated and correspondence games are left silently
@@ -394,15 +401,21 @@ export function App() {
   const canLeave = async () => leaveAsked ? askFirst(t.ogsLeaveAsk, t.ogsLeave) : !dirty || confirmDiscard()
   // an action that may replace the game cancels a pending search or live challenge before any picker, download or
   // dialog: a match starting meanwhile would replace the game without the leave question; backing out leaves it cancelled
-  const newGame = async (size = nextSize) => {
+  const newGame = async (size = nextSize, o: { handicap?: number } = {}) => {
     abandon()
     if (!(await canLeave())) return
     setNextSize(size)
+    let g: Game
     if (settings.opponent === 'ai' && canPlayAI) {
-      const me: Sign = settings.color === 'b' ? 1 : settings.color === 'w' ? -1 : random() < 0.5 ? 1 : -1
+      const h = o.handicap ?? settings.handicap // with a handicap the player takes Black, White plays first
+      const me: Sign = h || settings.color === 'b' ? 1 : settings.color === 'w' ? -1 : random() < 0.5 ? 1 : -1
       const rank = settings.aiRank, name = t.botName(rank)
-      start(new Game({ size, playerBlack: me === 1 ? '' : name, playerWhite: me === 1 ? name : '' }), { sign: -me as Sign, rank })
-    } else start(new Game({ size }), null)
+      g = new Game({ size, playerBlack: me === 1 ? '' : name, playerWhite: me === 1 ? name : '',
+        ...h > 0 && { komi: 0.5, setup: { black: handicapStones(size, h), white: [] }, firstSign: -1 as Sign } })
+      if (h > 0) g.root.data.HA = [String(h)]
+      start(g, { sign: -me as Sign, rank })
+    } else start(g = new Game({ size }), null)
+    if (settings.clock !== 'off') { Object.assign(g.root.data, sgfTime(CLOCKS[settings.clock])); setClock(startClock(CLOCKS[settings.clock])) }
   }
   const open = async (read: () => Promise<string | null> = openSgfFile, asked = false) => {
     abandon()
@@ -567,6 +580,21 @@ export function App() {
     if (!bot || result) return
     finish(d => d.resigns(-bot.sign), true, resignResult(bot.sign))
   }
+  // the local clock runs for the side to move at the end of the line; stopped after two passes, once decided, under a trainer
+  const tail = game.moves.slice(-2), endTurn = (game.moves.length ? -game.moves.at(-1)!.sign : game.info.firstSign) as Sign
+  const clockTurn = result || panel || tail.length === 2 && tail.every(m => !m.vertex) ? null : endTurn
+  useEffect(() => { if (clock) { const c = sync(clock, clockTurn, Date.now()); if (c !== clock) setClock(c) } })
+  // a human side out of time loses (checked late too, after a sleep); the bot's clock runs but it never loses on time
+  useEffect(() => {
+    if (!clock || clock.turn === null || result) return
+    const lose = (s: Sign) => finish(d => d.losesOnTime(s), bot ? true : null, timeResult(-s as Sign))
+    const late = ([1, -1] as const).find(s => s !== bot?.sign && timeUp(clock, s, Date.now()))
+    if (late) return lose(late)
+    const s = clock.turn
+    if (s === bot?.sign) return
+    const id = setTimeout(() => lose(s), flagAt(clock)! - Date.now())
+    return () => clearTimeout(id)
+  }, [clock, result]) // eslint-disable-line react-hooks/exhaustive-deps
   const final = countingNow && score(game.board.signMap, countingNow.dead, { black: game.board.getCaptures(1), white: game.board.getCaptures(-1) }, game.info.komi, countingNow.own)
   const validate = () => {
     if (!final || result) return
@@ -847,17 +875,17 @@ export function App() {
   const playing = review ? !!review.branch : !game.ended && !result && (!online || online.phase === 'play') // whose turn it is means something
   const floor = review?.branch ? from : 0
   const re = outcome?.re ?? '' // "B+R", "W+4.5", "0"
-  const resignation = re.endsWith('+R'), countingOpen = !!final && !result
+  const resignation = re.endsWith('+R'), timeout = re.endsWith('+T'), countingOpen = !!final && !result
   // the count, shown while counting and, once validated, at every cursor position (scored on the final board)
   const end = game.boards.at(-1)!
-  const count = counting?.game === game && (countingOpen || (!!re && !resignation))
+  const count = counting?.game === game && (countingOpen || (!!re && !resignation && !timeout))
     ? score(end.signMap, counting.dead, { black: end.getCaptures(1), white: end.getCaptures(-1) }, komi, counting.own) : null
   const sideOf = (s: Sign) => count ? s === 1 ? count.black : count.white : null
   const tallyOf = (s: Sign) => { const c = sideOf(s)!; return t.tally(c.territory, c.prisoners, s === -1 ? komi : undefined) }
   // counting: points over the tally; counted: "wins" over points and tally; a draw: the points alone
   const subOf = (s: Sign) => !count || re === '0' ? null : countingOpen ? tallyOf(s) : `${t.points(sideOf(s)!.total)} · ${tallyOf(s)}`
   const stateOf = (s: Sign) => count && (countingOpen || re === '0') ? t.points(sideOf(s)!.total)
-    : re ? re[0] === (s === 1 ? 'B' : 'W') ? t.wins : resignation ? t.resigned : ''
+    : re ? re[0] === (s === 1 ? 'B' : 'W') ? t.wins : resignation ? t.resigned : timeout ? t.onTime : ''
     : last && !last.vertex && last.sign === s ? t.passed
     : !playing ? ''
     : toPlay === s ? bot?.sign === s ? thinking ? t.thinking : t.waiting : online && online.me !== s ? t.thinking : t.yourMove
@@ -866,6 +894,9 @@ export function App() {
   const gameLabel = gameHint ? `${t.game} · ${gameHint}` : t.game
   const alert = upd.s === 'available' ? t.updateAvailable(upd.version) : engine.state === 'error' ? failureText(engine.error) : null
   const closeSheet = () => setSheet(null)
+  /** The player's own changes in the Game sheet re-propose the handicap (the bot's auto-adjusted level does not). */
+  const propose = ({ size = nextSize, ...c }: Partial<Pick<Settings, 'myRank' | 'aiRank'>> & { size?: number }) =>
+    setSettings(s => { const n = { ...s, ...c }; return { ...n, handicap: proposeHandicap(n.myRank, n.aiRank, size) } })
   // Networks opened from Settings closes back to Settings, on its link
   const closeNets = () => setSheet(netsFromSettings.current ? 'settings' : null)
   useEffect(() => { if (sheet === 'view') document.getElementById('display')?.scrollIntoView({ block: 'start' }) }, [sheet])
@@ -971,7 +1002,10 @@ export function App() {
                     <div className="lbl"><span className="nm">{bot ? c === bot.sign ? t.ai : t.you : (c === 1 ? playerBlack : playerWhite) || t.color(c)}</span>{rank && <span className="rk">{rank}</span>}</div>
                     <div aria-live={countingOpen ? 'polite' : undefined}>
                       <div className="state" aria-live={online ? 'polite' : undefined}>{stateOf(c)}</div>
-                      {online?.clock && !result ? <div className="sub"><Clock clock={online.clock} tc={online.tc} color={c} pausedSince={online.pausedSince} /></div> : sub && <div className="sub">{sub}</div>}
+                      {online?.clock && !result ? <div className="sub"><Clock read={now => ogs.clockOf(online.clock!, c, now, ogs.drift(), online.pausedSince)}
+                        period={online.tc?.system === 'byoyomi' ? online.tc.period_time : undefined} /></div>
+                        : clock && !result && !sub ? <div className="sub"><Clock read={now => read(clock, c, now)} period={clock.spec.period / 1000} /></div>
+                        : sub && <div className="sub">{sub}</div>}
                     </div>
                     <span className="cap" role="img" aria-label={t.captures(n)}>{n}</span>
                     <span className="wm" aria-hidden="true">{c === 1 ? '黒' : '白'}</span>
@@ -1014,7 +1048,7 @@ export function App() {
           <section>
             <div className="lab"><span>{t.newGame}</span><span /></div>
             <div className="opts">
-              <Seg label={t.size} value={nextSize} options={SIZES.map(n => [n, `${n}×${n}`])} set={setNextSize} />
+              <Seg label={t.size} value={nextSize} options={SIZES.map(n => [n, `${n}×${n}`])} set={n => { setNextSize(n); propose({ size: n }) }} />
               <Seg label={t.opponent} value={settings.opponent} options={[['human', t.twoPlayers], ['ai', t.ai], ['ogs', 'OGS']]} set={v => set('opponent', v)} />
               {settings.opponent === 'ogs' ? (
                 <OgsSection speed={settings.ogsSpeed} setSpeed={v => set('ogsSpeed', v)}
@@ -1025,16 +1059,24 @@ export function App() {
                   onSignedIn={() => { if (online && online.me === 0) follow(online.id) }} />
               ) : <>
               {settings.opponent === 'ai' && (canPlayAI ? <>
-                <Seg label={t.yourColor} value={settings.color} options={[['b', t.black], ['w', t.white], ['r', t.random]]} set={v => set('color', v)} />
-                <Stepper label={t.aiLevel} value={settings.aiRank} set={v => set('aiRank', v)} />
+                <Seg label={t.yourColor} value={settings.handicap ? 'b' : settings.color} options={[['b', t.black], ['w', t.white], ['r', t.random]]} set={v => set('color', v)}
+                  disabled={!!settings.handicap} title={settings.handicap ? t.handicapBlack : undefined} />
+                <Stepper label={t.aiLevel} value={settings.aiRank} step={d => propose({ aiRank: stepRank(settings.aiRank, d) })} />
+                <Stepper label={t.handicap} value={t.handicapStones(settings.handicap)} step={d => set('handicap', stepHandicap(settings.handicap, -d))} names={[t.fewerStones, t.moreStones]} />
+                {settings.handicap > 0 && settings.handicap === proposeHandicap(settings.myRank, settings.aiRank, nextSize) && <p className="quiet">{t.handicapProposed}</p>}
                 <details className="more">
                   <summary>{t.aiSettings}</summary>
-                  <Stepper label={t.myLevel} value={settings.myRank} set={v => setSettings(s => ({ ...s, myRank: v, aiRank: v }))} />
+                  <Stepper label={t.myLevel} value={settings.myRank} step={d => { const v = stepRank(settings.myRank, d); propose({ myRank: v, aiRank: v }) }} />
                   <Switch label={t.autoAdjust} on={settings.autoAdjust} toggle={() => set('autoAdjust', !settings.autoAdjust)} />
                   <Switch label={t.thinkTime} on={settings.delay} toggle={() => set('delay', !settings.delay)} />
                   <Switch label={t.botResign} on={settings.botResign} toggle={() => set('botResign', !settings.botResign)} />
                 </details>
               </> : cta)}
+              <div className="field">
+                <span>{t.clock}</span>
+                <Seg label={t.clock} value={settings.clock} set={v => set('clock', v)} options={[['off', t.clockOff, t.clockNone],
+                  ...Object.entries(CLOCKS).map(([k, c]) => [k, t.clockShort(c.main / 60_000, c.periods, c.period / 1000), t.clockLong(c.main / 60_000, c.periods, c.period / 1000)] as [ClockSetting, string, string])]} />
+              </div>
               <button className="btn accent" onClick={() => { closeSheet(); newGame() }} title={shortcut('N')} disabled={settings.opponent === 'ai' && !canPlayAI}>{t.begin}</button>
               </>}
             </div>

@@ -97,6 +97,14 @@ export const fr: Dict = {
   rankAdjusted: (r: string) => `Niveau de l’IA ajusté : ${r} pour la prochaine partie.`,
   humanSilent: 'Le réseau Humain ne répond pas. Vérifie qu’il est installé.',
   badAnswer: 'Réponse de KataGo illisible.',
+  // handicap and the local clock
+  handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} pierres` : 'Aucun'),
+  fewerStones: 'Handicap : moins de pierres', moreStones: 'Handicap : plus de pierres',
+  handicapProposed: 'Proposé d’après l’écart de niveau.', handicapBlack: 'Avec un handicap, tu prends Noir.',
+  clock: 'Pendule', clockOff: 'Sans', clockNone: 'Sans pendule',
+  clockShort: (min: number, n: number, s: number) => `${min}′ + ${n}×${s}″`,
+  clockLong: (min: number, n: number, s: number) => `${min} minutes, puis ${n} périodes de ${s} secondes (byo-yomi)`,
+  losesOnTime: (loser: number) => `${color(loser)} perd au temps.`, onTime: 'perd au temps',
   // game review (p: the colour that punishes, s: the colour that made the mistake)
   review: 'Revue', reviewGame: 'Revoir la partie', backToGame: 'Retour à la partie',
   reviewNeedsNet: 'Installe un réseau d’analyse pour revoir une partie.',

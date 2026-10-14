@@ -96,6 +96,14 @@ export const en = {
   rankAdjusted: (r: string) => `AI level adjusted to ${r} for the next game.`,
   humanSilent: 'The Human network isn’t responding. Check that it’s installed.',
   badAnswer: 'Unreadable answer from KataGo.',
+  // handicap and the local clock
+  handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} stones` : 'None'),
+  fewerStones: 'Handicap: fewer stones', moreStones: 'Handicap: more stones',
+  handicapProposed: 'Suggested by the level gap.', handicapBlack: 'With a handicap, you take Black.',
+  clock: 'Clock', clockOff: 'Off', clockNone: 'No clock',
+  clockShort: (min: number, n: number, s: number) => `${min}′ + ${n}×${s}″`,
+  clockLong: (min: number, n: number, s: number) => `${min} minutes, then ${n} periods of ${s} seconds (byo-yomi)`,
+  losesOnTime: (loser: number) => `${color(loser)} loses on time.`, onTime: 'lost on time',
   // game review (p: the colour that punishes, s: the colour that made the mistake)
   review: 'Review', reviewGame: 'Review the game', backToGame: 'Back to the game',
   reviewNeedsNet: 'Install an analysis network to review a game.',
