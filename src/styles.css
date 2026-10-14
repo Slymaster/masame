@@ -289,8 +289,6 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .rc-rule { stroke: var(--rule); stroke-width: 1; shape-rendering: crispEdges }
 .rc-tick, .rc-date { fill: var(--muted); font-family: var(--f-ui); font-size: 10.5px; font-variant-numeric: tabular-nums; letter-spacing: .04em }
 .rc-line { fill: none; stroke: var(--ink); stroke-width: 1.25; stroke-linejoin: round; stroke-linecap: round; opacity: .85 }
-.rc-band { fill: var(--accent); opacity: .14 }
-.rc-dot { fill: var(--ink); opacity: .55 }
 .rc-now { fill: var(--accent); stroke: var(--sheet); stroke-width: 2 }
 .rc-now-label { fill: var(--accent); font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 15px }
 .clock { font-variant-numeric: tabular-nums }
