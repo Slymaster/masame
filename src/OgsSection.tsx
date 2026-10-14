@@ -19,6 +19,8 @@ export interface OgsSectionProps {
   /** A challenge at the sheet's size and pace; rejects with an error to show in the form (ogs_no_player…). */
   onChallenge: (username: string, o: { ranked: boolean; handicap: boolean }) => Promise<void>
   onAccept: (c: ogs.ChallengeRow) => void
+  /** A challenge I sent: a live one waited under the board stops waiting too; errors go to the note. */
+  onCancelChallenge: (id: number) => void
   onResume: (id: number) => void // one of my ongoing games
   onImport: (id: number) => void // a finished game, as SGF
   onWatch: (id: number) => void // someone else's live game
@@ -91,7 +93,7 @@ export function OgsSection(p: OgsSectionProps) {
 const size = (n: number) => `${n}×${n}`
 
 /** Pace and automatch, my correspondence searches, challenges both ways. */
-function Play({ speed, setSpeed, onFind, onChallenge, onAccept, main }: OgsSectionProps & { main: React.RefObject<HTMLButtonElement | null> }) {
+function Play({ speed, setSpeed, onFind, onChallenge, onAccept, onCancelChallenge, main }: OgsSectionProps & { main: React.RefObject<HTMLButtonElement | null> }) {
   const searches = useSyncExternalStore(ogs.searches.subscribe, ogs.searches.get)
   const challenges = useSyncExternalStore(ogs.challenges.subscribe, ogs.challenges.get)
   const [name, setName] = useState(''), [ranked, setRanked] = useState(true), [handicap, setHandicap] = useState(true)
@@ -151,7 +153,7 @@ function Play({ speed, setSpeed, onFind, onChallenge, onAccept, main }: OgsSecti
       {sent.map(c => (
         <div key={c.id} className="ogs-item">
           <span className="who"><span className="to" aria-hidden>→</span><span className="nm">{c.to.username}</span>{c.to.rank && <span className="rk">{c.to.rank}</span>}</span>
-          <span className="ogs-acts"><button className="link" onClick={() => act(() => ogs.cancelChallenge(c.id))}>{t.cancel}</button></span>
+          <span className="ogs-acts"><button className="link" onClick={() => onCancelChallenge(c.id)}>{t.cancel}</button></span>
           <span className="dim">{[size(c.size), t.paces[c.speed].toLowerCase()].join(' · ')}</span>
         </div>
       ))}

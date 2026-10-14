@@ -181,7 +181,7 @@ export function App() {
   const ogsStatus = useSyncExternalStore(ogs.onStatus, ogs.getStatus)
   // a live challenge sent and not answered yet (its keepalive and wait stopped by stop), a game started meanwhile elsewhere
   const [challengeWait, setChallengeWait] = useState<{ id: number; gameId: number; who: string } | null>(null)
-  const waiting = useRef<{ gameId: number; stop: () => void } | null>(null)
+  const waiting = useRef<{ id: number; gameId: number; stop: () => void } | null>(null)
   const [started, setStarted] = useState<{ id: number; who: string } | null>(null)
   const challengeRows = useSyncExternalStore(ogs.challenges.subscribe, ogs.challenges.get)
   const activeRows = useSyncExternalStore(ogs.active.subscribe, ogs.active.get)
@@ -384,7 +384,7 @@ export function App() {
   // online is cleared only here, and only with the board replaced: an unfinished OGS position never becomes a local
   // game open to KataGo (a finished one may stay, see signOut)
   const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null); setJoining(false) }
-  const start = (g: Game, b: typeof bot) => { cancelSearch(); stopOnline(); show(g, b) }
+  const start = (g: Game, b: typeof bot) => { abandon(); stopOnline(); show(g, b) }
   const show = (g: Game, b: typeof bot) => {
     setGame(g); setBot(b); setNote(null); setStarted(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null)
   }
@@ -392,10 +392,10 @@ export function App() {
   // only a live game I play goes on with my clock running; spectated and correspondence games are left silently
   const leaveAsked = !!myGame && !myGame.corr
   const canLeave = async () => leaveAsked ? askFirst(t.ogsLeaveAsk, t.ogsLeave) : !dirty || confirmDiscard()
-  // an action that may replace the game cancels a pending search before any picker, download or dialog: a match
-  // starting meanwhile would be abandoned without the leave question; backing out leaves the search cancelled
+  // an action that may replace the game cancels a pending search or live challenge before any picker, download or
+  // dialog: a match starting meanwhile would replace the game without the leave question; backing out leaves it cancelled
   const newGame = async (size = nextSize) => {
-    cancelSearch()
+    abandon()
     if (!(await canLeave())) return
     setNextSize(size)
     if (settings.opponent === 'ai' && canPlayAI) {
@@ -405,7 +405,7 @@ export function App() {
     } else start(new Game({ size }), null)
   }
   const open = async (read: () => Promise<string | null> = openSgfFile, asked = false) => {
-    cancelSearch()
+    abandon()
     try {
       const text = await read()
       if (text === null) return
@@ -418,7 +418,7 @@ export function App() {
   }
   /** The trainer's "Play a game from here": the bot takes the other side when it can play, else two players. */
   const playFrom = async (moves: Move[]) => {
-    cancelSearch()
+    abandon()
     if (!(await canLeave())) return false
     const me = -moves.at(-1)!.sign as Sign, ai = settings.opponent === 'ai' && canPlayAI, name = t.botName(settings.aiRank)
     start(Game.fromRecord({ size: 19, playerBlack: ai && me === -1 ? name : '', playerWhite: ai && me === 1 ? name : '' }, moves), ai ? { sign: -me as Sign, rank: settings.aiRank } : null)
@@ -456,21 +456,26 @@ export function App() {
         const r = s.result
         setOnline(s); setResult(s.game, r ? { msg: d => d.ogsResult(r.winner, r.how, r.points), re: r.re } : null)
       })
-    } catch (e) { setNote(d => failureText(e, d)) }
+    } catch (e) { setJoining(false); setNote(d => failureText(e, d)) }
   }
-  const resume = async (id: number) => { if (online?.id === id) return; cancelSearch(); if (await canLeave()) follow(id) }
-  const importGame = async (id: number) => { cancelSearch(); if (await canLeave()) open(() => ogs.sgf(id), true) }
+  // for callbacks that outlive the render they were made in (a match or a challenge starting later)
+  const latestFollow = useRef(follow)
+  latestFollow.current = follow
+  const resume = async (id: number) => { if (online?.id === id) return; abandon(); if (await canLeave()) follow(id) }
+  const importGame = async (id: number) => { abandon(); if (await canLeave()) open(() => ogs.sgf(id), true) }
   const find = async () => {
     if (!(await canLeave())) return // the shown game is left once a match starts
-    cancelSearch()
+    abandon()
     try {
       const size = nextSize as ogs.BoardSize, speed = settings.ogsSpeed, m = ogs.findMatch(size, speed)
       searching.current = m.cancel
       setSearch({ size, speed })
-      m.started.then(id => { searching.current = null; follow(id) })
+      m.started.then(id => { searching.current = null; latestFollow.current(id) })
     } catch (e) { setNote(d => failureText(e, d)) }
   }
   const cancelSearch = () => { searching.current?.(); searching.current = null; setSearch(null) }
+  /** Whatever would replace the shown game on its own later: a pending automatch, a live challenge's wait. */
+  const abandon = () => { cancelSearch(); cancelChallenge(true) }
   /** Before signing out: an unfinished OGS game is left (asked first) and its board replaced; a finished one stays. */
   const signOut = async () => {
     if (leaveAsked && !(await askFirst(t.ogsLeaveAsk, t.ogsLeave))) return false
@@ -480,29 +485,37 @@ export function App() {
     return true
   }
   const stopWait = () => { waiting.current?.stop(); waiting.current = null; setChallengeWait(null) }
+  /** Ends the live challenge's wait and withdraws it; `quiet`: best effort, when something else replaces it. */
+  const cancelChallenge = (quiet = false) => {
+    const id = waiting.current?.id
+    stopWait()
+    if (id !== undefined) ogs.cancelChallenge(id).catch(e => { if (!quiet) setNote(d => failureText(e, d)) })
+  }
+  /** The sheet's Sent list: the waited challenge ends its wait too. */
+  const cancelSent = (id: number) => {
+    if (waiting.current?.id === id) cancelChallenge()
+    else ogs.cancelChallenge(id).catch(e => setNote(d => failureText(e, d)))
+  }
   /** A challenge sent; a live one waits, with its keepalive, for the game to start without replacing the board. */
   const sendChallenge = async (playerId: number, who: string, body: unknown, corr: boolean) => {
     if (!corr) cancelSearch()
     const { challengeId, gameId } = await ogs.challenge(playerId, body)
     if (corr) return setNote(d => d.ogsChallengeSent(who))
-    stopWait()
+    cancelChallenge(true) // an earlier one still waiting
+    setNote(null)
     let leave = () => {}
-    const stopKeep = ogs.keepAlive(challengeId, gameId), w = { gameId, stop: () => { stopKeep(); leave() } }
+    const stopKeep = ogs.keepAlive(challengeId, gameId), w = { id: challengeId, gameId, stop: () => { stopKeep(); leave() } }
     waiting.current = w
     setChallengeWait({ id: challengeId, gameId, who })
     try {
-      leave = ogs.follow(gameId, (_, s) => { if (s && waiting.current === w) { stopWait(); follow(gameId) } })
+      // the wait ends before follow(), whose start() would otherwise withdraw this very challenge
+      leave = ogs.follow(gameId, (_, s) => { if (s && waiting.current === w) { stopWait(); latestFollow.current(gameId) } })
     } catch (e) { stopWait(); setNote(d => failureText(e, d)) }
-  }
-  const cancelChallenge = () => {
-    const id = challengeWait?.id
-    stopWait()
-    if (id !== undefined) ogs.cancelChallenge(id).catch(e => setNote(d => failureText(e, d)))
   }
   const challengePlayer = async (username: string, o: { ranked: boolean; handicap: boolean }) => {
     const speed = settings.ogsSpeed, corr = speed === 'correspondence'
+    const p = await ogs.findPlayer(username) // an unknown name fails here, before any leave question
     if (!corr && !(await canLeave())) return
-    const p = await ogs.findPlayer(username)
     await sendChallenge(p.id, p.username, ogs.challengeBody({ size: nextSize as ogs.BoardSize, speed, ...o }), corr)
     if (!corr) closeSheet()
   }
@@ -512,7 +525,7 @@ export function App() {
   }
   // asked for every pace: following the new game replaces the board
   const accept = async (c: ogs.ChallengeRow) => {
-    cancelSearch()
+    abandon()
     if (!(await canLeave())) return
     try { const id = await ogs.acceptChallenge(c.id); closeSheet(); follow(id) } catch (e) { setNote(d => failureText(e, d)) }
   }
@@ -766,26 +779,29 @@ export function App() {
   const withNote = (text: string) => [text, note?.(t)].filter(Boolean).join(' ')
   const incoming = !myGame && challengeRows.find(c => !c.mine)
   const undoAsk = myGame?.undo
-  // outside trainers and reviews, top first: search, challenge wait, OGS game states, result, incoming challenge, the rest
-  const [gameLine, gameLinks]: [string | null | undefined, Link[]] = search ? [note?.(t) ?? t.ogsSearching(search.size, t.paces[search.speed]), [['cancel', t.cancel, cancelSearch]]]
-    : challengeWait ? [withNote(t.ogsChallengeWait(challengeWait.who)), [['cancel', t.cancel, cancelChallenge]]]
+  // outside trainers and reviews, top first: search, OGS game prompts, challenge wait, OGS game states, result, the local
+  // game's lines; only when none has anything to say, a game started elsewhere or an incoming challenge
+  const [line, lineLinks]: [string | null | undefined, Link[]] = search ? [note?.(t) ?? t.ogsSearching(search.size, t.paces[search.speed]), [['cancel', t.cancel, cancelSearch]]]
     : ongoing && ogsStatus !== 'online' ? [t.ogsReconnecting, []]
     : myGame?.placing ? [withNote(myGame.me === 1 ? t.ogsPlaceMine(myGame.placing) : t.ogsPlaceTheirs(myGame.players.black.username, myGame.placing)), []]
     : undoAsk && undoAsk.by === ogs.me?.id ? [withNote(t.ogsUndoSent), [['withdraw', t.ogsWithdraw, () => send(() => ogs.cancelUndo(myGame.id, undoAsk.move))]]]
     : undoAsk && ogs.me && ogs.canAnswerUndo(myGame, ogs.me.id) ? [withNote(t.ogsUndoAsked(opponent!.username)), [['accept', t.ogsAccept, () => send(() => ogs.acceptUndo(myGame.id, undoAsk.move))]]]
     : myGame?.pause ? [withNote(t.ogsPaused), ogs.canResume(myGame) ? [['resume', t.resume, () => send(() => ogs.resumeGame(myGame.id))]] : []]
     : removal ? [withNote(removal.scoring === 'waiting' ? t.ogsScoringWait : removal.scoring === 'failed' ? t.ogsScoringFailed : t.countingHelp), []]
+    : challengeWait ? [t.ogsChallengeWait(challengeWait.who), [['cancel', t.cancel, () => cancelChallenge()]]]
     : ongoing && online.me === 0 ? [withNote(t.ogsWatching(online.players.black.username, online.players.white.username)),
       [['quit', t.ogsLeave, () => start(new Game({ size: game.info.size }), null)]]]
-    : started ? [withNote(t.ogsStartedVs(started.who)), [['open', t.ogsOpen, () => resume(started.id)]]]
     : result ? [withNote(result(t)), [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
       ...(online && online.me !== 0 && online.phase === 'finished' ? [['rematch', t.ogsRematch, rematch] as Link] : [])]]
-    : incoming ? [withNote(t.ogsChallenged(incoming.from.username, incoming.from.rank, incoming.size, t.paces[incoming.speed], incoming.ranked)),
-      [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
     : countingNow ? [t.countingHelp, []]
     : game.ended ? [t.countingWait, []]
     : [(botError ?? note)?.(t) ?? engineWait ?? (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null),
       botError ? [['retry', t.retry, retryBot]] : []]
+  const [gameLine, gameLinks]: [string | null | undefined, Link[]] = line ? [line, lineLinks]
+    : started ? [t.ogsStartedVs(started.who), [['open', t.ogsOpen, () => resume(started.id)]]]
+    : incoming ? [t.ogsChallenged(incoming.from.username, incoming.from.rank, incoming.size, t.paces[incoming.speed], incoming.ranked),
+      [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
+    : [line, lineLinks]
   const links: Link[] = tr.open ? tr.links : review?.error ? [['retry', t.retry, retryLesson]]
     : !review ? gameLinks
     : !m ? [['back', t.backToGame, leaveReview]]
@@ -976,7 +992,7 @@ export function App() {
                 {online ? <button className="act" onClick={() => send(() => ogs.requestUndo(online.id, ogs.moveNumber(online)))} disabled={!atEnd || !ogs.canRequestUndo(online)}
                   title={t.ogsUndoHelp}><Icon name="arrow-back-up" />{t.undo}</button>
                   : <button className="act" onClick={undo} disabled={game.cursor === 0 || (!!bot && !!result)} title={shortcut('Z')}><Icon name="arrow-back-up" />{t.undo}</button>}
-                {myGame ? myGame.pause
+                {myGame ? myGame.pause?.player
                   ? <button key="resume" className="act" onClick={() => send(() => ogs.resumeGame(myGame.id))} disabled={!ogs.canResume(myGame)}><Icon name="play" />{t.resume}</button>
                   : <button key="pause" className="act" onClick={() => send(() => ogs.pauseGame(myGame.id))} disabled={!ogs.canPause(myGame)}
                     title={myGame.pausesLeft === undefined ? undefined : t.ogsPausesLeft(myGame.pausesLeft)}><Icon name="pause" />{t.ogsPause}</button>
@@ -1003,7 +1019,7 @@ export function App() {
                   // correspondence: the search is listed in the sheet, and its start told by a notice
                   onFind={() => { if (settings.ogsSpeed === 'correspondence') send(() => void ogs.findMatch(nextSize as ogs.BoardSize, 'correspondence')); else { closeSheet(); find() } }}
                   onResume={id => { closeSheet(); resume(id) }} onImport={id => { closeSheet(); importGame(id) }} onSignOut={signOut}
-                  onChallenge={challengePlayer} onAccept={accept} onWatch={id => { closeSheet(); resume(id) }} onOpenLink={openLink}
+                  onChallenge={challengePlayer} onAccept={accept} onCancelChallenge={cancelSent} onWatch={id => { closeSheet(); resume(id) }} onOpenLink={openLink}
                   onSignedIn={() => { if (online && online.me === 0) follow(online.id) }} />
               ) : <>
               {settings.opponent === 'ai' && (canPlayAI ? <>
