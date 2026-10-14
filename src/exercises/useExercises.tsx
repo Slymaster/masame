@@ -21,12 +21,13 @@ interface Run { k: string; tried: Vertex | null; gap: number | null; shown: Line
 /** The exercise's position, then `line` played with rule checks. */
 const after = (x: Exercise, line: Line) => { const g = positionOf(x); return g.branch(g.moves.length, line) }
 
-export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, setThinking }: {
+export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, setThinking, autoLine }: {
   view: RefObject<{ drop(v: Vertex, c: Sign): void; pass?(c: Sign): void } | null>
   open: boolean; setOpen: (o: boolean) => void; blocked: boolean
   canAnalyze: boolean // an analysis network is active (KataGo grades each answer)
   ask: (g: Game) => Promise<Analysis> // KataGo's view of a position; App serialises the queries
   setThinking: (on: boolean) => void // App's "thinking" (board animation, engine-start captions)
+  autoLine: string | null // the automatic review's state, while games wait
 }) {
   const [store, setStore] = useState<StoredDeck>(load)
   const loaded = useRef(store)
@@ -129,6 +130,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
     <section className="rv ex" aria-label={t.exercises}>
       <div className="lab"><span>{t.exercises}</span><span /></div>
       {!canAnalyze ? <p className="estimate">{t.exNeedsNet}</p> : <>
+        {autoLine && <p className="quiet" aria-live="polite">{autoLine}</p>}
         {(store.readOnly || c.due + c.fresh + c.later > 0) && (
           <p className="quiet" aria-live="polite">{store.readOnly ? t.exReadOnly : t.exProgress(c.due, c.fresh, c.later)}</p>
         )}

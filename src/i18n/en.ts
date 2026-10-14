@@ -176,6 +176,10 @@ export const en = {
   exWhereHelp: (n: number) => `Points lost per game by your moves, over your last ${n === 1 ? 'reviewed game' : `${f.num(n)} reviewed games`}. Opening: the first 50 moves; endgame: from move 151 (19×19, scaled on smaller boards).`,
   exReset: 'Delete the exercises', exResetAsk: 'Delete all your exercises and their statistics?',
   exReadOnly: 'These exercises were saved by a newer Masame: practice here won’t be recorded.',
+  // automatic review
+  autoDone: (n: number) => (n ? `Review done: ${f.plural(n, 'key moment joins', 'key moments join')} your exercises.` : 'Review done: no decisive moment.'),
+  autoPending: (n: number) => `Automatic review: ${f.plural(n, 'game', 'games')} waiting`,
+  autoRunning: (pct: number) => `Automatic review: in progress… ${f.pct(pct)}`,
   // OGS (online-go.com)
   // OGS sheet: tabs, play, my games, watch
   ogsTabs: { play: 'Play', games: 'My games', watch: 'Watch' }, ogsTabsLabel: 'OGS',
