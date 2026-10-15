@@ -74,6 +74,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
 
   /** Fin de partie: a yose session, its positions found now in the library's endgames (the player watches the count). */
   const yoseSession = () => {
+    if (blocked) return
     start({ only: null, keys: [], yose: {}, gen: 0 })
     const id = gen.current, live = () => gen.current === id
     setThinking(true)
@@ -163,7 +164,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
   const live = ld && positionOf(x).board.get(chain[0]) === x.sign // the side to play saves its group (else kills)
   const replaying = !!run?.more.length
   const board: Partial<Board3DState> = !run || !x || !pos ? { interactive: false, marks: null } : {
-    signMap: pos.board.signMap, last: pos.lastMove?.vertex ?? null, toPlay: pos.toPlay, ownership: null, counting: null, focus: ld ? boxOf(chain, x.size) : null,
+    signMap: pos.board.signMap, last: pos.lastMove?.vertex ?? null, toPlay: pos.toPlay, ownership: null, counting: null, focus: null, frame: ld ? boxOf(chain, x.size) : null,
     captures: { black: pos.board.getCaptures(1), white: pos.board.getCaptures(-1) }, interactive: !run.tried,
     marks: played && !replaying && (!run.tried || !pos.board.get(played)) ? [{ v: played, label: '×', tone: 'mistake' } as Mark] : [],
   }
