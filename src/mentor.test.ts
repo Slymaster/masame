@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { Game } from './game'
-import { BUDGET, Mentor, MENTOR_QUERY, threshold } from './mentor'
+import { BUDGET, Mentor, MENTOR_QUERY, MIN_VISITS, type Read, threshold } from './mentor'
 
-/** A mentor whose engine answers Black's lead `leads[cursor]` (or never, for `never`), counting the questions. */
-const fake = (leads: number[], o: { budget?: number; never?: number; fail?: boolean } = {}) => {
+/** A full search whose only candidate is the corner (never played below): the move is judged by comparing two searches. */
+const lead = (n: number): Read => ({ scoreLead: n, moves: [{ v: [0, 0], scoreLead: n, visits: 100 }] })
+/** A mentor whose engine answers `leads[cursor]` (a number: Black's lead) or never, for `never`, counting the questions. */
+const fake = (leads: (number | Read)[], o: { budget?: number; never?: number; fail?: boolean } = {}) => {
   const asked: number[] = []
   const m = new Mentor(g => {
     asked.push(g.cursor)
     if (o.fail) return Promise.reject(new Error('engine'))
-    return g.cursor === o.never ? new Promise<number>(() => {}) : Promise.resolve(leads[g.cursor])
+    const r = leads[g.cursor]
+    return g.cursor === o.never ? new Promise<Read>(() => {}) : Promise.resolve(typeof r === 'number' ? lead(r) : r)
   }, o.budget)
   return { m, asked }
 }
@@ -30,6 +33,22 @@ describe('the mentor', () => {
     expect(pass.m.stops).toBe(0)
     // 19×19 needs 4: 3.9 passes
     expect(await fake([3, -0.9]).m.check(at(19, [3, 3]))).toBeNull()
+  })
+
+  it('never stops the best move of the search before it, and reads a move it looked at inside that one search', async () => {
+    const best = fake([{ scoreLead: 0.5, moves: [{ v: [4, 4], scoreLead: 0.5, visits: 30 }] }, -10])
+    expect(await best.m.check(at(9, [4, 4]))).toBeNull()
+    expect(best.asked).toEqual([0, 1]) // the search after is asked side by side, and not used
+    // White's move, third choice: Black's lead 1 with the best, 4 with it, 3 points
+    const listed = fake([0, { scoreLead: 1, moves: [{ v: [6, 6], scoreLead: 1, visits: 60 }, { v: [2, 6], scoreLead: 2, visits: 20 }, { v: [4, 4], scoreLead: 4, visits: 3 }] }])
+    expect(await listed.m.check(at(9, [2, 2], [4, 4]))).toBeCloseTo(3)
+  })
+
+  it('compares two separate searches only when both read enough', async () => {
+    const thin = (n: number): Read => ({ scoreLead: n, moves: [{ v: [0, 0], scoreLead: n, visits: MIN_VISITS - 1 }] })
+    expect(await fake([thin(0), -10]).m.check(at(9, [4, 4]))).toBeNull()
+    expect(await fake([0, thin(-10)]).m.check(at(9, [4, 4]))).toBeNull()
+    expect(await fake([0, -10]).m.check(at(9, [4, 4]))).toBe(10)
   })
 
   it('reads the cost from the side that moved', async () => {
