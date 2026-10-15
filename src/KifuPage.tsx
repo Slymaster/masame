@@ -36,7 +36,9 @@ export function Kifu({ game, source, ranks, onClose }: { game: Game; source: str
   const names = [playerBlack || t.color(1), playerWhite || t.color(-1)]
   const date = game.root.data.DT?.[0]?.slice(0, 10) || today()
   const res = result ? readResult(result) : null
-  const title = `${names[0]}${ranks[0] ? ` ${ranks[0]}` : ''} – ${names[1]}${ranks[1] ? ` ${ranks[1]}` : ''}`
+  // the AI's name already carries its rank ("KataGo human 10k")
+  const named = (i: number) => ranks[i] && !names[i].endsWith(ranks[i]) ? `${names[i]} ${ranks[i]}` : names[i]
+  const title = `${named(0)} – ${named(1)}`
   const meta = [date, t.board(size, komi), res && [t.ended(res.winner, res.how, res.points), res.winner ? t.endedHow(res.how, res.points) : ''].filter(Boolean).join(' '), source]
     .filter(Boolean).join(' · ')
 
