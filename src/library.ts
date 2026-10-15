@@ -47,16 +47,17 @@ const queued = <T>(f: () => Promise<T>): Promise<T> => { const r = queue.catch((
 
 /** The game's SGF (null: unchanged) and its entry (null: unchanged); the entry also updates the store at once. */
 export function write(id: string, sgf: string | null, entry: Entry | null): Promise<void> {
-  if (entry) set(upsert(entries ?? [], entry))
+  if (entry) change(id, entry)
   return queued(() => call<void>('library_write', { id, sgf, entry }))
 }
-/** Merges fields into a stored entry (memory score, counted, rankRead…); unknown ids are ignored. */
+/** Merges fields into a stored entry (memory score, counted, rankRead…), loading the index first if needed; unknown ids are ignored. */
 export function patch(id: string, p: Partial<Omit<Entry, 'id'>>): Promise<void> {
-  const e = entries?.find(x => x.id === id)
+  if (!entries) return load().then(() => patch(id, p))
+  const e = entries.find(x => x.id === id)
   return e ? write(id, null, { ...e, ...p }) : Promise.resolve()
 }
 export function remove(id: string): Promise<void> {
-  if (entries) set(entries.filter(e => e.id !== id))
+  change(id, null)
   return queued(() => call<void>('library_delete', { id }))
 }
 export const setSidecar = (id: string, name: string, json: unknown) => queued(() => call<void>('library_sidecar_write', { id, name, json }))
@@ -65,8 +66,12 @@ export const setCurrent = (c: Current | null) => queued(() => call<void>('librar
 // ---------- the store (for useSyncExternalStore) ----------
 let entries: Entry[] | null = null // null: not loaded yet
 let loading: Promise<Entry[]> | null = null
+// Changes made before the index is loaded (null: removed), applied over it once it is: the list may predate them.
+const early = new Map<string, Entry | null>()
 const subs = new Set<() => void>()
 const set = (v: Entry[]) => { entries = v; subs.forEach(f => f()) }
+const applied = (xs: Entry[], id: string, e: Entry | null) => e ? upsert(xs, e) : xs.filter(x => x.id !== id)
+function change(id: string, e: Entry | null) { if (entries) set(applied(entries, id, e)); else early.set(id, e) }
 /** Newest first; an entry with the same id is replaced. */
 export const upsert = (xs: Entry[], e: Entry) => [e, ...xs.filter(x => x.id !== e.id)].sort((a, b) => b.date - a.date)
 export const subscribe = (f: () => void) => { subs.add(f); return () => { subs.delete(f) } }
@@ -74,7 +79,12 @@ export const get = () => entries
 /** Loads the index once (again after a failure). */
 export function load(): Promise<Entry[]> {
   if (entries) return Promise.resolve(entries)
-  return loading ??= listAll().then(xs => { set(xs); return xs }).finally(() => { loading = null })
+  return loading ??= listAll().then(xs => {
+    for (const [id, e] of early) xs = applied(xs, id, e)
+    early.clear()
+    set(xs)
+    return xs
+  }).finally(() => { loading = null })
 }
 
 /** A fresh id: the source's letter, the time and a random tail; an OGS game keeps its OGS id, a file its content hash. */

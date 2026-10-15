@@ -1,6 +1,7 @@
 mod backend;
 mod engine;
 mod failure;
+mod library;
 mod menu;
 mod networks;
 mod ogs;
@@ -412,7 +413,8 @@ fn set_language(app: AppHandle, labels: menu::Labels) -> Res<()> {
     Ok(())
 }
 
-/// The SGF size cap, in bytes; the webview caps the text it opens at the same figure (MAX_SGF in src/sgf.ts).
+/// The SGF size cap, in bytes; the webview caps the text it opens at the same figure (MAX_SGF in src/sgf.ts), and so
+/// does the library (library.rs).
 const MAX_SGF: u64 = 5 * 1024 * 1024;
 
 /// The existing files among a launch's arguments (how Windows and Linux pass an associated file), relative ones
@@ -466,6 +468,7 @@ pub fn run() {
         if let Some(w) = app.get_webview_window("main") { let _ = w.unminimize(); let _ = w.set_focus(); }
     }));
     builder
+        .manage(library::Library::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
@@ -492,7 +495,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
             engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, update_check, update_install, take_opened,
-            ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history
+            ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history,
+            library::library_list, library::library_read, library::library_write, library::library_delete,
+            library::library_sidecar_read, library::library_sidecar_write, library::library_current_read, library::library_current_write
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
