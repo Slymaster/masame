@@ -415,7 +415,7 @@ body[data-drop]::after {
 .ex .rc-now { stroke: var(--card) }
 
 /* ---------- the four doors and their sheets (Apprendre, Mes parties, Partager) ---------- */
-.brand { gap: 2px; flex-wrap: wrap; row-gap: 10px }
+.brand { flex: none; gap: 2px; flex-wrap: wrap; row-gap: 10px } /* flex: none: a tall card body must not squash the doors' row */
 /* the four doors: a row of their own under the seal, the title and the eye, each named */
 .brand::after { content: ""; order: 2; flex-basis: 100% }
 .card.off .brand::after { content: none }
