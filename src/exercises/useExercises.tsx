@@ -11,6 +11,7 @@ import { note as journal } from '../journal'
 import { review, type Rating } from '../joseki/fsrs'
 import { record } from '../joseki/store'
 import { gtp, type Analysis } from '../katago'
+import * as library from '../library'
 import { boxOf, ldVerdict, mean, PLIES, reached } from '../tsumego/mine'
 import { findYose, libraryGames, YOSE_N, YOSE_QUERY } from '../tsumego/yose'
 import { rankName } from '../rank'
@@ -143,8 +144,10 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
   // started at once: no flash of "nothing left"; the find-better deck picks up where it was left
   const toggle = () => { if (open) setOpen(false); else if (session.only === 'find' && !session.keys && run) { if (!blocked) setOpen(true) } else start(DECK) }
   const close = () => setOpen(false)
-  const add = (game: Game, moments: Moment[], leads: (number | undefined)[], me: Sign | 0) =>
-    setStore(s => s.readOnly ? s : { ...s, p: addReview(s.p, game, moments, leads, me, Date.now()) })
+  const add = (game: Game, moments: Moment[], leads: (number | undefined)[], me: Sign | 0) => {
+    const id = library.idOf(game), date = id ? library.get()?.find(e => e.id === id)?.date : undefined // when it was played, for the monthly letter
+    setStore(s => s.readOnly ? s : { ...s, p: addReview(s.p, game, moments, leads, me, Date.now(), date) })
+  }
   /** New cards from elsewhere (the tsumego miner), known keys untouched. */
   const addItems = (xs: Record<string, Exercise>) =>
     setStore(s => s.readOnly ? s : { ...s, p: { ...s.p, items: { ...Object.fromEntries(Object.entries(xs).filter(([k]) => !(k in Object.prototype))), ...s.p.items } } })

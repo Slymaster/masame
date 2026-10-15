@@ -51,6 +51,15 @@ describe('the facts of a month', () => {
     expect(letterLines(f, fr)).toEqual(['Rien ce mois-ci.'])
     expect(letterLines(f, en)).toEqual(['Nothing this month.'])
   })
+  it('a month without a game says only so, whatever else it held', () => {
+    const quiet: Sources = { entries: [], played: [], ranks: [], counts: [{ t: at(2), err: 2 }], journal: [ev(at(6), 'tsumego', true, 't1'), ev(at(2, 9, 21), 'ritual', true)] }
+    expect(letterLines(monthFacts(2026, 9, quiet), fr)).toEqual(['Rien ce mois-ci.'])
+  })
+  it('a game reviewed in October but played in September counts where it was played', () => {
+    const late: Sources = { ...fixture, played: [{ k: 'a', t: at(5), loss: [3, 12, 4] }, { k: 'z', t: at(6), d: at(28, 8), loss: [40, 0, 0] }] }
+    expect(monthFacts(2026, 9, late).phase).toEqual({ p: 1, lost: 12 })
+    expect(monthFacts(2026, 8, late).phase).toEqual({ p: 0, lost: 40 })
+  })
   it('a first month takes its rank from its own first reading', () => {
     expect(monthFacts(2026, 8, fixture).rank).toEqual({ from: 14, to: 14 })
   })

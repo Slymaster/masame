@@ -513,5 +513,5 @@ section > .seg + .ogs-input { display: block; width: 100% }
 .letter p { margin: 0; font: italic 400 19px/1.35 var(--f-title) }
 .letter .btn { align-self: flex-start; margin-top: 6px; color: var(--pw-ink); border-color: rgba(43, 29, 14, .28) }
 .letter-nav { display: flex; justify-content: space-between; margin-top: 10px }
-.letter-nav .link { font-size: 14px }
+.letter-nav .link { font-size: 16px; color: var(--ink) }
 .letter-nav .next { margin-left: auto }

@@ -16,7 +16,7 @@ export interface Facts {
   files: number // games from files gone back over (a file enters the library when reviewed, replayed or guessed)
   wins: { won: number; of: number } | null // finished games against the AI
   rank: { from: number; to: number } | null // the rank read (an index) at the month's start and end
-  phase: { p: 0 | 1 | 2; lost: number } | null // where the reviewed games of the month lost the most, per game
+  phase: { p: 0 | 1 | 2; lost: number } | null // where the games played in the month (else reviewed in it, date unknown) lost the most, per game
   joseki: number; fuseki: number // sequences answered right for the first time this month
   tsumego: number // distinct problems solved
   counting: { n: number; err: number } | null // positions counted, the median error
@@ -56,7 +56,7 @@ export function monthFacts(y: number, m: number, s: Sources): Facts {
   const ai = games.filter(e => e.source === 'ai' && e.result && e.me !== 0)
   const won = ai.filter(e => e.result![0] === (e.me === 1 ? 'B' : 'W')).length
   const before = s.ranks.filter(r => r.t < from), upto = s.ranks.filter(r => r.t < to), month = upto.filter(r => r.t >= from)
-  const played = s.played.filter(g => inM(g.t)), where = whereLost(played), top = Math.max(...where)
+  const played = s.played.filter(g => inM(g.d ?? g.t)), where = whereLost(played), top = Math.max(...where)
   const counts = s.counts.filter(c => inM(c.t))
   const events = s.journal.filter(e => inM(e.t))
   const solved = new Set(events.filter(e => e.k === 'tsumego' && e.ok).map(e => e.id ?? e.t))
@@ -75,7 +75,7 @@ export function monthFacts(y: number, m: number, s: Sources): Facts {
 
 /** The months to show, newest first: this month, then back to the oldest with anything in it (at most `cap`). */
 export function months(s: Sources, now: number, cap = 12): { y: number; m: number }[] {
-  const ts = [...s.entries.map(e => e.date), ...s.journal.map(e => e.t), ...s.played.map(g => g.t), ...s.ranks.map(r => r.t), ...s.counts.map(c => c.t)]
+  const ts = [...s.entries.map(e => e.date), ...s.journal.map(e => e.t), ...s.played.map(g => g.d ?? g.t), ...s.ranks.map(r => r.t), ...s.counts.map(c => c.t)]
   const d = new Date(now), oldest = ts.length ? Math.min(now, ...ts) : now, o = new Date(oldest)
   const span = (d.getFullYear() - o.getFullYear()) * 12 + d.getMonth() - o.getMonth()
   // shortcut: older months than `cap` are left out; a "see older letters" link if players ever ask for them
@@ -90,9 +90,10 @@ export function loadCounts(st: Pick<Storage, 'getItem'> = localStorage): CountEr
   } catch { return [] }
 }
 
-/** One sentence per fact, in Masame's voice; a month with nothing in it says only so. */
+/** One sentence per fact, in Masame's voice; a month without a game says only so (the spec: « Rien ce mois-ci. »). */
 export function letterLines(f: Facts, d: Dict): string[] {
   const l = d.letter, p = f.played
+  if (!(p.ai + p.ogs + p.two + p.position + f.files)) return [l.nothing]
   const lines = [
     p.ai + p.ogs + p.two + p.position && l.played(p),
     f.files && l.files(f.files),
@@ -105,5 +106,5 @@ export function letterLines(f: Facts, d: Dict): string[] {
     f.counting && l.counting(f.counting.n, f.counting.err),
     f.ritual && l.ritual(f.ritual.days, f.ritual.run),
   ].filter((x): x is string => !!x)
-  return lines.length ? lines : [l.nothing]
+  return lines
 }

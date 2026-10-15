@@ -25,8 +25,9 @@ export interface Exercise {
   chain?: string // the chain at stake
   n?: number // the move number the position was taken at
 }
-/** A reviewed game: points your moves lost in the opening, middle game and endgame. */
-export interface Played { k: string; t: number; loss: number[] }
+/** A reviewed game: points your moves lost in the opening, middle game and endgame; t: when reviewed, d: when played (its
+ *  library entry's date, absent when the game isn't in the library or for reviews kept before v0.5). */
+export interface Played { k: string; t: number; loss: number[]; d?: number }
 export interface Deck { v: 1; items: Record<string, Exercise>; cards: Record<string, Card>; day: string; fresh: number; games: Played[] }
 export interface StoredDeck { p: Deck; readOnly: boolean }
 export const KEY = 'masame.exercises', BAD = 'masame.exercises.bad', GAMES = 20
@@ -65,12 +66,12 @@ export function recordKey(game: Game): string {
 }
 
 /** New exercises for a review's moments (known ones untouched) and, when `me` is known, where its moves lost points. */
-export function addReview(d: Deck, game: Game, moments: Moment[], leads: (number | undefined)[], me: Sign | 0, now: number): Deck {
+export function addReview(d: Deck, game: Game, moments: Moment[], leads: (number | undefined)[], me: Sign | 0, now: number, date?: number): Deck {
   const items = { ...d.items }
   for (const m of moments) { const x = exerciseOf(game, m, now); const k = keyOf(x); if (!Object.hasOwn(items, k)) items[k] = x }
   if (!me) return { ...d, items }
   const k = recordKey(game), moves = game.moves.slice(0, reviewEnd(game))
-  return { ...d, items, games: [...d.games.filter(g => g.k !== k), { k, t: now, loss: phaseLosses(leads, moves, me, game.info.size) }].slice(-GAMES) }
+  return { ...d, items, games: [...d.games.filter(g => g.k !== k), { k, t: now, loss: phaseLosses(leads, moves, me, game.info.size), ...date !== undefined && { d: date } }].slice(-GAMES) }
 }
 
 const fresh = (d: Deck, now: number) => (d.day === today(now) ? d.fresh : 0)
@@ -146,7 +147,7 @@ export const isItem = (x: unknown) => obj(x) && num(x.t) && num(x.komi) && num(x
   && ['b', 'w', 'moves', 'better', 'punish', 'played'].every(k => fits(x[k], x.size as number)) && (x.played as string).length === 2
   && [x.b, x.w].every(s => !lineOf(s as string).includes(null)) // setup stones are never passes
   && (x.kind === undefined || x.kind === 'ld' && fits(x.chain, x.size as number) && !!(x.chain as string) && Number.isInteger(x.n) && (x.n as number) > 0)
-const isGame = (g: unknown) => obj(g) && typeof g.k === 'string' && num(g.t) && Array.isArray(g.loss) && g.loss.length === 3 && g.loss.every(num)
+const isGame = (g: unknown) => obj(g) && typeof g.k === 'string' && num(g.t) && Array.isArray(g.loss) && g.loss.length === 3 && g.loss.every(num) && (g.d === undefined || num(g.d))
 
 export function load(st: Storage = localStorage): StoredDeck {
   let raw: string | null = null
