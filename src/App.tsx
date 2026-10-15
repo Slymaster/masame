@@ -41,7 +41,7 @@ import { useToday } from './today/useToday'
 import { MonthLetters } from './MonthLetters'
 import { canGuess, useClassics } from './classics/useClassics'
 import { LearnSheet, OgsRating, RankProgress, storeTab, WhereLost, type DeckRow, type ProgressSection } from './LearnSheet'
-import { GamesSheet } from './GamesSheet'
+import { GamesSheet, named } from './GamesSheet'
 import { ShareSheet } from './ShareSheet'
 import { menuEnabled } from './menu'
 import * as library from './library'
@@ -1115,7 +1115,7 @@ export function App() {
   // [action id, label, action]: the id tells refocus whether the same action is still offered
   type Link = [string, string, () => void]
   const withNote = (text: string) => [text, note?.(t)].filter(Boolean).join(' ')
-  const aiMoved = nextAi && nextAi !== bot?.rank ? nextAi : null
+  const aiMoved = bot && nextAi && nextAi !== bot.rank ? nextAi : null // only on a game against the AI: a review may land while another game shows
   const mentorLine = mt.mentor ? t.mentorStops(mt.stops) : null
   // on the result card's title line, in ink, two lines at most: one thing at a time, the latest note (the review, the memory
   // score…) or else the mentor's stops; the AI's next level stays in its chip
@@ -1292,10 +1292,11 @@ export function App() {
           <p className="note" aria-live="polite" tabIndex={-1}>
             {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message} className={message === cardLine ? 'res' : undefined}>
               {message === cardLine ? <>
-                {/* the result as a score sheet: winner's stone, who and how, the AI's next level; read in that order */}
+                {/* the result as a score sheet: winner's stone, who and how, the AI's next level; read in that order. With a note, how it
+                    ended gives way (the stone and the player cards still say it): two lines of words at most */}
                 {res.winner !== 0 && <span className={`stone ${res.winner === 1 ? 'b' : 'w'}`} aria-hidden="true">{t.resultShort(re)}</span>}
                 <span className="txt"><b>{t.ended(res.winner, res.how, res.points)}{said && <span className="said"> · {said}</span>}</b>{' '}
-                  <small>{res.winner !== 0 && t.endedHow(res.how, res.points)}</small></span>
+                  <small>{!said && res.winner !== 0 && t.endedHow(res.how, res.points)}</small></span>
                 {aiMoved && <span className="chip">{t.aiLevel}{' '}<b>{bot && <i>{bot.rank} →</i>} {aiMoved}</b></span>}
               </> : <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>}
               {!anLine && links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>
@@ -1376,7 +1377,7 @@ export function App() {
                 return (
                   <div key={c} role="group" aria-label={t.color(c)}
                     className={`pc ${c === 1 ? 'b' : 'w'}${toPlay === c && playing ? ' on' : ''}${thinking && bot?.sign === c ? ' thinking' : ''}`}>
-                    <div className="lbl"><span className="nm">{bot ? c === bot.sign ? bot.era ? t.masterOf(bot.era) : t.ai : t.you : (c === 1 ? playerBlack : playerWhite) || t.color(c)}</span>{rank && <span className="rk">{rank}</span>}</div>
+                    <div className="lbl"><span className="nm">{bot ? c === bot.sign ? bot.era ? t.masterOf(bot.era) : t.ai : t.you : (shownEntry?.source === 'ai' && c === -shownEntry.me ? named(shownEntry, c === 1 ? shownEntry.black : shownEntry.white).name : c === 1 ? playerBlack : playerWhite) || t.color(c)}</span>{rank && <span className="rk">{rank}</span>}</div>
                     <div aria-live={countingOpen ? 'polite' : undefined}>
                       <div className="state" aria-live={online ? 'polite' : undefined}>{stateOf(c)}</div>
                       {online?.clock && !result ? <div className="sub"><Clock read={now => ogs.clockOf(online.clock!, c, now, ogs.drift(), online.pausedSince)}

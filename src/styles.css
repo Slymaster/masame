@@ -165,15 +165,9 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 }
 .board-wrap > .note .link { font: inherit; color: var(--accent); text-decoration-color: currentColor; white-space: nowrap; margin-left: .45em }
 .board-wrap > .note .link:hover { color: var(--accent-hover) }
-/* a narrow window beside the card: smaller type, and the links beside two lines of text at most, so they are never cut */
-@container (max-width: 460px) {
-  .board-wrap > .note > span { display: inline-flex; align-items: center; gap: .45em; font-size: 16.5px }
-  .board-wrap > .note > :not(.res) .txt { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden }
-  .board-wrap > .note .link { margin-left: 0 }
-}
 /* the result, as a score sheet: the winner's stone, who and how, the AI's next level, then the review as the one filled button;
    at most 64px tall (the room under the board): the title never wraps nor shrinks, the sub line (how it ended) wraps in what
-   is left; the mentor's stops and the review or memory notice follow the title in ink and wrap, never cut (room: 200px) */
+   is left, and gives way to a note; the mentor's stops and the review or memory notice follow the title in ink and wrap, never cut (room: 200px) */
 .board-wrap > .note > .res {
   display: inline-flex; align-items: center; gap: 12px; max-width: 100%; max-height: none; overflow: visible; padding: 5px 6px 5px 8px; border: 0;
   border-radius: 999px; box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--rule); font: 500 12px/1.2 var(--f-ui); text-align: left; text-wrap: wrap
