@@ -200,6 +200,11 @@ describe('tsumego in the deck, and phase sessions', () => {
     expect(counts(deck(), NOW)).toMatchObject({ fresh: 5 })
     expect(nextExercise(deck(), NOW, null, 'ld')).toBe('c')
     expect(hand(deck(), NOW, 9, null, 'find')).toEqual(['a', 'b'])
+    // 8 of each kind, a quota of 10: the rows share it, 5 and 5; 3 already opened today: 4 and 3
+    const many: Deck = { ...emptyDeck(), items: Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`k${i}`, i < 8 ? ex({ t: YESTERDAY, n: 3 + i }) : ld({ n: 3 + i })])) }
+    expect([counts(many, NOW, 'find').fresh, counts(many, NOW, 'ld').fresh]).toEqual([5, 5])
+    const opened = { ...many, day: today(NOW), fresh: 3 }
+    expect([counts(opened, NOW, 'find').fresh, counts(opened, NOW, 'ld').fresh, counts(opened, NOW).fresh]).toEqual([4, 3, 7])
   })
   it('a phase session takes that phase only, due and new first, then the soonest due, mixed', () => {
     expect(sessionKeys(deck(), NOW, 8, 1, () => 0.999).sort()).toEqual(['b', 'c', 'e', 'f'])

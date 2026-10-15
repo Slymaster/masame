@@ -110,12 +110,16 @@ export function sessionKeys(d: Deck, now: number, n: number, phase: 0 | 1 | 2, r
   return keys
 }
 
-/** Due cards, new exercises available today (within the quota), new ones made today (from tomorrow). */
+/** Due cards, new exercises available today (within the quota), new ones made today (from tomorrow). The two rows
+ *  (find-better, tsumego) share one quota: half each, the half one row can't use going to the other, so that together
+ *  they never promise more new cards than today opens. */
 export function counts(d: Deck, now: number, only: Only = null) {
   const m = midnight(now), news = isNew(d, only), later = news.filter(([, x]) => x.t >= m).length
+  const q = Math.max(0, NEW_PER_DAY - fresh(d, now)), ready = (o: Only) => isNew(d, o).filter(([, x]) => x.t < m).length
+  const find = Math.min(ready('find'), Math.max(Math.ceil(q / 2), q - ready('ld')))
   return {
     due: Object.entries(d.cards).filter(([k, c]) => Object.hasOwn(d.items, k) && c.due <= now && kept(only)(d.items[k])).length,
-    fresh: Math.min(Math.max(0, NEW_PER_DAY - fresh(d, now)), news.length - later), later,
+    fresh: only === null ? Math.min(q, news.length - later) : only === 'find' ? find : Math.min(ready('ld'), q - find), later,
   }
 }
 

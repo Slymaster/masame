@@ -105,6 +105,14 @@ describe('mining a game', () => {
     const borderline = async (g: Game, deep: boolean) =>
       ({ scoreLead: 0, pv: [[2, 0]] as Vertex[], ownership: own(19, B3, g.toPlay === 1 ? 0.9 : deep ? -0.45 : -0.9) })
     expect(await mineGame(game, [], game.moves.length, 'Bob', borderline, () => true, NOW, () => 0.1)).toEqual([])
+    // still read by the deep pair, but inside the stricter margin (−0.6): no problem either
+    const close = async (g: Game, deep: boolean) =>
+      ({ scoreLead: 0, pv: [[2, 0]] as Vertex[], ownership: own(19, B3, g.toPlay === 1 ? 0.9 : deep ? -0.6 : -0.9) })
+    expect(await mineGame(game, [], game.moves.length, 'Bob', close, () => true, NOW, () => 0.1)).toEqual([])
+    // found only by the deep pair: both reads must agree
+    const late = async (g: Game, deep: boolean) =>
+      ({ scoreLead: 0, pv: [[2, 0]] as Vertex[], ownership: own(19, B3, g.toPlay === 1 ? 0.9 : deep ? -0.9 : -0.3) })
+    expect(await mineGame(game, [], game.moves.length, 'Bob', late, () => true, NOW, () => 0.1)).toEqual([])
   })
   it('stops when the engine is wanted elsewhere', async () => {
     const game = loadSgf(`(;SZ[19]${Array.from({ length: 60 }, (_, i) => `;${i % 2 ? 'W' : 'B'}[${'abcdefghijklmnopqrs'[i % 19]}${'cdefghijkl'[Math.floor(i / 19)]}]`).join('')})`)
