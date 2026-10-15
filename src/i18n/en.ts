@@ -462,7 +462,7 @@ export const en = {
   memDone: (r: number, n: number, h: number) => `${f.plural(r, 'move', 'moves')} replayed from memory out of ${f.num(n)}, ${f.plural(h, 'help', 'helps')}`,
   memStopped: (at: number) => `Stopped at move ${at}.`,
   memAgain: 'Start again', memFound: 'found', memHelps: 'helps', memLeft: 'to go',
-  memHelpText: 'Place the moves in order, both sides. A wrong stone trembles and goes; a second miss shows the move.',
+  memHelpText: 'Place the moves in order, both sides. A second miss shows the move.',
   libraryShown: 'A game from your library.',
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {

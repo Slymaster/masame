@@ -455,7 +455,7 @@ body[data-drop]::after {
 .lib-who { display: flex; align-items: baseline; min-width: 0; overflow: hidden }
 .lib-who .who { display: flex; align-items: baseline; font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.2; white-space: nowrap }
 .lib-who .rk { margin-left: 6px; font-size: 14px }
-.lib-res { flex: none; font-size: 16px; color: var(--ink); font-variant-numeric: tabular-nums }
+.lib-res { flex: none; font-size: 18px; color: var(--ink); font-variant-numeric: tabular-nums }
 .lib-sub { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums }
 .lib-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px }
 .lib-badges i { font-style: normal; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--well); color: var(--ink) }
@@ -513,5 +513,5 @@ section > .seg + .ogs-input { display: block; width: 100% }
 .letter p { margin: 0; font: italic 400 19px/1.35 var(--f-title) }
 .letter .btn { align-self: flex-start; margin-top: 6px; color: var(--pw-ink); border-color: rgba(43, 29, 14, .28) }
 .letter-nav { display: flex; justify-content: space-between; margin-top: 10px }
-.letter-nav .link { font-size: 16px; color: var(--ink) }
+.letter-nav .link, .ed .link, .phases .link { font-size: 16px; color: var(--ink) } /* an action the player looks for, not a footnote */
 .letter-nav .next { margin-left: auto }

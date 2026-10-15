@@ -232,11 +232,11 @@ export function useClassics({ view, open, setOpen, blocked, canAnalyze, ask, set
         <div className="field"><span>{t.clStart}</span>
           <Seg label={t.clStart} value={run.from} options={STARTS.map(s => [s, t.move(s)])} set={from => setRun({ ...run, from, at: startOf(g, from) })} />
         </div>
-        {best && <p className="quiet">{t.clBestLine(best.found, best.total)}</p>}
+        {best && <p className="say">{t.clBestLine(best.found, best.total)}</p>}
         <div className="opts"><button className="btn accent" onClick={begin} disabled={!canAnalyze}>{t.clBegin}</button></div>
       </> : <>
         <p className="say" aria-live="polite">{run.score.total > 0 && t.clScore(run.score.found, run.score.total)}</p>
-        {avg !== null && <p className="quiet">{t.clAverage(avg)}</p>}
+        {avg !== null && <p className="say">{t.clAverage(avg)}</p>}
         <div className="bar" role="progressbar" aria-label={t.clProgress} aria-valuenow={shownAt} aria-valuemin={0} aria-valuemax={g.moves.length}>
           <i style={{ width: `${shownAt / g.moves.length * 100}%` }} />
         </div>

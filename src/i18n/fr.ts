@@ -462,7 +462,7 @@ export const fr: Dict = {
   memDone: (r: number, n: number, h: number) => `${f.plural(r, 'coup rejoué', 'coups rejoués')} de mémoire sur ${f.num(n)}, ${f.plural(h, 'aide', 'aides')}`,
   memStopped: (at: number) => `Arrêté au coup ${at}.`,
   memAgain: 'Recommencer', memFound: 'retrouvés', memHelps: 'aides', memLeft: 'à poser',
-  memHelpText: 'Pose les coups dans l’ordre, pour les deux camps. Une pierre fausse tremble et s’en va ; au second essai manqué, le coup s’allume.',
+  memHelpText: 'Pose les coups dans l’ordre, pour les deux camps. Au second essai manqué, le coup s’allume.',
   libraryShown: 'Une partie de ta bibliothèque.',
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {

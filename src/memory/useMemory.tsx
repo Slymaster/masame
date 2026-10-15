@@ -45,7 +45,7 @@ export function useMemory({ view, open, setOpen, blocked, onEnd }: {
       store(s)
       const r = s.run, n = total(s.rec)
       onEnd(d => `${d.memStopped(s.rec.moveNumber(r.k) + 1)} ${d.memDone(r.recalled, n, r.helps)}.`)
-    }
+    } else if (s?.saved) { const r = s.run, n = total(s.rec); onEnd(d => `${d.memDone(r.recalled, n, r.helps)}.`) } // a finished run: its score stays said
     setS(null); setOpen(false)
   }
   // the second miss: the right move lights up, then is placed
@@ -100,7 +100,7 @@ export function useMemory({ view, open, setOpen, blocked, onEnd }: {
         <li><b>{run.recalled}</b><span>{t.memFound}</span></li><li><b>{run.helps}</b><span>{t.memHelps}</span></li><li><b>{n - rec.moveNumber(run.k)}</b><span>{t.memLeft}</span></li>
       </ul>
       <Timeline g={rec} floor={0} go={() => {}} auto={false} toggleAuto={() => {}} live relocate={() => {}} />
-      <p className="quiet">{t.memHelpText}</p>
+      <p className="say">{t.memHelpText}</p>
     </section>
   )
   const acts = <>
