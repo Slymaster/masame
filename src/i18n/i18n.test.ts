@@ -25,6 +25,19 @@ describe('dictionaries', () => {
   })
 })
 
+describe('result letters', () => {
+  afterEach(() => setLang('fr'))
+  const all = ['B+R', 'W+T', 'B+F', 'W+3.5', 'B+0.5', 'b+r', '0', 'Void', '?', 'B+']
+  it('read N(oir), B(lanc) and a decimal comma in French', () => {
+    setLang('fr')
+    expect(all.map(t.resultShort)).toEqual(['N+R', 'B+T', 'N+F', 'B+3,5', 'N+0,5', 'N+r', '0', 'Annulée', '?', 'N+'])
+  })
+  it('stay standard SGF in English', () => {
+    setLang('en')
+    expect(all.map(t.resultShort)).toEqual(all)
+  })
+})
+
 describe('language setting', () => {
   it('is English unless the user chose one in the UI', () => {
     expect(storedLang({})).toBe('en')

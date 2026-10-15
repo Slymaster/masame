@@ -41,8 +41,8 @@ export function outcome(e: Entry): string {
   const re = e.result
   if (!re) return t.lbUnfinished
   if (re === '0' || /^(draw|jigo)/i.test(re)) return t.lbDraw
-  if (!e.me) return re
-  return `${re[0] === (e.me === 1 ? 'B' : 'W') ? t.lbWon : t.lbLost} · ${re}`
+  if (!e.me) return t.resultShort(re)
+  return `${re[0] === (e.me === 1 ? 'B' : 'W') ? t.lbWon : t.lbLost} · ${t.resultShort(re)}`
 }
 /** Finished OGS games not in the library yet: opening one imports it. */
 export const notImported = (rows: ogs.GameRow[], xs: Entry[]) => rows.filter(g => !xs.some(e => e.ogsId === g.id))
@@ -136,7 +136,7 @@ export function GamesSheet({ onClose, opener, onResume, onOpen, onImport, onImpo
               ? notImported(done.rows, entries ?? []).map(g => (
                 <button key={g.id} className="game-row" onClick={() => onImportOgs(g.id)}>
                   <span className="who"><span className="nm">{g.opponent.username}</span>{g.opponent.rank && <span className="rk">{g.opponent.rank}</span>}</span>
-                  <span className="dim">{[`${g.size}×${g.size}`, g.result, t.date(g.date)].filter(Boolean).join(' · ')}</span>
+                  <span className="dim">{[`${g.size}×${g.size}`, g.result && t.resultShort(g.result), t.date(g.date)].filter(Boolean).join(' · ')}</span>
                 </button>))
               : !done.more && <p className="say">{t.gamesOgsAllKept}</p>)}
             {loading && <p className="say">{t.ogsLoading}</p>}

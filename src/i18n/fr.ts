@@ -114,6 +114,9 @@ export const fr: Dict = {
   gamesInAppOnly: 'Tes parties sont gardées dans l’application.', gamesImport: 'Importer un SGF…',
   gamesOgsFinished: 'Terminées sur OGS, pas encore gardées', gamesOgsAllKept: 'Toutes tes parties OGS terminées sont déjà ici.',
   lbWon: 'Gagnée', lbLost: 'Perdue', lbDraw: 'Nulle', lbUnfinished: 'Inachevée',
+  /** Un RE SGF lu en français : N(oir), B(lanc) et la virgule décimale ("B+R" → "N+R", "W+3.5" → "B+3,5"). */
+  resultShort: (re: string) => /^void$/i.test(re.trim()) ? 'Annulée'
+    : re.trim().replace(/^([BW])\+(.*)$/i, (_, c: string, x: string) => `${c.toUpperCase() === 'B' ? 'N' : 'B'}+${x.replace('.', ',')}`),
   lbPlayedLike: (r: string) => `joué comme un ${r}`, lbMoments: (n: number) => f.plural(n, 'moment', 'moments'),
   lbMemory: (r: number, n: number) => `mémoire ${f.num(r)}/${f.num(n)}`, lbCounted: 'comptée',
   ritualWaiting: 'le rituel du jour t’attend', rankNone: 'Ton rang apparaît dès qu’une de tes parties est revue.', work: 'Travailler',

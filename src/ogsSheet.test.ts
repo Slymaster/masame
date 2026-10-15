@@ -87,5 +87,7 @@ describe('Mes parties', () => {
     setLang('en')
     expect(xs.map(outcome)).toEqual(['Won · B+R', 'Lost · B+4.5', 'Draw', 'Unfinished', 'Unfinished'])
     expect(outcome({ ...xs[2], result: 'W+R' })).toBe('W+R')
+    setLang('fr')
+    expect(xs.slice(0, 2).map(outcome)).toEqual(['Gagnée · N+R', 'Perdue · N+4,5'])
   })
 })
