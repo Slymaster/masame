@@ -1329,19 +1329,20 @@ export function App() {
                 </div>
                 {master ? <>
                   <Stepper label={t.era} value={String(settings.era)} step={d => set('era', stepEra(settings.era, -d))} names={[t.earlier, t.later]} />
-                  <p className="quiet">{t.eraHelp}</p>
+                  <p className="say">{t.eraHelp}</p>
                 </> : <Stepper label={t.aiLevel} value={settings.aiRank} step={d => propose({ aiRank: stepRank(settings.aiRank, d) })} />}
                 <Stepper label={t.handicap} value={t.handicapStones(settings.handicap)} step={d => set('handicap', stepHandicap(settings.handicap, -d))} names={[t.fewerStones, t.moreStones]} />
                 {settings.handicap > 0 && settings.handicap === proposeHandicap(settings.myRank, master ? MASTER_RANK : settings.aiRank, nextSize)
-                  && <p className="quiet">{master ? t.eraHandicap(settings.handicap) : t.handicapProposed}</p>}
+                  && <p className={master ? 'say' : 'quiet'}>{master ? t.eraHandicap(settings.handicap) : t.handicapProposed}</p>}
                 <details className="more">
                   <summary>{t.aiSettings}</summary>
                   <Stepper label={t.myLevel} value={settings.myRank} step={d => { const v = stepRank(settings.myRank, d); propose({ myRank: v, aiRank: v }) }} />
                   <Switch label={t.autoAdjust} on={settings.autoAdjust} toggle={() => set('autoAdjust', !settings.autoAdjust)} title={t.autoAdjustHelp} />
                   <Switch label={t.thinkTime} on={settings.delay} toggle={() => set('delay', !settings.delay)} />
                   <Switch label={t.botResign} on={settings.botResign} toggle={() => set('botResign', !settings.botResign)} />
-                  <Switch label={t.mentor} on={settings.mentor && canAnalyze} toggle={() => set('mentor', !settings.mentor)} disabled={!canAnalyze} />
-                  <p className="quiet">{canAnalyze ? t.mentorHelp : t.mentorNeedsNet}</p>
+                  {/* without an analysis network there is no AI to play, so the sheet shows the call to install one instead */}
+                  <Switch label={t.mentor} on={settings.mentor} toggle={() => set('mentor', !settings.mentor)} />
+                  <p className="say">{t.mentorHelp}</p>
                 </details>
               </> : cta)}
               <div className="field">

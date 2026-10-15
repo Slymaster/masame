@@ -352,6 +352,7 @@ export class Board3D {
   private terr!: { 1: THREE.InstancedMesh; [-1]: THREE.InstancedMesh }
   private ghost!: THREE.Mesh
   private ghostMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
+  private pendingMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
   private markers!: { 1: THREE.Mesh; [-1]: THREE.Mesh }
   private boardMat!: THREE.MeshPhysicalMaterial
   /** Pale golden kaya (the scan, barely graded): readability comes from the stones' contact shadow and rim, not dark wood. */
@@ -631,6 +632,11 @@ export class Board3D {
     this.ghostMats = {
       1: new THREE.MeshPhysicalMaterial({ color: 0x18181b, roughness: 0.45, transparent: true, opacity: 0.5, depthWrite: false }),
       [-1]: new THREE.MeshPhysicalMaterial({ color: 0xf4efe4, roughness: 0.35, transparent: true, opacity: 0.6, depthWrite: false }),
+    }
+    // the stone the mentor stopped: denser than the hover ghost, so it still reads as a black or white stone on the wood
+    this.pendingMats = {
+      1: new THREE.MeshPhysicalMaterial({ color: 0x18181b, roughness: 0.42, clearcoat: 0.3, transparent: true, opacity: 0.72, depthWrite: false }),
+      [-1]: new THREE.MeshPhysicalMaterial({ color: 0xfdfbf6, roughness: 0.3, clearcoat: 0.5, transparent: true, opacity: 0.78, depthWrite: false }),
     }
     this.ghost = new THREE.Mesh(this.geoB, this.ghostMats[1]); this.ghost.visible = false; this.ghost.renderOrder = 3
     scene.add(this.ghost)
@@ -1332,7 +1338,7 @@ export class Board3D {
     this.ghost.visible = ok
     if (ok && st && h) {
       this.ghost.geometry = sign === 1 ? this.geoB : this.geoW
-      this.ghost.material = this.ghostMats[sign === 1 ? 1 : -1]
+      this.ghost.material = (p ? this.pendingMats : this.ghostMats)[sign === 1 ? 1 : -1]
       this.ghost.position.set(gx(N, h[0]), SH, gz(N, h[1]))
     }
     return busy

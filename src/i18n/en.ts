@@ -134,7 +134,6 @@ export const en = {
   eraHandicap: (n: number) => `You take ${n} stones against the master, as in the teaching games of old.`,
   mentor: 'Mentor',
   mentorHelp: 'A game with the mentor is a lesson: it feeds neither your rank reading nor auto-adjust.',
-  mentorNeedsNet: 'Needs an analysis network.',
   mentorStop: (points: number) => `This move costs ${Math.round(points)} points. There is better.`,
   mentorKeep: 'Keep it',
   mentorStops: (n: number) => (n ? `The mentor stopped you ${n === 1 ? 'once' : `${n} times`}.` : 'The mentor never stopped you.'),
