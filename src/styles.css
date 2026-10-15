@@ -460,7 +460,10 @@ body[data-drop]::after {
 .lib-badges i { font-style: normal; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--well); color: var(--ink) }
 section > .seg + .ogs-input { margin-top: 10px }
 .progress { display: flex; flex-direction: column; gap: 4px }
-.progress .lab { margin-bottom: 6px }
+/* Progrès reads as one page: each section opens on an italic title, a rule between sections */
+.progress .lab { margin-bottom: 6px; padding-bottom: 2px; border-bottom: 0; font: italic 500 24px/1.2 var(--f-title); letter-spacing: 0; text-transform: none; color: var(--ink) }
+.progress .lab span:last-child { font: 13px var(--f-ui); color: var(--muted) }
+.progress + .progress { border-top: 1px solid var(--rule-2); padding-top: 18px }
 .phases li { display: flex; align-items: baseline; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--rule); font-size: 14px }
 .phases li > span { flex: 1 }
 .phases li > b { font-weight: 500; font-variant-numeric: tabular-nums }
@@ -469,3 +472,12 @@ section > .seg + .ogs-input { margin-top: 10px }
 .lib-who .vs { margin: 0 8px; color: var(--muted) }
 section > .seg + .ogs-input { display: block; width: 100% }
 .td .say { margin-bottom: 8px }
+/* Progrès › La lettre du mois: a sheet of paper in both skins */
+.letter { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px 16px; border-radius: 4px; background: var(--pw); color: var(--pw-ink); box-shadow: 0 1px 3px var(--shadow), 0 0 0 1px var(--rule) }
+.letter h3 { margin: 0 0 4px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; font: italic 500 26px/1.15 var(--f-title) }
+.letter h3 em { font-size: 19px; font-weight: 400; color: var(--pw-muted) }
+.letter p { margin: 0; font: italic 400 19px/1.35 var(--f-title) }
+.letter .btn { align-self: flex-start; margin-top: 6px; color: var(--pw-ink); border-color: rgba(43, 29, 14, .28) }
+.letter-nav { display: flex; justify-content: space-between; margin-top: 10px }
+.letter-nav .link { font-size: 14px }
+.letter-nav .next { margin-left: auto }
