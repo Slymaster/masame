@@ -523,6 +523,8 @@ section > .seg + .ogs-input { display: block; width: 100% }
    tab bar over the home indicator; the sheets fill the screen above the tab bar, which stays live (App: inert). */
 @media (max-width: 700px) {
   :root { --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px); --tab: 56px }
+  /* Android: the navigation bar's height (48 dp with buttons, less with the gesture bar) when the WebView reports none */
+  html[data-android] { --safe-b: max(env(safe-area-inset-bottom, 0px), 48px) }
   .stage { flex-direction: column; gap: 0; padding: var(--safe-t) 0 calc(var(--tab) + var(--safe-b) + 8px) }
   .board-wrap { flex: none; width: 100%; aspect-ratio: 1; margin-bottom: 62px }
   .board-wrap > .note { left: 0; padding: 0 10px }
@@ -571,6 +573,13 @@ section > .seg + .ogs-input { display: block; width: 100% }
   .stepper .step button { width: 44px; height: 44px }
   .row, .seg button, .game-row, .jrow { min-height: 44px }
   .btn { min-height: 44px }
+  /* no sticky hover after a tap (WebKit keeps :hover on the last touched element) */
+  :is(.icon, .chev):hover:not(:disabled):not([aria-pressed=true]) { color: var(--muted) }
+  .act:hover:not(:disabled):not([aria-pressed=true]):not(.accent) { color: var(--ink) }
+  :is(.icon, .act, .chev, .lib-row, .share-row, .deck-row, .game-row, .jrow, .jfams button, .stepper .step button):hover:not(:disabled) { background: none }
+  .btn:hover:not(:disabled) { background: transparent; border-color: var(--rule-2) }
+  .btn.accent:hover:not(:disabled) { border-color: var(--accent) }
+  .icon.cands[aria-pressed=true] { color: var(--accent); background: var(--hover) } /* the candidates toggle, plainly on */
   /* inline links keep their line; the padding only widens what a finger hits */
   .link { padding-block: 12px; margin-block: -12px }
   .board-wrap > .note > .res .link { height: 44px; padding-block: 0; margin-block: 0 }

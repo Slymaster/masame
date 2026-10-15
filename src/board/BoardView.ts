@@ -323,6 +323,7 @@ export class BoardView {
   private stonesKey = ''
   private hover: Vertex | null = null // the ghost stone: under the mouse, or where a finger tapped first
   private pointer = 'mouse' // the last pointerdown's pointerType: the click that follows comes from it
+  private pos = '' // the position last shown
   private anim: { x: number; y: number; c: Sign; start: number } | null = null
   private shook: { x: number; y: number; c: Sign; start: number } | null = null
   /** Where each stone was put down (mm in the square jitter space); stones never move once down. */
@@ -427,7 +428,10 @@ export class BoardView {
   }
 
   update(state: BoardState) {
-    if (!state.interactive || state.counting) this.hover = null
+    // a finger's ghost waits for its second tap only on the position it was put on (compared by content: trainers rebuild maps)
+    const pos = state.signMap.map(r => r.join('')).join('/')
+    if (!state.interactive || state.counting || this.pointer !== 'mouse' && pos !== this.pos) this.hover = null
+    this.pos = pos
     this.reconcile(state)
     const a = this.anim, l = state.last
     if (a && !(l && l[0] === a.x && l[1] === a.y)) this.anim = null // undo/navigation mid-drop

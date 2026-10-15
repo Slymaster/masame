@@ -1332,7 +1332,7 @@ export function App() {
                 <Icon name={sound ? 'volume' : 'volume-off'} />
               </button>
               {/* phones: no 3D nor its Atelier yet (v1.1); a toggle for the candidate moves stands in for holding A */}
-              {isMobile ? <button className="icon sm" aria-pressed={held} onClick={() => setHeld(v => !v)} aria-label={t.candidates} title={t.candidates}><Icon name="target" /></button> : <>
+              {isMobile ? <button className="icon sm cands" aria-pressed={held} onClick={() => setHeld(v => !v)} aria-label={t.candidates} title={t.candidates}><Icon name="target" /></button> : <>
                 <button className="icon sm" aria-pressed={renderer === '3d'} onClick={() => { setSession2d(false); set('renderer', renderer === '3d' ? '2d' : '3d') }}
                   aria-label={t.renderToggle} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
                 <button className="icon sm" onClick={openSheet('atelier')} aria-label={t.atelier} title={t.atelier}><Icon name="view" /></button>
