@@ -28,8 +28,8 @@ export function useToday({ blocked, decks, canPlay, rank, start, onDone }: {
   /** A ritual game reached a result. */
   const played = () => { const n = { ...r, game: today() }; setR(n); save(n) }
   const go = () => { const i = steps.findIndex(s => s && !s.done); if (i >= 0 && !blocked) { setFlow(true); start[i]() } }
-  /** The open trainer's link to the next step, once its own step is done. */
-  const onward = (i: number): Link[] => flow && !finished && steps[i]?.done ? [['ritual', t.ritualGo, go]] : []
+  /** The open trainer's link to the next step, once its own step (or its part of it: `mine`) is done. */
+  const onward = (i: number, mine = steps[i]?.done): Link[] => flow && !finished && mine ? [['ritual', t.ritualGo, go]] : []
   const waiting = !blocked && !finished && steps.some(s => s && !s.done) // the Learn door's dot
 
   const streak = streakOf(r, now), avail = steps.some(Boolean)

@@ -25,13 +25,14 @@ interface Run { k: string; tried: Vertex | null; gap: number | null; shown: Line
 /** The exercise's position, then `line` played with rule checks. */
 const after = (x: Exercise, line: Line) => { const g = positionOf(x); return g.branch(g.moves.length, line) }
 
-export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, setThinking, autoLine }: {
+export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, setThinking, autoLine, hand = HAND }: {
   view: RefObject<{ drop(v: Vertex, c: Sign): void; pass?(c: Sign): void } | null>
   open: boolean; setOpen: (o: boolean) => void; blocked: boolean
   canAnalyze: boolean // an analysis network is active (KataGo grades each answer)
   ask: (g: Game) => Promise<Analysis> // KataGo's view of a position; App serialises the queries
   setThinking: (on: boolean) => void // App's "thinking" (board animation, engine-start captions)
   autoLine: string | null // the automatic review's state, while games wait
+  hand?: number // the ritual hand's exercise cards (fewer when counting positions join it)
 }) {
   const [store, setStore] = useState<StoredDeck>(load)
   const loaded = useRef(store)
@@ -81,7 +82,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
   const add = (game: Game, moments: Moment[], leads: (number | undefined)[], me: Sign | 0) =>
     setStore(s => s.readOnly ? s : { ...s, p: addReview(s.p, game, moments, leads, me, Date.now()) })
   const now = Date.now(), c = counts(store.p, now)
-  const today = deckStep(store.p.cards, c.due + c.fresh, now, HAND) // the daily ritual's first step: a hand of HAND cards
+  const today = deckStep(store.p.cards, c.due + c.fresh, now, hand) // the daily ritual's first step: a hand of `hand` cards
   const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, add, today, counts: c, games: store.p.games }
   if (!open) return none
 

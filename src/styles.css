@@ -470,3 +470,9 @@ section > .seg + .ogs-input { margin-top: 10px }
 .lib-who .vs { margin: 0 8px; color: var(--muted) }
 section > .seg + .ogs-input { display: block; width: 100% }
 .td .say { margin-bottom: 8px }
+.stepper.big .step button { width: 40px; height: 40px; font-size: 22px; border: 1px solid var(--rule-2) }
+.stepper.big output { font-size: 26px; min-width: 48px; font-family: var(--f-title) }
+.mem-figs { display: flex; gap: 22px; list-style: none; margin: 0; padding: 0 }
+.mem-figs li { display: flex; flex-direction: column }
+.mem-figs b { font-family: var(--f-title); font-size: 30px; font-weight: 500; line-height: 1.1 }
+.mem-figs span { font-size: 14px; color: var(--muted) }

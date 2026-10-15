@@ -14,6 +14,7 @@ export interface MenuState {
   engineHelp: boolean // engine help is allowed now: no ongoing OGS game, no review (the trainers' `blocked`)
   canAnalyze: boolean // an analysis network is active
   is3d: boolean
+  canMemory: boolean // a game to replay from memory is shown (no trainer open)
 }
 
 const RULES: Partial<Record<MenuId, (s: MenuState) => boolean>> = {
@@ -21,6 +22,7 @@ const RULES: Partial<Record<MenuId, (s: MenuState) => boolean>> = {
   undo: s => s.canUndo, pass: s => s.canPass, resign: s => s.canResign, review: s => s.canReview,
   territory: s => s.engineHelp && s.canAnalyze,
   exercises: s => s.engineHelp && s.canAnalyze, joseki: s => s.engineHelp,
+  count: s => s.engineHelp, memory: s => s.canMemory, // counting needs no analysis net: KataGo's leads come from the review
   camera: s => s.is3d,
 }
 

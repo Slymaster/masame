@@ -43,6 +43,9 @@ import { menuEnabled } from './menu'
 import * as library from './library'
 import { isLocal, local, noteRank, noteReview, resumable, unfinished, useCurrentGame, type Bot } from './current'
 import { useMentor } from './useMentor'
+import { useCounting } from './count/useCounting'
+import { useMemory } from './memory/useMemory'
+import { COUNTS, countStep, handStep, HAND } from './today/ritual'
 
 // free analysis: a near-instant read, then one that sharpens it
 const QUICK = { maxVisits: 80, overrideSettings: { maxTime: 0.3 } }, DEEP = { maxVisits: 800, overrideSettings: { maxTime: 2.5 } }
@@ -98,7 +101,7 @@ function webgl2() {
 }
 
 /** What App drives, whichever renderer is mounted: the Canvas2D BoardView ("light") or the lazily loaded Board3D. */
-type View = { update(s: Board3DState): void; drop(v: Vertex, c: Sign): void; pass?(c: Sign): void; resetCamera?(): void; snapshot?(): Promise<Blob | null>; destroy(): void }
+type View = { update(s: Board3DState): void; drop(v: Vertex, c: Sign): void; pass?(c: Sign): void; shake?(v: Vertex, c: Sign): void; resetCamera?(): void; snapshot?(): Promise<Blob | null>; destroy(): void }
 
 function Goban({ state, onPlay, view, mode, options, thinking, onFallback, children }: {
   state: Board3DState; onPlay: (v: Vertex) => boolean; view: React.RefObject<View | null>
@@ -320,7 +323,7 @@ export function App() {
   // The trainers borrow the board and the card, one at a time; the game waits underneath, untouched. A new activity (a
   // takeover of the same shape as useJoseki/useExercises) plugs in at four places: its name in Panel, its hook in
   // `trainers` below, its row in the Learn sheet's `decks`, and its command in `commands` (menu ids: src/menu.ts).
-  type Panel = 'joseki' | 'exercises'
+  type Panel = 'joseki' | 'exercises' | 'count' | 'memory'
   const [panel, setPanel] = useState<Panel | null>(null)
   /** A trainer's setOpen: opening it replaces any other; closing it closes only itself. */
   const panelOpen = (name: Panel) => (o: boolean) => setPanel(p => (o ? name : p === name ? null : p))
@@ -362,23 +365,33 @@ export function App() {
     view, open: panel === 'joseki', preload: sheet === 'learn', setOpen: panelOpen('joseki'),
     rank: settings.myRank, setRank: v => set('myRank', v), blocked: ongoing || !!review, playFrom: m => playFrom(m),
   })
+  // Compter (C1) and Rejouer de mémoire (C2)
+  const ct = useCounting({
+    open: panel === 'count', setOpen: panelOpen('count'), blocked: ongoing || !!review, canAnalyze, setThinking,
+    light: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, { maxVisits: TERRITORY_VISITS, includeOwnership: true })); scanRun.current = run; return run.then(a => a.ownership) },
+  })
+  const mem = useMemory({ view, open: panel === 'memory', setOpen: panelOpen('memory'), blocked: ongoing || !!review, onEnd: setNote })
+  /** Replays the shown game from memory; its score goes to its library entry (a file or an unkept game is kept first). */
+  const replay = () => mem.start(game, async () => library.idOf(game) ?? library.keep(game, online ? 'ogs' : bot ? 'ai' : 'file', mine, online ? { ogsId: online.id } : {}))
   const ex = useExercises({
     view, open: panel === 'exercises', setOpen: panelOpen('exercises'), blocked: ongoing || !!review, canAnalyze, setThinking,
     autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null,
     ask: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, REPLY)); scanRun.current = run; return run },
+    hand: ct.available ? HAND - COUNTS : HAND,
   })
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
   useEffect(() => setRitualSaid(null), [panel])
   const netsUnknown = inTauri() && !nets // at launch: the steps needing a net are neither done nor off yet
   const td = useToday({
     blocked: ongoing || !!review,
-    decks: [netsUnknown ? { done: false, left: null } : canAnalyze ? ex.today : null, jt.today ?? { done: false, left: null }], canPlay: netsUnknown ? null : canPlayAI, rank: settings.myRank,
+    // the exercises step: a hand of exercises, then two positions to count when your reviewed games give some
+    decks: [handStep(netsUnknown ? { done: false, left: null } : canAnalyze ? ex.today : null, ct.available ? countStep(ct.today) : null), jt.today ?? { done: false, left: null }], canPlay: netsUnknown ? null : canPlayAI, rank: settings.myRank,
     // each step closes the Learn sheet, then takes the card
-    start: [() => { setSheet(null); setPanel('exercises') }, () => { setSheet(null); setPanel('joseki'); jt.practise() },
+    start: [() => { setSheet(null); setPanel(canAnalyze && !ex.today?.done ? 'exercises' : 'count') }, () => { setSheet(null); setPanel('joseki'); jt.practise() },
       () => { setSheet(null); setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
     onDone: n => { if (panel) setRitualSaid(n); else setNote(d => d.ritualDone(n)) }, // a panel's note hides the game's
   })
-  const trainers = [jt, ex] // every takeover of the card, in no particular order: at most one is open
+  const trainers = [jt, ex, ct, mem] // every takeover of the card, in no particular order: at most one is open
   const tr = trainers.find(x => x.open) ?? ex
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
   const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && (online.placing ? online.me === 1 : game.toPlay === online.me) : !bot || game.toPlay !== bot.sign
@@ -393,6 +406,8 @@ export function App() {
   const countingNow = !review && counting?.game === game && game.ended && atEnd ? counting : null
   const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result) && !ongoing
   const canReview = reviewShown && canAnalyze
+  // a game to replay from memory: moves to place, not one being played (the AI's, an OGS game going on), no review
+  const canMemory = game.moves.some(m => !m.setup) && (!bot || !!result) && !ongoing && !review
   const live = ongoing || !!bot && !result || !!panel // a game being played (or a trainer shown): no autoplay
   const locked = !!result && atEnd // a decided line: playing from an earlier move opens a variation
   const play = (v: Vertex | null) => {
@@ -917,7 +932,7 @@ export function App() {
   const commands: Record<string, () => void> = {
     undo, new: newCommand, open, save, postcard, panel: togglePanel,
     pass: () => play(null), resign, territory: () => { if (!ongoing) set('territory', !settings.territory) }, review: () => { if (canReview && !review) startReview(mine) },
-    today: openLearn, exercises: ex.toggle, joseki: jt.toggle, games: () => door('games'),
+    today: openLearn, exercises: ex.toggle, joseki: jt.toggle, games: () => door('games'), count: ct.toggle, memory: () => { if (canMemory) replay() },
     camera: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
   }
   // a focused range keeps the shortcuts: its arrows/Home/End go through goTo (preventDefault: no second native step)
@@ -978,7 +993,7 @@ export function App() {
     hasGame: game.moves.length > 0 || game.info.setup.black.length + game.info.setup.white.length > 0, canUndo: !panel && !review && !online && game.cursor > 0 && !(bot && result),
     canPass: !panel && !review && !countingNow && !removal && !game.ended && !locked && humanTurn && !online?.placing,
     canResign: !panel && !review && !result && (!!bot || !!myGame), canReview: !panel && !review && canReview,
-    engineHelp: !ongoing && !review, canAnalyze, is3d: renderer === '3d',
+    engineHelp: !ongoing && !review, canAnalyze, is3d: renderer === '3d', canMemory: !panel && canMemory,
   })
   const enabledKey = JSON.stringify(enabled)
   useEffect(() => { if (isMac && inTauri()) call('set_menu_enabled', { enabled }).catch(console.error) }, [enabledKey]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1053,6 +1068,8 @@ export function App() {
   const mentorLine = mt.mentor ? t.mentorStops(mt.stops) : null
   const resultLine = result && [result(t), note?.(t), aiMoved && t.aiNext(aiMoved), mentorLine].filter(Boolean).join(' ')
   const incoming = !myGame && challengeRows.find(c => !c.mine)
+  const libraryShown = canMemory && !bot && !dirty && !!library.idOf(game) // a game opened from Mes parties, untouched
+  const libraryLinks: Link[] = [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []), ['memory', t.memLink, replay]]
   const undoAsk = myGame?.undo
   // outside trainers and reviews, top first: search, OGS game prompts, challenge wait, OGS game states, result, the local
   // game's lines; only when none has anything to say, a game started elsewhere or an incoming challenge
@@ -1066,20 +1083,21 @@ export function App() {
     : challengeWait ? [t.ogsChallengeWait(challengeWait.who), [['cancel', t.cancel, () => cancelChallenge()]]]
     : ongoing && online.me === 0 ? [withNote(t.ogsWatching(online.players.black.username, online.players.white.username)),
       [['quit', t.ogsLeave, () => start(new Game({ size: game.info.size }), null)]]]
-    : result ? [resultLine, [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []),
+    : result ? [resultLine, [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []), ...(canMemory ? [['memory', t.memLink, replay] as Link] : []),
       ...(online && online.me !== 0 && online.phase === 'finished' ? [['rematch', t.ogsRematch, rematch] as Link] : [])]]
     : mt.stopped ? [t.mentorStop(mt.stopped.loss), [['retry', t.retry, mt.retry], ['keep', t.mentorKeep, mt.keep]]]
     : countingNow ? [t.countingHelp, []]
     : game.ended ? [t.countingWait, []]
     : [[(botError ?? note)?.(t), engineWait].filter(Boolean).join(' ') || (mt.late && !result ? t.mentorLate : null) || (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null),
-      botError ? [['retry', t.retry, retryBot]] : []]
+      botError ? [['retry', t.retry, retryBot]] : libraryShown ? libraryLinks : []]
   const [gameLine, gameLinks]: [string | null | undefined, Link[]] = line ? [line, lineLinks]
     : started ? [t.ogsStartedVs(started.who), [['open', t.ogsOpen, () => resume(started.id)]]]
     : incoming ? [t.ogsChallenged(incoming.from.username, incoming.from.rank, incoming.size, t.paces[incoming.speed], incoming.ranked),
       [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
+    : libraryShown ? [t.libraryShown, libraryLinks]
     : [line, lineLinks]
-  // td.onward's step index: the ritual's exercises 0, joseki 1
-  const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open ? 1 : ex.open ? 0 : -1)] : review?.error ? [['retry', t.retry, retryLesson]]
+  // td.onward's step index: the ritual's exercises 0 (its exercises, then its counting), joseki 1
+  const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open ? 1 : ex.open || ct.open ? 0 : -1, ex.open ? !!ex.today?.done : undefined)] : review?.error ? [['retry', t.retry, retryLesson]]
     : !review ? gameLinks
     : !m ? [['back', t.backToGame, leaveReview]]
     : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as Link] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
@@ -1161,11 +1179,14 @@ export function App() {
     { key: 'exercises', name: t.decks.exercises, phrase: t.deckPhrases.exercises, counts: ex.counts, off: canAnalyze ? undefined : t.tdOff.exercises,
       open: () => { closeSheet(); setPanel('exercises') } },
     { key: 'joseki', name: t.decks.joseki, phrase: t.deckPhrases.joseki, counts: jt.counts ?? null, open: () => { closeSheet(); setPanel('joseki') } },
+    // the counter's place shows the counting error, the same figure as Progrès
+    { key: 'count', name: t.countDeck, phrase: t.countPhrase, counts: null, off: ct.median === null ? undefined : t.countFigure(ct.median), open: () => { closeSheet(); setPanel('count') } },
   ]
   const progressSections: ProgressSection[] = [
     { key: 'rank', title: t.rankSection, body: <RankProgress ranks={ranks.p.games} follows={settings.autoAdjust} /> },
     ...ogs.me && !ogs.isGuest() ? [{ key: 'ogs', title: t.ogsRatingSection, body: <OgsRating /> }] : [],
     { key: 'where', title: t.exWhere, side: ex.games.length ? t.exGames(ex.games.length) : '', body: <WhereLost games={ex.games} /> },
+    { key: 'count', title: t.countSection, body: <p className="say">{ct.median === null ? t.countNoneYet : t.countMedian(ct.median, ct.n)}</p> },
   ]
   const cta = settings.opponent === 'ai' && !canPlayAI && (
     <div className="cta">

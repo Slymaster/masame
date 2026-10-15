@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Card } from '../joseki/fsrs'
 import { today } from '../joseki/store'
-import { allDone, CAP, complete, HAND, deckStep, fresh, gameStep, KEY, load, save, streakOf, yesterday } from './ritual'
+import { allDone, CAP, complete, COUNTS, countStep, HAND, handStep, deckStep, fresh, gameStep, KEY, load, save, streakOf, yesterday } from './ritual'
 
 const mem = (init: Record<string, string> = {}) => {
   const m = new Map(Object.entries(init))
@@ -27,6 +27,18 @@ describe('the daily ritual', () => {
     expect(deckStep(deck(CAP, 0), 8, NOW, HAND)).toEqual({ done: false, left: 1 })
     expect(deckStep(deck(HAND, 0), 8, NOW, HAND)).toEqual({ done: true, left: 0 })
     expect(deckStep(deck(2, 0), 9, NOW, HAND)).toEqual({ done: false, left: HAND - 2 })
+  })
+  it('the hand ends with COUNTS counting positions when some exist, still six cards', () => {
+    expect(HAND - COUNTS + COUNTS).toBe(6)
+    expect(countStep(0)).toEqual({ done: false, left: COUNTS }); expect(countStep(1)).toEqual({ done: false, left: 1 }); expect(countStep(3)).toEqual({ done: true, left: 0 })
+    const ex = deckStep(deck(1, 0), 9, NOW, HAND - COUNTS) // 1 exercise of 4 done, 3 left, then 2 positions
+    expect(handStep(ex, countStep(0))).toEqual({ done: false, left: 5 })
+    expect(handStep({ done: true, left: 0 }, countStep(1))).toEqual({ done: false, left: 1 }) // exercises done, counting next
+    expect(handStep({ done: true, left: 0 }, countStep(2))).toEqual({ done: true, left: 0 })
+    expect(handStep(null, countStep(0))).toEqual(countStep(0)) // no analysis net: the counting alone
+    expect(handStep(ex, null)).toBe(ex) // no counting positions: the exercises alone
+    expect(handStep(null, null)).toBeNull()
+    expect(handStep({ done: false, left: null }, countStep(0))!.left).toBeNull()
   })
   it('the game step is done once a ritual game ended today', () => {
     expect(gameStep(fresh(), NOW)).toEqual({ done: false, left: 1 })
