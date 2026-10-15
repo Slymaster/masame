@@ -19,6 +19,11 @@ export interface Exercise {
   loss: number // points it lost (the review's deep check)
   best: number // Black's lead with the better move
   better: string; punish: string // KataGo's better line from here, and the line punishing the mistake (after it)
+  // a tsumego ('ld', src/tsumego/mine.ts): the whole position set up (moves ''), `sign` saves or kills the chain;
+  // a yose position ('yose', never stored): `played` is the second biggest move, `loss` what it gives up
+  kind?: 'ld' | 'yose'
+  chain?: string // the chain at stake
+  n?: number // the move number the position was taken at
 }
 /** A reviewed game: points your moves lost in the opening, middle game and endgame. */
 export interface Played { k: string; t: number; loss: number[] }
@@ -44,7 +49,7 @@ export function exerciseOf(game: Game, m: Moment, now: number): Exercise {
 /** The position before the mistake: reviewing the same game twice adds nothing. */
 export const keyOf = (x: Exercise) => hash64(`${x.size}|${x.komi}|${x.b}|${x.w}|${x.sign}|${x.moves}`)
 /** The mistake's move number. */
-export const mv = (x: Exercise) => x.moves.length / 2 + 1
+export const mv = (x: Exercise) => x.n ?? x.moves.length / 2 + 1
 
 /** The position before the mistake; its moves alternate and end with the opponent's, which sets who started. */
 export function positionOf(x: Exercise): Game {
@@ -70,7 +75,10 @@ export function addReview(d: Deck, game: Game, moments: Moment[], leads: (number
 
 const fresh = (d: Deck, now: number) => (d.day === today(now) ? d.fresh : 0)
 const midnight = (now: number) => new Date(now).setHours(0, 0, 0, 0)
-const isNew = (d: Deck) => Object.entries(d.items).filter(([k]) => !Object.hasOwn(d.cards, k))
+/** Which cards a trainer shows: find-better ones, tsumego, or (null) all of them. */
+export type Only = 'find' | 'ld' | null
+const kept = (only: Only) => (x: Exercise) => only === null || (only === 'ld') === (x.kind === 'ld')
+const isNew = (d: Deck, only: Only = null) => Object.entries(d.items).filter(([k, x]) => !Object.hasOwn(d.cards, k) && kept(only)(x))
 
 /** The weakest phase (most points lost per game: 0 opening, 1 middle game, 2 endgame), null before any loss. */
 export function weakest(games: Played[]): 0 | 1 | 2 | null {
@@ -79,23 +87,34 @@ export function weakest(games: Played[]): 0 | 1 | 2 | null {
 }
 /** The next `n` exercises: the due cards, most overdue first, then within today's quota the oldest new ones made before
  *  today (in game order); with `weak`, that phase's exercises come first in each group (the daily ritual's hand). */
-export function hand(d: Deck, now: number, n: number, weak: 0 | 1 | 2 | null = null): string[] {
+export function hand(d: Deck, now: number, n: number, weak: 0 | 1 | 2 | null = null, only: Only = null): string[] {
   const lean = (x: Exercise) => (weak !== null && phaseOf(mv(x), x.size) !== weak ? 1 : 0)
-  const due = Object.entries(d.cards).filter(([k, c]) => Object.hasOwn(d.items, k) && c.due <= now)
+  const due = Object.entries(d.cards).filter(([k, c]) => Object.hasOwn(d.items, k) && c.due <= now && kept(only)(d.items[k]))
     .sort((a, b) => lean(d.items[a[0]]) - lean(d.items[b[0]]) || a[1].due - b[1].due).map(([k]) => k)
   // made today: the review itself was today's lesson
   const m = midnight(now), quota = Math.max(0, NEW_PER_DAY - fresh(d, now))
-  const news = isNew(d).filter(([, x]) => x.t < m).sort(([, a], [, b]) => lean(a) - lean(b) || a.t - b.t || mv(a) - mv(b)).slice(0, quota).map(([k]) => k)
+  const news = isNew(d, only).filter(([, x]) => x.t < m).sort(([, a], [, b]) => lean(a) - lean(b) || a.t - b.t || mv(a) - mv(b)).slice(0, quota).map(([k]) => k)
   return [...due, ...news].slice(0, n)
 }
 /** The most overdue card first; then, within today's quota, the oldest new exercise made before today (in game order). */
-export const nextExercise = (d: Deck, now: number, weak: 0 | 1 | 2 | null = null): string | null => hand(d, now, 1, weak)[0] ?? null
+export const nextExercise = (d: Deck, now: number, weak: 0 | 1 | 2 | null = null, only: Only = null): string | null => hand(d, now, 1, weak, only)[0] ?? null
+
+/** A practice session on one phase: `n` cards of that phase (find-better and tsumego), the due and today's new first,
+ *  then the soonest due; shuffled so both kinds mix. */
+export function sessionKeys(d: Deck, now: number, n: number, phase: 0 | 1 | 2, random = Math.random): string[] {
+  const of = (k: string) => phaseOf(mv(d.items[k]), d.items[k].size) === phase
+  const first = hand(d, now, Infinity).filter(of)
+  const rest = Object.keys(d.items).filter(k => of(k) && !first.includes(k)).sort((a, b) => (d.cards[a]?.due ?? d.items[a].t) - (d.cards[b]?.due ?? d.items[b].t))
+  const keys = [...first, ...rest].slice(0, n)
+  for (let i = keys.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [keys[i], keys[j]] = [keys[j], keys[i]] }
+  return keys
+}
 
 /** Due cards, new exercises available today (within the quota), new ones made today (from tomorrow). */
-export function counts(d: Deck, now: number) {
-  const m = midnight(now), news = isNew(d), later = news.filter(([, x]) => x.t >= m).length
+export function counts(d: Deck, now: number, only: Only = null) {
+  const m = midnight(now), news = isNew(d, only), later = news.filter(([, x]) => x.t >= m).length
   return {
-    due: Object.entries(d.cards).filter(([k, c]) => Object.hasOwn(d.items, k) && c.due <= now).length,
+    due: Object.entries(d.cards).filter(([k, c]) => Object.hasOwn(d.items, k) && c.due <= now && kept(only)(d.items[k])).length,
     fresh: Math.min(Math.max(0, NEW_PER_DAY - fresh(d, now)), news.length - later), later,
   }
 }
@@ -118,10 +137,11 @@ const num = (x: unknown): x is number => typeof x === 'number' && Number.isFinit
 const obj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)
 /** Codes on an n×n board, 'tt' (pass) aside. */
 const fits = (s: unknown, n: number) => typeof s === 'string' && /^([a-t]{2})*$/.test(s) && lineOf(s).every(v => !v || (v[0] < n && v[1] < n))
-const isItem = (x: unknown) => obj(x) && num(x.t) && num(x.komi) && num(x.loss) && num(x.best) && typeof x.vs === 'string'
+export const isItem = (x: unknown) => obj(x) && num(x.t) && num(x.komi) && num(x.loss) && num(x.best) && typeof x.vs === 'string'
   && Number.isInteger(x.size) && (x.size as number) >= 2 && (x.size as number) <= 19 && (x.sign === 1 || x.sign === -1)
   && ['b', 'w', 'moves', 'better', 'punish', 'played'].every(k => fits(x[k], x.size as number)) && (x.played as string).length === 2
   && [x.b, x.w].every(s => !lineOf(s as string).includes(null)) // setup stones are never passes
+  && (x.kind === undefined || x.kind === 'ld' && fits(x.chain, x.size as number) && !!(x.chain as string) && Number.isInteger(x.n) && (x.n as number) > 0)
 const isGame = (g: unknown) => obj(g) && typeof g.k === 'string' && num(g.t) && Array.isArray(g.loss) && g.loss.length === 3 && g.loss.every(num)
 
 export function load(st: Storage = localStorage): StoredDeck {

@@ -1162,13 +1162,13 @@ export class Board3D {
 
   /** The trainer's veil and lettered markers: one unlit plane over the board, repainted only when they change. */
   private buildMarks() {
-    const s = this.state, key = s?.marks?.length || s?.focus ? JSON.stringify([s.marks, s.focus, this.N, this.coords]) : ''
+    const s = this.state, key = s?.marks?.length || s?.focus || s?.frame ? JSON.stringify([s.marks, s.focus, s.frame, this.N, this.coords]) : ''
     if (key === this.marksKey) return
     this.marksKey = key
     if (this.marks) { this.scene.remove(this.marks); this.marks.geometry.dispose(); (this.marks.material as THREE.MeshBasicMaterial).map?.dispose(); (this.marks.material as THREE.Material).dispose(); this.marks = null }
     if (!key || !s) return
     const { BW, BD, N } = this.D, k = 2048 / Math.max(BW, BD), cv = mkCanvas(Math.round(BW * k), Math.round(BD * k))
-    paintMarks(cv.getContext('2d')!, i => (gx(N, i) + BW / 2) * k, j => (gz(N, j) + BD / 2) * k, SX * k, s.marks, s.focus, cv.width, cv.height, 0.1) // unlit over a lit board: a lighter veil reads the same
+    paintMarks(cv.getContext('2d')!, i => (gx(N, i) + BW / 2) * k, j => (gz(N, j) + BD / 2) * k, SX * k, s.marks, s.focus, cv.width, cv.height, 0.1, s.frame, 0.9) // unlit over a lit board: a lighter veil reads the same; the frame, stronger, holds on warm wood
     const tex = new THREE.CanvasTexture(cv)
     tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4
     const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })

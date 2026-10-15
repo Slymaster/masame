@@ -25,6 +25,8 @@ export interface BoardState {
   focus?: [number, number, number, number] | null
   /** A stone shown in half-tone on an empty point: the move the mentor stopped. */
   pending?: { v: Vertex; sign: Sign } | null
+  /** Grid rectangle [x0, y0, x1, y1] outlined by a soft frame (a tsumego's area); the whole board stays clear. */
+  frame?: [number, number, number, number] | null
 }
 export interface Mark { v: Vertex; label: string; tone: 'best' | 'ok' | 'mistake' }
 
@@ -278,7 +280,12 @@ function lastRing(c: CanvasRenderingContext2D, g: Geom, [cx, cy]: [number, numbe
 
 /** Veil and markers, also drawn into the 3D board's overlay texture: px / py map grid indices to canvas units. */
 export function paintMarks(c: CanvasRenderingContext2D, px: (i: number) => number, py: (i: number) => number, cell: number,
-  marks: Mark[] | null | undefined, focus: BoardState['focus'], w: number, h: number, veil = 0.24) {
+  marks: Mark[] | null | undefined, focus: BoardState['focus'], w: number, h: number, veil = 0.24, frame: BoardState['frame'] = null, frameAlpha = 0.55) {
+  if (frame) {
+    const m = cell * 0.5, x0 = px(frame[0]) - m, y0 = py(frame[1]) - m
+    c.lineWidth = cell * 0.09; c.strokeStyle = `rgba(138,47,34,${frameAlpha})`
+    c.beginPath(); c.roundRect(x0, y0, px(frame[2]) + m - x0, py(frame[3]) + m - y0, cell * 0.3); c.stroke()
+  }
   if (focus) {
     const m = cell * 0.5, x0 = px(focus[0]) - m, y0 = py(focus[1]) - m
     c.fillStyle = `rgba(246,240,229,${veil})`
@@ -541,7 +548,7 @@ export class BoardView {
     c.setTransform(dpr, 0, 0, dpr, 0, 0)
     if (own) deadHint(c, g, own, s.signMap, this.at)
     if (s.counting) countMarks(c, g, s.signMap, s.counting, this.at)
-    if (s.focus || s.marks?.length) paintMarks(c, i => g.P[i], i => g.P[i], g.cell, s.marks, s.focus, S, S)
+    if (s.focus || s.frame || s.marks?.length) paintMarks(c, i => g.P[i], i => g.P[i], g.cell, s.marks, s.focus, S, S, undefined, s.frame)
     if (a) { const ap = this.at(a.x, a.y); stoneShadow(c, g, ...ap, t); stone(c, g, a.x, a.y, a.c, t, ap) }
     const w = this.shook, wk = w ? (now - w.start) / SHAKE_MS : 1
     if (w && wk < 1 && !s.signMap[w.y]?.[w.x]) {

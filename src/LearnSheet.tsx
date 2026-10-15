@@ -84,7 +84,7 @@ export function OgsRating() {
 
 const PHASES = ['opening', 'middle', 'endgame'] as const
 /** Progrès › Where you lose points, per phase; `work` (when given) adds a button per phase to practise it. */
-export function WhereLost({ games, work }: { games: Played[]; work?: (phase: 0 | 1 | 2) => void }) {
+export function WhereLost({ games, work, blocked }: { games: Played[]; work?: (phase: 0 | 1 | 2) => void; blocked?: boolean }) {
   const n = games.length, where = whereLost(games), top = Math.max(...where), i = where.indexOf(top), head = Math.round(top) > 0 // first on a tie; never "−0 points"
   if (!n) return <p className="say">{t.exWhereNone}</p>
   return <>
@@ -95,7 +95,7 @@ export function WhereLost({ games, work }: { games: Played[]; work?: (phase: 0 |
     <ul className="phases">
       {PHASES.map((name, j) => <li key={name} className={head && j === i ? 'top' : ''}>
         <span>{t.exPhases[name]}</span><b>{t.exLost(where[j])}</b>
-        {work && <button className="link" onClick={() => work(j as 0 | 1 | 2)}>{t.work}</button>}
+        {work && <button className="link" onClick={() => work(j as 0 | 1 | 2)} disabled={blocked}>{t.work}</button>}
       </li>)}
     </ul>
     <p className="quiet">{t.exWhereHelp(n)}</p>

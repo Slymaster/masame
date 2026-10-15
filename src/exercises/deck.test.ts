@@ -5,7 +5,7 @@ import { NEW_PER_DAY, today } from '../joseki/store'
 import type { Moment } from '../review'
 import { loadSgf } from '../sgf'
 import {
-  addReview, BAD, counts, emptyDeck, exerciseOf, GAMES, gapOf, hand, KEY, keyOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save,
+  addReview, BAD, counts, emptyDeck, exerciseOf, GAMES, gapOf, hand, isItem, KEY, keyOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save, sessionKeys,
   weakest, whereLost, type Deck, type Exercise,
 } from './deck'
 
@@ -179,5 +179,33 @@ describe('storage', () => {
     save({ ...s, p: good() as Deck }, st)
     expect(st.m.get(KEY)).toBe(newer)
     expect(st.m.has(BAD)).toBe(false)
+  })
+})
+
+describe('tsumego in the deck, and phase sessions', () => {
+  // 9×9: move 20 is the middle game, 40 the endgame, 3 the opening
+  const ld = (o: Partial<Exercise> = {}) => ex({ kind: 'ld', moves: '', played: 'tt', punish: '', chain: 'bbcbdb', n: 20, t: YESTERDAY, ...o })
+  const deck = (): Deck => ({
+    ...emptyDeck(), items: {
+      a: ex({ t: YESTERDAY }), b: ex({ t: YESTERDAY, n: 20 }), c: ld(), d: ld({ n: 40 }), e: ld({ n: 21 }), f: ex({ t: YESTERDAY, n: 22 }),
+    },
+    cards: { f: { ...review(undefined, 3, YESTERDAY), due: NOW + 5 * 24 * H } },
+  })
+  it('a tsumego keeps its move number and passes the checks', () => {
+    expect([mv(ld()), isItem(ld()), isItem(ld({ chain: '' })), isItem(ld({ n: 0 })), isItem({ ...ld(), kind: 'yose' })]).toEqual([20, true, false, false, false])
+  })
+  it('each deck row counts its own kind; the shared new-card quota stays one', () => {
+    expect(counts(deck(), NOW, 'find')).toMatchObject({ due: 0, fresh: 2 })
+    expect(counts(deck(), NOW, 'ld')).toMatchObject({ due: 0, fresh: 3 })
+    expect(counts(deck(), NOW)).toMatchObject({ fresh: 5 })
+    expect(nextExercise(deck(), NOW, null, 'ld')).toBe('c')
+    expect(hand(deck(), NOW, 9, null, 'find')).toEqual(['a', 'b'])
+  })
+  it('a phase session takes that phase only, due and new first, then the soonest due, mixed', () => {
+    expect(sessionKeys(deck(), NOW, 8, 1, () => 0.999).sort()).toEqual(['b', 'c', 'e', 'f'])
+    expect(sessionKeys(deck(), NOW, 3, 1, () => 0.999)).toEqual(['b', 'c', 'e']) // f (not due) comes last, so it is cut
+    expect(sessionKeys(deck(), NOW, 8, 2)).toEqual(['d'])
+    expect(sessionKeys(deck(), NOW, 8, 0)).toEqual(['a'])
+    expect(sessionKeys({ ...deck(), items: {} }, NOW, 8, 1)).toEqual([])
   })
 })
