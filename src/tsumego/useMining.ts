@@ -7,7 +7,7 @@ import { inTauri, type Analysis } from '../katago'
 import * as library from '../library'
 import { reviewEnd } from '../review'
 import { loadSgf } from '../sgf'
-import { admit, canMine, ldKey, loadMined, markDone, mineGame, MINE_QUERY, saveMined } from './mine'
+import { admit, canMine, CONFIRM_QUERY, ldKey, loadMined, markDone, mineGame, MINE_QUERY, saveMined } from './mine'
 
 const RETRY_MS = 60_000, MAX_FAILS = 3
 
@@ -40,7 +40,7 @@ export function useMining({ free, ask, scanRun, known, add }: {
     const run = scanRun.current.catch(() => {}).then(async () => {
       const [sgf, rv] = await Promise.all([library.read(e.id), library.sidecar<library.ReviewSidecar>(e.id, 'review')])
       const game = loadSgf(sgf), vs = e.me === 1 ? e.white.name : e.me === -1 ? e.black.name : ''
-      return mineGame(game, (rv?.moments ?? []).map(x => x.at), reviewEnd(game), vs, g => latest.current.ask(g, MINE_QUERY), () => freeRef.current, Date.now())
+      return mineGame(game, (rv?.moments ?? []).map(x => x.at), reviewEnd(game), vs, (g, deep) => latest.current.ask(g, deep ? CONFIRM_QUERY : MINE_QUERY), () => freeRef.current, Date.now())
     })
     scanRun.current = run
     run.then(xs => {

@@ -10,6 +10,8 @@ import { isItem, type Exercise } from '../exercises/deck'
 export const MIN_STONES = 3, STATUS = 0.5, SEKI = 0.2, MARGIN = 2, LOCAL = 11, PER_DAY = 5, EVERY = 15, FROM = 30, TAIL = 20
 /** The detection query: both sides to play, ownership, bounded in time on any hardware. */
 export const MINE_QUERY = { maxVisits: 150, includeOwnership: true, analysisPVLen: 7, overrideSettings: { maxTime: 2 } }
+/** A candidate's confirmation: 150 visits let in borderline statuses (and a shallow answer), so the pair is read again deeper. */
+export const CONFIRM_QUERY = { ...MINE_QUERY, maxVisits: 600, overrideSettings: { maxTime: 6 } }
 /** After a try, KataGo's best line is played this far before the status is checked. */
 export const PLIES = 6
 
@@ -143,17 +145,23 @@ export function saveMined(m: Mined, st: Storage = localStorage) {
 
 type Read = { scoreLead: number; pv: (Vertex | null)[]; ownership: number[] | null }
 /**
- * Reads one reviewed game: each sampled position twice (Black first, then White first, both in flight), its problems
- * deduped by position and chain. null when `live` turned false (nothing kept: the game is read again later).
+ * Reads one reviewed game: each sampled position twice (Black first, then White first, both in flight), and a position
+ * with new candidates twice again deeper (`deep`): only what the deep pair still finds is kept, with its answer. Problems
+ * are deduped by position and chain. null when `live` turned false (nothing kept: the game is read again later).
  */
-export async function mineGame(game: Game, moments: number[], end: number, vs: string, ask: (g: Game) => Promise<Read>,
+export async function mineGame(game: Game, moments: number[], end: number, vs: string, ask: (g: Game, deep: boolean) => Promise<Read>,
   live: () => boolean, now: number, random = Math.random): Promise<Exercise[] | null> {
   const { size, komi } = game.info, out = new Map<string, Exercise>()
   for (const i of samples(moments, end)) {
     if (!live()) return null
     const signMap = game.boards[i].signMap
-    const [b, w] = await Promise.all([ask(positionAt(signMap, size, komi, 1)), ask(positionAt(signMap, size, komi, -1))])
-    for (const x of problemsAt({ signMap, size, komi, n: game.moveNumber(i) + 1, vs }, b, w, now, random)) if (!out.has(ldKey(x))) out.set(ldKey(x), x)
+    const p = { signMap, size, komi, n: game.moveNumber(i) + 1, vs }
+    const pair = (deep: boolean) => Promise.all([ask(positionAt(signMap, size, komi, 1), deep), ask(positionAt(signMap, size, komi, -1), deep)])
+    const [b, w] = await pair(false)
+    if (problemsAt(p, b, w, now, random).every(x => out.has(ldKey(x)))) continue
+    if (!live()) return null
+    const [db, dw] = await pair(true)
+    for (const x of problemsAt(p, db, dw, now, random)) if (!out.has(ldKey(x))) out.set(ldKey(x), x)
   }
   return live() ? [...out.values()] : null
 }

@@ -9,7 +9,7 @@ import { phaseOf, reviewEnd } from '../review'
 import { loadSgf } from '../sgf'
 import { positionAt, stonesOf } from './mine'
 
-export const YOSE_N = 8, YOSE_EVERY = 6, YOSE_GAP = 2, YOSE_ASKS = 40, YOSE_GAMES = 12
+export const YOSE_N = 8, YOSE_EVERY = 6, YOSE_GAP = 2, YOSE_MS = 60_000, YOSE_GAMES = 12
 export const YOSE_QUERY = { maxVisits: 100, analysisPVLen: 5, overrideSettings: { maxTime: 1 } }
 
 /** Endgame positions of a game (indices into its moves): phase 2, one every YOSE_EVERY moves, each with a move played from it. */
@@ -38,14 +38,14 @@ export function yoseOf(game: Game, i: number, a: Analysis, vs: string, now: numb
   }
 }
 
-/** Up to YOSE_N questions from the games' endgames, in random order, asking at most YOSE_ASKS positions. */
+/** Up to YOSE_N questions from the games' endgames, in random order, until the candidates run out or YOSE_MS have passed. */
 export async function findYose(games: { game: Game; vs: string }[], ask: (g: Game) => Promise<Analysis>, live: () => boolean,
   progress: (kept: number) => void, now: number, random = Math.random): Promise<Exercise[]> {
   const cands = games.flatMap(g => yoseSamples(g.game).map(i => ({ ...g, i })))
   for (let i = cands.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [cands[i], cands[j]] = [cands[j], cands[i]] }
-  const out: Exercise[] = []
-  for (const c of cands.slice(0, YOSE_ASKS)) {
-    if (!live() || out.length >= YOSE_N) break
+  const out: Exercise[] = [], until = Date.now() + YOSE_MS
+  for (const c of cands) {
+    if (!live() || out.length >= YOSE_N || Date.now() > until) break
     const x = yoseOf(c.game, c.i, await ask(positionAt(c.game.boards[c.i].signMap, c.game.info.size, c.game.info.komi, c.game.moves[c.i].sign as Sign)), c.vs, now)
     if (x) { out.push(x); progress(out.length) }
   }

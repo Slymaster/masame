@@ -87,19 +87,24 @@ describe('mining a game', () => {
     expect(samples([12, 50, 300], 100)).toEqual([12, 30, 45, 50, 60, 75])
     expect(samples([], 40)).toEqual([])
   })
-  it('asks both sides at each position and dedupes position + chain', async () => {
+  it('asks both sides at each position, confirms new candidates deeper and dedupes position + chain', async () => {
     // 30 moves away from the corner group, then passes: positions 30 and 45 are the same board
     const moves = Array.from({ length: 30 }, (_, i) => `;${i % 2 ? 'W' : 'B'}[${'abcdefghijklmnopqrs'[i % 19]}${'mnop'[Math.floor(i / 19)]}]`).join('')
       + Array.from({ length: 40 }, (_, i) => `;${i % 2 ? 'W' : 'B'}[]`).join('')
     const game = loadSgf(`(;SZ[19]KM[6.5]AB[bb][cb][db]${moves})`)
-    const asked: number[] = []
-    const ask = async (g: Game) => {
-      asked.push(g.toPlay)
+    const asked: string[] = []
+    const ask = async (g: Game, deep: boolean) => {
+      asked.push(`${g.toPlay}${deep ? 'd' : ''}`)
       return { scoreLead: 0, pv: [[2, 0]] as Vertex[], ownership: own(19, B3, g.toPlay === 1 ? 0.9 : -0.9) }
     }
     const xs = (await mineGame(game, [], game.moves.length, 'Bob', ask, () => true, NOW, () => 0.1))!
-    expect(asked).toEqual([1, -1, 1, -1]) // positions 30 and 45 (70 − 20 = 50)
+    // positions 30 and 45 (70 − 20 = 50): the second is the same board, nothing new to confirm
+    expect(asked).toEqual(['1', '-1', '1d', '-1d', '1', '-1'])
     expect(xs.map(x => [x.chain, x.n, x.vs])).toEqual([[expect.any(String), 31, 'Bob']])
+    // a status the deep pair no longer reads (−0.45 when the opponent plays first) is no problem
+    const borderline = async (g: Game, deep: boolean) =>
+      ({ scoreLead: 0, pv: [[2, 0]] as Vertex[], ownership: own(19, B3, g.toPlay === 1 ? 0.9 : deep ? -0.45 : -0.9) })
+    expect(await mineGame(game, [], game.moves.length, 'Bob', borderline, () => true, NOW, () => 0.1)).toEqual([])
   })
   it('stops when the engine is wanted elsewhere', async () => {
     const game = loadSgf(`(;SZ[19]${Array.from({ length: 60 }, (_, i) => `;${i % 2 ? 'W' : 'B'}[${'abcdefghijklmnopqrs'[i % 19]}${'cdefghijkl'[Math.floor(i / 19)]}]`).join('')})`)
