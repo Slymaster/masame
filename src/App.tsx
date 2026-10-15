@@ -36,6 +36,7 @@ import { useAutoReview } from './exercises/useAutoReview'
 import { recordKey } from './exercises/deck'
 import { tone } from './joseki/practice'
 import { useToday } from './today/useToday'
+import { MonthLetters } from './MonthLetters'
 import { LearnSheet, OgsRating, RankProgress, storeTab, WhereLost, type DeckRow, type ProgressSection } from './LearnSheet'
 import { GamesSheet } from './GamesSheet'
 import { ShareSheet } from './ShareSheet'
@@ -1123,6 +1124,7 @@ export function App() {
     { key: 'rank', title: t.rankSection, body: <RankProgress ranks={ranks.p.games} follows={settings.autoAdjust} /> },
     ...ogs.me && !ogs.isGuest() ? [{ key: 'ogs', title: t.ogsRatingSection, body: <OgsRating /> }] : [],
     { key: 'where', title: t.exWhere, side: ex.games.length ? t.exGames(ex.games.length) : '', body: <WhereLost games={ex.games} /> },
+    { key: 'letter', title: t.letterSection, body: <MonthLetters played={ex.games} ranks={ranks.p.games} /> },
   ]
   const cta = settings.opponent === 'ai' && !canPlayAI && (
     <div className="cta">
