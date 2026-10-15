@@ -337,6 +337,27 @@ export const fr: Dict = {
   postcard: 'Carte postale…', postcardHint: 'Enregistrer le goban en image (PNG), signée, pour la partager', postcardTitle: 'Enregistrer la carte postale',
   postcardName: (n: number, move?: number) => `masame-${n}x${n}${move === undefined ? '' : `-coup-${move}`}.png`,
   postcardSaved: 'Carte postale enregistrée.', postcardNotReady: 'le goban n’est pas encore dessiné', postcardFailed: (m: string) => `Impossible d’enregistrer la carte postale : ${m}`,
+  // counting (C1): who leads in a position of your reviewed games, and by how much
+  countDeck: 'Compter', countPhrase: 'qui mène, de combien ?', countWho: 'Qui mène ?', countBy: 'De combien ?', countEven: 'Égalité', countAnswer: 'Répondre',
+  countAsk: (n: number, of: number, move: number) => `Position ${n} sur ${of}, coup ${move} : qui mène, et de combien ?`,
+  countVerdict: (v: 'right' | 'close' | 'far', lead: number) => `${({ right: 'Juste', close: 'Proche', far: 'Loin' })[v]} : KataGo compte ${lead ? `${color(lead > 0 ? 1 : -1)} +${f.half(lead)}` : 'l’égalité'}.`,
+  countYours: (lead: number) => `Tu as dit ${lead ? `${color(lead > 0 ? 1 : -1)} +${f.num(Math.abs(lead))}` : 'égalité'}.`,
+  countLight: 'Voir la lumière', countNext: 'Position suivante', countAgain: 'Encore cinq',
+  countSession: (n: number, right: number, med: number) => `${f.plural(n, 'position comptée', 'positions comptées')}, ${f.plural(right, 'juste', 'justes')}. Erreur médiane : ${pts(med)}.`,
+  countNone: 'Aucune partie revue pour l’instant. Revois une partie, et ses positions viendront ici se compter.',
+  countLoading: 'Je choisis une position', countFailed: (m: string) => `Impossible d’ouvrir cette position. ${m}`, countLightFailed: (m: string) => `Impossible d’éclairer la position. ${m}`,
+  countSection: 'Ton erreur de comptage', countMedian: (med: number, n: number) => `${pts(med)} en médiane sur ${n === 1 ? 'ton dernier comptage' : `tes ${f.num(n)} derniers comptages`}`,
+  countNoneYet: 'Compte quelques positions et ton erreur s’affichera ici.', countFigure: (med: number) => `erreur médiane ${pts(med)}`,
+  // replaying from memory (C2): the game's moves placed again in order, both sides
+  memLink: 'Rejouer de mémoire', memTitle: 'Rejouer de mémoire',
+  memAsk: (n: number, s: number) => `Coup ${n} : à ${color(s)}. Pose le coup de la partie.`,
+  memWrong: (n: number) => `Pas ce coup-là. Coup ${n} : essaie encore.`,
+  memHelp: (n: number) => `Le coup ${n} était ici. Il compte comme une aide.`, memHelpPass: (n: number) => `Le coup ${n} était un passe. Il compte comme une aide.`,
+  memDone: (r: number, n: number, h: number) => `${f.plural(r, 'coup rejoué', 'coups rejoués')} de mémoire sur ${f.num(n)}, ${f.plural(h, 'aide', 'aides')}`,
+  memStopped: (at: number) => `Arrêté au coup ${at}.`, memBest: (r: number, n: number) => `Ton meilleur : ${f.num(r)} sur ${f.num(n)}.`,
+  memAgain: 'Recommencer', memFound: 'retrouvés', memHelps: 'aides', memLeft: 'à poser',
+  memHelpText: 'Pose les coups dans l’ordre, pour les deux camps. Une pierre fausse tremble et s’en va ; au second essai manqué, le coup s’allume.',
+  libraryShown: 'Une partie de ta bibliothèque.',
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
     library_bad_id: 'Le nom de cette partie n’est pas valide.',

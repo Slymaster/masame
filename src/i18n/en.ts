@@ -337,6 +337,27 @@ export const en = {
   postcard: 'Postcard…', postcardHint: 'Save the board as a picture (PNG), signed, to share', postcardTitle: 'Save the postcard',
   postcardName: (n: number, move?: number) => `masame-${n}x${n}${move === undefined ? '' : `-move-${move}`}.png`,
   postcardSaved: 'Postcard saved.', postcardNotReady: 'the board isn’t drawn yet', postcardFailed: (m: string) => `Couldn’t save the postcard: ${m}`,
+  // counting (C1): who leads in a position of your reviewed games, and by how much
+  countDeck: 'Counting', countPhrase: 'who leads, by how much?', countWho: 'Who leads?', countBy: 'By how much?', countEven: 'Even', countAnswer: 'Answer',
+  countAsk: (n: number, of: number, move: number) => `Position ${n} of ${of}, move ${move}: who leads, and by how much?`,
+  countVerdict: (v: 'right' | 'close' | 'far', lead: number) => `${({ right: 'Right', close: 'Close', far: 'Far' })[v]}: KataGo counts ${lead ? `${color(lead > 0 ? 1 : -1)} +${f.half(lead)}` : 'it even'}.`,
+  countYours: (lead: number) => `You said ${lead ? `${color(lead > 0 ? 1 : -1)} +${f.num(Math.abs(lead))}` : 'even'}.`,
+  countLight: 'See the light', countNext: 'Next position', countAgain: 'Five more',
+  countSession: (n: number, right: number, med: number) => `${f.plural(n, 'position', 'positions')} counted, ${f.num(right)} right. Median error: ${pts(med)}.`,
+  countNone: 'No reviewed game yet. Review a game, and its positions come here to be counted.',
+  countLoading: 'Choosing a position', countFailed: (m: string) => `Couldn’t open this position. ${m}`, countLightFailed: (m: string) => `Couldn’t light the position. ${m}`,
+  countSection: 'Your counting error', countMedian: (med: number, n: number) => `${pts(med)} median over your last ${f.plural(n, 'count', 'counts')}`,
+  countNoneYet: 'Count a few positions and your error shows here.', countFigure: (med: number) => `median error ${pts(med)}`,
+  // replaying from memory (C2): the game's moves placed again in order, both sides
+  memLink: 'Replay from memory', memTitle: 'Replay from memory',
+  memAsk: (n: number, s: number) => `Move ${n}: ${color(s)} to play. Place the game’s move.`,
+  memWrong: (n: number) => `Not that one. Move ${n}: try again.`,
+  memHelp: (n: number) => `Move ${n} was here. It counts as a help.`, memHelpPass: (n: number) => `Move ${n} was a pass. It counts as a help.`,
+  memDone: (r: number, n: number, h: number) => `${f.plural(r, 'move', 'moves')} replayed from memory out of ${f.num(n)}, ${f.plural(h, 'help', 'helps')}`,
+  memStopped: (at: number) => `Stopped at move ${at}.`, memBest: (r: number, n: number) => `Your best: ${f.num(r)} of ${f.num(n)}.`,
+  memAgain: 'Start again', memFound: 'found', memHelps: 'helps', memLeft: 'to go',
+  memHelpText: 'Place the moves in order, both sides. A wrong stone trembles and goes; a second miss shows the move.',
+  libraryShown: 'A game from your library.',
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
     library_bad_id: 'This game’s name isn’t valid.',

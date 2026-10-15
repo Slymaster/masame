@@ -46,7 +46,7 @@ const now = () => {
   const pin = import.meta.env.DEV ? new URLSearchParams(location.search).get('clock') : null
   return pin ? new Date(pin) : new Date()
 }
-const FADE_MS = 230, OMBRE_MS = 900, AUTO_MS = 15_000
+const FADE_MS = 230, OMBRE_MS = 900, AUTO_MS = 15_000, SHAKE_MS = 650 // SHAKE_MS: a refused stone trembles, then fades away
 const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
 const AO_K = 1.4 // contact-shadow quad half size, in stone radii
 // contact shadow: darkest right at the silhouette (peak per colour), a gaussian gone (≈2 %) AO_REACH radii out on the
@@ -352,6 +352,9 @@ export class Board3D {
   private terr!: { 1: THREE.InstancedMesh; [-1]: THREE.InstancedMesh }
   private ghost!: THREE.Mesh
   private ghostMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
+  private trem!: THREE.Mesh // the refused stone (shake)
+  private tremMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
+  private shook: { v: Vertex; c: Sign; t0: number } | null = null
   private markers!: { 1: THREE.Mesh; [-1]: THREE.Mesh }
   private boardMat!: THREE.MeshPhysicalMaterial
   /** Pale golden kaya (the scan, barely graded): readability comes from the stones' contact shadow and rim, not dark wood. */
@@ -501,6 +504,15 @@ export class Board3D {
     this.invalidate()
   }
 
+  /** A refused stone (replaying from memory): it trembles and disappears; the position doesn't change. */
+  shake(v: Vertex, c: Sign) {
+    if (this.dead) return
+    this.hover = null
+    this.shook = { v, c, t0: performance.now() }
+    this.sound.tap(c)
+    this.invalidate()
+  }
+
   update(state: Board3DState) {
     if (this.dead) return
     if (!state.interactive || state.counting) this.hover = null
@@ -634,6 +646,9 @@ export class Board3D {
     }
     this.ghost = new THREE.Mesh(this.geoB, this.ghostMats[1]); this.ghost.visible = false; this.ghost.renderOrder = 3
     scene.add(this.ghost)
+    this.tremMats = { 1: this.ghostMats[1].clone(), [-1]: this.ghostMats[-1].clone() }
+    this.trem = new THREE.Mesh(this.geoB, this.tremMats[1]); this.trem.visible = false; this.trem.renderOrder = 3
+    scene.add(this.trem)
     const mm = (c: number) => new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
     this.markers = { 1: new THREE.Mesh(markerGeo(this.geoB.userData.prof), mm(0xe9dcc4)), [-1]: new THREE.Mesh(markerGeo(this.geoW.userData.prof), mm(0x2a201a)) }
     for (const m of Object.values(this.markers)) { m.matrixAutoUpdate = false; m.visible = false; scene.add(m) }
@@ -1335,6 +1350,15 @@ export class Board3D {
       this.ghost.material = this.ghostMats[st.toPlay === 1 ? 1 : -1]
       this.ghost.position.set(gx(N, h[0]), SH, gz(N, h[1]))
     }
+    const w = this.shook, wk = w ? (now - w.t0) / SHAKE_MS : 1
+    this.trem.visible = !!w && wk < 1 && !st?.signMap[w.v[1]]?.[w.v[0]]
+    if (w && this.trem.visible) {
+      const m = this.tremMats[w.c === 1 ? 1 : -1], dx = this.instant() ? 0 : Math.sin(wk * Math.PI * 8) * 2.4 * (1 - wk)
+      m.opacity = 0.92 * (1 - sstep(0.45, 1, wk))
+      this.trem.geometry = w.c === 1 ? this.geoB : this.geoW; this.trem.material = m
+      this.trem.position.set(gx(N, w.v[0]) + dx, SH, gz(N, w.v[1]))
+      busy = true
+    } else this.shook = null
     return busy
   }
 
