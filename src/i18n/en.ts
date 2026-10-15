@@ -104,7 +104,7 @@ export const en = {
   learnTabs: { today: 'Today', progress: 'Progress' }, learnTabsLabel: 'Learn',
   decksLab: 'Your decks', deckCount: (due: number, fresh: number) => `${f.num(due)} to review · ${f.num(fresh)} new`,
   decks: { exercises: 'Exercises from your games', joseki: 'Joseki', fuseki: 'Fuseki' },
-  deckPhrases: { exercises: 'find better', joseki: 'explore, practise, programme', fuseki: 'the first twelve moves' },
+  deckPhrases: { exercises: 'find better', joseki: 'explore, practise, programme', fuseki: 'the opening, up to twelve moves' },
   learnBlocked: 'Not during an OGS game or a review: finish it first.',
   rankSection: 'Your rank read in your moves', ogsRatingSection: 'OGS rating',
   gamesAll: 'All your games', gamesFilterLabel: 'Games shown',

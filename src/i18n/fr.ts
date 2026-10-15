@@ -104,7 +104,7 @@ export const fr: Dict = {
   learnTabs: { today: 'Aujourd’hui', progress: 'Progrès' }, learnTabsLabel: 'Apprendre',
   decksLab: 'Tes paquets', deckCount: (due: number, fresh: number) => `${f.num(due)} à revoir · ${f.num(fresh)} ${fresh > 1 ? 'nouveaux' : 'nouveau'}`,
   decks: { exercises: 'Exercices de tes parties', joseki: 'Joseki', fuseki: 'Fuseki' },
-  deckPhrases: { exercises: 'trouve mieux', joseki: 'explorer, s’entraîner, programme', fuseki: 'les douze premiers coups' },
+  deckPhrases: { exercises: 'trouve mieux', joseki: 'explorer, s’entraîner, programme', fuseki: 'l’ouverture, jusqu’à douze coups' },
   learnBlocked: 'Pas pendant une partie OGS ni une revue : termine-la d’abord.',
   rankSection: 'Ton rang lu dans tes coups', ogsRatingSection: 'Classement OGS',
   gamesAll: 'Toutes tes parties', gamesFilterLabel: 'Parties montrées',
