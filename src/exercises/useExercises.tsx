@@ -29,7 +29,7 @@ type Line = (Vertex | null)[]
 interface Run { k: string; tried: Vertex | null; gap: number | null; ok: boolean | null; shown: Line; more: Line; line: 'better' | 'punish' | 'reply' | null; error: unknown }
 /** What the trainer shows: one kind of card from the deck (`only`), or a session's cards in order (`keys`; yose ones in `yose`,
  *  found while `gen` counts them); `then` is offered once the session is over. */
-interface Session { only: Only; keys: string[] | null; yose: Record<string, Exercise> | null; gen: number | null; then: Link | null; error?: unknown }
+interface Session { only: Only; keys: string[] | null; yose: Record<string, Exercise> | null; gen: number | null; then: Link | null; error?: unknown; empty?: boolean }
 const DECK: Session = { only: 'find', keys: null, yose: null, gen: null, then: null }
 export const WORK_N = 8 // cards in a phase session
 const RATING: Record<'found' | 'short' | 'missed', Rating> = { found: 3, short: 2, missed: 1 }
@@ -95,7 +95,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
     if (phase === 2) return yoseSession()
     const keys = sessionKeys(store.p, Date.now(), WORK_N, phase)
     if (phase === 0 && !keys.length) return opening()
-    start({ only: null, keys, then: phase === 0 ? ['opening', t.workOpening, opening] : null })
+    start({ only: null, keys, empty: !keys.length, then: phase === 0 ? ['opening', t.workOpening, opening] : null })
   }
 
   /** A try's gap (and a tsumego's status), shown, noted in the journal and recorded once (FSRS; a yose position isn't kept). */
@@ -192,7 +192,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
     : verdict === 'found' ? t.exFound : verdict === 'short' ? t.exShort(run!.gap!) : t.exMissed(run?.gap ?? 0)
   const nothing = session.error ? t.answerFailed(failureText(session.error)) : session.gen !== null ? t.yoSearching(session.gen, YOSE_N)
     : session.yose ? Object.keys(session.yose).length ? t.workDone : t.yoNone
-    : session.keys ? t.workDone
+    : session.keys ? session.empty ? t.workEmpty : t.workDone
     : session.only === 'ld' ? Object.values(store.p.items).some(x => x.kind === 'ld') ? t.tsDone : t.tsEmpty
     : Object.keys(store.p.items).length ? t.exDone : t.exEmpty
   const note = say ?? (!run || !x ? !canAnalyze ? t.exNeedsNet : nothing
