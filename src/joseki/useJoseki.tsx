@@ -109,7 +109,8 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
   const acts = <button className="act" onClick={close} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button>
   if (!db || !R) {
     const note = error ? T.failed(failureText(error)) : T.loading
-    return { ...none, acts, note, body: <section className="rv"><p className="estimate">{note}</p></section> }
+    // the family switch stays, so a missing book is never a dead end
+    return { ...none, acts, note, body: <section className="rv jt">{setBook && <Seg label={t.fFamily} value={book} options={[['joseki', t.joseki], ['fuseki', t.fuseki]]} set={setBook} />}<p className={error ? 'say' : 'estimate'}>{note}</p></section> }
   }
 
   const lens = db.profiles[p]
@@ -155,7 +156,11 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
   const toPlayLine = line ? signOf(line.o, lw!.moves.length, ctx) : 1
   const answerTenuki = () => { if (line?.phase === 'ask') graded(answer(db, line, 'tenuki')) }
   const lineMarks: Mark[] = line?.phase === 'wrong' && ln!.e.length
-    ? accepted(db, node(lw!)).filter(i => !isTenuki(ln!.e[i][0])).map((i, k) => ({ v: shownAt(lw!, line.o, ln!.e[i][0]), label: LETTERS[k], tone: tone(ln!.e[i][2] / 10) }))
+    ? (() => { const kids: number[] = [] // as in Explore: mirror twins (same child) share one letter
+        return accepted(db, node(lw!)).filter(i => !isTenuki(ln!.e[i][0])).map(i => {
+          const c = ln!.e[i][1], k = kids.includes(c) ? kids.indexOf(c) : kids.push(c) - 1
+          return { v: shownAt(lw!, line.o, ln!.e[i][0]), label: LETTERS[k] ?? '·', tone: tone(ln!.e[i][2] / 10) }
+        }) })()
     : []
   const progress = counts(db, store.p.cards, fresh, now)
 
