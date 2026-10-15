@@ -1,6 +1,7 @@
 // "Le rituel du jour": a hand of exercises (leaning toward your weakest phase), the due joseki and a 9×9 at your level, chained once a day. The steps come from
 // the decks (never stored); only the streak and the ritual game's day are kept, in localStorage like the decks.
 import type { Card } from '../joseki/fsrs'
+import type { Book } from '../joseki/db'
 import { today } from '../joseki/store'
 
 // cards that make a day's step: the joseki (or fuseki) step's CAP, the exercises step's HAND
@@ -17,6 +18,8 @@ export function deckStep(cards: Record<string, Card>, left: number, now: number,
   const seen = Object.values(cards).filter(c => c.last >= midnight(now)).length
   return { done: seen >= cap || left === 0, left: seen >= cap ? 0 : Math.min(left, cap - seen) }
 }
+/** The second step's book: the fuseki when the opening is your weakest phase (deck.ts weakest()), else the joseki. */
+export const openingBook = (weak: 0 | 1 | 2 | null): Book => weak === 0 ? 'fuseki' : 'joseki'
 export const gameStep = (r: Ritual, now: number): Step => ({ done: r.game === today(now), left: r.game === today(now) ? 0 : 1 })
 /** Every available step done, with at least one available. */
 export const allDone = (steps: Step[]) => steps.some(s => s) && steps.every(s => !s || s.done)

@@ -1,7 +1,7 @@
-// Joseki progress, kept in localStorage and keyed by position (positionKey), so it survives data rebuilds.
+// Joseki and fuseki progress (one key each, the same format), kept in localStorage and keyed by position (positionKey), so it survives data rebuilds.
 import type { Card } from './fsrs'
 
-export const KEY = 'masame.joseki', BAD = 'masame.joseki.bad', NEW_PER_DAY = 10
+export const KEY = 'masame.joseki', BAD = 'masame.joseki.bad', FUSEKI_KEY = 'masame.fuseki', NEW_PER_DAY = 10
 /** day: the local date `fresh` (new cards introduced) counts for. */
 export interface Progress { v: 1; cards: Record<string, Card>; day: string; fresh: number }
 /** readOnly: written by a newer app; shown empty and never overwritten. */
@@ -13,9 +13,11 @@ const empty = (): Progress => ({ v: 1, cards: {}, day: today(), fresh: 0 })
 const num = (x: unknown) => typeof x === 'number' && Number.isFinite(x)
 export const isCard = (c: unknown) => !!c && typeof c === 'object' && (['s', 'd', 'due', 'last', 'reps', 'lapses'] as const).every(k => num((c as Card)[k]))
 
-export function load(st: Storage = localStorage): Stored {
+/** key: KEY or FUSEKI_KEY; the raw text of a damaged store goes to `${key}.bad`. */
+export function load(st: Storage = localStorage, key = KEY): Stored {
+  const bad = `${key}.bad`
   let raw: string | null = null
-  try { raw = st.getItem(KEY) } catch { return { p: empty(), readOnly: false } } // storage disabled
+  try { raw = st.getItem(key) } catch { return { p: empty(), readOnly: false } } // storage disabled
   if (raw === null) return { p: empty(), readOnly: false }
   try {
     const j = JSON.parse(raw)
@@ -23,17 +25,17 @@ export function load(st: Storage = localStorage): Stored {
     if (j?.v === 1 && j.cards && typeof j.cards === 'object' && !Array.isArray(j.cards) && typeof j.day === 'string' && num(j.fresh)) {
       const cards = Object.fromEntries(Object.entries(j.cards).filter(([, c]) => isCard(c))) as Progress['cards']
       // a bad card costs that card only; the raw text is kept aside
-      if (Object.keys(cards).length < Object.keys(j.cards).length) try { st.setItem(BAD, raw) } catch { /* full */ }
+      if (Object.keys(cards).length < Object.keys(j.cards).length) try { st.setItem(bad, raw) } catch { /* full */ }
       return { p: j.day === today() ? { ...j, cards } : { ...j, cards, day: today(), fresh: 0 }, readOnly: false }
     }
   } catch { /* garbage: below */ }
-  try { st.setItem(BAD, raw) } catch { /* full: the fresh start still beats a crash */ }
+  try { st.setItem(bad, raw) } catch { /* full: the fresh start still beats a crash */ }
   return { p: empty(), readOnly: false }
 }
 
-export function save(s: Stored, st: Storage = localStorage) {
+export function save(s: Stored, st: Storage = localStorage, key = KEY) {
   if (s.readOnly) return
-  try { st.setItem(KEY, JSON.stringify(s.p)) } catch { /* private mode: this session only */ }
+  try { st.setItem(key, JSON.stringify(s.p)) } catch { /* private mode: this session only */ }
 }
 
 /** A review recorded on a new day restarts the daily count of new cards. */

@@ -10,7 +10,8 @@ export const TAG = { classic: 1, pro: 2, ai: 4, verified: 8, contested: 16 }
 export type Edge = [string, number, number, number[], number, number?]
 export interface JNode { k: string; e: Edge[]; s?: 1; pv?: string }
 export interface Root { name: string; m: string; node: number; f: number[] }
-export interface JosekiDb { v: 1; build: Record<string, unknown>; profiles: string[]; roots: Root[]; nodes: JNode[] }
+/** family: set by the loader for fuseki.v1.json (not in the file). */
+export interface JosekiDb { v: 1; build: Record<string, unknown>; profiles: string[]; roots: Root[]; nodes: JNode[]; family?: 'fuseki' }
 
 const isInt = (v: unknown, min: number, max = Infinity): v is number => Number.isInteger(v) && (v as number) >= min && (v as number) <= max
 const isMove = (v: unknown) => typeof v === 'string' && /^[a-s]{2}$/.test(v)
@@ -37,11 +38,12 @@ export function validate(raw: unknown): JosekiDb {
   return d
 }
 
-let loading: Promise<JosekiDb> | undefined
+export type Book = 'joseki' | 'fuseki'
+const loading: Partial<Record<Book, Promise<JosekiDb>>> = {}
 /** Fetched on first use (it is not small), then shared. */
-export const loadJoseki = () => loading ??= fetch(`${import.meta.env.BASE_URL}assets/joseki/joseki.v1.json`)
-  .then(r => { if (!r.ok) throw new Error(`joseki data: HTTP ${r.status}`); return r.json() })
-  .then(validate, e => { loading = undefined; throw e })
+export const loadJoseki = (book: Book = 'joseki') => loading[book] ??= fetch(`${import.meta.env.BASE_URL}assets/joseki/${book}.v1.json`)
+  .then(r => { if (!r.ok) throw new Error(`${book} data: HTTP ${r.status}`); return r.json() })
+  .then(j => book === 'fuseki' ? { ...validate(j), family: book } : validate(j), e => { loading[book] = undefined; throw e })
 
 export interface Child { move: string; child: number; loss: number; freq: number[]; tags: number; sym: number }
 /** Moves stored at a node: loss in points, freq per profile in 0..1. */

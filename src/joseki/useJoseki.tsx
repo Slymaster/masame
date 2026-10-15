@@ -1,4 +1,5 @@
-// The joseki trainer: Explore, Practise and Programme panels, which borrow the board and the card while open.
+// The joseki trainer: Explore, Practise and Programme panels, which borrow the board and the card while open. The same
+// hook is the fuseki trainer (book 'fuseki': Explore and Practise only, its own progress), each its own takeover.
 // App keeps its game untouched underneath; its play(), bot turn and Undo defer to the trainer while it is open.
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { Board3DState } from '../board3d/Board3D'
@@ -7,16 +8,17 @@ import { askFirst, saveSgfFile } from '../files'
 import type { Move, Sign, Vertex } from '../game'
 import { failureText, t } from '../i18n'
 import { Icon } from '../Icon'
+import { note as journal } from '../journal'
 import { gtp } from '../katago'
 import { Seg } from '../Seg'
 import { deckStep } from '../today/ritual'
-import { loadJoseki, nearestProfile, reach, TAG, validate, type JosekiDb } from './db'
+import { loadJoseki, nearestProfile, reach, TAG, validate, type Book, type JosekiDb } from './db'
 import { review } from './fsrs'
 import {
-  accepted, answer, continuation, counts, EXPLORE, focus, isTenuki, nextCard, node, pathTo, position, programme, reply, shown, shownAt,
-  startLine, storedAt, tone, walk, type Line, type Orient, type Path,
+  accepted, answer, contextOf, continuation, counts, exploreOf, focus, isTenuki as tenukiIn, nextCard, node, pathTo, position, programme, randomOrient, reply,
+  shown as shownIn, shownAt, startLine, storedAt, tone, walk, type Line, type Orient, type Path,
 } from './practice'
-import { load, NEW_PER_DAY, record, reset, save, today, type Stored } from './store'
+import { FUSEKI_KEY, KEY, load, NEW_PER_DAY, record, reset, save, today, type Stored } from './store'
 import { N, point } from './sym'
 
 const LEVELS = ['20k', '15k', '10k', '5k', '1d', '5d']
@@ -27,37 +29,47 @@ type Tab = 'explore' | 'practise' | 'programme'
 type Link = [string, string, () => void]
 
 /** The real data, or the committed fixture while developing without it (never shipped as the product data). */
-const loadData = () => loadJoseki().catch(e => import.meta.env.DEV
-  ? import('./fixture.json').then(m => { console.warn('joseki: using the fixture', e); return validate(structuredClone(m.default)) })
+const loadData = (book: Book) => loadJoseki(book).catch(e => import.meta.env.DEV
+  ? (book === 'fuseki' ? import('./fuseki-fixture.json') : import('./fixture.json')).then(m => {
+    console.warn(`${book}: using the fixture`, e)
+    const d = validate(structuredClone(m.default))
+    return book === 'fuseki' ? { ...d, family: book } : d
+  })
   : Promise.reject(e))
-const randomOrient = (): Orient => ({ k: Math.floor(Math.random() * 8), swap: Math.random() < 0.5 })
-const signOf = (o: Orient, ply: number) => ((ply % 2 ? 1 : -1) * (o.swap ? -1 : 1)) as Sign // ply: moves after the context
+/** Who plays move `ply` (counted after the context). */
+const signOf = (o: Orient, ply: number, context: string[]) => (((context.length + ply) % 2 ? -1 : 1) * (o.swap ? -1 : 1)) as Sign
 
-export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked, playFrom }: {
+export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOpen, rank, setRank, blocked, playFrom }: {
+  book?: Book; setBook?: (b: Book) => void // the family switch: opens the other book's takeover
   view: RefObject<{ drop(v: Vertex, c: Sign): void } | null>; open: boolean; preload: boolean; setOpen: (o: boolean) => void
   rank: string; setRank: (r: string) => void; blocked: boolean; playFrom: (moves: Move[]) => Promise<boolean>
 }) {
+  const fuseki = book === 'fuseki', key = fuseki ? FUSEKI_KEY : KEY
+  const T = fuseki
+    ? { title: t.fuseki, loading: t.fLoading, failed: t.fFailed, root: t.fFirst, exploreNote: t.fExploreNote, context: t.fContext, help: t.fPractiseHelp, wrong: t.fWrong, resetAsk: t.fResetAsk, fileName: t.fFileName }
+    : { title: t.joseki, loading: t.jLoading, failed: t.jFailed, root: t.jCorner, exploreNote: t.jExploreNote, context: t.jContext, help: t.jPractiseHelp, wrong: t.jWrong, resetAsk: t.jResetAsk, fileName: t.jFileName }
   const [tab, setTab] = useState<Tab>('explore')
   const [db, setDb] = useState<JosekiDb | null>(null)
   const [error, setError] = useState<unknown>(null)
   const [ex, setEx] = useState<{ path: Path; line: boolean }>({ path: { root: 0, picks: [] }, line: false })
   const [line, setLine] = useState<Line | null>(null)
   const [replaying, setReplaying] = useState(false)
-  const [store, setStore] = useState<Stored>(() => load())
+  const [store, setStore] = useState<Stored>(() => load(localStorage, key))
   const [say, setSay] = useState<string | null>(null) // a one-off note (not in the book, exported)
   const loaded = useRef(store)
-  useEffect(() => { if (store !== loaded.current) save(store) }, [store]) // written on real changes only, never at launch
+  useEffect(() => { if (store !== loaded.current) save(store, localStorage, key) }, [store]) // written on real changes only, never at launch
 
   useEffect(() => {
     if (!(open || preload) || db) return
     let live = true
     setError(null)
-    loadData().then(d => live && setDb(d), e => live && setError(e))
+    loadData(book).then(d => live && setDb(d), e => live && setError(e))
     return () => { live = false }
   }, [open, preload, db])
   useEffect(() => { if (blocked) setOpen(false) }, [blocked])
 
   const R = useMemo(() => db && reach(db), [db])
+  const ctx = db ? contextOf(db) : [], shown = (ms: string[], o: Orient) => shownIn(ms, o, ctx), isTenuki = (m: string) => !!db && tenukiIn(db, m)
   const p = db ? nearestProfile(db.profiles, rank) : 0
 
   // the opponent's answer, then any replayed line (punishment, continuation), one stone at a time
@@ -81,20 +93,22 @@ export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked
   const newLine = () => {
     if (!db || !R) return
     setReplaying(false); setSay(null)
-    const n = nextCard(db, R, p, store.p.cards, fresh, now)
-    setLine(n === null ? null : startLine(db, pathTo(db, R, p, n), randomOrient()))
+    const n = nextCard(db, R, p, store.p.cards, fresh, now, fuseki ? Math.random() < 0.5 ? 0 : 1 : undefined)
+    setLine(n === null ? null : startLine(db, pathTo(db, R, p, n), randomOrient(book)))
     if (n === null) setSay(t.jDone)
   }
   const toggle = () => { if (!blocked) { setOpen(!open); setSay(null) } }
   const close = () => setOpen(false)
-  /** The daily ritual's joseki step: the Practise tab, a line started at once. */
-  const practise = () => { setTab('practise'); newLine() }
+  /** The daily ritual's step (and Travailler › Opening): the Practise tab, a line started at once, or as soon as the book is loaded. */
+  const [queued, setQueued] = useState(false)
+  const practise = () => { setTab('practise'); if (db) newLine(); else setQueued(true) }
+  useEffect(() => { if (queued && db && R) { setQueued(false); newLine() } }, [queued, db, R]) // eslint-disable-line react-hooks/exhaustive-deps
   const left = db && counts(db, store.p.cards, fresh, now), todayStep = left && deckStep(store.p.cards, left.due + left.fresh, now) // null until loaded
   const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, today: todayStep, practise, counts: left }
   if (!open) return none
   const acts = <button className="act" onClick={close} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button>
   if (!db || !R) {
-    const note = error ? t.jFailed(failureText(error)) : t.jLoading
+    const note = error ? T.failed(failureText(error)) : T.loading
     return { ...none, acts, note, body: <section className="rv"><p className="estimate">{note}</p></section> }
   }
 
@@ -102,6 +116,7 @@ export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked
   const pct = (f: number) => t.percent(f)
 
   // ---------- Explore ----------
+  const EXPLORE = exploreOf(db)
   const goEx = (path: Path) => { setEx({ path, line: false }); setSay(null) }
   const exW = walk(db, ex.path), exNode = db.nodes[node(exW)], exEdges = exNode.e
   const exLetters = new Map<number, string>() // edge index → its marker letter
@@ -117,7 +132,7 @@ export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked
   const back = () => ex.path.picks.length && goEx({ ...ex.path, picks: ex.path.picks.slice(0, -1) })
   const down = (i: number) => {
     const v = shownAt(exW, EXPLORE, exEdges[i][0])
-    view.current?.drop(v, signOf(EXPLORE, exW.moves.length))
+    view.current?.drop(v, signOf(EXPLORE, exW.moves.length, ctx))
     goEx({ ...ex.path, picks: [...ex.path.picks, i] })
   }
   const moveName = (i: number) => isTenuki(exEdges[i][0]) ? t.jTenuki : `${exLetters.get(i)} · ${gtp(shownAt(exW, EXPLORE, exEdges[i][0]), N)}`
@@ -125,14 +140,15 @@ export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked
   const loss = (x10: number) => x10 ? t.jLoss(x10 / 10) : t.jBest
 
   // ---------- Practise ----------
-  const fromHere = () => { setTab('practise'); setReplaying(false); setSay(null); setLine(startLine(db, ex.path, randomOrient())) }
+  const fromHere = () => { setTab('practise'); setReplaying(false); setSay(null); setLine(startLine(db, ex.path, randomOrient(book))) }
   const graded = (l: Line) => {
     const c = l.last?.card
     if (c && (store.p.cards[c] || fresh < NEW_PER_DAY)) setStore(s => ({ ...s, p: record(s.p, c, review(s.p.cards[c], l.last!.rating, Date.now())) }))
+    if (l.last) journal(book, l.last.rating === 3, c ?? undefined)
     setLine(l)
   }
   const lw = line && walk(db, line.path), ln = lw && db.nodes[node(lw)]
-  const toPlayLine = line ? signOf(line.o, lw!.moves.length) : 1
+  const toPlayLine = line ? signOf(line.o, lw!.moves.length, ctx) : 1
   const answerTenuki = () => { if (line?.phase === 'ask') graded(answer(db, line, 'tenuki')) }
   const lineMarks: Mark[] = line?.phase === 'wrong' && ln!.e.length
     ? accepted(db, node(lw!)).filter(i => !isTenuki(ln!.e[i][0])).map((i, k) => ({ v: shownAt(lw!, line.o, ln!.e[i][0]), label: LETTERS[k], tone: tone(ln!.e[i][2] / 10) }))
@@ -145,7 +161,7 @@ export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked
   const moves = shown(practising ? [...lw!.moves, ...line!.extra] : exMoves, o), b = position(moves)
   const board: Partial<Board3DState> = {
     signMap: b.signMap, last: moves.at(-1)!.vertex, toPlay: -moves.at(-1)!.sign as Sign, ownership: null, counting: null,
-    captures: { black: b.getCaptures(1), white: b.getCaptures(-1) }, focus: focus(o),
+    captures: { black: b.getCaptures(1), white: b.getCaptures(-1) }, focus: focus(db, o),
     interactive: practising ? line!.phase === 'ask' && !replaying : tab === 'explore' && !ex.line,
     marks: practising ? lineMarks : tab === 'explore' && !ex.line
       ? [...exLetters].map(([i, label]) => ({ v: shownAt(exW, EXPLORE, exEdges[i][0]), label, tone: tone(exEdges[i][2] / 10) })) : [],
@@ -170,11 +186,11 @@ export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked
     : away && line.phase === 'ask' ? `${t.jElsewhere}${t.jAsk(toPlayLine)}`
     : line.phase === 'ask' ? line.dev !== null ? t.jAskPunish(line.dev) : `${last ? last.rating === 3 ? t.jGood : t.jHard : ''}${t.jAsk(toPlayLine)}`
     : line.phase === 'reply' ? last?.rating === 3 ? t.jGood : t.jHard
-    : line.phase === 'wrong' ? ln!.e.length ? lineMarks.length ? t.jWrong : t.jWrongTenuki : t.jMissedPunish
+    : line.phase === 'wrong' ? ln!.e.length ? lineMarks.length ? T.wrong : t.jWrongTenuki : t.jMissedPunish
     : `${away ? t.jElsewhere : ''}${last ? last.rating === 1 ? '' : line.dev !== null ? `${t.found} ` : t.jGood : ''}${t.jLineEnd}`
-  const note = say ?? (tab === 'practise' ? lineNote ?? t.jPractiseHelp : tab === 'explore'
+  const note = say ?? (tab === 'practise' ? lineNote ?? T.help : tab === 'explore'
     ? exLine.length && ex.line ? t.jKataLine(exLine.map(m => gtp(point(m), N)).join(' '))
-    : t.jExploreNote(exW.moves.length) : t.jProgrammeNote)
+    : T.exploreNote(exW.moves.length) : t.jProgrammeNote)
   const links: Link[] = practising && (line!.phase === 'wrong' || line!.phase === 'end') ? [
     ...line!.more.length && !replaying ? [['more', line!.phase === 'wrong' ? t.seePunishment : t.jContinuation, () => setReplaying(true)] as Link] : [],
     ['next', t.jNextLine, newLine],
@@ -182,20 +198,21 @@ export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked
 
   // ---------- panels ----------
   const exportProgress = async () => {
-    try { if (await saveSgfFile(JSON.stringify(store.p, null, 1), t.jFileName, 'json')) setSay(t.jExported) } catch (e) { setSay(failureText(e)) }
+    try { if (await saveSgfFile(JSON.stringify(store.p, null, 1), T.fileName, 'json')) setSay(t.jExported) } catch (e) { setSay(failureText(e)) }
   }
-  const resetProgress = async () => { if (await askFirst(t.jResetAsk, t.jReset)) { setStore({ p: reset(), readOnly: false }); setSay(null) } }
+  const resetProgress = async () => { if (await askFirst(T.resetAsk, t.jReset)) { setStore({ p: reset(), readOnly: false }); setSay(null) } }
   const fams = tab === 'programme' ? programme(db, R, p).slice(0, 8) : []
   const body = (
-    <section className="rv jt" aria-label={t.joseki}>
-      <div className="lab"><span>{t.joseki}</span><span>{lens}</span></div>
-      <Seg label={t.joseki} value={tab} options={[['explore', t.jTabs.explore], ['practise', t.jTabs.practise], ['programme', t.jTabs.programme]]} set={v => { setTab(v); setSay(null) }} />
+    <section className="rv jt" aria-label={T.title}>
+      <div className="lab"><span>{T.title}</span><span>{lens}</span></div>
+      {setBook && <Seg label={t.fFamily} value={book} options={[['joseki', t.joseki], ['fuseki', t.fuseki]]} set={setBook} />}
+      <Seg label={T.title} value={tab} options={[['explore', t.jTabs.explore], ['practise', t.jTabs.practise], ...fuseki ? [] : [['programme', t.jTabs.programme] as [Tab, string]]]} set={v => { setTab(v); setSay(null) }} />
       <div className="field">
         <span>{t.myLevel}</span>
         <Seg label={t.myLevel} value={LEVELS[nearestProfile(LEVELS, rank)]} options={LEVELS.map(r => [r, r])} set={setRank} />
       </div>
       {tab === 'explore' && <>
-        <Seg label={t.jCorner} value={ex.path.root} options={db.roots.map((r, i) => [i, r.name])} set={root => goEx({ root, picks: [] })} />
+        <Seg label={T.root} value={ex.path.root} options={db.roots.map((r, i) => [i, r.name])} set={root => goEx({ root, picks: [] })} />
         <div className="jnav">
           <button className="chev" onClick={back} disabled={!ex.path.picks.length} aria-label={t.jBack} title={`${t.jBack} (←)`}><Icon name="chevron-left" /></button>
           <span className="quiet">{t.move(exW.moves.length)}</span>
@@ -209,7 +226,7 @@ export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked
           ))}
         </ul>}
         {tenukiEdge >= 0 && exEdges[tenukiEdge][2] <= 5 && <p className="quiet">{t.jTenukiFine(exEdges[tenukiEdge][2] / 10)}</p>}
-        {complete && <p className="estimate">{t.jComplete}</p>}
+        {complete && !fuseki && <p className="estimate">{t.jComplete}</p>}
         {exEdges.length > 0 && <p className="quiet jlens">
           <span>{t.jLens}</span>
           {LENS.map(r => db.profiles.indexOf(r)).filter(q => q >= 0).map(q => {
@@ -223,12 +240,12 @@ export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked
           <button className="btn" onClick={fromHere} disabled={!exEdges.length}>{t.jPractiseHere}</button>
           <button className="btn" onClick={() => playFrom(moves).then(ok => ok && close())}>{t.jPlayHere}</button>
         </div>
-        <p className="quiet">{t.jContext}</p>
+        <p className="quiet">{T.context}</p>
       </>}
       {tab === 'practise' && <>
         <p className="quiet" aria-live="polite">{store.readOnly ? t.jReadOnly : t.jProgress(progress.due, progress.fresh)}</p>
         <div className="opts">
-          {line ? <button key="tenuki" className="btn" onClick={answerTenuki} disabled={line.phase !== 'ask' || replaying} title={t.jTenukiHelp}>{t.jTenuki}</button>
+          {line ? !fuseki && <button key="tenuki" className="btn" onClick={answerTenuki} disabled={line.phase !== 'ask' || replaying} title={t.jTenukiHelp}>{t.jTenuki}</button>
             : <button key="start" className="btn accent" onClick={newLine}>{t.jStart}</button>}
         </div>
         <p className="quiet"><button className="link" onClick={exportProgress}>{t.jExport}</button> · <button className="link" onClick={resetProgress} disabled={store.readOnly}>{t.jReset}</button></p>

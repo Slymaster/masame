@@ -94,8 +94,8 @@ export const fr: Dict = {
   shareCopied: (url: string) => `Lien copié : ${url}`, shareCopyFailed: 'Impossible de copier le lien.',
   learnTabs: { today: 'Aujourd’hui', progress: 'Progrès' }, learnTabsLabel: 'Apprendre',
   decksLab: 'Tes paquets', deckCount: (due: number, fresh: number) => `${f.num(due)} à revoir · ${f.num(fresh)} ${fresh > 1 ? 'nouveaux' : 'nouveau'}`,
-  decks: { exercises: 'Exercices de tes parties', joseki: 'Joseki' },
-  deckPhrases: { exercises: 'trouve mieux', joseki: 'explorer, s’entraîner, programme' },
+  decks: { exercises: 'Exercices de tes parties', joseki: 'Joseki', fuseki: 'Fuseki' },
+  deckPhrases: { exercises: 'trouve mieux', joseki: 'explorer, s’entraîner, programme', fuseki: 'les douze premiers coups' },
   learnBlocked: 'Pas pendant une partie OGS ni une revue : termine-la d’abord.',
   rankSection: 'Ton rang lu dans tes coups', ogsRatingSection: 'Classement OGS',
   gamesAll: 'Toutes tes parties', gamesFilterLabel: 'Parties montrées',
@@ -194,6 +194,12 @@ export const fr: Dict = {
   jProgrammeNote: 'Ton programme : les coins à apprendre en premier.',
   jProgrammeHelp: (rank: string) => `Classés selon la fréquence de chaque coin en ${rank} × les points qu’il y coûte.`,
   jMet: (n: number) => `environ 1 coin sur ${f.num(n)}`, jOpenFamily: (name: string) => `Explorer ${name}`,
+  // entraîneur de fuseki : l’autre livre de l’entraîneur de joseki
+  fuseki: 'Fuseki', fFamily: 'Livre', fLoading: 'Chargement des fuseki.', fFailed: (m: string) => `Impossible de charger les fuseki : ${m}`, fFirst: 'Premier coup',
+  fExploreNote: (n: number) => `Fuseki · coup ${n}. Une lettre suit un coup : A perd le moins.`,
+  fContext: 'Le goban vide, Noir commence, komi 6,5, règles japonaises. Une ouverture et ses images en miroir ne comptent qu’une fois.',
+  fPractiseHelp: 'Chaque ouverture est tournée au hasard, et tu joues Noir ou Blanc. Ton adversaire joue comme un joueur de ton niveau, erreurs comprises : punis-les.',
+  fWrong: 'Pas dans le livre : ce sont les coups marqués d’une lettre.', fResetAsk: 'Effacer toute ta progression en fuseki ?', fFileName: 'masame-fuseki.json',
   // le rituel du jour
   today: 'Aujourd’hui', tdIntro: 'Dix minutes par jour : tes exercices, quelques joseki, une partie rapide.',
   tdSteps: { exercises: 'Exercices', joseki: 'Joseki ou fuseki', game: 'Un 9×9 à ton niveau' },

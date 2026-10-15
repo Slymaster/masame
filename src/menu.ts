@@ -20,7 +20,7 @@ const RULES: Partial<Record<MenuId, (s: MenuState) => boolean>> = {
   save: s => s.hasGame, postcard: s => s.hasGame,
   undo: s => s.canUndo, pass: s => s.canPass, resign: s => s.canResign, review: s => s.canReview,
   territory: s => s.engineHelp && s.canAnalyze,
-  exercises: s => s.engineHelp && s.canAnalyze, joseki: s => s.engineHelp,
+  exercises: s => s.engineHelp && s.canAnalyze, joseki: s => s.engineHelp, fuseki: s => s.engineHelp,
   camera: s => s.is3d,
 }
 
