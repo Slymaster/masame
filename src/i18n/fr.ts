@@ -496,6 +496,7 @@ export const fr: Dict = {
     no_analysis_net: 'Aucun réseau d’analyse n’est installé. Ouvre « Réseaux » pour en télécharger un.',
     spawn_failed: 'Impossible de lancer KataGo.',
     engine_crashed: 'KataGo s’est arrêté de façon inattendue.',
+    engine_crashed_at_start: 'KataGo s’est arrêté pendant son dernier démarrage, il n’a donc pas été relancé tout seul. Réessaie, ou choisis le réseau Léger dans Réseaux.',
     engine_stopped: 'Le moteur est arrêté.',
     engine_timeout: 'KataGo ne répond pas.',
     bad_query: 'Requête d’analyse invalide.',

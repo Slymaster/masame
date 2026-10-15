@@ -22,8 +22,11 @@ const MAX_JSON: usize = 4_000_000; // an API page is ~30 kB
 const JSON_TIMEOUT: Duration = Duration::from_secs(30); // whole request, body included
 
 pub const HUMAN: &str = "b18c384nbt-humanv0";
-/// Single place to change the default analysis net (the benchmark may recommend another one).
-pub const DEFAULT_NETWORK: &str = "kata1-tf3-b10c512-s3203M-d5937M";
+const BALANCED: &str = "kata1-tf3-b10c512-s3203M-d5937M";
+const LIGHT: &str = "kata1-tf2-b10c384-s2941M-d5872M";
+/// Single place to change the default analysis net. iPhone: the light one, as the balanced one is about 3× slower there
+/// (docs/katago-benchmark.md §8).
+pub const DEFAULT_NETWORK: &str = if cfg!(target_os = "ios") { LIGHT } else { BALANCED };
 const MAXIMUM: &str = "kata1-tf3-b11c768-s11003M-d5973M-7gres";
 
 struct Preset { key: &'static str, name: &'static str, bytes: u64, sha256: &'static str, created: &'static str, extra: bool }
@@ -33,11 +36,11 @@ struct Preset { key: &'static str, name: &'static str, bytes: u64, sha256: &'sta
 const PRESETS: [Preset; 4] = [
     Preset { key: "human", name: HUMAN, bytes: 99_066_230,
         sha256: "637746e44f0efe00ad1245a50aa9bbf0716efe364c43965ead97bd6835d84ab5", created: "2024-07-01T00:00:00Z" /* KataGo 1.15 release month */, extra: true },
-    Preset { key: "balanced", name: DEFAULT_NETWORK, bytes: 94_281_753,
+    Preset { key: "balanced", name: BALANCED, bytes: 94_281_753,
         sha256: "c04db4a503721d948bb720324f3cbdac6088cc9eb243632f020e4b6846f58995", created: "2026-08-25T05:48:41Z", extra: false },
     Preset { key: "maximum", name: MAXIMUM, bytes: 262_039_869,
         sha256: "93bdb63a3bfae4a70db0cb5265287495ecfc10b1ba1cc6814feeba1cdf055871", created: "2026-09-25T02:04:37Z", extra: false },
-    Preset { key: "light", name: "kata1-tf2-b10c384-s2941M-d5872M", bytes: 38_245_507,
+    Preset { key: "light", name: LIGHT, bytes: 38_245_507,
         sha256: "8015d49bdf45854c94e5f9e22b2b70e8738d3e56a6edca730e5b82509998a5b5", created: "2026-08-25T05:47:56Z", extra: false },
 ];
 
@@ -143,7 +146,14 @@ pub fn catalog(nets: &[ApiNet]) -> Vec<Entry> {
     if let Some(n) = newest.filter(|n| preset(&n.name).is_none() && strongest.is_none_or(|s| s.name != n.name)) {
         out.push(from_api("newest", n))
     }
+    if cfg!(target_os = "ios") { for_phone(&mut out) }
     out
+}
+
+/// iPhone: no maximum net (beyond what the phone runs well), and the light net recommended first after the human one.
+fn for_phone(entries: &mut Vec<Entry>) {
+    entries.retain(|e| e.key != "maximum");
+    if let Some(i) = entries.iter().position(|e| e.key == "light") { let light = entries.remove(i); entries.insert(1.min(entries.len()), light) }
 }
 
 /// Everything but `https_only`, so tests can talk to a local plain-HTTP server with the same policies.
@@ -343,6 +353,14 @@ mod tests {
         nets.retain(|n| n.name != "kata1-tf3-b11c768-s12252M-d6398M");
         let keys: Vec<_> = catalog(&nets).into_iter().map(|e| e.key).collect();
         assert_eq!(keys, ["human", "balanced", "maximum", "light", "newest"]);
+    }
+
+    #[test]
+    fn phones_get_no_maximum_and_light_first() {
+        let mut c = catalog(&parse_nets(&serde_json::from_str(FIXTURE).unwrap()));
+        for_phone(&mut c);
+        let keys: Vec<_> = c.iter().map(|e| e.key.as_str()).collect();
+        assert_eq!(keys, ["human", "light", "balanced", "strongest", "newest"]);
     }
 
     #[test]

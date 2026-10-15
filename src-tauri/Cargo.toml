@@ -35,6 +35,9 @@ tauri-plugin-updater = { version = "~2.13", default-features = false, features =
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 [target.'cfg(target_os = "ios")'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
+# App activity observers and the iCloud backup flag (src/ios.rs); already in the dependency tree via tao.
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSError", "NSNotification", "NSOperation", "NSString", "NSURL", "NSValue"] }
+block2 = "0.6"
 
 # Links open through the system on phones; Android's rustls verifier asks the OS trust store through the JVM.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
