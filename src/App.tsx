@@ -204,6 +204,7 @@ export function App() {
   const [bot, setBot] = useState<Bot | null>(null)
   const outcomes = useRef(new WeakMap<GameNode, { msg: Msg; re: string }>())
   const outcome = outcomes.current.get(game.leaf), result = outcome?.msg ?? null
+  const recorded = game.onMain ? game.info.result : undefined // the result the shown line was loaded or validated with
   const setResult = (g: Game, o: { msg: Msg; re: string } | null) => { if (o) outcomes.current.set(g.leaf, o); else outcomes.current.delete(g.leaf); rerender() }
   const [thinking, setThinking] = useState(false)
   const winrates = useRef(new WeakMap<Move, number>())
@@ -854,7 +855,7 @@ export function App() {
   // Two passes: counting. KataGo's ownership suggests the dead stones (without an engine, none are suggested);
   // the player corrects them, then validates a Japanese count (territory + prisoners + komi).
   useEffect(() => {
-    if (!game.ended || !atEnd || result || counting || online) return // OGS counts its own games
+    if (!game.ended || !atEnd || result || counting || online || recorded) return // OGS counts its own games; a game with its result is not counted again
     let live = true
     const enter = (own: number[] | null) => {
       if (live) setCounting({ game, own, dead: own ? suggestDead(game.board.signMap, own) : noDead(game.board.signMap) })
@@ -862,7 +863,7 @@ export function App() {
     if (!canAnalyze) enter(null)
     else analyze(game, { maxVisits: FINAL_VISITS, includeOwnership: true }).then(a => enter(a.ownership), () => enter(null))
     return () => { live = false }
-  }, [game.ended, atEnd, ver, game, canAnalyze, counting, result, online])
+  }, [game.ended, atEnd, ver, game, canAnalyze, counting, result, online, recorded])
 
   // "Ombre et lumière": ownership of the displayed position, debounced, kept until the next estimate arrives.
   useEffect(() => {
@@ -1112,6 +1113,7 @@ export function App() {
   const withNote = (text: string) => [text, note?.(t)].filter(Boolean).join(' ')
   const aiMoved = nextAi && nextAi !== bot?.rank ? nextAi : null
   const mentorLine = mt.mentor ? t.mentorStops(mt.stops) : null
+  const said = [mentorLine, note?.(t)].filter(Boolean).join(' ') // on the result card's title line, in ink: the mentor's stops, the review or memory notice
   const resultLine = result && [result(t), note?.(t), aiMoved && t.aiNext(aiMoved), mentorLine].filter(Boolean).join(' ')
   const incoming = !myGame && challengeRows.find(c => !c.mine)
   // a finished game shown untouched (from Mes parties, or a file): Revoir, Rejouer de mémoire, Deviner les coups, when each makes sense
@@ -1137,14 +1139,14 @@ export function App() {
       ...(online && online.me !== 0 && online.phase === 'finished' ? [['rematch', t.ogsRematch, rematch] as Link] : [])]]
     : mt.stopped ? [t.mentorStop(mt.stopped.loss), [['retry', t.retry, mt.retry], ['keep', t.mentorKeep, mt.keep]]]
     : countingNow ? [t.countingHelp, []]
-    : game.ended ? [t.countingWait, []]
-    : [[(botError ?? note)?.(t), engineWait].filter(Boolean).join(' ') || (mt.late && !result ? t.mentorLate : null) || (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null),
+    : game.ended && !recorded ? [t.countingWait, []]
+    : [[(botError ?? note)?.(t), engineWait].filter(Boolean).join(' ') || (mt.late && !result ? t.mentorLate : null) || (last && !last.vertex && !(libraryShown && atEnd) ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null),
       botError ? [['retry', t.retry, retryBot]] : quietShown ? libraryLinks : []]
   const [gameLine, gameLinks]: [string | null | undefined, Link[]] = line ? [line, lineLinks]
     : started ? [t.ogsStartedVs(started.who), [['open', t.ogsOpen, () => resume(started.id)]]]
+    : libraryShown ? [t.libraryShown, libraryLinks] // a pending challenge still shows on the Play door's dot
     : incoming ? [t.ogsChallenged(incoming.from.username, incoming.from.rank, incoming.size, t.paces[incoming.speed], incoming.ranked),
       [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
-    : libraryShown ? [t.libraryShown, libraryLinks]
     : quietShown && guessable ? [t.clOfferLine, libraryLinks]
     : [line, lineLinks]
   // td.onward's step index: the ritual's exercises 0 (its exercises, then its counting), joseki or fuseki 1
@@ -1192,7 +1194,7 @@ export function App() {
 
   const playing = review ? !!review.branch : !game.ended && !result && (!online || online.phase === 'play') // whose turn it is means something
   const floor = review?.branch ? from : 0
-  const re = outcome?.re ?? '' // "B+R", "W+4.5", "0"
+  const re = outcome?.re ?? recorded ?? '' // "B+R", "W+4.5", "0"; a game opened with its result reads it
   const res = readResult(re) // the caption's card reads the result from RE
   const resignation = re.endsWith('+R'), timeout = re.endsWith('+T'), countingOpen = !!final && !result
   // the count, shown while counting and, once validated, at every cursor position (scored on the final board)
@@ -1282,8 +1284,8 @@ export function App() {
               {message === resultLine ? <>
                 {/* the result as a score sheet: winner's stone, who and how, the AI's next level; read in that order */}
                 {res.winner !== 0 && <span className={`stone ${res.winner === 1 ? 'b' : 'w'}`} aria-hidden="true">{t.resultShort(re)}</span>}
-                <span className="txt"><b>{t.ended(res.winner, res.how, res.points)}{mentorLine && <span className="said"> · {mentorLine}</span>}</b>{' '}
-                  <small>{[res.winner !== 0 && t.endedHow(res.how, res.points), note?.(t)].filter(Boolean).join(' · ')}</small></span>
+                <span className="txt"><b>{t.ended(res.winner, res.how, res.points)}{said && <span className="said"> · {said}</span>}</b>{' '}
+                  <small>{res.winner !== 0 && t.endedHow(res.how, res.points)}</small></span>
                 {aiMoved && <span className="chip">{t.aiLevel}{' '}<b>{bot && <i>{bot.rank} →</i>} {aiMoved}</b></span>}
               </> : <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>}
               {!anLine && links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>

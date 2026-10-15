@@ -172,12 +172,11 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
   .board-wrap > .note .link { margin-left: 0 }
 }
 /* the result, as a score sheet: the winner's stone, who and how, the AI's next level, then the review as the one filled button;
-   at most 64px tall (the room under the board): the title never wraps nor shrinks, the sub line wraps in what is left, two
-   lines at most (the full sentence is in the title attribute); with the mentor's stops, the title takes two lines (room for
-   them: 200px) and the sub line one */
+   at most 64px tall (the room under the board): the title never wraps nor shrinks, the sub line (how it ended) wraps in what
+   is left; the mentor's stops and the review or memory notice follow the title in ink and wrap, never cut (room: 200px) */
 .board-wrap > .note > .res {
   display: inline-flex; align-items: center; gap: 12px; max-width: 100%; max-height: none; overflow: visible; padding: 5px 6px 5px 8px; border: 0;
-  border-radius: 999px; box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--rule); font: 500 12px/1.2 var(--f-ui); text-align: left
+  border-radius: 999px; box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--rule); font: 500 12px/1.2 var(--f-ui); text-align: left; text-wrap: wrap
 }
 .res .stone { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; font: 600 9.5px var(--f-ui); letter-spacing: -.01em; box-shadow: 0 2px 4px rgba(0, 0, 0, .45) }
 .res .stone.b { background: var(--stone-b); color: var(--pb-ink) }
@@ -188,7 +187,6 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .res .txt small:empty { display: none }
 .res .txt b .said { font-weight: 400; white-space: normal } /* the mentor's stops, on the title's line: a result the player reads */
 .res .txt:has(.said) { min-width: 200px }
-.res .txt:has(.said) small { -webkit-line-clamp: 1 }
 .res .chip { flex: none; display: flex; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 1px solid var(--rule-2); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); white-space: nowrap }
 .res .chip b { font: 600 14px var(--f-ui); letter-spacing: 0; text-transform: none; color: var(--ink); font-variant-numeric: tabular-nums }
 .res .chip i { font-style: normal; font-weight: 500; color: var(--muted) }
@@ -207,9 +205,9 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
   .board-wrap > .note > .res { gap: 10px; padding-left: 14px }
   .res .chip { gap: 0; padding-left: 10px; font-size: 0 }
 }
-/* the mentor's stops need a full row (≈ 740px), two buttons beside the AI level's box ≈ 560px; with less, the two buttons
-   stack at the right, compact, so the card keeps inside the caption's width and its 64px */
-@container (max-width: 700px) {
+/* the mentor's stops and the notices need a full row (≈ 1000px), two buttons beside the AI level's box ≈ 560px; with less,
+   the two buttons stack at the right, compact, so the words keep two lines and the card about its 64px */
+@container (max-width: 1000px) {
   .board-wrap > .note > .res:has(.said) { display: inline-grid; grid-auto-flow: column; grid-template-rows: auto auto; row-gap: 4px }
   .res:has(.said) > :not(.link) { grid-row: span 2 }
   .board-wrap > .note > .res:has(.said) .link { height: 25px; padding: 0 11px; gap: 5px; font-size: 12.5px }
