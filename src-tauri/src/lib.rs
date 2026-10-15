@@ -445,15 +445,21 @@ fn open_url<R: tauri::Runtime>(app: &AppHandle<R>, url: &str) -> Res<()> {
     app.opener().open_url(url, None::<&str>).map_err(|e| Failure::with("open_failed", e))
 }
 
-/// Android: rustls checks certificates with the OS trust store, through the JVM context tao registered.
+/// Android: rustls checks certificates with the OS trust store, through the JVM context tao registered. Without it every
+/// HTTPS call fails closed, so the cause goes to logcat (tag "masame"): stderr goes nowhere on Android.
 #[cfg(target_os = "android")]
-fn init_tls() -> Result<(), jni::errors::Error> {
+fn init_tls() {
     let ctx = ndk_context::android_context();
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) };
-    vm.attach_current_thread(|env| {
+    let Err(e) = vm.attach_current_thread(|env| {
         let context = unsafe { jni::objects::JObject::from_raw(env, ctx.context().cast()) };
         rustls_platform_verifier::android::init_with_env(env, context)
-    })
+    }) else { return };
+    use std::ffi::{c_char, c_int, CString};
+    #[link(name = "log")]
+    extern "C" { fn __android_log_write(prio: c_int, tag: *const c_char, text: *const c_char) -> c_int; }
+    let text = CString::new(format!("TLS verifier not initialised, every HTTPS call will fail: {e}").replace('\0', "")).unwrap_or_default();
+    unsafe { __android_log_write(6 /* ANDROID_LOG_ERROR */, c"masame".as_ptr(), text.as_ptr()) };
 }
 
 /// Rebuilds the macOS menu bar in the UI language; `labels` come from the frontend dictionary. No-op elsewhere.
@@ -560,7 +566,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             #[cfg(target_os = "android")]
-            if let Err(e) = init_tls() { eprintln!("[tls] Android verifier not initialised: {e}") }
+            init_tls();
             let h = app.handle().clone();
             let mut engine = Engine::new(move |ev, payload| { let _ = h.emit(ev, payload); });
             if let Ok(d) = data_dir(app.handle()) { engine = engine.with_log(d.join(ENGINE_LOG)) }
