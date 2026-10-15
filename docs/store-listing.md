@@ -127,7 +127,7 @@ No account, no ads, no tracking, no in-app purchases. Your games stay on your ph
 Not yet on iPhone: online play on OGS and the 3D board. Both are in the desktop version of Masame, for macOS, Windows and Linux.
 ```
 
-FR (3049 caractères)
+FR (3048 caractères)
 
 ```
 Masame, c'est un goban et un professeur. En face de toi, KataGo, le moteur de go open source, qui ne joue pas comme une machine mais comme un joueur humain du rang que tu choisis, de 20 kyu à 9 dan. Après chaque partie, il te montre où sont partis tes points, et tes propres erreurs reviennent sous forme d'exercices.
@@ -152,7 +152,7 @@ APPRENDRE
 • Tsumego tirés de tes parties : des problèmes de vie et de mort trouvés dans tes propres positions.
 • Compter : qui mène, et de combien ? Puis le compte de KataGo.
 • Joseki et fuseki : chaque coup candidat avec les points qu'il perd et la fréquence à laquelle les joueurs de ton niveau le jouent, puis l'entraînement contre un adversaire de ton niveau.
-• Les Classiques : vingt et une parties de l'époque Edo, de Dosaku à la partie des oreilles rouges de Shusaku. Joue chaque coup avant de voir celui du maître, et KataGo te dit ce que coûte le tien.
+• Les Classiques : vingt et une parties de l'époque Edo, de Dosaku à la partie de l’oreille rouge de Shusaku. Joue chaque coup avant de voir celui du maître, et KataGo te dit ce que coûte le tien.
 • Rejouer de mémoire : rejoue une partie terminée, les deux couleurs, coup par coup.
 
 MES PARTIES
@@ -337,7 +337,7 @@ No account, no ads, no tracking, no in-app purchases. Your games stay on your ph
 Not yet on Android: online play on OGS and the 3D board. Both are in the desktop version of Masame, for macOS, Windows and Linux.
 ```
 
-FR (3128 caractères)
+FR (3127 caractères)
 
 ```
 Masame, c'est un goban et un professeur. En face de toi, KataGo, le moteur de go open source, qui ne joue pas comme une machine mais comme un joueur humain du rang que tu choisis, de 20 kyu à 9 dan. Après chaque partie, il te montre où sont partis tes points, et tes propres erreurs reviennent sous forme d'exercices.
@@ -362,7 +362,7 @@ APPRENDRE
 • Tsumego tirés de tes parties : des problèmes de vie et de mort trouvés dans tes propres positions.
 • Compter : qui mène, et de combien ? Puis le compte de KataGo.
 • Joseki et fuseki : chaque coup candidat avec les points qu'il perd et la fréquence à laquelle les joueurs de ton niveau le jouent, puis l'entraînement contre un adversaire de ton niveau.
-• Les Classiques : vingt et une parties de l'époque Edo, de Dosaku à la partie des oreilles rouges de Shusaku. Joue chaque coup avant de voir celui du maître, et KataGo te dit ce que coûte le tien.
+• Les Classiques : vingt et une parties de l'époque Edo, de Dosaku à la partie de l’oreille rouge de Shusaku. Joue chaque coup avant de voir celui du maître, et KataGo te dit ce que coûte le tien.
 • Rejouer de mémoire : rejoue une partie terminée, les deux couleurs, coup par coup.
 
 MES PARTIES
