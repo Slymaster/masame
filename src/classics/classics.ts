@@ -2,6 +2,7 @@
 // parts of the guessing: which moves the player guesses, what a guess costs, the best score kept per game.
 import type { Game, Sign, Vertex } from '../game'
 import { loadSgf } from '../sgf'
+import { readV1, writeV1 } from '../store'
 
 /** A shipped game, as index.json lists it. */
 export interface Classic {
@@ -65,17 +66,14 @@ const n = (x: unknown) => typeof x === 'number' && Number.isFinite(x) && x >= 0
 const isBest = (b: unknown): b is Best => !!b && typeof b === 'object' && ['found', 'total', 'cost', 'others', 't'].every(k => n((b as Record<string, unknown>)[k]))
 
 export function load(st: Storage = localStorage): Store {
-  try {
-    const j = JSON.parse(st.getItem(KEY) ?? 'null')
-    const best = j?.v === 1 && j.best && typeof j.best === 'object' ? j.best : {}
-    return { v: 1, best: Object.fromEntries(Object.entries(best).filter(([, b]) => isBest(b))) as Record<string, Best> }
-  } catch { return { v: 1, best: {} } } // storage disabled or garbage: no scores, never a crash
+  const best = readV1<Store>(KEY, j => !!j.best && typeof j.best === 'object', st)?.best ?? {}
+  return { v: 1, best: Object.fromEntries(Object.entries(best).filter(([, b]) => isBest(b))) as Record<string, Best> }
 }
 /** Keeps a finished (or stopped) run when it beats the stored one; returns the store as it now is. */
 export function keepBest(id: string, s: Score, now = Date.now(), st: Storage = localStorage): Store {
   const store = load(st)
   if (!s.total || !better(s, store.best[id])) return store
   const next: Store = { v: 1, best: { ...store.best, [id]: { ...s, t: now } } }
-  try { st.setItem(KEY, JSON.stringify(next)) } catch { /* private mode or full: not kept */ }
+  writeV1(KEY, next, st)
   return next
 }
