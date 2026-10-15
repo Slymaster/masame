@@ -29,6 +29,7 @@ describe('yose positions', () => {
     expect(x).toMatchObject({ kind: 'yose', sign: 1, played: 'ef', loss: 2.5, best: 5, better: 'ee', moves: '', n: 35, vs: 'Bob' })
     expect(yoseOf(game, 35, an([[[4, 4], -5], [[4, 5], -2]]), '', NOW)).toMatchObject({ sign: -1, loss: 3 })
     expect(yoseOf(game, 34, an([[[4, 4], 5], [[4, 5], 3.5]]), '', NOW)).toBeNull() // too close
+    expect(yoseOf(game, 34, an([[[4, 4], 30], [[4, 5], 5]]), '', NOW)).toBeNull() // 25 points: a group's life, not endgame
     expect(yoseOf(game, 34, an([[null, 5], [[4, 5], 0]]), '', NOW)).toBeNull() // a pass is no question
     expect(yoseOf(game, 34, an([[[4, 4], 5]]), '', NOW)).toBeNull() // no second move read
   })
