@@ -513,6 +513,7 @@ export const en = {
     ogs_port_busy: 'Couldn’t receive the OGS sign-in: no local port is free.',
     ogs_network: 'Couldn’t reach OGS.',
     ogs_cancelled: 'OGS sign-in cancelled.',
+    ogs_unavailable: 'OGS sign-in isn’t available on this device yet.',
     ogs_not_square: 'Masame only shows square boards.',
     ogs_no_player: 'No OGS player by that name.',
     ogs_no_game: 'OGS game not found, or private.',

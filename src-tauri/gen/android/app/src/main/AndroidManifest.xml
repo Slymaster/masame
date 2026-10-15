@@ -20,17 +20,8 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- No SGF association on Android for v1 (tauri.android.conf.json): nothing handles it yet. When it comes back, accept content:// URIs through ContentResolver only, never file:// paths from intents (another app could point Masame at its own private files, such as ogs.json). -->
             <!-- tauri-file-associations. AUTO-GENERATED. DO NOT REMOVE. -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <action android:name="android.intent.action.SEND_MULTIPLE" />
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:mimeType="application/x-go-sgf" />
-                <data android:pathPattern=".*\\.sgf" />
-            </intent-filter>
-            
             <!-- tauri-file-associations. AUTO-GENERATED. DO NOT REMOVE. -->
         </activity>
 

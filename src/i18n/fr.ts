@@ -513,6 +513,7 @@ export const fr: Dict = {
     ogs_port_busy: 'Impossible de recevoir la connexion OGS : aucun port local n’est libre.',
     ogs_network: 'Impossible de joindre OGS.',
     ogs_cancelled: 'Connexion à OGS annulée.',
+    ogs_unavailable: 'La connexion à OGS n’est pas encore disponible sur cet appareil.',
     ogs_not_square: 'Masame n’affiche que les gobans carrés.',
     ogs_no_player: 'Aucun joueur OGS de ce nom.',
     ogs_no_game: 'Partie OGS introuvable ou privée.',
