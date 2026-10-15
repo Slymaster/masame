@@ -114,6 +114,19 @@ describe('mining a game', () => {
       ({ scoreLead: 0, pv: [[2, 0]] as Vertex[], ownership: own(19, B3, g.toPlay === 1 ? 0.9 : deep ? -0.9 : -0.3) })
     expect(await mineGame(game, [], game.moves.length, 'Bob', late, () => true, NOW, () => 0.1)).toEqual([])
   })
+  it('asks a group once per game, though the board around it changes between samples', async () => {
+    // 70 moves far from the corner group: positions 30 and 45 differ, the group is the same
+    const moves = Array.from({ length: 70 }, (_, i) => `;${i % 2 ? 'W' : 'B'}[${'abcdefghijklmnopqrs'[i % 19]}${'nopqrs'[Math.floor(i / 19)]}]`).join('')
+    const game = loadSgf(`(;SZ[19]KM[6.5]AB[bb][cb][db]${moves})`)
+    const asked: string[] = []
+    const ask = async (g: Game, deep: boolean) => {
+      asked.push(`${g.toPlay}${deep ? 'd' : ''}`)
+      return { scoreLead: 0, pv: [[2, 0]] as Vertex[], ownership: own(19, B3, g.toPlay === 1 ? 0.9 : -0.9) }
+    }
+    const xs = (await mineGame(game, [], game.moves.length, 'Bob', ask, () => true, NOW, () => 0.1))!
+    expect(xs).toHaveLength(1)
+    expect(asked).toEqual(['1', '-1', '1d', '-1d', '1', '-1']) // the second sample isn't confirmed again
+  })
   it('stops when the engine is wanted elsewhere', async () => {
     const game = loadSgf(`(;SZ[19]${Array.from({ length: 60 }, (_, i) => `;${i % 2 ? 'W' : 'B'}[${'abcdefghijklmnopqrs'[i % 19]}${'cdefghijkl'[Math.floor(i / 19)]}]`).join('')})`)
     expect(await mineGame(game, [], 60, '', async () => ({ scoreLead: 0, pv: [], ownership: null }), () => false, NOW)).toBeNull()
