@@ -352,7 +352,10 @@ export class BoardView {
       this.hover = nh; this.req()
     }
     const leave = (e: PointerEvent) => { if (e.pointerType === 'mouse') { this.hover = null; this.req() } }
-    const click = (e: MouseEvent) => {
+    // a finger plays on pointerup: WebKit may fold two quick taps into a double tap and send a single click
+    const up = (e: PointerEvent) => { if (e.pointerType !== 'mouse') act(e) }
+    const click = (e: MouseEvent) => { if (this.pointer === 'mouse') act(e) }
+    const act = (e: MouseEvent) => {
       const touch = this.pointer !== 'mouse', v = this.pick(e, touch), s = this.state
       if (!v || !s?.interactive) return
       if (s.counting) { this.onPlay(v); return }
@@ -363,6 +366,7 @@ export class BoardView {
       else if (touch) { this.hover = null; this.req() }
     }
     canvas.addEventListener('pointerdown', down)
+    canvas.addEventListener('pointerup', up)
     canvas.addEventListener('pointermove', move)
     canvas.addEventListener('pointerleave', leave)
     canvas.addEventListener('click', click)
@@ -376,6 +380,7 @@ export class BoardView {
     this.cleanup = () => {
       mq.removeEventListener('change', onDpr)
       canvas.removeEventListener('pointerdown', down)
+      canvas.removeEventListener('pointerup', up)
       canvas.removeEventListener('pointermove', move)
       canvas.removeEventListener('pointerleave', leave)
       canvas.removeEventListener('click', click)
