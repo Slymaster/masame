@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+#[cfg(desktop)]
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 struct App {
@@ -25,6 +26,7 @@ struct App {
     http: reqwest::Client,
     catalog: Mutex<Vec<Entry>>,
     downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    #[cfg(desktop)]
     update: Mutex<Option<Update>>, // the newer release update_check found, for update_install
     ogs: ogs::Ogs,
     #[cfg(engine_variants)]
@@ -66,13 +68,17 @@ fn env_path(k: &str) -> Option<PathBuf> { if cfg!(debug_assertions) { std::env::
 /// The one place that decides which KataGo binary runs, and its platform-specific overrides: BADUK_KATAGO (dev), else
 /// on Apple Silicon the bundled sidecar, which Tauri places next to the app executable; on Windows, Linux and Intel Macs
 /// (below) one of several bundled builds.
-#[cfg(not(engine_variants))]
+#[cfg(all(desktop, not(engine_variants)))]
 fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
     env_path("BADUK_KATAGO")
         .or_else(|| Some(std::env::current_exe().ok()?.parent()?.join(format!("katago{}", std::env::consts::EXE_SUFFIX))))
         .map(|b| (b, vec![]))
         .ok_or(Failure::new("engine_missing"))
 }
+
+/// Phones: KataGo is not wired in yet.
+#[cfg(mobile)]
+fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> { Err(Failure::new("engine_unavailable")) }
 
 /// Windows: resources/katago-win/<variant>/katago.exe (next to its DLLs); Linux:
 /// resources/katago-linux/<variant>/katago; Intel Macs: the sidecar katago-<variant> next to the app executable (sidecars,
@@ -315,23 +321,25 @@ async fn engine_analyze(app: AppHandle, s: State<'_, App>, query: Value) -> Res<
 
 /// Opens one of a few fixed pages (credits) in the default browser; the webview never passes a URL.
 #[tauri::command]
-fn open_link(which: String) -> Res<()> {
+fn open_link(app: AppHandle, which: String) -> Res<()> {
     let url = match which.as_str() {
         "katago" => "https://github.com/lightvector/KataGo",
         "license" => "https://katagotraining.org/network_license/",
         "releases" => "https://github.com/Slymaster/masame/releases/latest",
         _ => return Err(Failure::new("unknown_link")),
     };
-    open_url(url)
+    open_url(&app, url)
 }
 
 /// Whether this build can replace itself: everywhere but Linux, where only the AppImage can (a .deb or .rpm belongs to
 /// the package manager). The bundle type is the marker Tauri's bundler patches into the binary, not the environment.
+#[cfg(desktop)]
 fn installable() -> bool {
     !cfg!(target_os = "linux") || matches!(tauri::utils::platform::bundle_type(), Some(tauri::utils::config::BundleType::AppImage))
 }
 
 /// The updater for the fixed endpoint in tauri.conf.json.
+#[cfg(desktop)]
 fn updater<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
     // Only the local end-to-end test build allows plain http (an override config, never committed).
     let https = app.config().plugins.0.get("updater").and_then(|u| u.get("dangerousInsecureTransportProtocol")).and_then(Value::as_bool) != Some(true);
@@ -344,6 +352,7 @@ fn updater<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri_plugin_updater::Resul
 }
 
 /// Asks the fixed endpoint whether a newer release exists, and keeps it for update_install.
+#[cfg(desktop)]
 #[tauri::command]
 async fn update_check(app: AppHandle, s: State<'_, App>) -> Res<Option<Value>> {
     let fail = |e: tauri_plugin_updater::Error| Failure::with("update_check", e);
@@ -355,6 +364,7 @@ async fn update_check(app: AppHandle, s: State<'_, App>) -> Res<Option<Value>> {
 
 /// Downloads the checked update (verified against the public key in tauri.conf.json), stops KataGo (on Windows the
 /// installer replaces katago.exe and its DLLs), installs and restarts. On Windows `install` exits the app itself.
+#[cfg(desktop)]
 #[tauri::command]
 async fn update_install(app: AppHandle, s: State<'_, App>) -> Res<()> {
     if !installable() { return Err(Failure::with("update_failed", "not installable")) }
@@ -381,13 +391,13 @@ async fn update_install(app: AppHandle, s: State<'_, App>) -> Res<()> {
 }
 
 #[cfg(target_os = "macos")]
-fn open_url(url: &str) -> Res<()> {
+fn open_url<R: tauri::Runtime>(_app: &AppHandle<R>, url: &str) -> Res<()> {
     // Absolute path: never resolved through PATH.
     std::process::Command::new("/usr/bin/open").arg(url).spawn().map(|_| ()).map_err(|e| Failure::with("open_failed", e))
 }
 
 #[cfg(windows)]
-fn open_url(url: &str) -> Res<()> {
+fn open_url<R: tauri::Runtime>(_app: &AppHandle<R>, url: &str) -> Res<()> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
     let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
@@ -397,10 +407,27 @@ fn open_url(url: &str) -> Res<()> {
     if r as usize > 32 { Ok(()) } else { Err(Failure::with("open_failed", r as usize)) }
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
-fn open_url(url: &str) -> Res<()> {
+#[cfg(all(desktop, not(any(target_os = "macos", windows))))]
+fn open_url<R: tauri::Runtime>(_app: &AppHandle<R>, url: &str) -> Res<()> {
     // Absolute path: never resolved through PATH.
     std::process::Command::new("/usr/bin/xdg-open").arg(url).spawn().map(|_| ()).map_err(|e| Failure::with("open_failed", e))
+}
+
+#[cfg(mobile)]
+fn open_url<R: tauri::Runtime>(app: &AppHandle<R>, url: &str) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(url, None::<&str>).map_err(|e| Failure::with("open_failed", e))
+}
+
+/// Android: rustls checks certificates with the OS trust store, through the JVM context tao registered.
+#[cfg(target_os = "android")]
+fn init_tls() -> Result<(), jni::errors::Error> {
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) };
+    vm.attach_current_thread(|env| {
+        let context = unsafe { jni::objects::JObject::from_raw(env, ctx.context().cast()) };
+        rustls_platform_verifier::android::init_with_env(env, context)
+    })
 }
 
 /// Rebuilds the macOS menu bar in the UI language; `labels` come from the frontend dictionary. No-op elsewhere.
@@ -462,6 +489,7 @@ struct Opened { name: String, text: String }
 
 /// Partager › Kifu: the system print dialog for the page (WKWebView ignores window.print(); wry prints the webview on
 /// every desktop OS), where "Save as PDF" makes the PDF.
+#[cfg(desktop)]
 #[tauri::command]
 fn print_page(webview: tauri::Webview) -> Res<()> {
     webview.print().map_err(|e| Failure::with("print_failed", e))
@@ -488,13 +516,18 @@ pub fn run() {
         queue_opened(app, arg_files(argv, Path::new(&cwd)));
         if let Some(w) = app.get_webview_window("main") { let _ = w.unminimize(); let _ = w.set_focus(); }
     }));
-    builder
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_opener::init());
+    let builder = builder
         .manage(library::Library::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            #[cfg(target_os = "android")]
+            if let Err(e) = init_tls() { eprintln!("[tls] Android verifier not initialised: {e}") }
             let h = app.handle().clone();
             let mut engine = Engine::new(move |ev, payload| { let _ = h.emit(ev, payload); });
             if let Ok(d) = data_dir(app.handle()) { engine = engine.with_log(d.join(ENGINE_LOG)) }
@@ -505,17 +538,22 @@ pub fn run() {
             };
             if let Err(e) = install_config(app.handle()) { eprintln!("[katago] config not installed: {e:?}") }
             app.manage(App {
-                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), update: Default::default(), ogs: Default::default(),
+                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), ogs: Default::default(),
+                #[cfg(desktop)]
+                update: Default::default(),
                 #[cfg(engine_variants)]
                 failed_variants: Default::default(),
             });
             Ok(())
-        })
-        // Our menu items (macOS) go to the frontend, which runs them exactly like their keyboard shortcuts.
-        .on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); })
+        });
+    // Our menu items (macOS) go to the frontend, which runs them exactly like their keyboard shortcuts.
+    #[cfg(desktop)]
+    let builder = builder.on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); });
+    builder
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
-            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, set_menu_enabled, update_check, update_install, take_opened, print_page,
+            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, set_menu_enabled, take_opened,
+            #[cfg(desktop)] update_check, #[cfg(desktop)] update_install, #[cfg(desktop)] print_page,
             ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history,
             library::library_list, library::library_read, library::library_write, library::library_delete,
             library::library_sidecar_read, library::library_sidecar_write, library::library_current_read, library::library_current_write

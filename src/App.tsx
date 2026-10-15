@@ -24,7 +24,7 @@ import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
 import { loadSgf, MAX_SGF, readResult, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import { DECORS, type Decor } from './board3d/decors'
-import { isMac, shortcut } from './platform'
+import { isMac, isMobile, shortcut } from './platform'
 import { useFullscreen, useWindowTheme } from './window'
 import { getVersion } from '@tauri-apps/api/app'
 import { checkDue, updateSettings, type UpdateInfo } from './update'
@@ -302,7 +302,8 @@ export function App() {
     launchCheck.current = true
     getVersion().then(setVersion, () => {})
     const now = Date.now()
-    if (settings.autoUpdate && checkDue(now, settings.updateChecked)) { set('updateChecked', now); checkUpdate(true) }
+    // phones update through their store
+    if (!isMobile && settings.autoUpdate && checkDue(now, settings.updateChecked)) { set('updateChecked', now); checkUpdate(true) }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const subs = [
@@ -1516,7 +1517,7 @@ export function App() {
               <button className="link" onClick={copyDiagnostics}>{t.copyDiagnostics}</button>
               {diag && <> · {diag(t)}</>}
             </p>}
-            {inTauri() && <>
+            {inTauri() && !isMobile && <>
               <div className="row" style={{ cursor: 'default' }}><span>{t.updates}</span></div>
               <p className={`engine${upd.s === 'error' ? ' err' : ''}`} aria-live="polite">
                 {updLine}{updActions.map(([label, act]) => <span key={label}> · <button className="link" onClick={act}>{label}</button></span>)}

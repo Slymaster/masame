@@ -486,6 +486,7 @@ export const en = {
     settings_write: 'Setting not saved.',
     catalog_offline: 'Online catalog unavailable; showing the last known version.',
     engine_missing: 'The KataGo engine is missing.',
+    engine_unavailable: 'KataGo isn’t available on this device yet.',
     config_missing: 'The KataGo configuration is missing.',
     model_missing: 'The analysis network is missing.',
     no_analysis_net: 'No analysis network is installed. Open “Networks” to download one.',
