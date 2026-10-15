@@ -108,7 +108,8 @@ export const bind = (g: Game, id: string) => { ids.set(g, id) }
 /** An entry for a game, from its info and its SGF root properties (BR/WR ranks, HA, DT); `o` sets or overrides the rest. */
 export function entryOf(g: Game, o: { id: string; source: Source; me: Sign | 0 } & Partial<Entry>): Entry {
   const d = g.root.data, first = (k: string) => d[k]?.[0] ?? ''
-  const dt = Date.parse(first('DT').slice(0, 10)) // "2026-10-14", or a range "2026-10-14,15": its first day
+  // "2026-10-14", or a range "2026-10-14,15": its first day, a local date (Date.parse would read it as UTC midnight)
+  const [y, m, day] = first('DT').slice(0, 10).split('-').map(Number), dt = m && day ? new Date(y, m - 1, day).getTime() : NaN
   const ha = parseInt(first('HA'), 10)
   return {
     date: Number.isFinite(dt) ? dt : Date.now(), size: g.info.size, komi: g.info.komi, handicap: ha >= 2 ? ha : 0,

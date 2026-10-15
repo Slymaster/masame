@@ -147,7 +147,7 @@ describe('a game and its entry', () => {
   it('reads the entry from the SGF: players, ranks, handicap, date, result', async () => {
     const g = await game('(;SZ[19]KM[0.5]HA[3]PB[Ana]BR[12k]PW[Masame]WR[9k]DT[2026-10-14,15]RE[W+R];B[pd];W[dd])')
     expect(lib.entryOf(g, { id: 'x', source: 'file', me: 0 })).toEqual({
-      id: 'x', source: 'file', me: 0, date: Date.parse('2026-10-14'), size: 19, komi: 0.5, handicap: 3,
+      id: 'x', source: 'file', me: 0, date: new Date(2026, 9, 14).getTime(), size: 19, komi: 0.5, handicap: 3,
       black: { name: 'Ana', rank: '12k' }, white: { name: 'Masame', rank: '9k' }, result: 'W+R',
     })
     const bare = lib.entryOf(await game('(;SZ[9];B[ee])'), { id: 'y', source: 'two', me: 0, date: 5 })
