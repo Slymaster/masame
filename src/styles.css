@@ -207,13 +207,23 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
   .board-wrap > .note > .res { gap: 10px; padding-left: 14px }
   .res .chip { gap: 0; padding-left: 10px; font-size: 0 }
 }
-/* the mentor's stops need a full row (≈ 740px); with less, the two buttons stack at the right, compact, so the card keeps
-   inside the caption's width and its 64px */
+/* the mentor's stops need a full row (≈ 740px), two buttons beside the AI level's box ≈ 560px; with less, the two buttons
+   stack at the right, compact, so the card keeps inside the caption's width and its 64px */
 @container (max-width: 700px) {
   .board-wrap > .note > .res:has(.said) { display: inline-grid; grid-auto-flow: column; grid-template-rows: auto auto; row-gap: 4px }
   .res:has(.said) > :not(.link) { grid-row: span 2 }
   .board-wrap > .note > .res:has(.said) .link { height: 25px; padding: 0 11px; gap: 5px; font-size: 12.5px }
   .board-wrap > .note > .res:has(.said) .link[data-act=review] { padding-left: 9px }
+}
+@container (max-width: 560px) {
+  .board-wrap > .note > .res:has(.link + .link) { display: inline-grid; grid-auto-flow: column; grid-template-rows: auto auto; row-gap: 4px }
+  .res:has(.link + .link) > :not(.link) { grid-row: span 2 }
+  .board-wrap > .note > .res:has(.link + .link) .link { height: 25px; padding: 0 11px; gap: 5px; font-size: 12.5px }
+  .board-wrap > .note > .res:has(.link + .link) .link[data-act=review] { padding-left: 9px }
+}
+/* the smallest windows: the AI level's box keeps its rank and drops its label */
+@container (max-width: 450px) {
+  .res .chip { display: none }
 }
 /* narrow: smaller title and compact buttons */
 @container (max-width: 460px) {
