@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { rng } from '../board/noise'
 import { openingBook } from '../today/ritual'
-import { reach, validate, type JosekiDb } from './db'
+import { failureText } from '../i18n'
+import { en } from '../i18n/en'
+import { loadJoseki, reach, validate, type JosekiDb } from './db'
 import fixture from './fuseki-fixture.json'
 import josekiFixture from './fixture.json'
 import { review } from './fsrs'
@@ -85,5 +87,17 @@ describe('the ritual', () => {
   it('takes the fuseki when the opening is your weakest phase, the joseki otherwise', () => {
     expect(openingBook(0)).toBe('fuseki')
     expect([openingBook(1), openingBook(2), openingBook(null)]).toEqual(['joseki', 'joseki', 'joseki'])
+  })
+})
+
+describe('a missing book', () => {
+  it('reads as one plain sentence, not a JSON parse error, and is fetched again next time', async () => {
+    const page = () => Promise.resolve(new Response('<!doctype html>', { headers: { 'content-type': 'text/html' } }))
+    const f = vi.fn(page); vi.stubGlobal('fetch', f)
+    const e = await loadJoseki('fuseki').catch(x => x)
+    expect(failureText(e, en)).toBe(en.bookMissing)
+    await loadJoseki('fuseki').catch(() => {})
+    expect(f).toHaveBeenCalledTimes(2)
+    vi.unstubAllGlobals()
   })
 })

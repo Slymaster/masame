@@ -104,7 +104,7 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
   const practise = () => { setTab('practise'); if (db) newLine(); else setQueued(true) }
   useEffect(() => { if (queued && db && R) { setQueued(false); newLine() } }, [queued, db, R]) // eslint-disable-line react-hooks/exhaustive-deps
   const left = db && counts(db, store.p.cards, fresh, now), todayStep = left && deckStep(store.p.cards, left.due + left.fresh, now) // null until loaded
-  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, today: todayStep, practise, counts: left }
+  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, today: todayStep, practise, counts: left, failed: !!error }
   if (!open) return none
   const acts = <button className="act" onClick={close} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button>
   if (!db || !R) {
@@ -120,14 +120,18 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
   const goEx = (path: Path) => { setEx({ path, line: false }); setSay(null) }
   const exW = walk(db, ex.path), exNode = db.nodes[node(exW)], exEdges = exNode.e
   const exLetters = new Map<number, string>() // edge index → its marker letter
-  exEdges.forEach((e, i) => { if (!isTenuki(e[0])) exLetters.set(i, LETTERS[exLetters.size] ?? '·') })
+  // mirror twins (two moves, one position up to symmetry) share one child: one row, one letter, their frequencies summed
+  const head = (i: number) => exEdges.findIndex(e => e[1] === exEdges[i][1]), heads = exEdges.flatMap((_, i) => head(i) === i ? [i] : [])
+  const freqOf = (i: number, q: number) => exEdges.reduce((a, e) => a + (e[1] === exEdges[i][1] ? e[3][q] : 0), 0)
+  let nLetters = 0
+  exEdges.forEach((e, i) => { if (!isTenuki(e[0])) exLetters.set(i, head(i) === i ? LETTERS[nLetters++] ?? '·' : exLetters.get(head(i))!) })
   const into = exW.nodes.length > 1 ? db.nodes[exW.nodes.at(-2)!].e[ex.path.picks.at(-1)!] : null // the edge that led here
   const exLine = !exEdges.length || (into && into[2] > 10) ? continuation(db, node(exW), exW.frames.at(-1)!) : []
   const tenukiEdge = exEdges.findIndex(e => isTenuki(e[0]))
   const proLocal = exEdges.reduce((a, e) => a + (isTenuki(e[0]) ? 0 : e[3][db.profiles.indexOf('pro')] ?? 0), 0) / 100
   // settled alone fires early in this context (the neighbours are the approacher's): complete = the tree's end, or settled and pros leave
   const complete = exEdges.length > 0 && (exEdges.every(e => !db.nodes[e[1]].e.length) || (exNode.s === 1 && proLocal < 0.3))
-  const frequent = exEdges.reduce((b, e, i) => e[3][p] > (exEdges[b]?.[3][p] ?? -1) ? i : b, -1)
+  const frequent = heads.reduce((b, i) => b < 0 || freqOf(i, p) > freqOf(b, p) ? i : b, -1)
   const exMoves = [...exW.moves, ...ex.line ? exLine : []]
   const back = () => ex.path.picks.length && goEx({ ...ex.path, picks: ex.path.picks.slice(0, -1) })
   const down = (i: number) => {
@@ -219,9 +223,9 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
           <button className="chev" onClick={() => frequent >= 0 && down(frequent)} disabled={frequent < 0} aria-label={t.jFrequent} title={`${t.jFrequent} (→)`}><Icon name="chevron-right" /></button>
         </div>
         {exEdges.length > 0 && <ul className="jrows" aria-label={t.jMoves}>
-          {exEdges.map((e, i) => (
+          {heads.map(i => [exEdges[i], i] as const).map(([e, i]) => (
             <li key={i}><button className={`jrow ${tone(e[2] / 10)}`} onClick={() => down(i)}>
-              <b>{moveName(i)}</b><span>{loss(e[2])}</span><span>{t.jAt(pct(e[3][p]), lens)}</span><small>{tags(e[4])}</small>
+              <b>{moveName(i)}</b><span>{loss(e[2])}</span><span>{t.jAt(pct(freqOf(i, p)), lens)}</span><small>{tags(e[4])}</small>
             </button></li>
           ))}
         </ul>}
@@ -230,8 +234,8 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
         {exEdges.length > 0 && <p className="quiet jlens">
           <span>{t.jLens}</span>
           {LENS.map(r => db.profiles.indexOf(r)).filter(q => q >= 0).map(q => {
-            const i = exEdges.reduce((b, e, j) => e[3][q] > exEdges[b][3][q] ? j : b, 0)
-            return <span key={q}>{db.profiles[q]}: {exLetters.get(i) ?? t.jTenuki} {pct(exEdges[i][3][q])}</span>
+            const i = heads.reduce((b, j) => freqOf(j, q) > freqOf(b, q) ? j : b, 0)
+            return <span key={q}>{db.profiles[q]}: {exLetters.get(i) ?? t.jTenuki} {pct(freqOf(i, q))}</span>
           })}
           <span>KataGo: {exLetters.get(0) ?? t.jTenuki}</span>
         </p>}

@@ -349,7 +349,8 @@ export function App() {
   const jt = useJoseki({ ...books, open: panel === 'joseki', setOpen: panelOpen('joseki') })
   const ft = useJoseki({ ...books, book: 'fuseki', open: panel === 'fuseki', setOpen: panelOpen('fuseki') })
   /** S'entraîner on the fuseki, a line started at once (the ritual, and Travailler › Opening). */
-  const practiseFuseki = () => { setSheet(null); setPanel('fuseki'); ft.practise() }
+  const practiseJoseki = () => { setSheet(null); setPanel('joseki'); jt.practise() }
+  const practiseFuseki = () => { if (ft.failed) return practiseJoseki(); setSheet(null); setPanel('fuseki'); ft.practise() } // the joseki stands in for a book that did not load
   const ex = useExercises({
     view, open: panel === 'exercises', setOpen: panelOpen('exercises'), blocked: ongoing || !!review, canAnalyze, setThinking,
     autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null,
@@ -357,13 +358,13 @@ export function App() {
   })
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
   useEffect(() => setRitualSaid(null), [panel])
-  const opening = openingBook(weakest(ex.games)) // the ritual's joseki or fuseki step
+  const opening = ft.failed ? 'joseki' : openingBook(weakest(ex.games)) // the ritual's joseki or fuseki step
   const netsUnknown = inTauri() && !nets // at launch: the steps needing a net are neither done nor off yet
   const td = useToday({
     blocked: ongoing || !!review,
     decks: [netsUnknown ? { done: false, left: null } : canAnalyze ? ex.today : null, (opening === 'fuseki' ? ft : jt).today ?? { done: false, left: null }], canPlay: netsUnknown ? null : canPlayAI, rank: settings.myRank,
     // each step closes the Learn sheet, then takes the card
-    start: [() => { setSheet(null); setPanel('exercises') }, () => { if (opening === 'fuseki') practiseFuseki(); else { setSheet(null); setPanel('joseki'); jt.practise() } },
+    start: [() => { setSheet(null); setPanel('exercises') }, opening === 'fuseki' ? practiseFuseki : practiseJoseki,
       () => { setSheet(null); setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
     onDone: n => { if (panel) setRitualSaid(n); else setNote(d => d.ritualDone(n)) }, // a panel's note hides the game's
   })

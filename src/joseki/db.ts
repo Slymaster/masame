@@ -6,6 +6,8 @@
 // fuseki (fuseki.v1.json, from the empty board) uses all 8, and its roots are the first moves. A node with no edges was not expanded; its pv is KataGo's best line from it.
 // s = settled (tenuki costs ≤ 0.5 point). Root and edge frequencies are floored percentages of each profile playing it.
 
+import { LocalizedError } from '../i18n'
+
 export const TAG = { classic: 1, pro: 2, ai: 4, verified: 8, contested: 16 }
 export type Edge = [string, number, number, number[], number, number?]
 export interface JNode { k: string; e: Edge[]; s?: 1; pv?: string }
@@ -42,7 +44,8 @@ export type Book = 'joseki' | 'fuseki'
 const loading: Partial<Record<Book, Promise<JosekiDb>>> = {}
 /** Fetched on first use (it is not small), then shared. */
 export const loadJoseki = (book: Book = 'joseki') => loading[book] ??= fetch(`${import.meta.env.BASE_URL}assets/joseki/${book}.v1.json`)
-  .then(r => { if (!r.ok) throw new Error(`${book} data: HTTP ${r.status}`); return r.json() })
+  // a missing file comes back as the page itself (HTML), not as a 404: both read as one plain sentence
+  .then(r => r.ok && !r.headers.get('content-type')?.includes('html') ? r.json() : Promise.reject(new LocalizedError(d => d.bookMissing)))
   .then(j => book === 'fuseki' ? { ...validate(j), family: book } : validate(j), e => { loading[book] = undefined; throw e })
 
 export interface Child { move: string; child: number; loss: number; freq: number[]; tags: number; sym: number }

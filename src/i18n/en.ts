@@ -195,6 +195,7 @@ export const en = {
   jProgrammeHelp: (rank: string) => `Ordered by how often you meet each corner at ${rank} × the points it costs there.`,
   jMet: (n: number) => `met about 1 corner in ${f.num(n)}`, jOpenFamily: (name: string) => `Explore ${name}`,
   // fuseki trainer: the joseki trainer's other book
+  bookMissing: 'the book is missing from this version of Masame',
   fuseki: 'Fuseki', fFamily: 'Book', fLoading: 'Loading the fuseki.', fFailed: (m: string) => `Couldn’t load the fuseki: ${m}`, fFirst: 'First move',
   fExploreNote: (n: number) => `Fuseki · move ${n}. A letter follows a move: A loses least.`,
   fContext: 'The empty board, Black first, komi 6.5, Japanese rules. An opening and its mirror images count as one.',
