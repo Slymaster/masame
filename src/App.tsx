@@ -1029,6 +1029,7 @@ export function App() {
   const resultLine = result && [result(t), note?.(t), aiMoved && t.aiNext(aiMoved)].filter(Boolean).join(' ')
   const incoming = !myGame && challengeRows.find(c => !c.mine)
   const libraryShown = canMemory && !bot && !dirty && !!library.idOf(game) // a game opened from Mes parties, untouched
+  const libraryLinks: Link[] = [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []), ['memory', t.memLink, replay]]
   const undoAsk = myGame?.undo
   // outside trainers and reviews, top first: search, OGS game prompts, challenge wait, OGS game states, result, the local
   // game's lines; only when none has anything to say, a game started elsewhere or an incoming challenge
@@ -1047,12 +1048,12 @@ export function App() {
     : countingNow ? [t.countingHelp, []]
     : game.ended ? [t.countingWait, []]
     : [(botError ?? note)?.(t) ?? engineWait ?? (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null),
-      botError ? [['retry', t.retry, retryBot]] : []]
+      botError ? [['retry', t.retry, retryBot]] : libraryShown ? libraryLinks : []]
   const [gameLine, gameLinks]: [string | null | undefined, Link[]] = line ? [line, lineLinks]
     : started ? [t.ogsStartedVs(started.who), [['open', t.ogsOpen, () => resume(started.id)]]]
     : incoming ? [t.ogsChallenged(incoming.from.username, incoming.from.rank, incoming.size, t.paces[incoming.speed], incoming.ranked),
       [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
-    : libraryShown ? [t.libraryShown, [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []), ['memory', t.memLink, replay]]]
+    : libraryShown ? [t.libraryShown, libraryLinks]
     : [line, lineLinks]
   // td.onward's step index: the ritual's exercises 0 (its exercises, then its counting), joseki 1
   const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open ? 1 : ex.open || ct.open ? 0 : -1, ex.open ? !!ex.today?.done : undefined)] : review?.error ? [['retry', t.retry, retryLesson]]

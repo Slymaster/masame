@@ -108,16 +108,15 @@ export function useCounting({ open, setOpen, blocked, canAnalyze, light, setThin
     <section className="rv ct" aria-label={t.countDeck}>
       <div className="lab"><span>{t.countDeck}</span><span>{r ? `${Math.min(done.n + +asked, SESSION)} / ${SESSION}` : ''}</span></div>
       {r && <>
-        <div className="field">
-          <span className="say">{t.countWho}</span>
-          <Seg<number> label={t.countWho} value={who ?? NaN} options={[[1, t.black], [-1, t.white], [0, t.countEven]]} set={v => setWho(v as 1 | -1 | 0)} disabled={!asked} />
-        </div>
-        <div className="row stepper">
+        {/* the answer as it stands, large; then who, then how much */}
+        <p className="state" aria-live="polite">{who === null ? t.countWho : who === 0 ? t.countEven : `${who === 1 ? t.black : t.white} +${by}`}</p>
+        <Seg<number> label={t.countWho} value={who ?? NaN} options={[[1, t.black], [-1, t.white], [0, t.countEven]]} set={v => setWho(v as 1 | -1 | 0)} disabled={!asked} />
+        <div className="row stepper big">
           <span className="say">{t.countBy}</span>
           <span className="step">
-            <button onClick={() => setBy(b => Math.max(1, b - 1))} disabled={!asked || who === 0 || by <= 1} aria-label={`${t.countBy} −1`}>‹</button>
+            <button onClick={() => setBy(b => Math.max(1, b - 1))} disabled={!asked || who === 0 || by <= 1} aria-label={`${t.countBy} −1`}>−</button>
             <output aria-live="polite">{who === 0 ? '–' : by}</output>
-            <button onClick={() => setBy(b => Math.min(40, b + 1))} disabled={!asked || who === 0 || by >= 40} aria-label={`${t.countBy} +1`}>›</button>
+            <button onClick={() => setBy(b => Math.min(40, b + 1))} disabled={!asked || who === 0 || by >= 40} aria-label={`${t.countBy} +1`}>+</button>
           </span>
         </div>
         {asked ? <div className="opts"><button className="btn accent" onClick={answer} disabled={who === null}>{t.countAnswer}</button></div>

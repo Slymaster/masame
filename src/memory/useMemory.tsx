@@ -96,7 +96,9 @@ export function useMemory({ view, open, setOpen, blocked, onEnd }: {
   const body = (
     <section className="rv mem" aria-label={t.memTitle}>
       <div className="lab"><span>{t.memTitle}</span><span /></div>
-      <p className="state">{t.memDone(run.recalled, n, run.helps)}</p>
+      <ul className="mem-figs" aria-label={t.memDone(run.recalled, n, run.helps)}>
+        <li><b>{run.recalled}</b><span>{t.memFound}</span></li><li><b>{run.helps}</b><span>{t.memHelps}</span></li><li><b>{n - rec.moveNumber(run.k)}</b><span>{t.memLeft}</span></li>
+      </ul>
       <Timeline g={rec} floor={0} go={() => {}} auto={false} toggleAuto={() => {}} live relocate={() => {}} />
       <p className="quiet">{t.memHelpText}</p>
     </section>
