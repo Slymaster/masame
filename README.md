@@ -96,7 +96,7 @@ The board takes the window; beside it, one floating card holds the game. Its hea
 ### My games
 
 - **The library.** Every game you play against the AI or between two players, your OGS games, the positions you save and the files you review are kept on your machine, with their result, the rank read in your moves, their key moments and your scores. Filter by source, search by opponent, open one with a click. Your ongoing OGS games come first, the ones where it's your move on top.
-- **Game review.** Up to three moments where a move cost the most points, each a short lesson: find the punishment yourself, see it, then see the better move. It runs locally, in about a minute. From a key moment you can also try your own continuation, and KataGo answers. Every finished game is also read in the background, on your machine, as soon as the engine is free, and its key moments join your exercises without a click.
+- **Game review.** Up to three moments where a move cost the most points, each a short lesson: find the punishment yourself, see it, then see the better move. After a game against the AI, or at any time in a two-player or SGF game. It runs locally, in about a minute. From a key moment you can also try your own continuation, and KataGo answers. Every finished game is also read in the background, on your machine, as soon as the engine is free, and its key moments join your exercises without a click.
 - **Replay from memory.** The board empties and you replay the game, both sides, move by move; after a second miss the move is shown. Your score joins the game in My games.
 - **Guess the moves.** The Classics' mode, on any game of your library.
 - **Share.** One small sheet: save the game as SGF, make a postcard, print a kifu, or copy the OGS link.
