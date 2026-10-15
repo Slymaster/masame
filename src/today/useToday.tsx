@@ -31,7 +31,7 @@ export function useToday({ blocked, decks, canPlay, rank, start, onDone }: {
   const go = () => { const i = steps.findIndex(s => s && !s.done); if (i >= 0 && !blocked) { setFlow(true); start[i]() } }
   /** The open trainer's link to the next step, once its own step (or its part of it: `mine`) is done. */
   const onward = (i: number, mine = steps[i]?.done): Link[] => flow && !finished && mine ? [['ritual', t.ritualGo, go]] : []
-  const waiting = !blocked && !finished && steps.some(s => s && !s.done) // the Learn door's dot
+  const waiting = !blocked && !finished && steps.some(s => s && !s.done) // the Learn door's dot; dark on purpose during an OGS game (blocked), when the ritual can't run
 
   const streak = streakOf(r, now), avail = steps.some(Boolean)
   const state = (s: Step, i: number) => !s ? t.tdOff[NAMES[i] as 'exercises' | 'game'] : s.done ? t.tdDoneStep : s.left === null ? t.tdLoading : t.tdLeft(s.left)
