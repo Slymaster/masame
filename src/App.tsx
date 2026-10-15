@@ -1210,7 +1210,7 @@ export function App() {
   // the doors' dots: a challenge awaits my answer (Play), the ritual waits (Learn), an OGS game awaits my move (My games)
   const doorHints = {
     play: challengeRows.some(c => !c.mine) ? t.ogsDotChallenge : null, learn: td.waiting ? t.ritualWaiting : null,
-    games: activeRows?.some(r => r.myTurn && r.corr) ? t.ogsDotTurn : null,
+    games: activeRows?.some(r => r.myTurn && (r.corr || r.id !== online?.id)) ? t.ogsDotTurn : null, // a live game not on the board, too
   }
   const alert = upd.s === 'available' ? t.updateAvailable(upd.version) : engine.state === 'error' ? failureText(engine.error) : null
   const closeSheet = () => setSheet(null)

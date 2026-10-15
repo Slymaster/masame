@@ -95,7 +95,7 @@ export function GamesSheet({ onClose, opener, onResume, onOpen, onImport, onImpo
         {ongoing.map(g => (
           <button key={g.id} className={`game-row${g.myTurn && g.phase === 'play' ? ' turn-mine' : ''}`} onClick={() => onResume(g.id)}>
             <span className="who"><span className="nm">{g.opponent.username}</span>{g.opponent.rank && <span className="rk">{g.opponent.rank}</span>}</span>
-            <span className="dim">{detail(g)}</span>
+            <span className="dim">{detail(g)} · <span className="go">{t.resume}</span></span>
           </button>
         ))}
         {searches.map(s => (

@@ -311,6 +311,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .game-row .who { display: flex; align-items: baseline; font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.2; min-width: 0; white-space: nowrap }
 .game-row .rk { font-size: 14px }
 .game-row .dim { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+.game-row .go { font-size: 14px; color: var(--accent) }
 /* OGS sheet: tab panes, challenge form, list items with inline actions, the rank chart */
 .ogs-pane { display: flex; flex-direction: column; gap: 18px; margin-top: 6px }
 .ogs-pane > .lab { margin-bottom: -8px }
