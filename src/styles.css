@@ -96,7 +96,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 :is(.icon, .act, .chev, .tl input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
 
 .meta { display: flex; align-items: center; gap: 2px; margin: 4px 0 10px; font-size: 11.5px; color: var(--muted) }
-.meta > span { margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.meta > span { margin-right: auto; line-height: 1.35; text-wrap: balance } /* wraps rather than cut: the OGS rules line is long */
 .body { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; margin: 0 -14px; padding: 0 14px 12px; scrollbar-width: thin; scrollbar-color: var(--rule-2) transparent }
 
 /* player cards: Black on lacquer, White on paper, whatever the skin */
@@ -150,8 +150,10 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 
 .note { min-height: 2.9em; margin-top: 6px; font-family: var(--f-title); font-style: italic; font-size: 16px; line-height: 1.4; color: var(--muted) }
 /* caption under the board, in room of its own below .board-wrap (up to two lines), so it never covers the board and stays
-   visible with the card hidden; ink on the card's colour, larger than the card's notes: it is what the player reads */
-.board-wrap { margin-bottom: 36px }
+   visible with the card hidden; ink on the card's colour, larger than the card's notes: it is what the player reads.
+   The room (this margin + .stage's 28px bottom padding = 76px) holds the tallest caption, the result card with the mentor's
+   stops (64px), its 4px top margin and 8px to the window's edge */
+.board-wrap { margin-bottom: 48px }
 .board-wrap > .note { position: absolute; left: calc(2 * var(--shift, 0px)); right: 0; top: 100%; min-height: 0; margin: 4px 0 0; text-align: center; pointer-events: none; container-type: inline-size }
 .board-wrap > .note > span {
   display: inline-block; max-width: min(100%, 600px); padding: 5px 20px 0; border-bottom: 7px solid transparent; border-radius: 19px; background: var(--card);
@@ -163,18 +165,12 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 }
 .board-wrap > .note .link { font: inherit; color: var(--accent); text-decoration-color: currentColor; white-space: nowrap; margin-left: .45em }
 .board-wrap > .note .link:hover { color: var(--accent-hover) }
-/* a narrow window beside the card: smaller type, and the links beside two lines of text at most, so they are never cut */
-@container (max-width: 460px) {
-  .board-wrap > .note > span { display: inline-flex; align-items: center; gap: .45em; font-size: 16.5px }
-  .board-wrap > .note > :not(.res) .txt { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden }
-  .board-wrap > .note .link { margin-left: 0 }
-}
 /* the result, as a score sheet: the winner's stone, who and how, the AI's next level, then the review as the one filled button;
-   at most 60px tall (the room under the board): the title never wraps nor shrinks, the sub line wraps in what is left, two
-   lines at most (the full sentence is in the title attribute) */
+   at most 64px tall (the room under the board): the title never wraps nor shrinks, the sub line (how it ended) wraps in what
+   is left, and gives way to a note; the mentor's stops and the review or memory notice follow the title in ink and wrap, never cut (room: 200px) */
 .board-wrap > .note > .res {
   display: inline-flex; align-items: center; gap: 12px; max-width: 100%; max-height: none; overflow: visible; padding: 5px 6px 5px 8px; border: 0;
-  border-radius: 999px; box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--rule); font: 500 12px/1.2 var(--f-ui); text-align: left
+  border-radius: 999px; box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--rule); font: 500 12px/1.2 var(--f-ui); text-align: left; text-wrap: wrap
 }
 .res .stone { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; font: 600 9.5px var(--f-ui); letter-spacing: -.01em; box-shadow: 0 2px 4px rgba(0, 0, 0, .45) }
 .res .stone.b { background: var(--stone-b); color: var(--pb-ink) }
@@ -183,6 +179,8 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .res .txt b { font: 600 18px/1.1 var(--f-ui); letter-spacing: -.01em; white-space: nowrap }
 .res .txt small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.15; color: var(--muted) }
 .res .txt small:empty { display: none }
+.res .txt b .said { font-weight: 400; white-space: normal } /* the mentor's stops, on the title's line: a result the player reads */
+.res .txt:has(.said) { min-width: 200px }
 .res .chip { flex: none; display: flex; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 1px solid var(--rule-2); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); white-space: nowrap }
 .res .chip b { font: 600 14px var(--f-ui); letter-spacing: 0; text-transform: none; color: var(--ink); font-variant-numeric: tabular-nums }
 .res .chip i { font-style: normal; font-weight: 500; color: var(--muted) }
@@ -201,10 +199,31 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
   .board-wrap > .note > .res { gap: 10px; padding-left: 14px }
   .res .chip { gap: 0; padding-left: 10px; font-size: 0 }
 }
-/* narrow: smaller title and compact buttons */
+/* the mentor's stops and the notices need a full row (≈ 1000px), two buttons beside the AI level's box ≈ 560px; with less,
+   the two buttons stack at the right, compact, so the words keep two lines and the card about its 64px */
+@container (max-width: 1000px) {
+  .board-wrap > .note > .res:has(.said) { display: inline-grid; grid-auto-flow: column; grid-template-rows: auto auto; row-gap: 4px }
+  .res:has(.said) > :not(.link) { grid-row: span 2 }
+  .board-wrap > .note > .res:has(.said) .link { height: 25px; padding: 0 11px; gap: 5px; font-size: 12.5px }
+  .board-wrap > .note > .res:has(.said) .link[data-act=review] { padding-left: 9px }
+}
+@container (max-width: 560px) {
+  .board-wrap > .note > .res:has(.link + .link) { display: inline-grid; grid-auto-flow: column; grid-template-rows: auto auto; row-gap: 4px }
+  .res:has(.link + .link) > :not(.link) { grid-row: span 2 }
+  .board-wrap > .note > .res:has(.link + .link) .link { height: 25px; padding: 0 11px; gap: 5px; font-size: 12.5px }
+  .board-wrap > .note > .res:has(.link + .link) .link[data-act=review] { padding-left: 9px }
+}
+/* the smallest windows: the AI level's box keeps only the new level */
+@container (max-width: 450px) {
+  .res .chip i { display: none }
+}
+/* narrow: compact buttons (the title and its note keep 18px); with a note and three buttons (a finished OGS game), the
+   review button keeps only its icon, so the words keep their two lines */
 @container (max-width: 460px) {
   .board-wrap > .note > .res { gap: 8px; padding-left: 12px }
-  .res .txt b { font-size: 16.5px }
+  .board-wrap > .note > .res:has(.said):has(.link + .link + .link) .link[data-act=review] { grid-area: 1 / 2; gap: 0; padding: 0 8px; font-size: 0 }
+  .res:has(.said):has(.link + .link + .link) .link[data-act=rematch] { grid-area: 1 / 3 }
+  .res:has(.said):has(.link + .link + .link) .link[data-act=memory] { grid-area: 2 / 2 / 3 / 4 }
   .res .chip { padding-left: 8px }
   .res .chip b { font-size: 13px }
   .board-wrap > .note > .res .link { height: 32px; padding: 0 12px; gap: 5px; font-size: 12.5px }
@@ -310,6 +329,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .game-row .who { display: flex; align-items: baseline; font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.2; min-width: 0; white-space: nowrap }
 .game-row .rk { font-size: 14px }
 .game-row .dim { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+.game-row .go { font-size: 14px; color: var(--accent) }
 /* OGS sheet: tab panes, challenge form, list items with inline actions, the rank chart */
 .ogs-pane { display: flex; flex-direction: column; gap: 18px; margin-top: 6px }
 .ogs-pane > .lab { margin-bottom: -8px }
@@ -395,7 +415,6 @@ body[data-drop]::after {
 }
 
 /* the daily ritual (Today) */
-.brand { gap: 2px } /* six header icons in the 336 px card */
 .td-rail { list-style: none; margin: 4px 0 0; padding: 0 }
 .td-rail li { position: relative; display: grid; grid-template-columns: 26px 1fr; column-gap: 12px; padding-bottom: 16px }
 .td-rail li:not(:last-child)::before { content: ""; position: absolute; left: 12.5px; top: 26px; bottom: 0; width: 1px; background: var(--rule-2) }
@@ -412,3 +431,107 @@ body[data-drop]::after {
 .rv-rank { display: flex; flex-direction: column; gap: 2px }
 .rv-rank .estimate { color: var(--ink) }
 .ex .rc-now { stroke: var(--card) }
+
+/* ---------- the four doors and their sheets (Apprendre, Mes parties, Partager) ---------- */
+.brand { flex: none; gap: 2px; flex-wrap: wrap; row-gap: 10px } /* flex: none: a tall card body must not squash the doors' row */
+/* the four doors: a row of their own under the seal, the title and the eye, each named */
+.brand::after { content: ""; order: 2; flex-basis: 100% }
+.card.off .brand::after { content: none }
+.panel-toggle { order: 1 }
+.door {
+  order: 3; position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px 6px;
+  border: 1px solid var(--rule); border-radius: 10px; background: none; color: var(--muted); font: inherit; font-size: 12.5px; line-height: 1.1; white-space: nowrap;
+  cursor: pointer; transition: color .25s, background .25s, border-color .25s
+}
+.door svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round }
+.door:hover { color: var(--accent); background: var(--hover); border-color: var(--rule-2) }
+.door:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.door .dot { top: 6px; right: 6px }
+.say { font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.35; color: var(--ink) }
+.say.err { color: var(--accent) }
+:is(.share-row, .deck-row, .lib-row) {
+  display: flex; width: calc(100% + 20px); margin: 0 -10px; padding: 12px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer; transition: background .25s
+}
+:is(.share-row, .deck-row, .lib-row):hover:not(:disabled) { background: var(--hover) }
+:is(.share-row, .deck-row, .lib-row):focus-visible { outline: 1px solid var(--accent); outline-offset: -1px }
+:is(.share-row, .deck-row, .lib-row):disabled { cursor: default; opacity: .5 }
+:is(.decks, .lib) ul, ul.lib, ul.phases { list-style: none; margin: 0; padding: 0 }
+:is(.decks, .lib) li + li, .share-row + .share-row { border-top: 1px solid var(--rule) }
+.share-list { display: flex; flex-direction: column }
+.share-row { justify-content: space-between; align-items: baseline; gap: 12px; font-family: var(--f-title); font-style: italic; font-size: 20px; line-height: 1.2 }
+.share-row kbd { font-family: var(--f-ui); font-style: normal; font-size: 12px; color: var(--muted) }
+.share-list .say { margin-top: 10px; overflow-wrap: anywhere }
+.deck-row { flex-direction: column; gap: 2px }
+.deck-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px }
+.deck-top b { font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 20px; line-height: 1.2 }
+.deck-n { flex: none; font-size: 16px; color: var(--ink); font-variant-numeric: tabular-nums }
+.deck-phrase { font-size: 13px; color: var(--muted) }
+.decks .say { margin-bottom: 6px }
+.lib { margin-top: 8px }
+.lib-row { flex-direction: column; gap: 3px }
+.lib-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px }
+.lib-who { display: flex; align-items: baseline; min-width: 0; overflow: hidden }
+.lib-who .who { display: flex; align-items: baseline; font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.2; white-space: nowrap }
+.lib-who .rk { margin-left: 6px; font-size: 14px }
+.lib-res { flex: none; font-size: 18px; color: var(--ink); font-variant-numeric: tabular-nums }
+.lib-sub { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums }
+.lib-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px }
+.lib-badges i { font-style: normal; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--well); color: var(--ink) }
+section > .seg + .ogs-input { margin-top: 10px }
+.progress { display: flex; flex-direction: column; gap: 4px }
+/* Progrès reads as one page: each section opens on an italic title, a rule between sections */
+.progress .lab { margin-bottom: 6px; padding-bottom: 2px; border-bottom: 0; font: italic 500 24px/1.2 var(--f-title); letter-spacing: 0; text-transform: none; color: var(--ink) }
+.progress .lab span:last-child { font: 13px var(--f-ui); color: var(--muted) }
+.progress + .progress { border-top: 1px solid var(--rule-2); padding-top: 18px }
+.phases li { display: flex; align-items: baseline; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--rule); font-size: 14px }
+.phases li > span { flex: 1 }
+.phases li > b { font-weight: 500; font-variant-numeric: tabular-nums }
+.phases li.top > b { color: var(--accent) }
+.progress .state { margin: 0 }
+.lib-who .vs { margin: 0 8px; color: var(--muted) }
+section > .seg + .ogs-input { display: block; width: 100% }
+.td .say { margin-bottom: 8px }
+.stepper.big .step button { width: 40px; height: 40px; font-size: 22px; border: 1px solid var(--rule-2) }
+.stepper.big output { font-size: 26px; min-width: 48px; font-family: var(--f-title) }
+.mem-figs { display: flex; gap: 22px; list-style: none; margin: 0; padding: 0 }
+.mem-figs li { display: flex; flex-direction: column }
+.mem-figs b { font-family: var(--f-title); font-size: 30px; font-weight: 500; line-height: 1.1 }
+.mem-figs span { font-size: 14px; color: var(--muted) }
+
+/* Kifu (Partager › Kifu): a page of paper over the app; printed alone (@media print), A4 */
+.kifu-page { position: fixed; inset: 0; z-index: 40; overflow: auto; background: #FCFAF5; color: #2A2118; outline: none }
+.kifu-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 24px; background: var(--sheet); color: var(--ink); border-bottom: 1px solid var(--rule) }
+.kifu-bar .title { font-family: var(--f-title); font-size: 32px; font-weight: 500; font-style: italic; line-height: 1; margin-right: 12px }
+.kifu-bar .say { flex: 1; margin: 0 }
+.kifu-bar .close { margin-left: auto; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; font-size: 26px; color: var(--ink); cursor: pointer }
+.kifu-bar .close:hover { background: var(--hover); color: var(--accent) }
+.kifu-sheet { max-width: 720px; margin: 28px auto 56px; padding: 0 24px }
+.kifu-head h1 { font: 600 26px/1.25 var(--f-ui); margin: 0 0 6px }
+.kifu-head p, .kifu-sheet h3, .kifu-legend { font: 500 18px/1.45 var(--f-ui); margin: 0 0 10px }
+.kifu-head { margin-bottom: 22px }
+.kifu-sheet h3 { font-weight: 600 }
+.kifu-sheet img { display: block; width: 100%; height: auto }
+.kifu-legend { margin-top: 10px }
+@page { size: A4; margin: 14mm }
+@media print {
+  html, body, #root { height: auto; overflow: visible; background: #fff }
+  body::before { display: none }
+  .kifu-open #root > :not(.kifu-page) { display: none !important }
+  .kifu-page { position: static; overflow: visible; background: #fff }
+  .kifu-bar { display: none }
+  .kifu-sheet { max-width: none; margin: 0; padding: 0; break-after: page }
+  .kifu-sheet:last-child { break-after: auto }
+  .kifu-sheet img { width: 170mm; max-width: 100%; margin: 0 auto; break-inside: avoid }
+  .kifu-head h1 { font-size: 16pt } .kifu-head p, .kifu-sheet h3, .kifu-legend { font-size: 11pt }
+}
+/* Progrès › La lettre du mois: a sheet of paper in both skins */
+.letter { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px 16px; border-radius: 4px; background: var(--pw); color: var(--pw-ink); box-shadow: 0 1px 3px var(--shadow), 0 0 0 1px var(--rule) }
+.letter h3 { margin: 0 0 4px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; font: italic 500 26px/1.15 var(--f-title) }
+.letter h3 em { font-size: 19px; font-weight: 400; color: var(--pw-muted) }
+.letter p { margin: 0; font: italic 400 19px/1.35 var(--f-title) }
+.letter .btn { align-self: flex-start; margin-top: 6px; color: var(--pw-ink); border-color: rgba(43, 29, 14, .28) }
+.letter-nav { display: flex; justify-content: space-between; margin-top: 10px }
+.letter-nav .link, .phases .link { font-size: 16px; color: var(--ink) } /* an action the player looks for, not a footnote */
+.ed .link { font-size: 20px; color: var(--ink) } /* Vider: as large as the editor's other actions */
+.letter-nav .next { margin-left: auto }

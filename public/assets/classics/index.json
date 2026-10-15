@@ -1,0 +1,359 @@
+[
+ {
+  "id": "dosaku-peichin-1682",
+  "file": "dosaku-peichin-1682.sgf",
+  "date": "1682-05-24",
+  "black": "Peichin Hamahika",
+  "white": "Honinbo Dosaku",
+  "result": "W+14",
+  "moves": 241,
+  "title": {
+   "fr": "Dosaku et le visiteur de Ryukyu",
+   "en": "Dosaku and the visitor from Ryukyu"
+  },
+  "context": {
+   "fr": "Venu des îles Ryukyu, Peichin Hamahika reçoit quatre pierres du Meijin et perd de quatorze points.",
+   "en": "Visiting from the Ryukyu Islands, Peichin Hamahika takes four stones from the Meijin and loses by fourteen points."
+  }
+ },
+ {
+  "id": "dosaku-shunchi-1684",
+  "file": "dosaku-shunchi-1684.sgf",
+  "date": "1684-01-05",
+  "black": "Yasui Shunchi",
+  "white": "Honinbo Dosaku",
+  "result": "B+1",
+  "moves": 277,
+  "title": {
+   "fr": "Le chef-d’œuvre de Dosaku",
+   "en": "Dosaku’s masterpiece"
+  },
+  "context": {
+   "fr": "Avec deux pierres, Shunchi joue un milieu de partie superbe ; Dosaku reprend presque tout et ne perd que d’un point.",
+   "en": "With two stones, Shunchi plays a superb middle game; Dosaku wins nearly all of it back and loses by a single point."
+  }
+ },
+ {
+  "id": "dochi-senkaku-1706",
+  "file": "dochi-senkaku-1706.sgf",
+  "date": "1706-01-08",
+  "black": "Honinbo Dochi",
+  "white": "Yasui Senkaku",
+  "result": "B+1",
+  "moves": 281,
+  "title": {
+   "fr": "Le tesuji de fin de partie de Dochi",
+   "en": "Dochi’s endgame tesuji"
+  },
+  "context": {
+   "fr": "Partie du château : en fin de partie, un tesuji inattendu rapporte deux points à Dochi, qui gagne d’un point.",
+   "en": "A castle game: late in the endgame an unexpected tesuji earns Dochi two points, and he wins by one."
+  }
+ },
+ {
+  "id": "retsugen-senkaku-1792",
+  "file": "retsugen-senkaku-1792.sgf",
+  "date": "1792-12-30",
+  "black": "Honinbo Retsugen",
+  "white": "Yasui Senkaku",
+  "result": "W+R",
+  "moves": 184,
+  "title": {
+   "fr": "Senkaku joue l’influence",
+   "en": "Senkaku plays for influence"
+  },
+  "context": {
+   "fr": "Senkaku, avec Blanc, construit de l’influence plutôt que du territoire, puis renverse la partie dans le combat.",
+   "en": "Playing White, Senkaku builds influence rather than territory, then turns the game around in the fighting."
+  }
+ },
+ {
+  "id": "chitoku-genjo-1812",
+  "file": "chitoku-genjo-1812.sgf",
+  "date": "1812-05-12",
+  "black": "Yasui Chitoku",
+  "white": "Honinbo Genjo",
+  "result": "B+R",
+  "moves": 155,
+  "title": {
+   "fr": "Genjo contre Chitoku",
+   "en": "Genjo against Chitoku"
+  },
+  "context": {
+   "fr": "Genjo et Chitoku furent les grands rivaux de leur génération ; ici, Chitoku, avec Noir, pousse Genjo à l’abandon.",
+   "en": "Genjo and Chitoku were the great rivals of their generation; here Chitoku, with Black, forces Genjo to resign."
+  }
+ },
+ {
+  "id": "rittetsu-jowa-1815",
+  "file": "rittetsu-jowa-1815.sgf",
+  "date": "1815",
+  "black": "Hattori Rittetsu",
+  "white": "Honinbo Jowa",
+  "result": "B+4",
+  "moves": 223,
+  "title": {
+   "fr": "Le chef-d’œuvre du jeune Gennan",
+   "en": "Young Gennan’s masterpiece"
+  },
+  "context": {
+   "fr": "Encore appelé Hattori Rittetsu, le futur Gennan Inseki bat de quatre points Jowa, son rival de toujours.",
+   "en": "Still named Hattori Rittetsu, the future Gennan Inseki beats Jowa, his lifelong rival, by four points."
+  }
+ },
+ {
+  "id": "jowa-chitoku-1820",
+  "file": "jowa-chitoku-1820.sgf",
+  "date": "1820",
+  "black": "Honinbo Jowa",
+  "white": "Yasui Chitoku",
+  "result": "B+2",
+  "moves": 259,
+  "title": {
+   "fr": "La plus belle partie d’Edo",
+   "en": "The finest game of the Edo period"
+  },
+  "context": {
+   "fr": "Chitoku, avec Blanc, cède du terrain pour attaquer plus tard ; Jowa garde l’avantage du premier coup et gagne de deux points.",
+   "en": "Chitoku, with White, gives up ground to attack later; Jowa keeps the edge of moving first and wins by two points."
+  }
+ },
+ {
+  "id": "blood-vomiting-1835",
+  "file": "blood-vomiting-1835.sgf",
+  "date": "1835-08-13",
+  "black": "Akaboshi Intetsu",
+  "white": "Honinbo Jowa",
+  "result": "W+R",
+  "moves": 246,
+  "title": {
+   "fr": "La partie du sang craché",
+   "en": "The blood-vomiting game"
+  },
+  "context": {
+   "fr": "Une variante secrète de l’école Inoue donne l’avance à Intetsu, mais trois coups brillants de Jowa renversent la partie ; Intetsu meurt peu après.",
+   "en": "A secret variation of the Inoue house puts Intetsu ahead, but three brilliant moves by Jowa turn the game; Intetsu dies soon after."
+  }
+ },
+ {
+  "id": "shintetsu-inseki-1835",
+  "file": "shintetsu-inseki-1835.sgf",
+  "date": "1835-12",
+  "black": "Yasui Shintetsu",
+  "white": "Inoue Gennan Inseki",
+  "result": "W+7",
+  "moves": 256,
+  "title": {
+   "fr": "Gennan et le long ko",
+   "en": "Gennan and the long ko"
+  },
+  "context": {
+   "fr": "Publiée en 1908 dans l’un des premiers livres de go en anglais, cette partie se joue autour d’un long ko ; Gennan gagne de sept points.",
+   "en": "Printed in 1908 in one of the first go books in English, this game turns on a long ko; Gennan wins by seven points."
+  }
+ },
+ {
+  "id": "shuwa-gennan-1842",
+  "file": "shuwa-gennan-1842.sgf",
+  "date": "1842-06-24",
+  "black": "Honinbo Shuwa",
+  "white": "Inoue Gennan Inseki",
+  "result": "B+6",
+  "moves": 270,
+  "title": {
+   "fr": "Gennan joue le tout pour le tout",
+   "en": "Gennan goes for broke"
+  },
+  "context": {
+   "fr": "Deux joueurs de la force d’un Meijin qui ne le furent jamais ; perdant d’un point, Gennan tente de vivre dans un coin, échoue et perd de six.",
+   "en": "Two players of Meijin strength who never held the title; one point behind, Gennan tries to live in a corner, fails and loses by six."
+  }
+ },
+ {
+  "id": "shusaku-sanchi-1843",
+  "file": "shusaku-sanchi-1843.sgf",
+  "date": "1843",
+  "black": "Honinbo Shusaku",
+  "white": "Yasui Sanchi",
+  "result": "B+R",
+  "moves": 169,
+  "title": {
+   "fr": "Shusaku chez Akai Gorosaku",
+   "en": "Shusaku at Akai Gorosaku’s"
+  },
+  "context": {
+   "fr": "Chez Akai Gorosaku, le jeune Shusaku prend les noirs contre Yasui Sanchi, septième dan, et le fait abandonner.",
+   "en": "At Akai Gorosaku’s house, the young Shusaku takes Black against Yasui Sanchi, seventh dan, and makes him resign."
+  }
+ },
+ {
+  "id": "shusaku-saichiro-1844",
+  "file": "shusaku-saichiro-1844.sgf",
+  "date": "1844-01-30",
+  "black": "Honinbo Shusaku",
+  "white": "Kishimoto Saichiro",
+  "result": "B+R",
+  "moves": 131,
+  "title": {
+   "fr": "Shusaku et Kishimoto Saichiro",
+   "en": "Shusaku and Kishimoto Saichiro"
+  },
+  "context": {
+   "fr": "Avec les noirs, Shusaku mène la partie contre Kishimoto Saichiro et obtient l’abandon au 131e coup.",
+   "en": "With Black, Shusaku leads the game against Kishimoto Saichiro and gets the resignation at move 131."
+  }
+ },
+ {
+  "id": "sanchi-shuwa-1844",
+  "file": "sanchi-shuwa-1844.sgf",
+  "date": "1844-12-26",
+  "black": "Yasui Sanchi",
+  "white": "Honinbo Shuwa",
+  "result": "B+1",
+  "moves": 239,
+  "title": {
+   "fr": "La partie du château de 1844",
+   "en": "The 1844 castle game"
+  },
+  "context": {
+   "fr": "Partie du château décidée d’un point : Sanchi, avec Noir, devance Shuwa, futur chef de la maison Honinbo.",
+   "en": "A castle game decided by one point: Sanchi, with Black, edges out Shuwa, future head of the Honinbo house."
+  }
+ },
+ {
+  "id": "ear-reddening-1846",
+  "file": "ear-reddening-1846.sgf",
+  "date": "1846-09-11",
+  "black": "Honinbo Shusaku",
+  "white": "Inoue Gennan Inseki",
+  "result": "B+2",
+  "moves": 325,
+  "title": {
+   "fr": "La partie de l’oreille rouge",
+   "en": "The ear-reddening game"
+  },
+  "context": {
+   "fr": "Au 127e coup, Shusaku, 17 ans, joue près du centre ; les oreilles de Gennan rougissent, et Shusaku gagne de deux points.",
+   "en": "At move 127, Shusaku, aged 17, plays near the centre; Gennan’s ears turn red, and Shusaku wins by two points."
+  }
+ },
+ {
+  "id": "shusaku-gennan-1846",
+  "file": "shusaku-gennan-1846.sgf",
+  "date": "1846",
+  "black": "Honinbo Shusaku",
+  "white": "Inoue Gennan Inseki",
+  "result": "B+R",
+  "moves": 197,
+  "title": {
+   "fr": "Après l’oreille rouge",
+   "en": "After the ear-reddening game"
+  },
+  "context": {
+   "fr": "Quelques jours après la partie de l’oreille rouge, Shusaku retrouve Gennan Inseki et gagne encore, cette fois par abandon.",
+   "en": "A few days after the ear-reddening game, Shusaku meets Gennan Inseki again and wins once more, this time by resignation."
+  }
+ },
+ {
+  "id": "shusaku-shuwa-1846",
+  "file": "shusaku-shuwa-1846.sgf",
+  "date": "1846-12-09",
+  "black": "Honinbo Shusaku",
+  "white": "Honinbo Shuwa",
+  "result": "B+R",
+  "moves": 141,
+  "title": {
+   "fr": "Shusaku à Kurumazaka",
+   "en": "Shusaku at Kurumazaka"
+  },
+  "context": {
+   "fr": "Dans la maison Honinbo, à Kurumazaka, Shusaku prend les noirs contre Shuwa, huitième dan, et le fait abandonner.",
+   "en": "In the Honinbo house at Kurumazaka, Shusaku takes Black against Shuwa, eighth dan, and makes him resign."
+  }
+ },
+ {
+  "id": "shusaku-saburosuke-1847",
+  "file": "shusaku-saburosuke-1847.sgf",
+  "date": "1847",
+  "black": "Honinbo Shusaku",
+  "white": "Tsuruoka Saburosuke",
+  "result": "B+R",
+  "moves": 157,
+  "title": {
+   "fr": "Shusaku et Tsuruoka Saburosuke",
+   "en": "Shusaku and Tsuruoka Saburosuke"
+  },
+  "context": {
+   "fr": "Contre Tsuruoka Saburosuke, Shusaku prend les noirs et l’emporte par abandon au 157e coup.",
+   "en": "Against Tsuruoka Saburosuke, Shusaku takes Black and wins by resignation at move 157."
+  }
+ },
+ {
+  "id": "shusaku-sanchi-1847",
+  "file": "shusaku-sanchi-1847.sgf",
+  "date": "1847-04-30",
+  "black": "Honinbo Shusaku",
+  "white": "Yasui Sanchi",
+  "result": "B+R",
+  "moves": 181,
+  "title": {
+   "fr": "Sanchi, quatre ans plus tard",
+   "en": "Sanchi, four years on"
+  },
+  "context": {
+   "fr": "Quatre ans après leur partie de 1843, Shusaku bat de nouveau Yasui Sanchi, septième dan, par abandon.",
+   "en": "Four years after their 1843 game, Shusaku beats Yasui Sanchi, seventh dan, again by resignation."
+  }
+ },
+ {
+  "id": "shusaku-shuwa-1851",
+  "file": "shusaku-shuwa-1851.sgf",
+  "date": "1851-11-15",
+  "black": "Honinbo Shusaku",
+  "white": "Honinbo Shuwa",
+  "result": "B+4",
+  "moves": 227,
+  "title": {
+   "fr": "Shusaku face à Shuwa",
+   "en": "Shusaku facing Shuwa"
+  },
+  "context": {
+   "fr": "Shusaku, avec Noir, bat de quatre points Shuwa, le chef de la maison Honinbo dont il est l’héritier.",
+   "en": "Shusaku, with Black, beats Shuwa by four points, the head of the Honinbo house whose heir he is."
+  }
+ },
+ {
+  "id": "showa-shusaku-1851",
+  "file": "showa-shusaku-1851.sgf",
+  "date": "1851-12-01",
+  "black": "Ito Showa",
+  "white": "Honinbo Shusaku",
+  "result": "W+R",
+  "moves": 154,
+  "title": {
+   "fr": "Deux générations",
+   "en": "Two generations"
+  },
+  "context": {
+   "fr": "Shusaku, 22 ans, avec Blanc, pousse à l’abandon Ito Showa, de près de trente ans son aîné.",
+   "en": "Shusaku, aged 22, with White, forces Ito Showa, nearly thirty years his senior, to resign."
+  }
+ },
+ {
+  "id": "yuzo-shusaku-1853",
+  "file": "yuzo-shusaku-1853.sgf",
+  "date": "1853-07-10",
+  "black": "Ota Yuzo",
+  "white": "Honinbo Shusaku",
+  "result": "W+3",
+  "moves": 228,
+  "title": {
+   "fr": "Le match contre Ota Yuzo",
+   "en": "The Ota Yuzo match"
+  },
+  "context": {
+   "fr": "En gagnant de trois points avec Blanc, Shusaku oblige Yuzo à recevoir un handicap et remporte le match le plus célèbre d’Edo.",
+   "en": "Winning by three points with White, Shusaku forces Yuzo to take a handicap and wins the most famous match of the Edo period."
+  }
+ }
+]

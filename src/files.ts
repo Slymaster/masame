@@ -35,11 +35,11 @@ export async function saveSgfFile(text: string, defaultName: string, ext: 'sgf' 
   return true
 }
 
-/** The postcard PNG; returns false if the user cancelled. */
-export async function savePngFile(png: Blob, defaultName: string): Promise<boolean> {
+/** A PNG (the postcard, the kifu, the monthly letter); returns false if the user cancelled. */
+export async function savePngFile(png: Blob, defaultName: string, title = t.postcardTitle): Promise<boolean> {
   if (isTauri()) {
     const [{ save }, { writeFile }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs')])
-    const path = await save({ title: t.postcardTitle, filters: [{ name: 'PNG', extensions: ['png'] }], defaultPath: defaultName })
+    const path = await save({ title, filters: [{ name: 'PNG', extensions: ['png'] }], defaultPath: defaultName })
     if (!path) return false
     await writeFile(path, new Uint8Array(await png.arrayBuffer()))
     return true

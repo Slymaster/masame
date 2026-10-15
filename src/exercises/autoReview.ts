@@ -7,8 +7,11 @@ import { readGame, reviewEnd, type Moment } from '../review'
 import { loadSgf, saveSgf } from '../sgf'
 import { recordKey } from './deck'
 
-/** A game waiting for its review: the record as SGF (a snapshot: the shown game may grow variations), the player's side. */
-export interface Job { k: string; sgf: string; side: Sign; t: number }
+/** A game waiting for its review: the record as SGF (a snapshot: the shown game may grow variations), the player's side,
+ * its library id (absent in queues saved before the library, or for a game not kept);
+ * noRank: a lesson (the mentor), whose rank is not read; noAdjust: its rank never moves the levels (a Master of an era). */
+export interface Job { k: string; sgf: string; side: Sign; t: number; id?: string; noRank?: true; noAdjust?: true }
+export type JobFlags = Pick<Job, 'id' | 'noRank' | 'noAdjust'>
 /** The session's memory: scan leads and rank probabilities per record key (shared with the foreground review), the moments
  * of jobs read but not yet ranked, failures per job, keys reviewed, and when the engine may be tried again after a failure (ms). */
 export interface Auto { queue: Job[]; leads: Map<string, (number | undefined)[]>; ranks: Map<string, Map<string, number>>; read: Map<string, Moment[]>
@@ -21,20 +24,27 @@ export const eligible = (g: Game, side: Sign | 0) =>
   side !== 0 && g.info.size <= 19 && g.moves.slice(0, reviewEnd(g)).filter(m => !m.setup).length >= MIN_MOVES
 
 /** The queue with this game added (oldest dropped past CAP), or unchanged when known, reviewed or not eligible. */
-export function enqueue(a: Auto, game: Game, side: Sign | 0, now: number): Job[] {
+export function enqueue(a: Auto, game: Game, side: Sign | 0, now: number, flags: JobFlags = {}): Job[] {
   const sgf = saveSgf(game), g = loadSgf(sgf) // the record as the job will read it
   if (!eligible(g, side)) return a.queue
   const k = recordKey(g)
-  if (a.reviewed.has(k) || a.queue.some(j => j.k === k)) return a.queue
-  return [...a.queue, { k, sgf, side: side as Sign, t: now }].slice(-CAP)
+  // two library entries with the same moves (a file and its OGS copy) are two jobs: each gets its review written
+  if (a.reviewed.has(flags.id ?? k) || a.queue.some(j => sameJob(j, k, flags.id))) return a.queue
+  return [...a.queue, { k, sgf, side: side as Sign, t: now, ...flags.id && { id: flags.id }, ...flags.noRank && { noRank: true as const }, ...flags.noAdjust && { noAdjust: true as const } }].slice(-CAP)
 }
 
 /** The oldest job that has not failed too often this session; none for RETRY_MS after a failure. */
 export const nextJob = (a: Auto, now: number) => (now < a.wait ? undefined : a.queue.find(j => (a.fails.get(j.k) ?? 0) < MAX_FAILS))
 export const newAuto = (queue: Job[]): Auto => ({ queue, leads: new Map(), ranks: new Map(), read: new Map(), fails: new Map(), reviewed: new Set(), wait: 0 })
 
-/** A record reviewed (in the background or by the player): its job goes, and it is not queued again this session. */
-export function reviewed(a: Auto, k: string) { a.reviewed.add(k); a.queue = a.queue.filter(j => j.k !== k); a.read.delete(k); a.ranks.delete(k) }
+/** The job of record `k` kept under library id `id` (either unknown: the record alone decides). */
+const sameJob = (j: Job, k: string, id?: string) => j.k === k && (!id || !j.id || j.id === id)
+/** A record reviewed (in the background or by the player), kept under `id`: its job goes, and it is not queued again this
+ * session; a job of the same moves under another id stays (and reuses the cached reading). */
+export function reviewed(a: Auto, k: string, id?: string) {
+  a.reviewed.add(id ?? k); a.queue = a.queue.filter(j => !sameJob(j, k, id))
+  if (!a.queue.some(j => j.k === k)) { a.read.delete(k); a.ranks.delete(k) }
+}
 
 export function leadsOf(a: Auto, k: string) {
   let l = a.leads.get(k)
@@ -63,19 +73,19 @@ export async function runJob(a: Auto, j: Job, ask: (g: Game, q: object) => Promi
       if (!live()) return 'paused'
       add(game, ms, leads, j.side); a.read.set(j.k, ms)
     }
-    if (rank) { r = await readRank(game, j.side, ranksOf(a, j.k), ask, live); if (!live()) return 'paused' }
+    if (rank && !j.noRank) { r = await readRank(game, j.side, ranksOf(a, j.k), ask, live); if (!live()) return 'paused' }
   } catch (e) {
     console.error('automatic review', e)
     a.fails.set(j.k, (a.fails.get(j.k) ?? 0) + 1); a.wait = Date.now() + RETRY_MS
     return 'failed'
   }
   rank?.(r)
-  reviewed(a, j.k)
+  reviewed(a, j.k, j.id)
   return ms
 }
 
 const isJob = (j: unknown): j is Job => !!j && typeof j === 'object' && typeof (j as Job).k === 'string' && typeof (j as Job).sgf === 'string'
-  && ((j as Job).side === 1 || (j as Job).side === -1) && Number.isFinite((j as Job).t)
+  && ((j as Job).side === 1 || (j as Job).side === -1) && Number.isFinite((j as Job).t) && ['undefined', 'string'].includes(typeof (j as Job).id)
 
 /** The stored queue; a bad entry (or a record that no longer loads) costs that entry only. */
 export function loadQueue(st: Storage = localStorage): Job[] {

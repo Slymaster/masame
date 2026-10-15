@@ -1,7 +1,7 @@
 import GoBoard from '@sabaki/go-board'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { TAG, validate, type JosekiDb } from '../../src/joseki/db'
-import { CONTEXT, MIRROR, N, REGION, ROOTS, canonical, code, fnv, point, positionKey, sym, type Pt } from '../../src/joseki/sym'
+import { CONTEXT, MIRROR, N, REGION, ROOTS, canonical, code, fnv, invert, point, positionKey, sym, type Pt } from '../../src/joseki/sym'
 import { cached, generate, PROFILES, type Resp } from './tree'
 
 const COLS = 'ABCDEFGHJKLMNOPQRST'
@@ -46,9 +46,9 @@ function walk(db: JosekiDb) {
   const boards: GoBoard[] = [], ply: number[] = []
   for (const r of db.roots) { boards[r.node] = replay([...CONTEXT, r.m]); ply[r.node] = 1 }
   db.nodes.forEach((n, i) => {
-    for (const [m, c, , , , mirrored] of n.e) {
+    for (const [m, c, , , , k] of n.e) {
       let b = boards[i].makeMove(ply[i] % 2 ? 1 : -1, point(m))
-      if (mirrored) b = new GoBoard(b.signMap.map((row, y) => row.map((_, x) => { const [a, z] = sym(MIRROR, [x, y]); return b.signMap[z][a] })))
+      if (k) b = new GoBoard(b.signMap.map((row, y) => row.map((_, x) => { const [a, z] = sym(invert(k), [x, y]); return b.signMap[z][a] })))
       boards[c] ??= b; ply[c] = ply[i] + 1
     }
   })

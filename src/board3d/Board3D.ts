@@ -18,7 +18,7 @@ import { paintMarks, type BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
 import { centreShift } from '../board/frame'
-import { bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, todAt, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
+import { bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
 import { cropRect, postcardCanvas, signatureFonts, toPng } from '../postcard'
 
@@ -41,7 +41,12 @@ export interface Board3DInit {
 }
 
 // Nothing moves but the stone being placed: view, décor and light changes crossfade (FADE_MS) instead of travelling
-const FADE_MS = 230, OMBRE_MS = 900, AUTO_MS = 15_000
+// dev only: ?clock=2026-01-15T17:00 pins "Auto"'s clock (season captures); builds always read the real time
+const now = () => {
+  const pin = import.meta.env.DEV ? new URLSearchParams(location.search).get('clock') : null
+  return pin ? new Date(pin) : new Date()
+}
+const FADE_MS = 230, OMBRE_MS = 900, AUTO_MS = 15_000, SHAKE_MS = 650 // SHAKE_MS: a refused stone trembles, then fades away
 const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
 const AO_K = 1.4 // contact-shadow quad half size, in stone radii
 // contact shadow: darkest right at the silhouette (peak per colour), a gaussian gone (≈2 %) AO_REACH radii out on the
@@ -347,6 +352,10 @@ export class Board3D {
   private terr!: { 1: THREE.InstancedMesh; [-1]: THREE.InstancedMesh }
   private ghost!: THREE.Mesh
   private ghostMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
+  private pendingMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
+  private trem!: THREE.Mesh // the refused stone (shake)
+  private tremMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
+  private shook: { v: Vertex; c: Sign; t0: number } | null = null
   private markers!: { 1: THREE.Mesh; [-1]: THREE.Mesh }
   private boardMat!: THREE.MeshPhysicalMaterial
   /** Pale golden kaya (the scan, barely graded): readability comes from the stones' contact shadow and rim, not dark wood. */
@@ -404,7 +413,7 @@ export class Board3D {
   private orbit: Orbit = { ...HOME }
   private orbitGoal: Orbit = { ...HOME }
   private seatH = 1
-  private tod: Tod = { ...TOD.afternoon }
+  private clock = new Date()
   private ombreK = 0; private ombreFrom = 0; private ombreOn = false; private ombreT0 = -1e9
   private hcK = 0
   private noGrid = false // measurements only: the ink lines would pass for stone edges
@@ -493,6 +502,15 @@ export class Board3D {
       for (const r of back) this.stones.set(-1 - r.p, r)
       this.animateDrop(s, now)
     } else this.pendingDrop = { p, c, at: now }
+    this.invalidate()
+  }
+
+  /** A refused stone (replaying from memory): it trembles and disappears; the position doesn't change. */
+  shake(v: Vertex, c: Sign) {
+    if (this.dead) return
+    this.hover = null
+    this.shook = { v, c, t0: performance.now() }
+    this.sound.tap(c)
     this.invalidate()
   }
 
@@ -627,8 +645,16 @@ export class Board3D {
       1: new THREE.MeshPhysicalMaterial({ color: 0x18181b, roughness: 0.45, transparent: true, opacity: 0.5, depthWrite: false }),
       [-1]: new THREE.MeshPhysicalMaterial({ color: 0xf4efe4, roughness: 0.35, transparent: true, opacity: 0.6, depthWrite: false }),
     }
+    // the stone the mentor stopped: denser than the hover ghost, so it still reads as a black or white stone on the wood
+    this.pendingMats = {
+      1: new THREE.MeshPhysicalMaterial({ color: 0x18181b, roughness: 0.42, clearcoat: 0.3, transparent: true, opacity: 0.72, depthWrite: false }),
+      [-1]: new THREE.MeshPhysicalMaterial({ color: 0xfdfbf6, roughness: 0.3, clearcoat: 0.5, transparent: true, opacity: 0.78, depthWrite: false }),
+    }
     this.ghost = new THREE.Mesh(this.geoB, this.ghostMats[1]); this.ghost.visible = false; this.ghost.renderOrder = 3
     scene.add(this.ghost)
+    this.tremMats = { 1: this.ghostMats[1].clone(), [-1]: this.ghostMats[-1].clone() }
+    this.trem = new THREE.Mesh(this.geoB, this.tremMats[1]); this.trem.visible = false; this.trem.renderOrder = 3
+    scene.add(this.trem)
     const mm = (c: number) => new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
     this.markers = { 1: new THREE.Mesh(markerGeo(this.geoB.userData.prof), mm(0xe9dcc4)), [-1]: new THREE.Mesh(markerGeo(this.geoW.userData.prof), mm(0x2a201a)) }
     for (const m of Object.values(this.markers)) { m.matrixAutoUpdate = false; m.visible = false; scene.add(m) }
@@ -891,19 +917,19 @@ export class Board3D {
 
   private instant() { return this.reducedMotion.matches }
 
-  private todNow(): Tod {
-    const d = new Date()
-    return this.opts.time === 'auto' ? todAt(d.getHours() + d.getMinutes() / 60) : TOD[this.opts.time]
+  /** The hour's light for a décor: "Auto" follows the clock and the season, the presets are fixed. */
+  private todFor(decor: Decor): Tod {
+    return this.opts.time === 'auto' ? seasonTod(this.clock, decor) : TOD[this.opts.time]
   }
 
   private applyOptions() {
     const cam = this.opts.camera === 'contemplation' ? 1 : 0
     if (cam !== this.camE) { this.camE = cam; this.hover = null; this.homeCamera(); this.placeFrame() }
     this.extrasOn()
-    this.tod = this.todNow()
+    this.clock = now()
     clearInterval(this.autoTimer)
     // "Auto" follows the clock in steps too small to see (a fraction of a degree, a few kelvin), applied at once
-    if (this.opts.time === 'auto') this.autoTimer = window.setInterval(() => { this.tod = this.todNow(); this.invalidate() }, AUTO_MS)
+    if (this.opts.time === 'auto') this.autoTimer = window.setInterval(() => { this.clock = now(); this.invalidate() }, AUTO_MS)
     this.hcK = this.opts.highContrast ? 1 : 0
     this.invalidate()
   }
@@ -1116,7 +1142,7 @@ export class Board3D {
     const { BW, BD, N } = this.D, k = 2048 / Math.max(BW, BD), cv = mkCanvas(Math.round(BW * k), Math.round(BD * k)), x = cv.getContext('2d')!
     x.fillStyle = '#000'; x.fillRect(0, 0, cv.width, cv.height)
     x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'
-    x.font = `500 ${(6.2 * k).toFixed(1)}px Manrope, system-ui, sans-serif`
+    x.font = `600 ${(6.2 * k).toFixed(1)}px Manrope, system-ui, sans-serif`
     const px = (wx: number) => (wx + BW / 2) * k, pz = (wz: number) => (wz + BD / 2) * k
     const off = (RB + this.D.margin) / 2 + 0.6, dy = 6.2 * k * 0.06
     for (let i = 0; i < N; i++) {
@@ -1128,7 +1154,7 @@ export class Board3D {
     }
     const tex = new THREE.CanvasTexture(cv)
     tex.anisotropy = 4
-    const mat = new THREE.MeshPhysicalMaterial({ color: 0x2b1a0b, alphaMap: tex, transparent: true, opacity: 0.66, roughness: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })
+    const mat = new THREE.MeshPhysicalMaterial({ color: 0x1e1206, alphaMap: tex, transparent: true, opacity: 0.92, roughness: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })
     this.labels = new THREE.Mesh(new THREE.PlaneGeometry(BW, BD).rotateX(-Math.PI / 2), mat)
     this.labels.position.y = 0.02; this.labels.receiveShadow = true; this.labels.renderOrder = 1
     this.scene.add(this.labels)
@@ -1136,13 +1162,13 @@ export class Board3D {
 
   /** The trainer's veil and lettered markers: one unlit plane over the board, repainted only when they change. */
   private buildMarks() {
-    const s = this.state, key = s?.marks?.length || s?.focus ? JSON.stringify([s.marks, s.focus, this.N, this.coords]) : ''
+    const s = this.state, key = s?.marks?.length || s?.focus || s?.frame ? JSON.stringify([s.marks, s.focus, s.frame, this.N, this.coords]) : ''
     if (key === this.marksKey) return
     this.marksKey = key
     if (this.marks) { this.scene.remove(this.marks); this.marks.geometry.dispose(); (this.marks.material as THREE.MeshBasicMaterial).map?.dispose(); (this.marks.material as THREE.Material).dispose(); this.marks = null }
     if (!key || !s) return
     const { BW, BD, N } = this.D, k = 2048 / Math.max(BW, BD), cv = mkCanvas(Math.round(BW * k), Math.round(BD * k))
-    paintMarks(cv.getContext('2d')!, i => (gx(N, i) + BW / 2) * k, j => (gz(N, j) + BD / 2) * k, SX * k, s.marks, s.focus, cv.width, cv.height, 0.1) // unlit over a lit board: a lighter veil reads the same
+    paintMarks(cv.getContext('2d')!, i => (gx(N, i) + BW / 2) * k, j => (gz(N, j) + BD / 2) * k, SX * k, s.marks, s.focus, cv.width, cv.height, 0.1, s.frame, 0.9) // unlit over a lit board: a lighter veil reads the same; the frame, stronger, holds on warm wood
     const tex = new THREE.CanvasTexture(cv)
     tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4
     const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
@@ -1321,15 +1347,24 @@ export class Board3D {
     }
     t1.count = n1; t2.count = n2; t1.instanceMatrix.needsUpdate = t2.instanceMatrix.needsUpdate = true
 
-    // hover ghost
-    const h = this.hover, st = s0
-    const ok = !!(h && st && st.interactive && !st.counting && !st.signMap[h[1]]?.[h[0]] && this.ready)
+    // hover ghost, or the half-tone stone the mentor stopped (the board is not interactive then)
+    const st = s0, p = st?.pending, h = p?.v ?? this.hover, sign = p?.sign ?? st?.toPlay
+    const ok = !!(h && st && (p || st.interactive && !st.counting && !st.signMap[h[1]]?.[h[0]]) && this.ready)
     this.ghost.visible = ok
     if (ok && st && h) {
-      this.ghost.geometry = st.toPlay === 1 ? this.geoB : this.geoW
-      this.ghost.material = this.ghostMats[st.toPlay === 1 ? 1 : -1]
+      this.ghost.geometry = sign === 1 ? this.geoB : this.geoW
+      this.ghost.material = (p ? this.pendingMats : this.ghostMats)[sign === 1 ? 1 : -1]
       this.ghost.position.set(gx(N, h[0]), SH, gz(N, h[1]))
     }
+    const w = this.shook, wk = w ? (now - w.t0) / SHAKE_MS : 1
+    this.trem.visible = !!w && wk < 1 && !st?.signMap[w.v[1]]?.[w.v[0]]
+    if (w && this.trem.visible) {
+      const m = this.tremMats[w.c === 1 ? 1 : -1], dx = this.instant() ? 0 : Math.sin(wk * Math.PI * 8) * 2.4 * (1 - wk)
+      m.opacity = 0.92 * (1 - sstep(0.45, 1, wk))
+      this.trem.geometry = w.c === 1 ? this.geoB : this.geoW; this.trem.material = m
+      this.trem.position.set(gx(N, w.v[0]) + dx, SH, gz(N, w.v[1]))
+      busy = true
+    } else this.shook = null
     return busy
   }
 
@@ -1427,7 +1462,7 @@ export class Board3D {
     const ot = Math.min(1, (now - this.ombreT0) / OMBRE_MS)
     this.ombreK = lerp(this.ombreFrom, this.ombreOn ? 1 : 0, easeIO(ot))
     if (ot < 1) busy = true
-    const L = LOOKS[this.decorOn ?? this.opts.decor], tod = L.tod ?? this.tod, ok = this.ombreK, ce = this.camE
+    const dk = this.decorOn ?? this.opts.decor, L = LOOKS[dk], tod = L.tod ?? this.todFor(dk), ok = this.ombreK, ce = this.camE
     const az = THREE.MathUtils.degToRad(tod.az), el0 = THREE.MathUtils.degToRad(tod.el)
     // Study keeps the hour's colour and direction but never lets the sun rake so low that stones shade their neighbours
     const el = lerp(Math.max(el0, THREE.MathUtils.degToRad(22)), el0, ce), lift = lerp(Math.min(1.15, Math.sin(el0) / Math.sin(el) * 1.25), 1, ce)

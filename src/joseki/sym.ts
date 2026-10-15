@@ -16,6 +16,8 @@ const find = (f: (v: Pt) => Pt) => [0, 1, 2, 3, 4, 5, 6, 7].find(k => probe.ever
 export const compose = (a: number, b: number) => find(v => sym(a, sym(b, v)))
 export const invert = (k: number) => find(v => sym(k, sym(k, sym(k, v)))) // every k has order 1, 2 or 4, so k³ = k⁻¹
 
+/** Symmetry sets for canonical(): the joseki keeps its corner, so only MIRROR; the fuseki uses the whole board's 8. */
+export const ALL = [0, 1, 2, 3, 4, 5, 6, 7]
 /** The top-right corner's own reflection, (x, y) → (18−y, 18−x): it merges the 3-4 and 4-3 lines. */
 export const MIRROR = 7
 /** Where joseki moves are looked for: the top-right quadrant and a margin. Closed under MIRROR. */
@@ -37,10 +39,11 @@ export function stones(signMap: number[][], k = 0): string {
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const [a, b] = sym(inv, [x, y]); s += 'o.x'[signMap[b][a] + 1] }
   return s
 }
-/** The smaller of the position and its MIRROR image; mirrored = the image was taken. */
-export function canonical(signMap: number[][]) {
-  const a = stones(signMap), b = stones(signMap, MIRROR)
-  return b < a ? { s: b, mirrored: true } : { s: a, mirrored: false }
+/** The smallest image of the position under the symmetries ks (default: itself and MIRROR); k = the one taken. */
+export function canonical(signMap: number[][], ks = [0, MIRROR]) {
+  let s = stones(signMap), k = 0
+  for (const j of ks) if (j) { const t = stones(signMap, j); if (t < s) { s = t; k = j } }
+  return { s, k, mirrored: k !== 0 }
 }
 function fnv32(s: string, reverse = false) {
   let h = 0x811c9dc5
@@ -52,7 +55,8 @@ export const fnv = (s: string) => fnv32(s).toString(16).padStart(8, '0')
 export const hash64 = (s: string) => (BigInt(fnv32(s)) << 32n | BigInt(fnv32(s, true))).toString(36)
 export const nodeKey = (ply: number, stones: string) => hash64(`${ply}|${ply % 2 ? 'B' : 'W'}|${stones}`)
 /**
- * Key of a position `ply` moves after the context (odd = Black to play); transpositions and mirror images share it.
+ * Key of a position `ply` moves after the context (joseki: odd = Black to play; fuseki: the context is the empty board,
+ * pass ks = ALL); transpositions and symmetric images share it.
  * shortcut: the ko ban is not part of the key, so a position with and without a pending ko merge; add it if ko-heavy lines ever matter.
  */
-export const positionKey = (signMap: number[][], ply: number) => nodeKey(ply, canonical(signMap).s)
+export const positionKey = (signMap: number[][], ply: number, ks?: number[]) => nodeKey(ply, canonical(signMap, ks).s)

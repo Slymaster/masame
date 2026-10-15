@@ -13,5 +13,5 @@ export default defineConfig({
   // Nested worktrees under .claude/ carry their own copies of the tests.
   // Slow CI runners (Intel macOS) need more than vitest's default 5 s for the heavier tests.
   test: { exclude: [...configDefaults.exclude, '.claude/**'], testTimeout: 30_000 },
-  server: { port: 1420, strictPort: true, watch: { ignored: ['**/src-tauri/**'] } },
+  server: { port: 1420, strictPort: true, watch: { ignored: ['**/src-tauri/**', '**/.claude/**'] } },
 })

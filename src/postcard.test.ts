@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cropRect } from './postcard'
+import { cropRect, wrap } from './postcard'
 import { en } from './i18n/en'
 import { fr } from './i18n/fr'
 
@@ -23,5 +23,14 @@ describe('postcard file name', () => {
     expect(en.postcardName(19, 123)).toBe('masame-19x19-move-123.png')
     expect(fr.postcardName(9, 0)).toBe('masame-9x9-coup-0.png')
     expect(fr.postcardName(19)).toBe('masame-19x19.png') // a trainer's board
+  })
+})
+
+describe('wrap', () => {
+  const x = { measureText: (s: string) => ({ width: s.length }) as TextMetrics } // one unit per character
+  it('breaks between words within the width, a long word alone on its line', () => {
+    expect(wrap(x, 'Tu as résolu 7 tsumego.', 12)).toEqual(['Tu as résolu', '7 tsumego.'])
+    expect(wrap(x, 'anticonstitutionnellement ok', 10)).toEqual(['anticonstitutionnellement', 'ok'])
+    expect(wrap(x, 'court', 40)).toEqual(['court'])
   })
 })
