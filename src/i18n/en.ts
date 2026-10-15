@@ -50,8 +50,8 @@ export const en = {
   aiSettings: 'AI settings',
   autoAdjust: 'Auto-adjust level', thinkTime: 'Thinking time', botResign: 'Bot may resign',
   aiOnlyInApp: 'The AI opponent is available in the app.',
-  aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
-    `To play against the AI, install the Human network${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' and an analysis network' : ''}.`,
+  aiNeeds: (humanSize: string | null, needAnalysis: boolean, phoneNetSize?: string) =>
+    `To play against the AI, install the Human network${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? phoneNetSize ? ` and the Fast network (${phoneNetSize})` : ' and an analysis network' : ''}.`,
   openNetworks: 'Open networks',
   atelier: 'Workshop', coords: 'Coordinates', sound: 'Sound', territory: 'Light and shadow', language: 'Language',
   candidates: 'Candidate moves', renderToggle: '3D / 2D', rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
@@ -435,7 +435,7 @@ export const en = {
   elo: (e: number) => `Elo ${f.num(e)}`,
   games: (n: number) => f.plural(n, 'game', 'games'),
   evaluating: 'being rated',
-  mb: (bytes: number) => `${f.num(Math.round(bytes / 1e6))} MB`,
+  mb: (bytes: number) => `${f.num(Math.round(bytes / 1e6))}\u00a0MB`, // never broken from its number
   month: f.month,
   verifying: 'Verifying…', downloadingNow: 'Downloading…', installed: 'Installed', error: 'Error',
   interruptedAt: (p: number) => `Paused at ${f.pct(p)}`,
