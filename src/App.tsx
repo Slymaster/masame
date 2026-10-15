@@ -36,6 +36,11 @@ import { useAutoReview } from './exercises/useAutoReview'
 import { recordKey } from './exercises/deck'
 import { tone } from './joseki/practice'
 import { useToday } from './today/useToday'
+import { LearnSheet, OgsRating, RankProgress, storeTab, WhereLost, type DeckRow, type ProgressSection } from './LearnSheet'
+import { GamesSheet } from './GamesSheet'
+import { ShareSheet } from './ShareSheet'
+import { menuEnabled } from './menu'
+import * as library from './library'
 
 // free analysis: a near-instant read, then one that sharpens it
 const QUICK = { maxVisits: 80, overrideSettings: { maxTime: 0.3 } }, DEEP = { maxVisits: 800, overrideSettings: { maxTime: 2.5 } }
@@ -215,7 +220,8 @@ export function App() {
   const [engine, setEngine] = useState<EngineStatus>({ state: 'stopped' })
   const [nets, setNets] = useState<NetState | null>(null)
   const [progress, setProgress] = useState<Record<string, Progress>>({})
-  const [sheet, setSheet] = useState<'game' | 'settings' | 'view' | 'nets' | null>(null) // 'view': Settings, at Display
+  // the four doors' sheets (play, learn, games, settings), Share, and 'atelier': Settings scrolled to its Atelier section
+  const [sheet, setSheet] = useState<'game' | 'learn' | 'games' | 'settings' | 'atelier' | 'share' | 'nets' | null>(null)
   // the control a sheet returns focus to (WebKit doesn't focus clicked buttons), kept when one sheet opens another
   const opener = useRef<HTMLElement | null>(null), netsFromSettings = useRef(false)
   const openSheet = (s: NonNullable<typeof sheet>) => (e: React.MouseEvent<HTMLElement>) => {
@@ -298,9 +304,13 @@ export function App() {
   const ongoing = !!online && online.phase !== 'finished'
   const myGame = ongoing && online.me !== 0 ? online : null // an unfinished OGS game I play
   const opponent = online && online.me !== 0 ? online.players[online.me === 1 ? 'white' : 'black'] : null
-  // the trainers (joseki, exercises) borrow the board and the card, one at a time; the game waits underneath, untouched
-  // (Today only takes the card: the game stays shown, not playable)
-  const [panel, setPanel] = useState<'joseki' | 'exercises' | 'today' | null>(null)
+  // The trainers borrow the board and the card, one at a time; the game waits underneath, untouched. A new activity (a
+  // takeover of the same shape as useJoseki/useExercises) plugs in at four places: its name in Panel, its hook in
+  // `trainers` below, its row in the Learn sheet's `decks`, and its command in `commands` (menu ids: src/menu.ts).
+  type Panel = 'joseki' | 'exercises'
+  const [panel, setPanel] = useState<Panel | null>(null)
+  /** A trainer's setOpen: opening it replaces any other; closing it closes only itself. */
+  const panelOpen = (name: Panel) => (o: boolean) => setPanel(p => (o ? name : p === name ? null : p))
   // Autoplay: the line being played, one move per settings.autoplay seconds, dropped like the bot's moves
   const [auto, setAuto] = useState<Game | null>(null)
   const [held, setHeld] = useState(false) // A held: free analysis of the shown position
@@ -335,25 +345,27 @@ export function App() {
     human: canPlayAI,
   })
   const jt = useJoseki({
-    view, open: panel === 'joseki', preload: panel === 'today', setOpen: o => setPanel(p => (o ? 'joseki' : p === 'joseki' ? null : p)),
+    view, open: panel === 'joseki', preload: sheet === 'learn', setOpen: panelOpen('joseki'),
     rank: settings.myRank, setRank: v => set('myRank', v), blocked: ongoing || !!review, playFrom: m => playFrom(m),
   })
   const ex = useExercises({
-    view, open: panel === 'exercises', setOpen: o => setPanel(p => (o ? 'exercises' : p === 'exercises' ? null : p)), blocked: ongoing || !!review, canAnalyze, setThinking,
-    autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null, ranks: ranks.p.games, follows: settings.autoAdjust,
+    view, open: panel === 'exercises', setOpen: panelOpen('exercises'), blocked: ongoing || !!review, canAnalyze, setThinking,
+    autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null,
     ask: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, REPLY)); scanRun.current = run; return run },
   })
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
   useEffect(() => setRitualSaid(null), [panel])
   const netsUnknown = inTauri() && !nets // at launch: the steps needing a net are neither done nor off yet
   const td = useToday({
-    open: panel === 'today', setOpen: o => setPanel(p => (o ? 'today' : p === 'today' ? null : p)), blocked: ongoing || !!review,
+    blocked: ongoing || !!review,
     decks: [netsUnknown ? { done: false, left: null } : canAnalyze ? ex.today : null, jt.today ?? { done: false, left: null }], canPlay: netsUnknown ? null : canPlayAI, rank: settings.myRank,
-    start: [() => setPanel('exercises'), () => { setPanel('joseki'); jt.practise() },
-      () => { setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
+    // each step closes the Learn sheet, then takes the card
+    start: [() => { setSheet(null); setPanel('exercises') }, () => { setSheet(null); setPanel('joseki'); jt.practise() },
+      () => { setSheet(null); setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
     onDone: n => { if (panel) setRitualSaid(n); else setNote(d => d.ritualDone(n)) }, // a panel's note hides the game's
   })
-  const tr = jt.open ? jt : td.open ? td : ex
+  const trainers = [jt, ex] // every takeover of the card, in no particular order: at most one is open
+  const tr = trainers.find(x => x.open) ?? ex
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
   const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && (online.placing ? online.me === 1 : game.toPlay === online.me) : !bot || game.toPlay !== bot.sign
   const mine: Sign | 0 = bot ? -bot.sign as Sign : online?.me ?? ogsSide(game) // the side a review looks at
@@ -858,7 +870,17 @@ export function App() {
   const togglePanel = () => set('panelHidden', !settings.panelHidden)
   // ⌘N with OGS as the opponent: the Game sheet, where an OGS game starts
   const newCommand = () => { if (settings.opponent !== 'ogs') return void newGame(); opener.current = document.activeElement as HTMLElement | null; setSheet('game') }
-  const commands: Record<string, () => void> = { undo, new: newCommand, open, save, panel: togglePanel }
+  /** Opens a door's sheet from the keyboard or the menu bar (focus comes back to what had it). */
+  const door = (s: NonNullable<typeof sheet>) => { opener.current = document.activeElement as HTMLElement | null; netsFromSettings.current = false; setSheet(s) }
+  const openLearn = () => { storeTab('today'); door('learn') }
+  // The commands registry: the macOS menu bar's items run these by id (src/menu.ts lists every id, menu.rs the items);
+  // an id is enabled in the bar only when it is here and src/menu.ts's rule allows it now.
+  const commands: Record<string, () => void> = {
+    undo, new: newCommand, open, save, postcard, panel: togglePanel,
+    pass: () => play(null), resign, territory: () => { if (!ongoing) set('territory', !settings.territory) }, review: () => { if (canReview && !review) startReview(mine) },
+    today: openLearn, exercises: ex.toggle, joseki: jt.toggle, games: () => door('games'),
+    camera: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
+  }
   // a focused range keeps the shortcuts: its arrows/Home/End go through goTo (preventDefault: no second native step)
   const blocked = (target: EventTarget | null) => target instanceof HTMLInputElement && target.type !== 'range' || sheet !== null
   const onMenu = useRef((_: string) => {})
@@ -912,6 +934,15 @@ export function App() {
     off.then(take)
     return () => { off.then(f => f()) }
   }, [])
+  // The macOS menu bar greys what makes no sense now (sent again whenever that changes)
+  const enabled = menuEnabled(commands, {
+    hasGame: game.moves.length > 0, canUndo: !panel && !review && !online && game.cursor > 0 && !(bot && result),
+    canPass: !panel && !review && !countingNow && !removal && !game.ended && !locked && humanTurn && !online?.placing,
+    canResign: !panel && !review && !result && (!!bot || !!myGame), canReview: !panel && !review && canReview,
+    engineHelp: !ongoing && !review, canAnalyze, is3d: renderer === '3d',
+  })
+  const enabledKey = JSON.stringify(enabled)
+  useEffect(() => { if (isMac && inTauri()) call('set_menu_enabled', { enabled }).catch(console.error) }, [enabledKey]) // eslint-disable-line react-hooks/exhaustive-deps
   // The macOS menu bar speaks the UI language (its labels live in the dictionaries)
   useEffect(() => { if (isMac && inTauri()) call('set_language', { labels: { ...t.menu, panel: settings.panelHidden ? t.menu.showPanel : t.menu.hidePanel } }).catch(console.error) }, [settings.lang, settings.panelHidden])
 
@@ -935,7 +966,7 @@ export function App() {
             home: () => goTo(0), end: () => goTo(shown.moves.length),
             ...(fullscreen && !isMac && { escape: () => setFullscreen(false) }), // after a sheet's Esc and before a review's
             ...(review && { escape: leaveReview }),
-            j: jt.toggle, e: ex.toggle, d: td.toggle, ...tr.keys,
+            j: jt.toggle, e: ex.toggle, d: openLearn, b: () => door('games'), ...tr.keys,
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
             t: ongoing ? undefined : () => set('territory', !settings.territory), h: togglePanel,
             ...(renderer === '3d' && {
@@ -1005,6 +1036,7 @@ export function App() {
     : incoming ? [t.ogsChallenged(incoming.from.username, incoming.from.rank, incoming.size, t.paces[incoming.speed], incoming.ranked),
       [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
     : [line, lineLinks]
+  // td.onward's step index: the ritual's exercises 0, joseki 1
   const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open ? 1 : ex.open ? 0 : -1)] : review?.error ? [['retry', t.retry, retryLesson]]
     : !review ? gameLinks
     : !m ? [['back', t.backToGame, leaveReview]]
@@ -1013,7 +1045,7 @@ export function App() {
     : lastMoment ? [['back', t.backToGame, leaveReview]] : [['next', t.nextMoment, () => openMoment(review.k + 1, 'try')]]
   const anLine = !an ? null : !canAnalyze ? t.anNeedsNet : anError ? t.anFailed(failureText(anError)) : engineWait
     ?? (cands ? t.anFor(toPlay) : t.anReading)
-  const message = anLine ?? (tr.open ? (thinking && engineWait) || [tr.note, !td.open && ritualSaid && t.ritualDone(ritualSaid)].filter(Boolean).join(' ') : review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
+  const message = anLine ?? (tr.open ? (thinking && engineWait) || [tr.note, ritualSaid && t.ritualDone(ritualSaid)].filter(Boolean).join(' ') : review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
     : gameLine)
   // tuning progress: outside the key (no re-fade per update) and aria-hidden (announced once)
   const tuned = message === t.tuningCaption && engine.state === 'tuning' ? t.tuningProgress(engine.step, engine.done, engine.total)
@@ -1066,8 +1098,11 @@ export function App() {
     : !playing ? ''
     : toPlay === s ? bot?.sign === s ? thinking ? t.thinking : t.waiting : online && online.me !== s ? t.thinking : t.yourMove
     : t.waiting
-  const gameHint = challengeRows.some(c => !c.mine) ? t.ogsDotChallenge : activeRows?.some(r => r.myTurn && r.corr) ? t.ogsDotTurn : null
-  const gameLabel = gameHint ? `${t.game} · ${gameHint}` : t.game
+  // the doors' dots: a challenge awaits my answer (Play), the ritual waits (Learn), an OGS game awaits my move (My games)
+  const doorHints = {
+    play: challengeRows.some(c => !c.mine) ? t.ogsDotChallenge : null, learn: td.waiting ? t.ritualWaiting : null,
+    games: activeRows?.some(r => r.myTurn && r.corr) ? t.ogsDotTurn : null,
+  }
   const alert = upd.s === 'available' ? t.updateAvailable(upd.version) : engine.state === 'error' ? failureText(engine.error) : null
   const closeSheet = () => setSheet(null)
   /** The player's own changes in the Game sheet re-propose the handicap (the bot's auto-adjusted level does not). */
@@ -1077,7 +1112,18 @@ export function App() {
   const resize = (n: number) => { if (n !== nextSize) { setNextSize(n); propose({ size: n }) } }
   // Networks opened from Settings closes back to Settings, on its link
   const closeNets = () => setSheet(netsFromSettings.current ? 'settings' : null)
-  useEffect(() => { if (sheet === 'view') document.getElementById('display')?.scrollIntoView({ block: 'start' }) }, [sheet])
+  useEffect(() => { if (sheet === 'atelier') document.getElementById('atelier')?.scrollIntoView({ block: 'start' }) }, [sheet])
+  // Apprendre: one row per deck, then Progrès's sections; a new activity appends its own (see Panel above)
+  const decks: DeckRow[] = [
+    { key: 'exercises', name: t.decks.exercises, phrase: t.deckPhrases.exercises, counts: ex.counts, off: canAnalyze ? undefined : t.tdOff.exercises,
+      open: () => { closeSheet(); setPanel('exercises') } },
+    { key: 'joseki', name: t.decks.joseki, phrase: t.deckPhrases.joseki, counts: jt.counts ?? null, open: () => { closeSheet(); setPanel('joseki') } },
+  ]
+  const progressSections: ProgressSection[] = [
+    { key: 'rank', title: t.rankSection, body: <RankProgress ranks={ranks.p.games} follows={settings.autoAdjust} /> },
+    ...ogs.me && !ogs.isGuest() ? [{ key: 'ogs', title: t.ogsRatingSection, body: <OgsRating /> }] : [],
+    { key: 'where', title: t.exWhere, side: ex.games.length ? t.exGames(ex.games.length) : '', body: <WhereLost games={ex.games} /> },
+  ]
   const cta = settings.opponent === 'ai' && !canPlayAI && (
     <div className="cta">
       <p>{!inTauri() ? t.aiOnlyInApp : t.aiNeeds(humanNet?.complete ? null : t.mb(HUMAN_BYTES), !canAnalyze)}</p>
@@ -1129,10 +1175,10 @@ export function App() {
             {!settings.panelHidden && <>
               <span className="seal" aria-hidden="true">柾</span>
               <h1>Masame</h1>
-              {td.button}{jt.button}{ex.button}
-              <button className="icon" onClick={openSheet('game')} aria-label={gameLabel} title={gameLabel}><Icon name="plus" />{gameHint && <i className="dot" />}</button>
-              <button className="icon" onClick={openSheet('settings')} aria-label={alert ? `${t.settings} · ${alert}` : t.settings}
-                title={alert ? `${t.settings} · ${alert}` : t.settings}><Icon name="adjustments" />{alert && <i className="dot" />}</button>
+              {([['game', 'play', 'plus', null], ['learn', 'learn', 'book', 'D'], ['games', 'games', 'library', 'B'], ['settings', 'settings', 'adjustments', null]] as const).map(([s, d, icon, key]) => {
+                const hint = d === 'settings' ? alert : doorHints[d], name = key ? `${t.doors[d]} (${key})` : t.doors[d], label = hint ? `${name} · ${hint}` : name
+                return <button key={d} className="door" onClick={openSheet(s)} aria-label={label} title={label}><Icon name={icon} /><span aria-hidden="true">{t.doors[d]}</span>{hint && <i className="dot" />}</button>
+              })}
             </>}
             {/* hidden card: only whose turn it is (breathing while the bot thinks), next to the toggle */}
             {settings.panelHidden && playing && (
@@ -1145,13 +1191,15 @@ export function App() {
           </header>
           <div className="card-in" id="card" hidden={settings.panelHidden}>
             <div className="meta">
-              <span>{online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : t.board(size, komi)}</span>
+              {/* wraps only between its parts, never inside one */}
+              <span>{(online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : t.board(size, komi)).split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
+              <button className="icon sm" onClick={openSheet('share')} aria-label={t.share} title={t.share}><Icon name="share" /></button>
               <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
                 <Icon name={sound ? 'volume' : 'volume-off'} />
               </button>
-              <button className="icon sm" onClick={openSheet('view')} aria-label={t.display} title={t.display}><Icon name="view" /></button>
               <button className="icon sm" aria-pressed={renderer === '3d'} onClick={() => { setSession2d(false); set('renderer', renderer === '3d' ? '2d' : '3d') }}
                 aria-label={t.render3d} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
+              <button className="icon sm" onClick={openSheet('atelier')} aria-label={t.atelier} title={t.atelier}><Icon name="view" /></button>
             </div>
             <div className="body">
               {tr.body ?? <>{cands ? ( // while A is held, the candidates in place of the players (or the review)
@@ -1240,7 +1288,7 @@ export function App() {
       </main>
 
       {sheet === 'game' && (
-        <Sheet title={t.game} onClose={closeSheet} opener={opener.current}>
+        <Sheet title={t.doors.play} onClose={closeSheet} opener={opener.current}>
           <section>
             <div className="lab"><span>{t.newGame}</span><span /></div>
             <div className="opts">
@@ -1250,7 +1298,7 @@ export function App() {
                 <OgsSection speed={settings.ogsSpeed} setSpeed={v => set('ogsSpeed', v)}
                   // correspondence: the search is listed in the sheet, and its start told by a notice
                   onFind={() => { if (settings.ogsSpeed === 'correspondence') send(() => void ogs.findMatch(nextSize as ogs.BoardSize, 'correspondence')); else { closeSheet(); find() } }}
-                  onResume={id => { closeSheet(); resume(id) }} onImport={id => { closeSheet(); importGame(id) }} onSignOut={signOut}
+                  onSignOut={signOut}
                   onChallenge={challengePlayer} onAccept={accept} onCancelChallenge={cancelSent} onWatch={id => { closeSheet(); resume(id) }} onOpenLink={openLink}
                   onSignedIn={() => { if (online && online.me === 0) follow(online.id) }} />
               ) : <>
@@ -1277,15 +1325,11 @@ export function App() {
               </>}
             </div>
           </section>
-          <section className="opts">
-            <button className="btn" onClick={() => { closeSheet(); open() }} title={shortcut('O')}>{t.open}</button>
-            <button className="btn" onClick={() => { closeSheet(); save() }} title={shortcut('S')}>{t.save}</button>
-            <button className="btn" onClick={() => { closeSheet(); postcard() }} title={t.postcardHint}>{t.postcard}</button>
-          </section>
+          {/* later: Style and Mentor join the AI settings above; "From a position…" (the position editor) comes here */}
         </Sheet>
       )}
 
-      {(sheet === 'settings' || sheet === 'view') && (
+      {(sheet === 'settings' || sheet === 'atelier') && (
         <Sheet title={t.settings} onClose={closeSheet} opener={opener.current} focus={netsFromSettings.current ? '[data-nets]' : undefined}>
           <section>
             <div className="lab"><span>{t.boardSection}</span><span /></div>
@@ -1299,8 +1343,8 @@ export function App() {
               disabled={ongoing} title={ongoing ? t.ogsUnavailable : undefined} />
           </section>
 
-          <section id="display">
-            <div className="lab"><span>{t.display}</span><span /></div>
+          <section id="atelier">
+            <div className="lab"><span>{t.atelier}</span><span /></div>
             <div className="opts">
               <Seg label={t.rendering} value={renderer} options={[['3d', t.render3d], ['2d', t.render2d]]} set={v => { setSession2d(false); set('renderer', v) }} />
               {renderer === '3d' && <>
@@ -1350,13 +1394,28 @@ export function App() {
               )}
               <Switch label={t.autoUpdate} on={settings.autoUpdate} toggle={() => set('autoUpdate', !settings.autoUpdate)} />
             </>}
+            {ogs.me && !ogs.isGuest() && <p className="engine">
+              {t.settingsOgs(ogs.me.username)} · <button className="link" onClick={async () => { if (await signOut()) ogs.logout().catch(e => setNote(d => failureText(e, d))) }}>{t.ogsSignOut}</button>
+            </p>}
           </section>
 
           <section>
             <div className="lab"><span>{t.keyboard}</span><span /></div>
-            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki} · <kbd>E</kbd> {t.footer.exercises} · <kbd>D</kbd> {t.footer.today} · <kbd>A</kbd> {t.footer.candidates}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
+            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki} · <kbd>E</kbd> {t.footer.exercises} · <kbd>D</kbd> {t.footer.today} · <kbd>B</kbd> {t.footer.games} · <kbd>A</kbd> {t.footer.candidates}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
           </section>
         </Sheet>
+      )}
+
+      {sheet === 'learn' && (
+        <LearnSheet onClose={closeSheet} opener={opener.current} ritual={td.body} decks={decks} blocked={ongoing || !!review} progress={progressSections} />
+      )}
+      {sheet === 'games' && (
+        <GamesSheet onClose={closeSheet} opener={opener.current} onResume={id => { closeSheet(); resume(id) }}
+          onOpen={e => { closeSheet(); open(() => library.read(e.id)) }} onImport={() => { closeSheet(); open() }} />
+      )}
+      {sheet === 'share' && (
+        <ShareSheet onClose={closeSheet} opener={opener.current} onSave={() => { closeSheet(); save() }} onPostcard={() => { closeSheet(); postcard() }}
+          ogsId={online?.id} />
       )}
 
       {sheet === 'nets' && <Networks nets={nets} progress={progress} onClose={closeNets} onChanged={refreshNets} opener={opener.current} />}

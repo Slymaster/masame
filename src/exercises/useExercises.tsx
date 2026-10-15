@@ -10,11 +10,10 @@ import { Icon } from '../Icon'
 import { review } from '../joseki/fsrs'
 import { record } from '../joseki/store'
 import { gtp, type Analysis } from '../katago'
-import { curve, localRank, phaseRanks, rankName, WINDOW, type Read } from '../rank'
-import { RankChart } from '../RankChart'
+import { rankName } from '../rank'
 import type { Moment } from '../review'
 import { deckStep, HAND } from '../today/ritual'
-import { addReview, counts, emptyDeck, gapOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save, verdictOf, weakest, whereLost, type Exercise, type StoredDeck } from './deck'
+import { addReview, counts, emptyDeck, gapOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save, verdictOf, weakest, type Exercise, type StoredDeck } from './deck'
 
 const REPLAY_MS = 650
 const PHASES = ['opening', 'middle', 'endgame'] as const
@@ -26,15 +25,13 @@ interface Run { k: string; tried: Vertex | null; gap: number | null; shown: Line
 /** The exercise's position, then `line` played with rule checks. */
 const after = (x: Exercise, line: Line) => { const g = positionOf(x); return g.branch(g.moves.length, line) }
 
-export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, setThinking, autoLine, ranks, follows }: {
+export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, setThinking, autoLine }: {
   view: RefObject<{ drop(v: Vertex, c: Sign): void; pass?(c: Sign): void } | null>
   open: boolean; setOpen: (o: boolean) => void; blocked: boolean
   canAnalyze: boolean // an analysis network is active (KataGo grades each answer)
   ask: (g: Game) => Promise<Analysis> // KataGo's view of a position; App serialises the queries
   setThinking: (on: boolean) => void // App's "thinking" (board animation, engine-start captions)
   autoLine: string | null // the automatic review's state, while games wait
-  ranks: Read[] // the player's rank read in each reviewed game (src/rank.ts), oldest first
-  follows: boolean // "Auto-adjust": the player's level follows that rank
 }) {
   const [store, setStore] = useState<StoredDeck>(load)
   const loaded = useRef(store)
@@ -84,14 +81,8 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
   const add = (game: Game, moments: Moment[], leads: (number | undefined)[], me: Sign | 0) =>
     setStore(s => s.readOnly ? s : { ...s, p: addReview(s.p, game, moments, leads, me, Date.now()) })
   const now = Date.now(), c = counts(store.p, now)
-  const waiting = canAnalyze && !open && !store.readOnly && c.due + c.fresh > 0
-  const button = (
-    <button className="icon" aria-pressed={open} onClick={toggle} disabled={blocked} aria-label={t.exercises} title={`${t.exercises} (E)`}>
-      <Icon name="target" />{waiting && <i className="dot" />}
-    </button>
-  )
   const today = deckStep(store.p.cards, c.due + c.fresh, now, HAND) // the daily ritual's first step: a hand of HAND cards
-  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, button, add, today }
+  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, add, today, counts: c, games: store.p.games }
   if (!open) return none
 
   // ---------- the board, the note and its links ----------
@@ -133,7 +124,6 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
 
   // ---------- the panel ----------
   const resetAll = async () => { if (await askFirst(t.exResetAsk, t.exReset)) { setStore({ p: emptyDeck(), readOnly: false }); setRun(null); setSay(null) } }
-  const n = store.p.games.length, where = whereLost(store.p.games), top = Math.max(...where), i = where.indexOf(top), head = Math.round(top) > 0 // first on a tie; never "−0 points"
   const body = (
     <section className="rv ex" aria-label={t.exercises}>
       <div className="lab"><span>{t.exercises}</span><span /></div>
@@ -143,22 +133,6 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
           <p className="quiet" aria-live="polite">{store.readOnly ? t.exReadOnly : t.exProgress(c.due, c.fresh, c.later)}</p>
         )}
         {x ? <p className="quiet">{t.exFrom(x.vs, mv(x))}</p> : <p className="estimate">{Object.keys(store.p.items).length ? t.exDone : t.exEmpty}</p>}
-      </>}
-      <div className="lab"><span>{t.exWhere}</span><span>{n ? t.exGames(n) : ''}</span></div>
-      {!n ? <p className="quiet">{t.exWhereNone}</p> : <>
-        {head && <>
-          <p className="state">{t.exPhases[PHASES[i]]}</p>
-          <p className="share">{t.exPerGame(top, top / where.reduce((a, b) => a + b) * 100)}</p>
-        </>}
-        <p className="quiet">{PHASES.flatMap((name, j) => (head && j === i ? [] : [`${t.exPhases[name]} ${t.exLost(where[j])}`])).join(' · ')}</p>
-        <p className="quiet">{t.exWhereHelp(n)}</p>
-      </>}
-      {ranks.length > 0 && <>
-        <div className="lab"><span>{t.rankLab}</span><span /></div>
-        <p className="state">{rankName(localRank(ranks)!)}</p>
-        <p className="quiet">{phaseLine(phaseRanks(ranks))}</p>
-        <RankChart points={curve(ranks)} label={(a, b) => t.rankChartLabel(a, b, ranks.length)} width={308} />
-        <p className="quiet">{t.rankHelp(Math.min(WINDOW, ranks.length), follows)}</p>
       </>}
       <p className="quiet"><button className="link" onClick={resetAll} disabled={store.readOnly}>{t.exReset}</button></p>
     </section>
