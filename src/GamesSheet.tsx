@@ -6,7 +6,7 @@ import { inTauri } from './katago'
 import * as library from './library'
 import type { Entry, Source } from './library'
 import * as ogs from './ogs'
-import { shortcut } from './platform'
+import { isMobile, shortcut } from './platform' // OGS on phones: v1.1
 import { rankName } from './rank'
 import { Seg } from './Seg'
 import { Sheet } from './Sheet'
@@ -109,7 +109,7 @@ export function GamesSheet({ onClose, opener, onResume, onOpen, onImport, onImpo
       <section>
         <div className="lab"><span>{t.gamesAll}</span><span>{list && list.length ? list.length : ''}</span></div>
         {!inTauri() ? <p className="say">{t.gamesInAppOnly}</p> : <>
-          <Seg label={t.gamesFilterLabel} value={filter} options={FILTERS.map(f => [f, t.gamesFilters[f]])} set={f => { setFilter(f); setPages(1) }} />
+          <Seg label={t.gamesFilterLabel} value={filter} options={FILTERS.filter(f => !isMobile || f !== 'ogs').map(f => [f, t.gamesFilters[f]])} set={f => { setFilter(f); setPages(1) }} />
           <input className="ogs-input" type="search" value={q} onChange={e => { setQ(e.target.value); setPages(1) }} placeholder={t.gamesSearch} aria-label={t.gamesSearch}
             autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} />
           {error ? <p className="say err" role="alert">{failureText(error)}</p>

@@ -54,7 +54,7 @@ export const fr: Dict = {
     `Pour jouer contre l’IA, installe le réseau Humain${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' et un réseau d’analyse' : ''}.`,
   openNetworks: 'Ouvrir les réseaux',
   atelier: 'Atelier', coords: 'Coordonnées', sound: 'Son', territory: 'Ombre et lumière', language: 'Langue',
-  renderToggle: '3D / 2D', rendering: 'Rendu', render3d: 'Atelier vivant (3D)', render2d: 'Léger (2D)',
+  candidates: 'Coups candidats', renderToggle: '3D / 2D', rendering: 'Rendu', render3d: 'Atelier vivant (3D)', render2d: 'Léger (2D)',
   view: 'Regard', study: 'Étude', contemplation: 'Contemplation',
   contemplationHint: 'Clic droit et glisser pour tourner, avec Maj ou clic molette pour déplacer, molette ou pincement pour zoomer, R ou double-clic hors du plateau pour recentrer',
   light: 'Lumière', lights: { auto: 'Auto', morning: 'Matin', afternoon: 'Après-midi', evening: 'Soir' }, lightAutoHint: 'Suit l’heure et la saison',

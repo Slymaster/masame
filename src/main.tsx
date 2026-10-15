@@ -21,6 +21,10 @@ import { App } from './App'
   document.documentElement.style.setProperty('--noise', `url(${c.toDataURL()})`)
 }
 
+// Android's WebView (before Chrome 136 or so) reports no bottom inset under edge-to-edge: styles.css keeps the navigation
+// bar's room itself there (html[data-android])
+if (/Android/.test(navigator.userAgent)) document.documentElement.dataset.android = ''
+
 // Dev only (stripped from builds): a declarative stand-in for the Tauri bridge, for UI previews (see devMock.ts).
 if (import.meta.env.DEV && sessionStorage.getItem('baduk.devMock')) await import('./devMock')
 
