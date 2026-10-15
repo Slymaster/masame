@@ -255,7 +255,7 @@ export const fr: Dict = {
   exPhases: { opening: 'Ouverture', middle: 'Milieu de partie', endgame: 'Fin de partie' },
   exPerGame: (x: number, share: number) => `−${f.plural(Math.round(x), 'point', 'points')} par partie · ${f.pct(share)} de ce que tu perds`,
   exLost: (x: number) => (Math.round(x) ? `−${f.num(Math.round(x))}` : '0'),
-  exWhereNone: 'Revois une partie que tu as jouée (contre l’IA, sur OGS, ou un fichier en choisissant ta couleur) pour voir où tu perds tes points.',
+  exWhereNone: 'Revois une de tes parties pour voir où tu perds tes points.',
   exWhereHelp: (n: number) => `Points perdus par partie par tes coups, sur ${n === 1 ? 'ta dernière partie revue' : `tes ${f.num(n)} dernières parties revues`}. Ouverture : les 50 premiers coups ; fin de partie : à partir du coup 151 (19×19, proportionnellement sur les petits gobans).`,
   // la lettre du mois (Apprendre › Progrès, src/letter.ts) : une phrase par fait, dans la voix de Masame, sans éloge
   letterSection: 'La lettre du mois',

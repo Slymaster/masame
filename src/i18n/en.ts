@@ -255,7 +255,7 @@ export const en = {
   exPhases: { opening: 'Opening', middle: 'Middle game', endgame: 'Endgame' },
   exPerGame: (x: number, share: number) => `−${f.plural(Math.round(x), 'point', 'points')} per game · ${f.pct(share)} of what you lose`,
   exLost: (x: number) => (Math.round(x) ? `−${f.num(Math.round(x))}` : '0'),
-  exWhereNone: 'Review a game you played (against the AI, on OGS, or a file with your colour picked) to see where you lose points.',
+  exWhereNone: 'Review one of your games to see where you lose points.',
   exWhereHelp: (n: number) => `Points lost per game by your moves, over your last ${n === 1 ? 'reviewed game' : `${f.num(n)} reviewed games`}. Opening: the first 50 moves; endgame: from move 151 (19×19, scaled on smaller boards).`,
   // the monthly letter (Learn › Progress, src/letter.ts): one sentence per fact, in Masame's voice, no praise
   letterSection: 'The letter of the month',
