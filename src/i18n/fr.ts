@@ -227,6 +227,23 @@ export const fr: Dict = {
   exWhereHelp: (n: number) => `Points perdus par partie par tes coups, sur ${n === 1 ? 'ta dernière partie revue' : `tes ${f.num(n)} dernières parties revues`}. Ouverture : les 50 premiers coups ; fin de partie : à partir du coup 151 (19×19, proportionnellement sur les petits gobans).`,
   exReset: 'Effacer les exercices', exResetAsk: 'Effacer tous tes exercices et leurs statistiques ?',
   exReadOnly: 'Ces exercices viennent d’une version plus récente de Masame : l’entraînement ici ne sera pas enregistré.',
+  // tsumego from your games (E1), phase practice and yose (E3)
+  tsDeck: 'Tsumego de tes parties', tsPhrase: 'vivre ou tuer', tsTitle: 'Tsumego',
+  tsAsk: (s: number, live: boolean) => `${color(s)} joue : ${live ? 'sauve le groupe' : 'tue le groupe'}.`,
+  tsFound: (live: boolean) => `Trouvé : le groupe ${live ? 'vit' : 'meurt'}.`,
+  tsShort: (live: boolean, gap: number) => `Presque : le groupe ${live ? 'vit' : 'meurt'}, mais tu laisses ${pts(gap)}.`,
+  tsMissed: (live: boolean) => `Manqué : après la réponse de KataGo, le groupe ${live ? 'meurt' : 'vit'}.`,
+  tsAnswer: (s: number, v: string, live: boolean) => `La réponse : ${color(s)} ${v} ${live ? 'sauve' : 'tue'} le groupe.`,
+  tsSeeAnswer: 'Voir la réponse', tsNext: 'Problème suivant',
+  tsEmpty: 'Pas encore de tsumego. Masame les trouve dans tes parties revues quand le moteur est libre, dès le lendemain.',
+  tsDone: 'Plus de tsumego pour aujourd’hui. Reviens demain.',
+  yoTitle: 'Fin de partie : le plus gros coup', yoAsk: (s: number) => `${color(s)} joue : le plus gros coup ?`,
+  yoSearching: (n: number, of: number) => `Je cherche les gros coups de tes fins de partie : ${f.num(n)} sur ${f.num(of)}.`,
+  yoNone: 'Pas encore de question de fin de partie nette dans tes parties. Joue ou importe quelques parties finies.',
+  yoFound: 'Trouvé : le plus gros coup.', yoShort: (gap: number) => `Presque : ${pts(gap)} de moins que le plus gros.`, yoMissed: (gap: number) => `Pas le plus gros : ${lost(gap)}.`,
+  yoAnswer: (s: number, v: string) => `Le plus gros : ${color(s)} ${v}.`,
+  workTitle: 'Séance de travail', workLeft: (n: number) => f.plural(n, 'carte restante', 'cartes restantes'), workDone: 'Séance finie. Bien joué.',
+  workOpening: 'Continuer avec les joseki',
   // revue automatique
   autoDone: (n: number, rank?: string) => rank ? `Tu as joué comme un\u00a0${rank}\u00a0· ${n ? `${f.plural(n, 'moment', 'moments').replace(' ', '\u00a0')} pour tes exercices` : 'aucun moment décisif'}.`
     : `Revue faite : ${n ? `${f.plural(n, 'moment rejoint', 'moments rejoignent')} tes exercices` : 'aucun moment décisif'}.`,

@@ -33,6 +33,7 @@ import { useJoseki } from './joseki/useJoseki'
 import { phaseLine, useExercises } from './exercises/useExercises'
 import { anchored, loadRanks, localRank, rankName, readRank, saveRanks, withReading, type Reading } from './rank'
 import { useAutoReview } from './exercises/useAutoReview'
+import { useMining } from './tsumego/useMining'
 import { recordKey } from './exercises/deck'
 import { tone } from './joseki/practice'
 import { useToday } from './today/useToday'
@@ -332,8 +333,9 @@ export function App() {
   }
   const keep = useRef(keepRank)
   keep.current = keepRank
+  const bgFree = canAnalyze && engine.state !== 'error' && !thinking && !review && !panel && !ongoing && !joining && !playingLocal && !auto && !held
   const ar = useAutoReview({
-    free: canAnalyze && engine.state !== 'error' && !thinking && !review && !panel && !ongoing && !joining && !playingLocal && !auto && !held,
+    free: bgFree,
     ask: (g, q) => analyze(g, { ...q, priority: -1 }), // KataGo serves higher priorities first: the bot, the trainers jump the queue
     scanRun, add: (...x) => ex.add(...x),
     done: (k, ms, r) => { // a job is always the player's own game
@@ -351,8 +353,10 @@ export function App() {
   const ex = useExercises({
     view, open: panel === 'exercises', setOpen: panelOpen('exercises'), blocked: ongoing || !!review, canAnalyze, setThinking,
     autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null,
-    ask: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, REPLY)); scanRun.current = run; return run },
+    ask: (g, q = REPLY) => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, q as Record<string, unknown>)); scanRun.current = run; return run },
   })
+  useMining({ free: bgFree, ask: (g, q) => analyze(g, { ...q, priority: -1 }), scanRun, known: ex.has, add: ex.addItems }) // tsumego from reviewed games
+  const workOpening = () => { setPanel('joseki'); jt.practise() } // Travailler › Ouverture: joseki practice (the fuseki's once it exists)
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
   useEffect(() => setRitualSaid(null), [panel])
   const netsUnknown = inTauri() && !nets // at launch: the steps needing a net are neither done nor off yet
@@ -360,7 +364,7 @@ export function App() {
     blocked: ongoing || !!review,
     decks: [netsUnknown ? { done: false, left: null } : canAnalyze ? ex.today : null, jt.today ?? { done: false, left: null }], canPlay: netsUnknown ? null : canPlayAI, rank: settings.myRank,
     // each step closes the Learn sheet, then takes the card
-    start: [() => { setSheet(null); setPanel('exercises') }, () => { setSheet(null); setPanel('joseki'); jt.practise() },
+    start: [() => { setSheet(null); ex.start({ only: null }) }, () => { setSheet(null); setPanel('joseki'); jt.practise() },
       () => { setSheet(null); setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
     onDone: n => { if (panel) setRitualSaid(n); else setNote(d => d.ritualDone(n)) }, // a panel's note hides the game's
   })
@@ -878,7 +882,7 @@ export function App() {
   const commands: Record<string, () => void> = {
     undo, new: newCommand, open, save, postcard, panel: togglePanel,
     pass: () => play(null), resign, territory: () => { if (!ongoing) set('territory', !settings.territory) }, review: () => { if (canReview && !review) startReview(mine) },
-    today: openLearn, exercises: ex.toggle, joseki: jt.toggle, games: () => door('games'),
+    today: openLearn, exercises: ex.toggle, tsumego: ex.tsumego, joseki: jt.toggle, games: () => door('games'),
     camera: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
   }
   // a focused range keeps the shortcuts: its arrows/Home/End go through goTo (preventDefault: no second native step)
@@ -1116,13 +1120,14 @@ export function App() {
   // Apprendre: one row per deck, then Progrès's sections; a new activity appends its own (see Panel above)
   const decks: DeckRow[] = [
     { key: 'exercises', name: t.decks.exercises, phrase: t.deckPhrases.exercises, counts: ex.counts, off: canAnalyze ? undefined : t.tdOff.exercises,
-      open: () => { closeSheet(); setPanel('exercises') } },
+      open: () => { closeSheet(); ex.start({}) } },
+    { key: 'tsumego', name: t.tsDeck, phrase: t.tsPhrase, counts: ex.tsCounts, off: canAnalyze ? undefined : t.tdOff.exercises, open: () => { closeSheet(); ex.tsumego() } },
     { key: 'joseki', name: t.decks.joseki, phrase: t.deckPhrases.joseki, counts: jt.counts ?? null, open: () => { closeSheet(); setPanel('joseki') } },
   ]
   const progressSections: ProgressSection[] = [
     { key: 'rank', title: t.rankSection, body: <RankProgress ranks={ranks.p.games} follows={settings.autoAdjust} /> },
     ...ogs.me && !ogs.isGuest() ? [{ key: 'ogs', title: t.ogsRatingSection, body: <OgsRating /> }] : [],
-    { key: 'where', title: t.exWhere, side: ex.games.length ? t.exGames(ex.games.length) : '', body: <WhereLost games={ex.games} /> },
+    { key: 'where', title: t.exWhere, side: ex.games.length ? t.exGames(ex.games.length) : '', body: <WhereLost games={ex.games} work={p => { closeSheet(); ex.work(p, workOpening) }} /> },
   ]
   const cta = settings.opponent === 'ai' && !canPlayAI && (
     <div className="cta">

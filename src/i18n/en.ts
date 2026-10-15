@@ -227,6 +227,23 @@ export const en = {
   exWhereHelp: (n: number) => `Points lost per game by your moves, over your last ${n === 1 ? 'reviewed game' : `${f.num(n)} reviewed games`}. Opening: the first 50 moves; endgame: from move 151 (19×19, scaled on smaller boards).`,
   exReset: 'Delete the exercises', exResetAsk: 'Delete all your exercises and their statistics?',
   exReadOnly: 'These exercises were saved by a newer Masame: practice here won’t be recorded.',
+  // tsumego from your games (E1), phase practice and yose (E3)
+  tsDeck: 'Tsumego from your games', tsPhrase: 'live or kill', tsTitle: 'Tsumego',
+  tsAsk: (s: number, live: boolean) => `${color(s)} to play: ${live ? 'save the group' : 'kill the group'}.`,
+  tsFound: (live: boolean) => `Found: the group ${live ? 'lives' : 'dies'}.`,
+  tsShort: (live: boolean, gap: number) => `Almost: the group ${live ? 'lives' : 'dies'}, but ${pts(gap)} short of the best.`,
+  tsMissed: (live: boolean) => `Missed: after KataGo’s answer, the group ${live ? 'dies' : 'lives'}.`,
+  tsAnswer: (s: number, v: string, live: boolean) => `The answer: ${color(s)} ${v} ${live ? 'saves' : 'kills'} the group.`,
+  tsSeeAnswer: 'See the answer', tsNext: 'Next problem',
+  tsEmpty: 'No tsumego yet. Masame finds them in your reviewed games while the engine is free, from the next day.',
+  tsDone: 'No tsumego left for today. Come back tomorrow.',
+  yoTitle: 'Endgame: the biggest move', yoAsk: (s: number) => `${color(s)} to play: the biggest move?`,
+  yoSearching: (n: number, of: number) => `Looking for big moves in your endgames: ${f.num(n)} of ${f.num(of)}.`,
+  yoNone: 'No clear endgame question in your games yet. Play or import a few finished games.',
+  yoFound: 'Found: the biggest move.', yoShort: (gap: number) => `Close: ${pts(gap)} less than the biggest.`, yoMissed: (gap: number) => `Not the biggest: ${lost(gap)}.`,
+  yoAnswer: (s: number, v: string) => `The biggest: ${color(s)} ${v}.`,
+  workTitle: 'Practice session', workLeft: (n: number) => f.plural(n, 'card left', 'cards left'), workDone: 'Session over. Well played.',
+  workOpening: 'Go on with the joseki',
   // automatic review
   autoDone: (n: number, rank?: string) => rank ? `You played like ${aRank(rank).replace(' ', '\u00a0')}\u00a0· ${n ? `${f.plural(n, 'key moment', 'key moments').replace(' ', '\u00a0')} for your exercises` : 'no decisive moment'}.`
     : `Review done: ${n ? `${f.plural(n, 'key moment joins', 'key moments join')} your exercises` : 'no decisive moment'}.`,
