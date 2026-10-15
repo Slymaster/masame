@@ -5,6 +5,8 @@ import { today } from '../joseki/store'
 
 // cards that make a day's step: the joseki (or fuseki) step's CAP, the exercises step's HAND
 export const KEY = 'masame.today', CAP = 5, HAND = 6
+// counting positions in the exercises hand, when your reviewed games give some: the hand is HAND − COUNTS exercises, then them
+export const COUNTS = 2
 /** streak: days in a row ending on `last` (the last day done, '' never); game: the day a ritual game last reached a result. */
 export interface Ritual { v: 1; streak: number; last: string; game: string }
 /** A step today: done, and how many are left (null while unknown); null when unavailable (counted as done). */
@@ -16,6 +18,13 @@ const midnight = (now: number) => new Date(now).setHours(0, 0, 0, 0)
 export function deckStep(cards: Record<string, Card>, left: number, now: number, cap = CAP): Step {
   const seen = Object.values(cards).filter(c => c.last >= midnight(now)).length
   return { done: seen >= cap || left === 0, left: seen >= cap ? 0 : Math.min(left, cap - seen) }
+}
+/** The counting part of the hand: COUNTS positions counted today. */
+export const countStep = (counted: number): Step => ({ done: counted >= COUNTS, left: Math.max(0, COUNTS - counted) })
+/** The exercises step: its exercise cards, then its counting positions (null: that part is unavailable). */
+export function handStep(ex: Step, count: Step): Step {
+  if (!ex || !count) return ex ?? count
+  return { done: ex.done && count.done, left: ex.left === null || count.left === null ? null : ex.left + count.left }
 }
 export const gameStep = (r: Ritual, now: number): Step => ({ done: r.game === today(now), left: r.game === today(now) ? 0 : 1 })
 /** Every available step done, with at least one available. */
