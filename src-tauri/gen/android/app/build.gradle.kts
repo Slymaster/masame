@@ -89,8 +89,12 @@ rust {
 // rustls-platform-verifier-android crate in Cargo.lock.
 val rustlsVerifier = rootDir.resolve("../../Cargo.lock").readText()
     .substringAfter("name = \"rustls-platform-verifier-android\"\nversion = \"").substringBefore('"')
+// That repository is a mutable git branch: it serves org.rustls only, and gradle/verification-metadata.xml pins the checksums.
 repositories {
-    maven { url = uri("https://github.com/rustls/rustls-platform-verifier/raw/maven-archive/android-release-support/maven/") }
+    exclusiveContent {
+        forRepository { maven { url = uri("https://github.com/rustls/rustls-platform-verifier/raw/maven-archive/android-release-support/maven/") } }
+        filter { includeGroup("org.rustls") }
+    }
 }
 
 dependencies {
