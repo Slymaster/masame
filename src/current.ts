@@ -56,11 +56,13 @@ export function snapshot(id: string, { game, bot, clock, myRank }: Shown, now: n
 
 /** The writer: call changed() after every change of the shown game; `get` gives the latest state when the write happens. */
 export function keeper(out: Pick<typeof library, 'write' | 'setCurrent'> = library, delay = 500) {
-  let timer: ReturnType<typeof setTimeout> | undefined, job: (() => void) | null = null, shown: Game | null = null
+  let timer: ReturnType<typeof setTimeout> | undefined, job: (() => void) | null = null, last: (() => void) | null = null, lastId = '', shown: Game | null = null
   const flush = () => { clearTimeout(timer); const j = job; job = null; j?.() }
   const report = (p: Promise<void>) => { p.catch(e => console.error('library', e)) }
   return {
     flush,
+    /** Closing the app: the pending write, or the shown unfinished game written again, its clock charged up to now. */
+    close() { if (job) flush(); else if (shown && unfinished(shown) && library.idOf(shown) === lastId) last?.() },
     changed(get: () => Shown) {
       const s = get(), g = s.game
       if (g !== shown) { // another game: the last one's pending write first; an unfinished one is no longer the current game
@@ -73,7 +75,8 @@ export function keeper(out: Pick<typeof library, 'write' | 'setCurrent'> = libra
       if (!id) library.bind(g, id = library.newId(s.bot ? 'ai' : 'two'))
       if (!dates.get(g)) dates.set(g, Date.now())
       const key = id
-      job = () => {
+      lastId = key
+      job = last = () => {
         const now = get(), x = snapshot(key, now.game === g ? now : s, Date.now(), library.get()?.find(e => e.id === key))
         report(out.write(key, x.sgf, x.entry)); report(out.setCurrent(x.current))
       }
@@ -125,7 +128,7 @@ export function useCurrentGame(s: Shown, ver: number, onRestore: (r: Awaited<Ret
   useEffect(() => { if (inTauri()) (k.current ??= keeper()).changed(() => latest.current) }, [ver, s.game, s.bot])
   useEffect(() => { // closing the window or quitting: the pending write now (Rust waits a moment before closing, see lib.rs)
     if (!inTauri()) return
-    const flush = () => k.current?.flush(), off = on<null>('library-flush', flush)
+    const flush = () => k.current?.close(), off = on<null>('library-flush', flush)
     addEventListener('pagehide', flush)
     return () => { removeEventListener('pagehide', flush); off.then(f => f()) }
   }, [])

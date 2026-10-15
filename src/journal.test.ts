@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CAP, inMonth, KEY, load, note } from './journal'
+import { BAD, CAP, inMonth, KEY, load, note } from './journal'
 
 const mem = (init: Record<string, string> = {}) => {
   const m = new Map(Object.entries(init))
@@ -20,6 +20,19 @@ describe('journal', () => {
     expect(es).toHaveLength(CAP)
     expect(es[0].t).toBe(1)
     expect(es.at(-1)).toEqual({ t: CAP, k: 'count', ok: true })
+  })
+  it('is stored versioned, reads the first bare-array format, and never writes over a newer version', () => {
+    const old = mem({ [KEY]: JSON.stringify([{ t: 1, k: 'yose', ok: true }]) })
+    note('count', false, undefined, 2, old)
+    expect(JSON.parse(old.m.get(KEY)!)).toEqual({ v: 1, events: [{ t: 1, k: 'yose', ok: true }, { t: 2, k: 'count', ok: false }] })
+    const newer = JSON.stringify({ v: 2, whatever: [] }), st = mem({ [KEY]: newer })
+    note('count', true, undefined, 3, st)
+    expect([load(st), st.m.get(KEY)]).toEqual([[], newer])
+  })
+  it('keeps unreadable text aside before starting again', () => {
+    const st = mem({ [KEY]: '{nope' })
+    note('memory', true, 'g', 1, st)
+    expect([st.m.get(BAD), load(st)]).toEqual(['{nope', [{ t: 1, k: 'memory', ok: true, id: 'g' }]])
   })
   it('survives garbage: unreadable text, a non-array, bad events', () => {
     expect(load(mem({ [KEY]: '{nope' }))).toEqual([])

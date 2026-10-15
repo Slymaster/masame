@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Game, GameNode } from './game'
 import { analyze } from './katago'
 import * as library from './library'
-import { Mentor, MENTOR_QUERY } from './mentor'
+import { Mentor, MENTOR_QUERY, MENTOR_WARM_QUERY } from './mentor'
 
 export function useMentor({ game, bot, thinkingTime, changed }: {
   game: Game; bot: { era?: number; mentor?: true } | null
@@ -13,7 +13,7 @@ export function useMentor({ game, bot, thinkingTime, changed }: {
 }) {
   const mentors = useRef(new WeakMap<Game, Mentor>())
   let mentor = bot?.mentor ? mentors.current.get(game) : undefined
-  if (bot?.mentor && !mentor) mentors.current.set(game, mentor = new Mentor(g => analyze(g, MENTOR_QUERY)))
+  if (bot?.mentor && !mentor) mentors.current.set(game, mentor = new Mentor((g, warm) => analyze(g, warm ? MENTOR_WARM_QUERY : MENTOR_QUERY)))
   const [stop, setStop] = useState<{ node: GameNode; loss: number } | null>(null)
   // the stop holds while its move is the end of the shown line (an undo or another game ends it)
   const stopped = mentor && stop && stop.node === game.nodes[game.cursor] && game.cursor === game.moves.length ? stop : null
@@ -38,7 +38,7 @@ export function useMentor({ game, bot, thinkingTime, changed }: {
 
   return {
     mentor, stopped, stops: mentor?.stops ?? 0,
-    /** The last check was given up at the budget: the player is told at once that the mentor let the move pass. */
+    /** The last check was given up at the budget or read too little: the player is told at once that the mentor let the move pass. */
     late: (mentor?.late ?? 0) >= 1,
     /** The cost of the player's last move when the mentor stops it, else null (no mentor, under the threshold, kept, late). */
     check: (g: Game) => (mentor ? mentor.check(g) : Promise.resolve(null)),

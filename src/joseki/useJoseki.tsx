@@ -46,8 +46,8 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
 }) {
   const fuseki = book === 'fuseki', key = fuseki ? FUSEKI_KEY : KEY
   const T = fuseki
-    ? { title: t.fuseki, loading: t.fLoading, failed: t.fFailed, root: t.fFirst, exploreNote: t.fExploreNote, context: t.fContext, help: t.fPractiseHelp, wrong: t.fWrong, resetAsk: t.fResetAsk, fileName: t.fFileName }
-    : { title: t.joseki, loading: t.jLoading, failed: t.jFailed, root: t.jCorner, exploreNote: t.jExploreNote, context: t.jContext, help: t.jPractiseHelp, wrong: t.jWrong, resetAsk: t.jResetAsk, fileName: t.jFileName }
+    ? { title: t.fuseki, loading: t.fLoading, failed: t.fFailed, root: t.fFirst, exploreNote: t.fExploreNote, context: t.fContext, help: t.fPractiseHelp, wrong: t.fWrong, resetAsk: t.fResetAsk, fileName: t.fFileName, notInBook: t.fNotInBook, askPunish: t.fAskPunish }
+    : { title: t.joseki, loading: t.jLoading, failed: t.jFailed, root: t.jCorner, exploreNote: t.jExploreNote, context: t.jContext, help: t.jPractiseHelp, wrong: t.jWrong, resetAsk: t.jResetAsk, fileName: t.jFileName, notInBook: t.jNotInBook, askPunish: t.jAskPunish }
   const [tab, setTab] = useState<Tab>('explore')
   const [db, setDb] = useState<JosekiDb | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -106,11 +106,13 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
   const left = db && counts(db, store.p.cards, fresh, now), todayStep = left && deckStep(store.p.cards, left.due + left.fresh, now) // null until loaded
   const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, today: todayStep, practise, counts: left, failed: !!error }
   if (!open) return none
+  // the game's own keys are muted while the trainer has the board (Space still presses a focused button)
+  const muted: Record<string, (() => void) | undefined> = { escape: close, ' ': undefined, arrowup: () => {}, arrowdown: () => {}, arrowleft: () => {}, arrowright: () => {}, home: () => {}, end: () => {}, p: () => {} }
   const acts = <button className="act" onClick={close} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button>
   if (!db || !R) {
     const note = error ? T.failed(failureText(error)) : T.loading
     // the family switch stays, so a missing book is never a dead end
-    return { ...none, acts, note, body: <section className="rv jt">{setBook && <Seg label={t.fFamily} value={book} options={[['joseki', t.joseki], ['fuseki', t.fuseki]]} set={setBook} />}<p className={error ? 'say' : 'estimate'}>{note}</p></section> }
+    return { ...none, acts, note, body: <section className="rv jt">{setBook && <Seg label={t.fFamily} value={book} options={[['joseki', t.joseki], ['fuseki', t.fuseki]]} set={setBook} />}<p className={error ? 'say' : 'estimate'}>{note}</p></section>, keys: muted }
   }
 
   const lens = db.profiles[p]
@@ -184,7 +186,7 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
     }
     if (tab !== 'explore' || ex.line) return false
     const i = exEdges.findIndex(e => e[0] === storedAt(exW, EXPLORE, v))
-    if (i < 0) { setSay(t.jNotInBook); return false }
+    if (i < 0) { setSay(T.notInBook); return false }
     goEx({ ...ex.path, picks: [...ex.path.picks, i] })
     return true
   }
@@ -193,7 +195,7 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
   const away = practising && line!.phase !== 'wrong' && isTenuki(lw!.nodes.length > 1 ? db.nodes[lw!.nodes.at(-2)!].e[line!.path.picks.at(-1)!][0] : 'pd')
   const lineNote = !line ? null
     : away && line.phase === 'ask' ? `${t.jElsewhere}${t.jAsk(toPlayLine)}`
-    : line.phase === 'ask' ? line.dev !== null ? t.jAskPunish(line.dev) : `${last ? last.rating === 3 ? t.jGood : t.jHard : ''}${t.jAsk(toPlayLine)}`
+    : line.phase === 'ask' ? line.dev !== null ? T.askPunish(line.dev) : `${last ? last.rating === 3 ? t.jGood : t.jHard : ''}${t.jAsk(toPlayLine)}`
     : line.phase === 'reply' ? last?.rating === 3 ? t.jGood : t.jHard
     : line.phase === 'wrong' ? ln!.e.length ? lineMarks.length ? T.wrong : t.jWrongTenuki : t.jMissedPunish
     : `${away ? t.jElsewhere : ''}${last ? last.rating === 1 ? '' : line.dev !== null ? `${t.found} ` : t.jGood : ''}${t.jLineEnd}`
@@ -240,9 +242,9 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
           <span>{t.jLens}</span>
           {LENS.map(r => db.profiles.indexOf(r)).filter(q => q >= 0).map(q => {
             const i = heads.reduce((b, j) => freqOf(j, q) > freqOf(b, q) ? j : b, 0)
-            return <span key={q}>{db.profiles[q]}: {exLetters.get(i) ?? t.jTenuki} {pct(freqOf(i, q))}</span>
+            return <span key={q}>{t.jLensOf(db.profiles[q], `${exLetters.get(i) ?? t.jTenuki} ${pct(freqOf(i, q))}`)}</span>
           })}
-          <span>KataGo: {exLetters.get(0) ?? t.jTenuki}</span>
+          <span>{t.jLensOf('KataGo', exLetters.get(0) ?? t.jTenuki)}</span>
         </p>}
         {exLine.length > 0 && <button className="link" onClick={() => setEx({ ...ex, line: !ex.line })} aria-pressed={ex.line}>{ex.line ? t.jHideLine : t.jShowLine}</button>}
         <div className="opts">
@@ -273,10 +275,8 @@ export function useJoseki({ book = 'joseki', setBook, view, open, preload, setOp
       </>}
     </section>
   )
-  // the game's own keys are muted while the trainer has the board (Space still presses a focused button)
   const keys: Record<string, (() => void) | undefined> = {
-    escape: close, ' ': undefined, arrowup: () => {}, arrowdown: () => {}, home: () => {}, end: () => {}, p: () => {},
-    arrowleft: () => { if (tab === 'explore') back() }, arrowright: () => { if (tab === 'explore' && frequent >= 0) down(frequent) },
+    ...muted, arrowleft: () => { if (tab === 'explore') back() }, arrowright: () => { if (tab === 'explore' && frequent >= 0) down(frequent) },
   }
   return { ...none, play, board, note, links, body, acts, keys }
 }

@@ -25,6 +25,7 @@ export interface Entry {
   review?: { moments: number } // reviewed (automatically or by hand): its leads and moments are in the 'review' sidecar
   memory?: { recalled: number; total: number; helps: number } // replayed from memory (C2), the best run
   counted?: number // positions of this game counted so far (C1)
+  added?: number // a file: when it entered the library (the monthly letter counts it then, not at its SGF date)
 }
 /** The 'review' sidecar (<id>.review.json): the scan's leads per move (Black's lead, null where unread) and the moments. */
 export interface ReviewSidecar { leads: (number | null)[]; moments: Moment[] }
@@ -128,7 +129,7 @@ export async function keep(g: Game, source: Source, me: Sign | 0, extra: Partial
   const sgf = saveSgf(g), id = newId(source, { ogsId: extra.ogsId, hash: source === 'file' ? hash64(sgf) : undefined })
   ids.set(g, id)
   const xs = await load().catch(() => null)
-  if (!xs?.some(e => e.id === id)) await write(id, sgf, entryOf(g, { id, source, me, ...extra }))
+  if (!xs?.some(e => e.id === id)) await write(id, sgf, entryOf(g, { id, source, me, ...source === 'file' && { added: Date.now() }, ...extra }))
   return id
 }
 

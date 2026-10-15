@@ -505,6 +505,13 @@ fn take_opened(opened: State<'_, OpenedFiles>) -> Res<Option<Opened>> {
 
 static FLUSHED: AtomicBool = AtomicBool::new(false); // the close's library flush was asked (once)
 const FLUSH_WAIT: Duration = Duration::from_millis(300);
+/// Quitting (⌘Q, or the last window gone): the page writes its pending library change first, then the app exits.
+fn quit(app: &tauri::AppHandle) {
+    if FLUSHED.swap(true, Ordering::SeqCst) { return app.exit(0) }
+    let _ = app.emit("library-flush", ());
+    let app = app.clone();
+    std::thread::spawn(move || { std::thread::sleep(FLUSH_WAIT); app.exit(0) });
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -548,7 +555,10 @@ pub fn run() {
         });
     // Our menu items (macOS) go to the frontend, which runs them exactly like their keyboard shortcuts.
     #[cfg(desktop)]
-    let builder = builder.on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); });
+    let builder = builder.on_menu_event(|app, e| {
+        if e.id().as_ref() == "quit" { return quit(app) }
+        if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); }
+    });
     builder
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
@@ -569,12 +579,7 @@ pub fn run() {
                 let app = app.clone();
                 std::thread::spawn(move || { std::thread::sleep(FLUSH_WAIT); if let Some(w) = app.get_webview_window(&label) { let _ = w.destroy(); } });
             }
-            RunEvent::ExitRequested { code: None, api, .. } if !FLUSHED.swap(true, Ordering::SeqCst) => {
-                api.prevent_exit();
-                let _ = app.emit("library-flush", ());
-                let app = app.clone();
-                std::thread::spawn(move || { std::thread::sleep(FLUSH_WAIT); app.exit(0) });
-            }
+            RunEvent::ExitRequested { code: None, api, .. } if !FLUSHED.load(Ordering::SeqCst) => { api.prevent_exit(); quit(app) }
             RunEvent::Exit => app.state::<App>().engine.kill(),
             #[cfg(target_os = "macos")]
             RunEvent::Opened { urls } => queue_opened(app, urls.iter().filter_map(url_file).collect()),

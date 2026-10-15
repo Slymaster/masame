@@ -105,6 +105,9 @@ export function cardOf(p: { signMap: SignMap; size: number; komi: number; n: num
 /** Position and chain: the same problem met again (another sampling, the other side asked) adds nothing. */
 export const ldKey = (x: Exercise) => hash64(`ld|${x.size}|${x.komi}|${x.b}|${x.w}|${x.chain}`)
 
+/** The chain's stones with their colour: a problem's identity across one game's samples, while the rest of the board moves. */
+export const chainIds = (x: Exercise) => { const b = new Set(x.b.match(/../g)); return (x.chain?.match(/../g) ?? []).map(v => (b.has(v) ? 'B' : 'W') + v) }
+
 /** The problems of one sampled position from its two reads; the side asked is drawn by `random` (save or kill). */
 export function problemsAt(p: { signMap: SignMap; size: number; komi: number; n: number; vs: string },
   b: { scoreLead: number; pv: (Vertex | null)[]; ownership: number[] | null }, w: { scoreLead: number; pv: (Vertex | null)[]; ownership: number[] | null },
@@ -147,23 +150,24 @@ export function saveMined(m: Mined, st: Storage = localStorage) {
 type Read = { scoreLead: number; pv: (Vertex | null)[]; ownership: number[] | null }
 /**
  * Reads one reviewed game: each sampled position twice (Black first, then White first, both in flight), and a position
- * with new candidates twice again deeper (`deep`): only what both pairs find, the deep one by CONFIRM, is kept, with its answer. Problems
- * are deduped by position and chain. null when `live` turned false (nothing kept: the game is read again later).
+ * with new candidates twice again deeper (`deep`): only what both pairs find, the deep one by CONFIRM, is kept, with its answer. A group
+ * already kept from an earlier sample (any of its stones) is not asked again, however the board changed. null when `live` turned false (nothing kept: the game is read again later).
  */
 export async function mineGame(game: Game, moments: number[], end: number, vs: string, ask: (g: Game, deep: boolean) => Promise<Read>,
   live: () => boolean, now: number, random = Math.random): Promise<Exercise[] | null> {
-  const { size, komi } = game.info, out = new Map<string, Exercise>()
+  const { size, komi } = game.info, out: Exercise[] = [], met = new Set<string>()
+  const isMet = (x: Exercise) => chainIds(x).some(id => met.has(id))
   for (const i of samples(moments, end)) {
     if (!live()) return null
     const signMap = game.boards[i].signMap
     const p = { signMap, size, komi, n: game.moveNumber(i) + 1, vs }
     const pair = (deep: boolean) => Promise.all([ask(positionAt(signMap, size, komi, 1), deep), ask(positionAt(signMap, size, komi, -1), deep)])
     const [b, w] = await pair(false)
-    const shallow = new Set(problemsAt(p, b, w, now, random).map(ldKey))
-    if ([...shallow].every(k => out.has(k))) continue
+    const shallow = new Set(problemsAt(p, b, w, now, random).filter(x => !isMet(x)).map(ldKey))
+    if (!shallow.size) continue
     if (!live()) return null
     const [db, dw] = await pair(true)
-    for (const x of problemsAt(p, db, dw, now, random, CONFIRM)) if (shallow.has(ldKey(x)) && !out.has(ldKey(x))) out.set(ldKey(x), x)
+    for (const x of problemsAt(p, db, dw, now, random, CONFIRM)) if (shallow.has(ldKey(x)) && !isMet(x)) { out.push(x); chainIds(x).forEach(id => met.add(id)) }
   }
-  return live() ? [...out.values()] : null
+  return live() ? out : null
 }

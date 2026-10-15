@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { Game } from './game'
-import { BUDGET, Mentor, MENTOR_QUERY, MIN_VISITS, type Read, threshold } from './mentor'
+import { BUDGET, Mentor, MENTOR_QUERY, MENTOR_WARM_QUERY, MIN_VISITS, type Read, threshold } from './mentor'
 
 /** A full search whose only candidate is the corner (never played below): the move is judged by comparing two searches. */
 const lead = (n: number): Read => ({ scoreLead: n, moves: [{ v: [0, 0], scoreLead: n, visits: 100 }] })
 /** A mentor whose engine answers `leads[cursor]` (a number: Black's lead) or never, for `never`, counting the questions. */
 const fake = (leads: (number | Read)[], o: { budget?: number; never?: number; fail?: boolean } = {}) => {
-  const asked: number[] = []
-  const m = new Mentor(g => {
-    asked.push(g.cursor)
+  const asked: number[] = [], warmed: number[] = []
+  const m = new Mentor((g, warm) => {
+    asked.push(g.cursor); if (warm) warmed.push(g.cursor)
     if (o.fail) return Promise.reject(new Error('engine'))
     const r = leads[g.cursor]
     return g.cursor === o.never ? new Promise<Read>(() => {}) : Promise.resolve(typeof r === 'number' ? lead(r) : r)
   }, o.budget, o.budget)
-  return { m, asked }
+  return { m, asked, warmed }
 }
 /** The position before the shown move read first, as while the player thinks (a move checked cold is not counted). */
 const warm = (m: Mentor, g: Game) => { const i = g.cursor; g.goTo(i - 1); m.prefetch(g); g.goTo(i); return g }
@@ -47,11 +47,21 @@ describe('the mentor', () => {
     expect(await listed.m.check(at(9, [2, 2], [4, 4]))).toBeCloseTo(3)
   })
 
-  it('compares two separate searches only when both read enough', async () => {
+  it('compares two separate searches only when both read enough, and says so when they did not', async () => {
     const thin = (n: number): Read => ({ scoreLead: n, moves: [{ v: [0, 0], scoreLead: n, visits: MIN_VISITS - 1 }] })
-    expect(await fake([thin(0), -10]).m.check(at(9, [4, 4]))).toBeNull()
-    expect(await fake([0, thin(-10)]).m.check(at(9, [4, 4]))).toBeNull()
-    expect(await fake([0, -10]).m.check(at(9, [4, 4]))).toBe(10)
+    const a = fake([thin(0), -10]), b = fake([0, thin(-10)]), ok = fake([0, -10])
+    expect(await a.m.check(at(9, [4, 4]))).toBeNull()
+    expect(await b.m.check(at(9, [4, 4]))).toBeNull()
+    expect([a.m.late, b.m.late]).toEqual([1, 1]) // the "engine too busy" caption shows
+    expect(await ok.m.check(at(9, [4, 4]))).toBe(10)
+    expect(ok.m.late).toBe(0)
+  })
+
+  it('reads the position before the move while the player thinks, with time to reach its visits', async () => {
+    const f = fake([0, -10]), g = warm(f.m, at(9, [4, 4]))
+    await f.m.check(g)
+    expect([f.asked, f.warmed]).toEqual([[0, 1], [0]])
+    expect(MENTOR_WARM_QUERY.overrideSettings.maxTime).toBeGreaterThan(MENTOR_QUERY.overrideSettings.maxTime)
   })
 
   it('reads the cost from the side that moved', async () => {

@@ -56,6 +56,19 @@ describe('the writer', () => {
     expect(o.write).toHaveBeenCalledTimes(1) // the new game has no move yet
   })
 
+  it('writes the unfinished game again when the app closes, its clock charged up to then', () => {
+    const o = out(), k = keeper(o), g = local(new Game({ size: 9 }))
+    const clock = startClock(CLOCKS['5+3x20'])
+    g.play([2, 2]); k.changed(() => shown(g, { clock }))
+    vi.advanceTimersByTime(1000)
+    expect(o.write).toHaveBeenCalledTimes(1)
+    k.close() // ticks don't schedule writes; closing does
+    expect(o.write).toHaveBeenCalledTimes(2)
+    g.info.result = 'B+R'; k.changed(() => shown(g, { clock }))
+    k.close() // decided: nothing more to write
+    expect(o.write).toHaveBeenCalledTimes(3)
+  })
+
   it('never writes a game that is not local: an OGS game, a file', () => {
     const o = out(), k = keeper(o), g = new Game({ size: 19 })
     g.play([3, 3]); k.changed(() => shown(g, { bot: null }))

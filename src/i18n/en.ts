@@ -110,7 +110,7 @@ export const en = {
   gamesAll: 'All your games', gamesFilterLabel: 'Games shown',
   gamesFilters: { all: 'All', ai: 'AI', ogs: 'OGS', two: 'Two players', file: 'Files' },
   gamesSearch: 'Search an opponent', gamesLoading: 'Loading your games…',
-  gamesEmpty: 'No games yet. Every game you play or open is kept here.', gamesNoMatch: 'No game matches.',
+  gamesEmpty: 'No games yet. Every game you play or review is kept here.', gamesNoMatch: 'No game matches.',
   gamesInAppOnly: 'Your games are kept in the app.', gamesImport: 'Import an SGF…',
   gamesOgsFinished: 'Finished on OGS, not yet kept', gamesOgsAllKept: 'All your finished OGS games are already here.',
   lbWon: 'Won', lbLost: 'Lost', lbDraw: 'Draw', lbUnfinished: 'Unfinished',
@@ -193,6 +193,7 @@ export const en = {
   jTags: { classic: 'classic', pro: 'pro', ai: 'AI', verified: 'verified by KataGo', contested: 'contested' },
   jTenuki: 'Tenuki', jTenukiHelp: 'Play elsewhere', jTenukiFine: (x: number) => `Tenuki is fine here (${lost(x)}).`,
   jComplete: 'Joseki complete: tenuki is fine.',
+  jLensOf: (who: string, what: string) => `${who}: ${what}`,
   jLens: 'Rank lens', jShowLine: 'Show KataGo’s line', jHideLine: 'Hide KataGo’s line',
   jKataLine: (moves: string) => `KataGo continues: ${moves}.`,
   jExploreNote: (n: number) => `Joseki · move ${n}. A letter follows a move: A loses least.`,
@@ -222,6 +223,8 @@ export const en = {
   fExploreNote: (n: number) => `Fuseki · move ${n}. A letter follows a move: A loses least.`,
   fContext: 'The empty board, Black first, komi 6.5, Japanese rules. An opening and its mirror images count as one.',
   fPractiseHelp: 'Each opening is turned at random, and you play Black or White. Your opponent plays like a player of your level, mistakes included: punish them.',
+  fNotInBook: 'Not in the book: pick a lettered move.',
+  fAskPunish: (loss: number) => `Your opponent left the book (−${pts(loss)}). Punish it.`,
   fWrong: 'Not in the book: the lettered moves are.', fResetAsk: 'Delete all your fuseki progress?', fFileName: 'masame-fuseki.json',
   // the daily ritual
   today: 'Today', tdIntro: 'Ten minutes a day: your exercises, a few joseki, a quick game.',
@@ -301,6 +304,7 @@ export const en = {
   yoNone: 'No clear endgame question in your games yet. Play or import a few finished games.',
   yoFound: 'Found: the biggest move.', yoShort: (gap: number) => `Close: ${pts(gap)} less than the biggest.`, yoMissed: (gap: number) => `Not the biggest: ${lost(gap)}.`,
   yoAnswer: (s: number, v: string) => `The biggest: ${color(s)} ${v}.`,
+  workEmpty: 'Nothing to practise in this phase yet. Review a game: its key moments become exercises.',
   workTitle: 'Practice session', workLeft: (n: number) => f.plural(n, 'card left', 'cards left'), workDone: 'Session over. Well played.',
   workOpening: 'Go on with the fuseki',
   // Les Classiques: guess the masters' moves (flux F)
@@ -458,7 +462,7 @@ export const en = {
   memDone: (r: number, n: number, h: number) => `${f.plural(r, 'move', 'moves')} replayed from memory out of ${f.num(n)}, ${f.plural(h, 'help', 'helps')}`,
   memStopped: (at: number) => `Stopped at move ${at}.`,
   memAgain: 'Start again', memFound: 'found', memHelps: 'helps', memLeft: 'to go',
-  memHelpText: 'Place the moves in order, both sides. A wrong stone trembles and goes; a second miss shows the move.',
+  memHelpText: 'Place the moves in order, both sides. A second miss shows the move.',
   libraryShown: 'A game from your library.',
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {

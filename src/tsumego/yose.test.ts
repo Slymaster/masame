@@ -20,8 +20,9 @@ const an = (leads: [Vertex | null, number][]): Analysis => ({
 })
 
 describe('yose positions', () => {
-  it('are endgame positions, one every 6 moves', () => {
-    expect(yoseSamples(game)).toEqual([34, 40, 46])
+  it('are endgame positions, one every 7 moves, so both sides are asked', () => {
+    expect(yoseSamples(game)).toEqual([34, 41, 48])
+    expect(yoseSamples(game).map(i => game.moves[i].sign)).toEqual([1, -1, 1])
   })
   it('are kept when the biggest move beats the second by 2 points or more, for the side to play', () => {
     const x = yoseOf(game, 34, an([[[4, 4], 5], [[4, 5], 2.5]]), 'Bob', NOW)!
@@ -40,10 +41,11 @@ describe('yose positions', () => {
   it('are searched until 8 are kept, with progress, and stop when cancelled', async () => {
     const games = Array.from({ length: 5 }, () => ({ game, vs: '' }))
     let asks = 0
-    const ask = async (_: Game) => (++asks % 2 ? an([[[4, 4], 6], [[4, 5], 1]]) : an([[[4, 4], 6], [[4, 5], 5]]))
+    const ask = async (g: Game) => { const s = g.toPlay; return ++asks % 2 ? an([[[4, 4], 6 * s], [[4, 5], s]]) : an([[[4, 4], 6 * s], [[4, 5], 5 * s]]) }
     const seen: number[] = []
     const xs = await findYose(games, ask, () => true, n => seen.push(n), NOW, () => 0.5)
     expect([xs.length, asks, seen]).toEqual([YOSE_N, 15, [1, 2, 3, 4, 5, 6, 7, 8]])
+    expect(new Set(xs.map(x => x.sign))).toEqual(new Set([1, -1]))
     expect(await findYose(games, ask, () => false, () => {}, NOW)).toEqual([])
   })
 })
