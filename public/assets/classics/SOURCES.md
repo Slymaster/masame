@@ -1,6 +1,6 @@
 # Les Classiques: sources
 
-Fifteen games of the Edo period (1603–1867), transcribed from public, freely accessible sources. No record comes from
+Twenty-one games of the Edo period (1603–1867), transcribed from public, freely accessible sources. No record comes from
 GoGoD, Go4Go or any other commercial database. Only the moves, players, result and date are kept (moves are historical
 facts); every commentary in the sources was left out, and the titles and context sentences are our own.
 
@@ -29,6 +29,11 @@ Smith's book gives the month only (`DT[1835-12]`).
   moves. Brouwer notes that much of his old-game material probably derives from GoGoD (the files use GoGoD's date
   conventions), so nothing was copied from it: it is the source of no shipped move and of no shipped date.
 
+Primary source "Kogyoku yoin" = 石谷広策『敲玉余韻』 (Ishitani Kosaku, *Kogyoku yoin*, 1897, four volumes of Honinbo
+Shusaku's games), public domain, scanned by the National Diet Library: volume 1 https://dl.ndl.go.jp/pid/861141, volume 3
+https://dl.ndl.go.jp/pid/861143 (volume 2, pid 861142, is not online). Each game is printed as two full-board figures of
+numbered stones (moves 1–100, then 101 to the end, numbered from 1 again), with recaptures listed above the board.
+
 Primary source "tasuki" = Vít Brunner's list of famous games, https://wiki.tasuki.org/games/go/famous (files at
 https://github.com/tasuki/vitwiki/tree/master/games/go/famous).
 
@@ -36,6 +41,18 @@ https://github.com/tasuki/vitwiki/tree/master/games/go/famous).
 from; the only licence statement is the wiki's cc by-sa footer. A GoGoD ancestry can therefore not be ruled out from the
 documents alone. What argues against it: tasuki keeps the Japanese lunisolar dates (GoGoD converts to Gregorian), and
 `retsugen-senkaku-1792` exists in no GoGoD-derived archive we checked. Settling it means asking Vít Brunner.
+
+### How the Kogyoku yoin games were read
+
+The six games added from *Kogyoku yoin* were read from the NDL's full-resolution images: the board grid of each figure
+was located, every intersection was cut out and enlarged, and the numeral printed on each stone was read and checked
+against a candidate move number; the stones without a number in the second figure were checked against the first
+figure, and the moves listed above the board ("劫トル", "ツグ", "同") against the stones they replace. Andries Brouwer's
+archive served only to propose the candidate number for each stone (comparison only, as above): wherever the book and
+that archive disagree, the book's move is shipped and the disagreement is listed below. Dates come from the book's
+headers (Japanese calendar), converted with the NAOJ database; where the book's day differs from Brouwer's, only the
+year is kept. The replay test then checks every move for legality, and the result is the book's "中押勝" (win by
+resignation) for Shusaku with Black in all six.
 
 ## The games
 
@@ -53,6 +70,12 @@ documents alone. What argues against it: tasuki keeps the Japanese lunisolar dat
 | `shuwa-gennan-1842.sgf` | Honinbo Shuwa (B) – Inoue Gennan Inseki (W), B+6 | tasuki `1842.sgf` (main line) | **Cross-checked**: identical 270 moves in the sample game of the Perl module Games::Go::Sgf2Dg, https://github.com/gitpan/Games-Go-Sgf2Dg/blob/master/genan-shuwa.sgf. Brouwer `ancient/Honinbo_Shuwa/266.sgf` differs at move 253 only (H8 instead of H9 in our record); we keep the move the two other copies agree on. Date: tasuki Tenpo 13-05-16 → 1842-06-24. |
 | `sanchi-shuwa-1844.sgf` | Yasui Sanchi (B) – Honinbo Shuwa (W), B+1, castle game | tasuki `1844.sgf` | **Single source.** Replay legal. Date: tasuki 1844-11-17 (Tenpo 15, the year renamed Koka 1) → 1844-12-26. |
 | `ear-reddening-1846.sgf` | Honinbo Shusaku (B) – Inoue Gennan Inseki (W), B+2 | tasuki `1846.sgf` | **Cross-checked**: identical 325 moves in Little Go's https://github.com/herzbube/littlego/blob/master/sgf/Famous%20games/Ear-reddening%20game.sgf (the same file as jgoboard's example) and in the Leela test record https://github.com/Sagebati/goban/blob/master/sgf/ShusakuvsInseki.sgf. The full-board diagram "The ear-reddening move" on https://senseis.xmp.net/?EarReddeningGame matches our position after move 127 exactly: Black 127 is at K11 (`ji`), next to the centre point. Result: tasuki says B+3; Little Go, the Leela record, Sensei's Library and Wikipedia (https://en.wikipedia.org/wiki/Ear-reddening_game) say two points, so we ship B+2. Date from Wikipedia (11 September 1846), also tasuki Koka 3-07-21 converted. |
+| `shusaku-sanchi-1843.sgf` | Honinbo Shusaku (B) – Yasui Sanchi (W, 7 dan), B+R, at Akai Gorosaku's house | *Kogyoku yoin* vol. 1, frames 7–8 | **Cross-checked**: all 169 moves read in the book agree with Brouwer `Shusaku/061.sgf` (comparison only). Date: the book's Tenpo 14, 9th month, 5th day disagrees with Brouwer's 14th: year only. |
+| `shusaku-saichiro-1844.sgf` | Honinbo Shusaku (B) – Kishimoto Saichiro (W), B+R | *Kogyoku yoin* vol. 1, frame 9 | **Cross-checked**: all 131 moves agree with Brouwer `Shusaku/076.sgf` (comparison only), including the four moves listed above the board. The book's second figure shows one black stone without a number (at G15) that no move accounts for; every numbered move agrees, so it is taken as a printing slip. Date: the book's Tenpo 14-12-11 → 1844-01-30. |
+| `shusaku-gennan-1846.sgf` | Honinbo Shusaku (B) – Inoue Gennan Inseki (W), B+R, the game after the ear-reddening game | *Kogyoku yoin* vol. 3, frames 11–12 | **Cross-checked**: all 197 moves agree with Brouwer `Shusaku/128.sgf` (comparison only). The second figure shows two black stones without numbers (M12, O12) that no move accounts for. Date: the book says Koka 3, 7th month, 27th and 29th days; Brouwer gives the 29th and 30th: year only. |
+| `shusaku-shuwa-1846.sgf` | Honinbo Shusaku (B) – Honinbo Shuwa (W, 8 dan), B+R, at the Honinbo house in Kurumazaka | *Kogyoku yoin* vol. 3, frame 24 | **Cross-checked with one difference**: moves 1–139 and 141 agree with Brouwer `Shusaku/135.sgf` (comparison only); White 140 is at F7 in the book and G6 in Brouwer: we ship the book's F7 (both are legal and the game ends at 141). The first figure also prints the number 77 on two stones (M14 and M13), a slip: White 106 is later shown at M14. Date: the book's Koka 3-10-21 → 1846-12-09 (Brouwer gives the same day). |
+| `shusaku-saburosuke-1847.sgf` | Honinbo Shusaku (B) – Tsuruoka Saburosuke (W), B+R | *Kogyoku yoin* vol. 1, frames 23–24 | **Cross-checked**: all 157 moves agree with Brouwer `Shusaku/144.sgf` (comparison only). Date: the book says Koka 3, 12th month (no day), that is January–February 1847; Brouwer gives the 11th month: year only. |
+| `shusaku-sanchi-1847.sgf` | Honinbo Shusaku (B) – Yasui Sanchi (W, 7 dan), B+R | *Kogyoku yoin* vol. 3, frames 12–13 | **Cross-checked with one difference**: all moves agree with Brouwer `Shusaku/158.sgf` (comparison only) except White 94, at E11 in the book and D10 in Brouwer; we ship the book's E11, which the book's second figure confirms. Date: the book's Koka 4-3-16 → 1847-04-30. |
 | `shusaku-shuwa-1851.sgf` | Honinbo Shusaku (B) – Honinbo Shuwa (W), B+4 | tasuki `1851.sgf` | Same 227 moves and result as Brouwer `Shusaku/305.sgf`, board rotated 180° (comparison only). Date: tasuki Kaei 4-10-22 → 1851-11-15. |
 | `showa-shusaku-1851.sgf` | Ito Showa (B) – Honinbo Shusaku (W), W+R | tasuki `1852.sgf` | Same 154 moves and result as Brouwer `Shusaku/309.sgf` (comparison only). Date: tasuki Kaei 4-11-09 → 1851-12-01. |
 | `yuzo-shusaku-1853.sgf` | Ota Yuzo (B) – Honinbo Shusaku (W), W+3 | tasuki `1853.sgf` (main line) | Same 228 moves and result as Brouwer `Shusaku/342.sgf` (comparison only). Date: tasuki Kaei 6-06-05 → 1853-07-10. |
@@ -68,11 +91,20 @@ documents alone. What argues against it: tasuki keeps the Japanese lunisolar dat
 - 1835, Yasui Shintetsu – Katsuda Eidzuke (Pfaundler, 1908, after Korschelt): Korschelt gave only 254 moves and the
   rest was invented by the author; the scanned table is also unreadable.
 
-## Why fifteen and not twenty
+## Twenty-one, and how the last six were found
 
 The brief asks for about twenty games. We looked for more Edo games in public, non-commercial sources whose records do
 not derive from GoGoD, and found none we could name and trust: tasuki's list is used in full (its two other pre-1868
 files are dropped above, and 1582 is before the Edo period and doubtful); Smith (1908) has a single Edo game, used here;
 the open-source viewers' samples (EidoGo, maxiGos, Little Go, jgoboard, Games::Go::Sgf2Dg, Sagebati/goban) repeat the games
 already shipped; Sensei's Library shows partial diagrams only; the other copies on GitHub (gobandroid's, the "pgd" dumps
-and the like) carry GoGoD's headers. Rather than pad the list with doubtful records, we ship fifteen.
+and the like) carry GoGoD's headers. Rather than pad the list with doubtful records, we first shipped fifteen. The six Shusaku games above were then read
+from *Kogyoku yoin*, a public-domain book scanned by the National Diet Library. Three more games from the same volumes
+were read and dropped: Shusaku – Ito Matsujiro 1844 (the book's second figure has no stone numbered 136, so the record
+cannot be completed from the book), Takegawa Yasaburo – Shusaku 1847 (the number 65 is printed on two stones and the
+last black move cannot be placed), and Shusaku – Shuwa, Koka 3-10-23 (the book's second figure departs from Brouwer's
+record in several places and was not read in full). Also looked at without result: the Nihon Ki-in Go Hall of Fame pages
+(biographies only, no game records), Wikimedia Commons (partial figures only, apart from the ear-reddening game),
+kihuu.net (no stated source, Chinese-database names), and the samples of Sabaki, KaTrain, glift, besogo, EidoGo, maxiGos
+and pachi (modern games or the games already shipped). Arthur Smith's book has no Edo game besides the 1835 one: its
+other illustrative games are from 1906–1907 or Korschelt's Meiji games.
