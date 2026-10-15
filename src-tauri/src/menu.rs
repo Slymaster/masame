@@ -45,7 +45,9 @@ pub fn build(app: &tauri::AppHandle, l: &Labels) -> tauri::Result<tauri::menu::M
     let app_menu = Submenu::with_items(app, "Masame", true, &[
         &P::about(app, Some(&l.about), None)?, &P::separator(app)?,
         &P::hide(app, Some(&l.hide))?, &P::hide_others(app, Some(&l.hide_others))?, &P::show_all(app, Some(&l.show_all))?,
-        &P::separator(app)?, &P::quit(app, Some(&l.quit))?,
+        &P::separator(app)?,
+        // not the predefined Quit: ⌘Q must let the page write its pending library change first (lib.rs, quit)
+        &MenuItem::with_id(app, "quit", &l.quit, true, Some("CmdOrCtrl+Q"))?,
     ])?;
     let file = Submenu::with_items(app, &l.file, true, &[
         &item("new", &l.new_game, Some("CmdOrCtrl+N"))?, &item("position", &l.position, None)?, &P::separator(app)?,
