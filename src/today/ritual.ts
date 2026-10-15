@@ -3,6 +3,7 @@
 import type { Card } from '../joseki/fsrs'
 import type { Book } from '../joseki/db'
 import { today } from '../joseki/store'
+import { readV1, writeV1 } from '../store'
 
 // cards that make a day's step: the joseki (or fuseki) step's CAP, the exercises step's HAND
 export const KEY = 'masame.today', CAP = 5, HAND = 6
@@ -43,12 +44,7 @@ export const streakOf = (r: Ritual, now: number) => (r.last === today(now) || r.
 
 export const fresh = (): Ritual => ({ v: 1, streak: 0, last: '', game: '' })
 export function load(st: Storage = localStorage): Ritual {
-  try {
-    const j = JSON.parse(st.getItem(KEY) ?? 'null')
-    if (j?.v === 1 && Number.isInteger(j.streak) && j.streak >= 0 && typeof j.last === 'string' && typeof j.game === 'string') return { v: 1, streak: j.streak, last: j.last, game: j.game }
-  } catch { /* storage disabled or garbage: a fresh start */ }
-  return fresh()
+  const j = readV1<Ritual>(KEY, j => Number.isInteger(j.streak) && (j.streak as number) >= 0 && typeof j.last === 'string' && typeof j.game === 'string', st)
+  return j ? { v: 1, streak: j.streak, last: j.last, game: j.game } : fresh()
 }
-export function save(r: Ritual, st: Storage = localStorage) {
-  try { st.setItem(KEY, JSON.stringify(r)) } catch { /* private mode: this session only */ }
-}
+export const save = (r: Ritual, st: Storage = localStorage) => writeV1(KEY, r, st)

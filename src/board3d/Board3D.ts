@@ -1142,7 +1142,7 @@ export class Board3D {
     const { BW, BD, N } = this.D, k = 2048 / Math.max(BW, BD), cv = mkCanvas(Math.round(BW * k), Math.round(BD * k)), x = cv.getContext('2d')!
     x.fillStyle = '#000'; x.fillRect(0, 0, cv.width, cv.height)
     x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'
-    x.font = `500 ${(6.2 * k).toFixed(1)}px Manrope, system-ui, sans-serif`
+    x.font = `600 ${(6.2 * k).toFixed(1)}px Manrope, system-ui, sans-serif`
     const px = (wx: number) => (wx + BW / 2) * k, pz = (wz: number) => (wz + BD / 2) * k
     const off = (RB + this.D.margin) / 2 + 0.6, dy = 6.2 * k * 0.06
     for (let i = 0; i < N; i++) {
@@ -1154,7 +1154,7 @@ export class Board3D {
     }
     const tex = new THREE.CanvasTexture(cv)
     tex.anisotropy = 4
-    const mat = new THREE.MeshPhysicalMaterial({ color: 0x2b1a0b, alphaMap: tex, transparent: true, opacity: 0.66, roughness: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })
+    const mat = new THREE.MeshPhysicalMaterial({ color: 0x1e1206, alphaMap: tex, transparent: true, opacity: 0.92, roughness: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })
     this.labels = new THREE.Mesh(new THREE.PlaneGeometry(BW, BD).rotateX(-Math.PI / 2), mat)
     this.labels.position.y = 0.02; this.labels.receiveShadow = true; this.labels.renderOrder = 1
     this.scene.add(this.labels)

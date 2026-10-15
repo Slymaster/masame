@@ -6,6 +6,7 @@ import { Game, type Move, type Sign, type Vertex } from '../game'
 import { today } from '../joseki/store'
 import { hash64 } from '../joseki/sym'
 import { isItem, type Exercise } from '../exercises/deck'
+import { readV1, writeV1 } from '../store'
 
 export const MIN_STONES = 3, STATUS = 0.5, CONFIRM = 0.7, SEKI = 0.2, MARGIN = 2, LOCAL = 11, PER_DAY = 5, EVERY = 15, FROM = 30, TAIL = 20
 /** The detection query: both sides to play, ownership, bounded in time on any hardware. */
@@ -136,16 +137,11 @@ export const canMine = (m: Mined, now: number) => !m.wait.length && (m.day !== t
 export const markDone = (m: Mined, id: string): Mined => ({ ...m, done: [...m.done.filter(x => x !== id), id].slice(-DONE_CAP) })
 
 export function loadMined(st: Storage = localStorage): Mined {
-  try {
-    const j = JSON.parse(st.getItem(KEY) ?? 'null')
-    if (j?.v === 1 && Array.isArray(j.done) && typeof j.day === 'string' && Number.isInteger(j.made) && Array.isArray(j.wait))
-      return { v: 1, done: j.done.filter((x: unknown) => typeof x === 'string'), day: j.day, made: j.made, wait: j.wait.filter((x: Exercise) => isItem(x) && x.kind === 'ld') }
-  } catch { /* storage disabled or garbage: start again (the deck dedupes what comes back) */ }
-  return emptyMined()
+  // absent, newer or garbage: start again (the deck dedupes what comes back)
+  const j = readV1<Mined>(KEY, j => Array.isArray(j.done) && typeof j.day === 'string' && Number.isInteger(j.made) && Array.isArray(j.wait), st)
+  return j ? { v: 1, done: j.done.filter((x: unknown) => typeof x === 'string'), day: j.day, made: j.made, wait: j.wait.filter((x: Exercise) => isItem(x) && x.kind === 'ld') } : emptyMined()
 }
-export function saveMined(m: Mined, st: Storage = localStorage) {
-  try { st.setItem(KEY, JSON.stringify(m)) } catch { /* private mode: this session only */ }
-}
+export const saveMined = (m: Mined, st: Storage = localStorage) => writeV1(KEY, m, st)
 
 type Read = { scoreLead: number; pv: (Vertex | null)[]; ownership: number[] | null }
 /**

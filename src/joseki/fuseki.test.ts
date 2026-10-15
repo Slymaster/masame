@@ -100,4 +100,10 @@ describe('a missing book', () => {
     expect(f).toHaveBeenCalledTimes(2)
     vi.unstubAllGlobals()
   })
+  it('a network or data error reads in your language, not the browser’s', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))))
+    const e = await loadJoseki('fuseki').catch(x => x)
+    expect(en.fFailed(failureText(e, en))).toBe('Couldn’t load the fuseki: the book can’t be read.')
+    vi.unstubAllGlobals()
+  })
 })

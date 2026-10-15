@@ -18,6 +18,6 @@ export default defineConfig({
   test: { exclude: [...configDefaults.exclude, '.claude/**'], testTimeout: 30_000 },
   server: {
     port: 1420, strictPort: true, host: host || false, hmr: host ? { protocol: 'ws', host, port: 1421 } : undefined,
-    watch: { ignored: ['**/src-tauri/**'] },
+    watch: { ignored: ['**/src-tauri/**', '**/.claude/**'] },
   },
 })

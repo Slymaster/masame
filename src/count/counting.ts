@@ -1,6 +1,7 @@
 // "Compter": positions drawn from your reviewed games, where you say who leads and by how much; KataGo's lead (read by
 // the review) is the truth. Pure, plus the errors kept in localStorage (masame.counting) like the decks.
 import type { Entry } from '../library'
+import { readV1, writeV1 } from '../store'
 
 export const KEY = 'masame.counting', CAP = 200, LAST = 20, SESSION = 5
 /** Your counts' absolute errors in points, newest last. */
@@ -46,12 +47,7 @@ export const added = (c: Counting, err: number, now: number): Counting => ({ v: 
 export const countedToday = (c: Counting, now: number) => { const m = new Date(now).setHours(0, 0, 0, 0); return c.errs.filter(e => e.t >= m).length }
 
 export function load(st: Storage = localStorage): Counting {
-  try {
-    const j = JSON.parse(st.getItem(KEY) ?? 'null')
-    if (j?.v === 1 && Array.isArray(j.errs)) return { v: 1, errs: j.errs.filter((e: unknown) => !!e && Number.isFinite((e as { t: number }).t) && Number.isFinite((e as { err: number }).err)).slice(-CAP) }
-  } catch { /* storage disabled or garbage: a fresh start */ }
-  return { v: 1, errs: [] }
+  const j = readV1<Counting>(KEY, j => Array.isArray(j.errs), st)
+  return { v: 1, errs: (j?.errs ?? []).filter((e: unknown) => !!e && Number.isFinite((e as { t: number }).t) && Number.isFinite((e as { err: number }).err)).slice(-CAP) }
 }
-export function save(c: Counting, st: Storage = localStorage) {
-  try { st.setItem(KEY, JSON.stringify(c)) } catch { /* private mode: this session only */ }
-}
+export const save = (c: Counting, st: Storage = localStorage) => writeV1(KEY, c, st)

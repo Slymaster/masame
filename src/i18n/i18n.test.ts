@@ -12,6 +12,13 @@ function leaves(o: object, path = ''): [string, unknown][] {
 
 describe('dictionaries', () => {
   afterEach(() => setLang('fr'))
+  it('keep the result card\'s notes short enough for its two lines', () => {
+    const SAID_MAX = 34 // measured: each of these fits beside the title in two lines at the narrowest window, with the AI's chip
+    for (const d of Object.values(dicts)) for (const s of [d.mentorStops(0), d.mentorStops(3), d.saved, d.postcardSaved, d.gameResumed,
+      d.ritualDone(1), d.ritualDone(365), d.memSaid(288, 361, 12), d.memSaid(1, 61, 1),
+      ...['7k', '18k', '25k', '9d'].flatMap(r => [d.autoDone(0, r), d.autoDone(1, r), d.autoDone(12, r)]), d.autoDone(0), d.autoDone(12)])
+      expect(s.length, s).toBeLessThanOrEqual(SAID_MAX)
+  })
   it('have identical keys, kinds and arities', () => {
     const shape = (o: object) => leaves(o).map(([k, v]) => `${k}:${typeof v}${typeof v === 'function' ? v.length : ''}`).sort()
     expect(shape(dicts.fr)).toEqual(shape(dicts.en))
@@ -22,6 +29,19 @@ describe('dictionaries', () => {
   it('switch live', () => {
     setLang('en'); expect(t.pass).toBe('Pass')
     setLang('fr'); expect(t.pass).toBe('Passer')
+  })
+})
+
+describe('result letters', () => {
+  afterEach(() => setLang('fr'))
+  const all = ['B+R', 'W+T', 'B+F', 'W+3.5', 'B+0.5', 'b+r', '0', 'Void', '?', 'B+']
+  it('read N(oir), B(lanc) and a decimal comma in French', () => {
+    setLang('fr')
+    expect(all.map(t.resultShort)).toEqual(['N+R', 'B+T', 'N+F', 'B+3,5', 'N+0,5', 'N+r', '0', 'Annulée', '?', 'N+'])
+  })
+  it('stay standard SGF in English', () => {
+    setLang('en')
+    expect(all.map(t.resultShort)).toEqual(all)
   })
 })
 

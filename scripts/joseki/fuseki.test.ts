@@ -1,4 +1,5 @@
 import GoBoard from '@sabaki/go-board'
+import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { validate, type JosekiDb } from '../../src/joseki/db'
 import { ALL, N, canonical, code, fnv, point, positionKey, stones, sym, type Pt } from '../../src/joseki/sym'
@@ -163,5 +164,24 @@ describe('fuseki', () => {
     const dying = async (q: Record<string, unknown>) => { if (++calls > 200) throw new Error('killed'); return engine(q) }
     await expect(fuseki(opts, cached(dying, key, store, () => {}))).rejects.toThrow('killed')
     expect(await fuseki(opts, cached(engine, key, store, () => {}))).toBe(text)
+  })
+})
+
+describe('the shipped fuseki book', () => {
+  const db = validate(JSON.parse(readFileSync(new URL('../../public/assets/joseki/fuseki.v1.json', import.meta.url), 'utf8')))
+  const { boards, ply } = walk(db) // every edge replayed with legal moves; a transposition must reach the same stones
+  it('holds at most 2 500 positions, twelve moves deep at most, each stored once in its canonical frame', () => {
+    expect(db.nodes.length).toBeLessThanOrEqual(2500)
+    expect(Math.max(...ply)).toBeLessThanOrEqual(12)
+    db.nodes.forEach((n, i) => {
+      expect(canonical(boards[i].signMap, ALL).k).toBe(0)
+      expect(n.k).toBe(positionKey(boards[i].signMap, ply[i], ALL))
+    })
+    expect(new Set(db.nodes.map(n => n.k)).size).toBe(db.nodes.length)
+  })
+  it('opens with the moves people play: the 4-4 and the 3-4 among its roots', () => {
+    const names = db.roots.map(r => r.name)
+    expect(names).toEqual(expect.arrayContaining(['4-4', '3-4']))
+    expect(names).not.toContain('10-10') // tengen is no shipped profile's move
   })
 })

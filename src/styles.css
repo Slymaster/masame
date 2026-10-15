@@ -150,8 +150,10 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 
 .note { min-height: 2.9em; margin-top: 6px; font-family: var(--f-title); font-style: italic; font-size: 16px; line-height: 1.4; color: var(--muted) }
 /* caption under the board, in room of its own below .board-wrap (up to two lines), so it never covers the board and stays
-   visible with the card hidden; ink on the card's colour, larger than the card's notes: it is what the player reads */
-.board-wrap { margin-bottom: 36px }
+   visible with the card hidden; ink on the card's colour, larger than the card's notes: it is what the player reads.
+   The room (this margin + .stage's 28px bottom padding = 76px) holds the tallest caption, the result card with the mentor's
+   stops (64px), its 4px top margin and 8px to the window's edge */
+.board-wrap { margin-bottom: 48px }
 .board-wrap > .note { position: absolute; left: calc(2 * var(--shift, 0px)); right: 0; top: 100%; min-height: 0; margin: 4px 0 0; text-align: center; pointer-events: none; container-type: inline-size }
 .board-wrap > .note > span {
   display: inline-block; max-width: min(100%, 600px); padding: 5px 20px 0; border-bottom: 7px solid transparent; border-radius: 19px; background: var(--card);
@@ -163,18 +165,12 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 }
 .board-wrap > .note .link { font: inherit; color: var(--accent); text-decoration-color: currentColor; white-space: nowrap; margin-left: .45em }
 .board-wrap > .note .link:hover { color: var(--accent-hover) }
-/* a narrow window beside the card: smaller type, and the links beside two lines of text at most, so they are never cut */
-@container (max-width: 460px) {
-  .board-wrap > .note > span { display: inline-flex; align-items: center; gap: .45em; font-size: 16.5px }
-  .board-wrap > .note > :not(.res) .txt { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden }
-  .board-wrap > .note .link { margin-left: 0 }
-}
 /* the result, as a score sheet: the winner's stone, who and how, the AI's next level, then the review as the one filled button;
-   at most 60px tall (the room under the board): the title never wraps nor shrinks, the sub line wraps in what is left, two
-   lines at most (the full sentence is in the title attribute) */
+   at most 64px tall (the room under the board): the title never wraps nor shrinks, the sub line (how it ended) wraps in what
+   is left, and gives way to a note; the mentor's stops and the review or memory notice follow the title in ink and wrap, never cut (room: 200px) */
 .board-wrap > .note > .res {
   display: inline-flex; align-items: center; gap: 12px; max-width: 100%; max-height: none; overflow: visible; padding: 5px 6px 5px 8px; border: 0;
-  border-radius: 999px; box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--rule); font: 500 12px/1.2 var(--f-ui); text-align: left
+  border-radius: 999px; box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--rule); font: 500 12px/1.2 var(--f-ui); text-align: left; text-wrap: wrap
 }
 .res .stone { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; font: 600 9.5px var(--f-ui); letter-spacing: -.01em; box-shadow: 0 2px 4px rgba(0, 0, 0, .45) }
 .res .stone.b { background: var(--stone-b); color: var(--pb-ink) }
@@ -184,6 +180,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .res .txt small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.15; color: var(--muted) }
 .res .txt small:empty { display: none }
 .res .txt b .said { font-weight: 400; white-space: normal } /* the mentor's stops, on the title's line: a result the player reads */
+.res .txt:has(.said) { min-width: 200px }
 .res .chip { flex: none; display: flex; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 1px solid var(--rule-2); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); white-space: nowrap }
 .res .chip b { font: 600 14px var(--f-ui); letter-spacing: 0; text-transform: none; color: var(--ink); font-variant-numeric: tabular-nums }
 .res .chip i { font-style: normal; font-weight: 500; color: var(--muted) }
@@ -202,10 +199,31 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
   .board-wrap > .note > .res { gap: 10px; padding-left: 14px }
   .res .chip { gap: 0; padding-left: 10px; font-size: 0 }
 }
-/* narrow: smaller title and compact buttons */
+/* the mentor's stops and the notices need a full row (≈ 1000px), two buttons beside the AI level's box ≈ 560px; with less,
+   the two buttons stack at the right, compact, so the words keep two lines and the card about its 64px */
+@container (max-width: 1000px) {
+  .board-wrap > .note > .res:has(.said) { display: inline-grid; grid-auto-flow: column; grid-template-rows: auto auto; row-gap: 4px }
+  .res:has(.said) > :not(.link) { grid-row: span 2 }
+  .board-wrap > .note > .res:has(.said) .link { height: 25px; padding: 0 11px; gap: 5px; font-size: 12.5px }
+  .board-wrap > .note > .res:has(.said) .link[data-act=review] { padding-left: 9px }
+}
+@container (max-width: 560px) {
+  .board-wrap > .note > .res:has(.link + .link) { display: inline-grid; grid-auto-flow: column; grid-template-rows: auto auto; row-gap: 4px }
+  .res:has(.link + .link) > :not(.link) { grid-row: span 2 }
+  .board-wrap > .note > .res:has(.link + .link) .link { height: 25px; padding: 0 11px; gap: 5px; font-size: 12.5px }
+  .board-wrap > .note > .res:has(.link + .link) .link[data-act=review] { padding-left: 9px }
+}
+/* the smallest windows: the AI level's box keeps only the new level */
+@container (max-width: 450px) {
+  .res .chip i { display: none }
+}
+/* narrow: compact buttons (the title and its note keep 18px); with a note and three buttons (a finished OGS game), the
+   review button keeps only its icon, so the words keep their two lines */
 @container (max-width: 460px) {
   .board-wrap > .note > .res { gap: 8px; padding-left: 12px }
-  .res .txt b { font-size: 16.5px }
+  .board-wrap > .note > .res:has(.said):has(.link + .link + .link) .link[data-act=review] { grid-area: 1 / 2; gap: 0; padding: 0 8px; font-size: 0 }
+  .res:has(.said):has(.link + .link + .link) .link[data-act=rematch] { grid-area: 1 / 3 }
+  .res:has(.said):has(.link + .link + .link) .link[data-act=memory] { grid-area: 2 / 2 / 3 / 4 }
   .res .chip { padding-left: 8px }
   .res .chip b { font-size: 13px }
   .board-wrap > .note > .res .link { height: 32px; padding: 0 12px; gap: 5px; font-size: 12.5px }
@@ -415,7 +433,7 @@ body[data-drop]::after {
 .ex .rc-now { stroke: var(--card) }
 
 /* ---------- the four doors and their sheets (Apprendre, Mes parties, Partager) ---------- */
-.brand { gap: 2px; flex-wrap: wrap; row-gap: 10px }
+.brand { flex: none; gap: 2px; flex-wrap: wrap; row-gap: 10px } /* flex: none: a tall card body must not squash the doors' row */
 /* the four doors: a row of their own under the seal, the title and the eye, each named */
 .brand::after { content: ""; order: 2; flex-basis: 100% }
 .card.off .brand::after { content: none }
@@ -515,7 +533,8 @@ section > .seg + .ogs-input { display: block; width: 100% }
 .letter p { margin: 0; font: italic 400 19px/1.35 var(--f-title) }
 .letter .btn { align-self: flex-start; margin-top: 6px; color: var(--pw-ink); border-color: rgba(43, 29, 14, .28) }
 .letter-nav { display: flex; justify-content: space-between; margin-top: 10px }
-.letter-nav .link, .ed .link, .phases .link { font-size: 16px; color: var(--ink) } /* an action the player looks for, not a footnote */
+.letter-nav .link, .phases .link { font-size: 16px; color: var(--ink) } /* an action the player looks for, not a footnote */
+.ed .link { font-size: 20px; color: var(--ink) } /* Vider: as large as the editor's other actions */
 .letter-nav .next { margin-left: auto }
 
 /* ---------- phones (iPhone, Android): never on the desktop, whose window is at least 900 × 640 ----------

@@ -28,7 +28,9 @@ export type Filter = 'all' | 'ai' | 'ogs' | 'two' | 'file'
 export const FILTERS: Filter[] = ['all', 'ai', 'ogs', 'two', 'file']
 const SOURCES: Record<Exclude<Filter, 'all'>, Source[]> = { ai: ['ai'], ogs: ['ogs'], two: ['two'], file: ['file', 'position'] }
 /** Who the player faced: the other side, or both sides when the player's colour is unknown. */
-export const opponents = (e: Entry) => (e.me === 1 ? [e.white] : e.me === -1 ? [e.black] : [e.black, e.white])
+// the AI is named in the language shown, not the one its game was saved in
+export const named = (e: Entry, p: Entry['black']) => e.source !== 'ai' ? p : { ...p, name: e.era ? t.masterOf(e.era) : p.rank ? t.botName(p.rank) : p.name }
+export const opponents = (e: Entry) => (e.me === 1 ? [named(e, e.white)] : e.me === -1 ? [named(e, e.black)] : [e.black, e.white])
 /** The entries a filter and an opponent search keep, in the library's order (newest first). */
 export function filtered(xs: Entry[], f: Filter, q: string): Entry[] {
   const s = q.trim().toLocaleLowerCase()
@@ -41,8 +43,8 @@ export function outcome(e: Entry): string {
   const re = e.result
   if (!re) return t.lbUnfinished
   if (re === '0' || /^(draw|jigo)/i.test(re)) return t.lbDraw
-  if (!e.me) return re
-  return `${re[0] === (e.me === 1 ? 'B' : 'W') ? t.lbWon : t.lbLost} · ${re}`
+  if (!e.me) return t.resultShort(re)
+  return `${re[0] === (e.me === 1 ? 'B' : 'W') ? t.lbWon : t.lbLost} · ${t.resultShort(re)}`
 }
 /** Finished OGS games not in the library yet: opening one imports it. */
 export const notImported = (rows: ogs.GameRow[], xs: Entry[]) => rows.filter(g => !xs.some(e => e.ogsId === g.id))
@@ -136,7 +138,7 @@ export function GamesSheet({ onClose, opener, onResume, onOpen, onImport, onImpo
               ? notImported(done.rows, entries ?? []).map(g => (
                 <button key={g.id} className="game-row" onClick={() => onImportOgs(g.id)}>
                   <span className="who"><span className="nm">{g.opponent.username}</span>{g.opponent.rank && <span className="rk">{g.opponent.rank}</span>}</span>
-                  <span className="dim">{[`${g.size}×${g.size}`, g.result, t.date(g.date)].filter(Boolean).join(' · ')}</span>
+                  <span className="dim">{[`${g.size}×${g.size}`, g.result && t.resultShort(g.result), t.date(g.date)].filter(Boolean).join(' · ')}</span>
                 </button>))
               : !done.more && <p className="say">{t.gamesOgsAllKept}</p>)}
             {loading && <p className="say">{t.ogsLoading}</p>}

@@ -104,7 +104,7 @@ export const fr: Dict = {
   learnTabs: { today: 'Aujourd’hui', progress: 'Progrès' }, learnTabsLabel: 'Apprendre',
   decksLab: 'Tes paquets', deckCount: (due: number, fresh: number) => `${f.num(due)} à revoir · ${f.num(fresh)} ${fresh > 1 ? 'nouveaux' : 'nouveau'}`,
   decks: { exercises: 'Exercices de tes parties', joseki: 'Joseki', fuseki: 'Fuseki' },
-  deckPhrases: { exercises: 'trouve mieux', joseki: 'explorer, s’entraîner, programme', fuseki: 'les douze premiers coups' },
+  deckPhrases: { exercises: 'trouve mieux', joseki: 'explorer, s’entraîner, programme', fuseki: 'l’ouverture, jusqu’à douze coups' },
   learnBlocked: 'Pas pendant une partie OGS ni une revue : termine-la d’abord.',
   rankSection: 'Ton rang lu dans tes coups', ogsRatingSection: 'Classement OGS',
   gamesAll: 'Toutes tes parties', gamesFilterLabel: 'Parties montrées',
@@ -114,6 +114,9 @@ export const fr: Dict = {
   gamesInAppOnly: 'Tes parties sont gardées dans l’application.', gamesImport: 'Importer un SGF…',
   gamesOgsFinished: 'Terminées sur OGS, pas encore gardées', gamesOgsAllKept: 'Toutes tes parties OGS terminées sont déjà ici.',
   lbWon: 'Gagnée', lbLost: 'Perdue', lbDraw: 'Nulle', lbUnfinished: 'Inachevée',
+  /** Un RE SGF lu en français : N(oir), B(lanc) et la virgule décimale ("B+R" → "N+R", "W+3.5" → "B+3,5"). */
+  resultShort: (re: string) => /^void$/i.test(re.trim()) ? 'Annulée'
+    : re.trim().replace(/^([BW])\+(.*)$/i, (_, c: string, x: string) => `${c.toUpperCase() === 'B' ? 'N' : 'B'}+${x.replace('.', ',')}`),
   lbPlayedLike: (r: string) => `joué comme un ${r}`, lbMoments: (n: number) => f.plural(n, 'moment', 'moments'),
   lbMemory: (r: number, n: number) => `mémoire ${f.num(r)}/${f.num(n)}`, lbCounted: 'comptée',
   ritualWaiting: 'le rituel du jour t’attend', rankNone: 'Ton rang apparaît dès qu’une de tes parties est revue.', work: 'Travailler',
@@ -147,7 +150,7 @@ export const fr: Dict = {
   mentorStop: (points: number) => `Ce coup coûte ${Math.round(points)} points. Il y a mieux.`,
   mentorLate: 'Le moteur est trop occupé : le mentor laisse passer tes coups pour l’instant.',
   mentorKeep: 'Garder',
-  mentorStops: (n: number) => (n ? `Le mentor t’a arrêté ${n} fois.` : 'Le mentor ne t’a pas arrêté.'),
+  mentorStops: (n: number) => (n ? `Le mentor t’a arrêté ${n}\u00a0fois.` : 'Le mentor ne t’a pas arrêté.'),
   // handicap and the local clock
   handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} pierres` : 'Aucun'),
   fewerStones: 'Handicap : moins de pierres', moreStones: 'Handicap : plus de pierres',
@@ -186,7 +189,7 @@ export const fr: Dict = {
   anFor: (s: number) => `Coups candidats pour ${color(s)}`, anReading: 'Lecture de la position…', anPass: 'Passer',
   anNeedsNet: 'Les coups candidats demandent un réseau d’analyse.', anFailed: (m: string) => `La position n’a pas pu être lue. ${m}`,
   // entraîneur de joseki
-  joseki: 'Joseki', jLoading: 'Chargement des joseki…', jFailed: (m: string) => `Impossible de charger les joseki : ${m}`,
+  joseki: 'Joseki', jLoading: 'Chargement des joseki…', jFailed: (m: string) => `Impossible de charger les joseki : ${m}.`,
   jTabs: { explore: 'Explorer', practise: 'S’entraîner', programme: 'Programme' },
   jCorner: 'Coin', jBack: 'Retour', jFrequent: 'Le plus joué à ton niveau', jMoves: 'Coups',
   jBest: 'meilleur', jLoss: (x: number) => lost(x), jAt: (pct: string, rank: string) => `${pct} en ${rank}`,
@@ -218,8 +221,8 @@ export const fr: Dict = {
   jProgrammeHelp: (rank: string) => `Classés selon la fréquence de chaque coin en ${rank} × les points qu’il y coûte.`,
   jMet: (n: number) => `environ 1 coin sur ${f.num(n)}`, jOpenFamily: (name: string) => `Explorer ${name}`,
   // entraîneur de fuseki : l’autre livre de l’entraîneur de joseki
-  bookMissing: 'le livre manque dans cette version de Masame',
-  fuseki: 'Fuseki', fFamily: 'Livre', fLoading: 'Chargement des fuseki.', fFailed: (m: string) => `Impossible de charger les fuseki : ${m}`, fFirst: 'Premier coup',
+  bookMissing: 'le livre manque dans cette version de Masame', bookUnreadable: 'le livre est illisible',
+  fuseki: 'Fuseki', fFamily: 'Livre', fLoading: 'Chargement des fuseki.', fFailed: (m: string) => `Impossible de charger les fuseki : ${m}.`, fFirst: 'Premier coup',
   fExploreNote: (n: number) => `Fuseki · coup ${n}. Une lettre suit un coup : A perd le moins.`,
   fContext: 'Le goban vide, Noir commence, komi 6,5, règles japonaises. Une ouverture et ses images en miroir ne comptent qu’une fois.',
   fPractiseHelp: 'Chaque ouverture est tournée au hasard, et tu joues Noir ou Blanc. Ton adversaire joue comme un joueur de ton niveau, erreurs comprises : punis-les.',
@@ -235,7 +238,7 @@ export const fr: Dict = {
   tdStreak: (n: number) => f.plural(n, 'jour', 'jours'), tdStreakLab: 'Série',
   tdStart: 'Commencer', tdContinue: 'Continuer', tdAllDone: 'Le rituel du jour est accompli. À demain.',
   tdNothing: 'Rien à faire pour l’instant : installe un réseau d’analyse, ou travaille les joseki.',
-  ritualGo: 'Continuer le rituel', ritualDone: (n: number) => `Rituel du jour terminé · série de ${f.plural(n, 'jour', 'jours')}.`,
+  ritualGo: 'Continuer le rituel', ritualDone: (n: number) => `Rituel fait · ${f.plural(n, 'jour', 'jours')} de suite.`,
   // exercices tirés de tes parties (s : la couleur qui a commis l’erreur)
   exercises: 'Exercices',
   exNeedsNet: 'Installe un réseau d’analyse pour t’entraîner : KataGo vérifie chaque réponse.',
@@ -255,7 +258,7 @@ export const fr: Dict = {
   exPhases: { opening: 'Ouverture', middle: 'Milieu de partie', endgame: 'Fin de partie' },
   exPerGame: (x: number, share: number) => `−${f.plural(Math.round(x), 'point', 'points')} par partie · ${f.pct(share)} de ce que tu perds`,
   exLost: (x: number) => (Math.round(x) ? `−${f.num(Math.round(x))}` : '0'),
-  exWhereNone: 'Revois une partie que tu as jouée (contre l’IA, sur OGS, ou un fichier en choisissant ta couleur) pour voir où tu perds tes points.',
+  exWhereNone: 'Revois une de tes parties pour voir où tu perds tes points.',
   exWhereHelp: (n: number) => `Points perdus par partie par tes coups, sur ${n === 1 ? 'ta dernière partie revue' : `tes ${f.num(n)} dernières parties revues`}. Ouverture : les 50 premiers coups ; fin de partie : à partir du coup 151 (19×19, proportionnellement sur les petits gobans).`,
   // la lettre du mois (Apprendre › Progrès, src/letter.ts) : une phrase par fait, dans la voix de Masame, sans éloge
   letterSection: 'La lettre du mois',
@@ -332,8 +335,7 @@ export const fr: Dict = {
   clNext: 'Coup suivant', clAgain: 'Rejouer', clOther: 'Une autre partie', clOffer: 'Deviner les coups',
   clOfferLine: 'Devine les coups de cette partie, un par un.',
   // revue automatique
-  autoDone: (n: number, rank?: string) => rank ? `Tu as joué comme un\u00a0${rank}\u00a0· ${n ? `${f.plural(n, 'moment', 'moments').replace(' ', '\u00a0')} pour tes exercices` : 'aucun moment décisif'}.`
-    : `Revue faite : ${n ? `${f.plural(n, 'moment rejoint', 'moments rejoignent')} tes exercices` : 'aucun moment décisif'}.`,
+  autoDone: (n: number, rank?: string) => `${rank ? `Ton jeu\u00a0: ${rank}` : 'Revue faite'}\u00a0· ${n ? `+${f.plural(n, 'exercice', 'exercices').replace(' ', '\u00a0')}` : 'aucun exercice'}.`,
   aiNext: (r: string) => `L’IA passe à\u00a0${r}.`,
   autoPending: (n: number) => `Revue automatique : ${f.plural(n, 'partie', 'parties')} en attente`,
   autoRunning: (pct: number) => `Revue automatique : en cours… ${f.pct(pct)}`,
@@ -449,7 +451,8 @@ export const fr: Dict = {
   countVerdict: (v: 'right' | 'close' | 'far', lead: number) => `${({ right: 'Juste', close: 'Proche', far: 'Loin' })[v]} : KataGo compte ${lead ? `${color(lead > 0 ? 1 : -1)} +${f.half(lead)}` : 'l’égalité'}.`,
   countYours: (lead: number) => `Tu as dit ${lead ? `${color(lead > 0 ? 1 : -1)} +${f.num(Math.abs(lead))}` : 'égalité'}.`,
   countLight: 'Voir la lumière', countNext: 'Position suivante', countAgain: 'Encore cinq',
-  countSession: (n: number, right: number, med: number) => `${f.plural(n, 'position comptée', 'positions comptées')}, ${f.plural(right, 'juste', 'justes')}. Erreur médiane : ${pts(med)}.`,
+  countSession: (n: number, right: number) => `${f.plural(right, 'juste', 'justes').replace(' ', '\u00a0')} sur\u00a0${f.num(n)}.`,
+  countSpent: 'Plus de position nouvelle dans tes parties revues.',
   countNone: 'Aucune partie revue pour l’instant. Revois une partie, et ses positions viendront ici se compter.',
   countLoading: 'Je choisis une position', countFailed: (m: string) => `Impossible d’ouvrir cette position. ${m}`, countLightFailed: (m: string) => `Impossible d’éclairer la position. ${m}`,
   countSection: 'Ton erreur de comptage', countMedian: (med: number, n: number) => `${pts(med)} en médiane sur ${n === 1 ? 'ton dernier comptage' : `tes ${f.num(n)} derniers comptages`}`,
@@ -460,7 +463,7 @@ export const fr: Dict = {
   memWrong: (n: number) => `Pas ce coup-là. Coup ${n} : essaie encore.`,
   memHelp: (n: number) => `Le coup ${n} était ici. Il compte comme une aide.`, memHelpPass: (n: number) => `Le coup ${n} était un passe. Il compte comme une aide.`,
   memDone: (r: number, n: number, h: number) => `${f.plural(r, 'coup rejoué', 'coups rejoués')} de mémoire sur ${f.num(n)}, ${f.plural(h, 'aide', 'aides')}`,
-  memStopped: (at: number) => `Arrêté au coup ${at}.`,
+  memSaid: (r: number, n: number, h: number) => `${r}/${n} de mémoire, ${f.plural(h, 'aide', 'aides')}.`,
   memAgain: 'Recommencer', memFound: 'retrouvés', memHelps: 'aides', memLeft: 'à poser',
   memHelpText: 'Pose les coups dans l’ordre, pour les deux camps. Au second essai manqué, le coup s’allume.',
   libraryShown: 'Une partie de ta bibliothèque.',

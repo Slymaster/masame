@@ -104,7 +104,7 @@ export const en = {
   learnTabs: { today: 'Today', progress: 'Progress' }, learnTabsLabel: 'Learn',
   decksLab: 'Your decks', deckCount: (due: number, fresh: number) => `${f.num(due)} to review · ${f.num(fresh)} new`,
   decks: { exercises: 'Exercises from your games', joseki: 'Joseki', fuseki: 'Fuseki' },
-  deckPhrases: { exercises: 'find better', joseki: 'explore, practise, programme', fuseki: 'the first twelve moves' },
+  deckPhrases: { exercises: 'find better', joseki: 'explore, practise, programme', fuseki: 'the opening, up to twelve moves' },
   learnBlocked: 'Not during an OGS game or a review: finish it first.',
   rankSection: 'Your rank read in your moves', ogsRatingSection: 'OGS rating',
   gamesAll: 'All your games', gamesFilterLabel: 'Games shown',
@@ -114,6 +114,8 @@ export const en = {
   gamesInAppOnly: 'Your games are kept in the app.', gamesImport: 'Import an SGF…',
   gamesOgsFinished: 'Finished on OGS, not yet kept', gamesOgsAllKept: 'All your finished OGS games are already here.',
   lbWon: 'Won', lbLost: 'Lost', lbDraw: 'Draw', lbUnfinished: 'Unfinished',
+  /** An SGF RE as the player reads it ("B+R", "W+3.5"): standard in English. */
+  resultShort: (re: string) => re.trim(),
   lbPlayedLike: (r: string) => `played like ${aRank(r)}`, lbMoments: (n: number) => f.plural(n, 'moment', 'moments'),
   lbMemory: (r: number, n: number) => `memory ${f.num(r)}/${f.num(n)}`, lbCounted: 'counted',
   ritualWaiting: 'today’s ritual is waiting', rankNone: 'Your rank shows once a game you played is reviewed.', work: 'Practise',
@@ -147,7 +149,7 @@ export const en = {
   mentorStop: (points: number) => `This move costs ${Math.round(points)} points. There is better.`,
   mentorLate: 'The engine is too busy: the mentor lets your moves pass for now.',
   mentorKeep: 'Keep it',
-  mentorStops: (n: number) => (n ? `The mentor stopped you ${n === 1 ? 'once' : `${n} times`}.` : 'The mentor never stopped you.'),
+  mentorStops: (n: number) => (n ? `The mentor stopped you ${n === 1 ? 'once' : `${n}\u00a0times`}.` : 'The mentor never stopped you.'),
   // handicap and the local clock
   handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} stones` : 'None'),
   fewerStones: 'Handicap: fewer stones', moreStones: 'Handicap: more stones',
@@ -186,7 +188,7 @@ export const en = {
   anFor: (s: number) => `Candidate moves for ${color(s)}`, anReading: 'Reading the position…', anPass: 'Pass',
   anNeedsNet: 'Candidate moves need an analysis network.', anFailed: (m: string) => `The position could not be read. ${m}`,
   // joseki trainer
-  joseki: 'Joseki', jLoading: 'Loading the joseki…', jFailed: (m: string) => `Couldn’t load the joseki: ${m}`,
+  joseki: 'Joseki', jLoading: 'Loading the joseki…', jFailed: (m: string) => `Couldn’t load the joseki: ${m}.`,
   jTabs: { explore: 'Explore', practise: 'Practise', programme: 'Programme' },
   jCorner: 'Corner', jBack: 'Back', jFrequent: 'Most played at your level', jMoves: 'Moves',
   jBest: 'best', jLoss: (x: number) => lost(x), jAt: (pct: string, rank: string) => `${pct} at ${rank}`,
@@ -218,8 +220,8 @@ export const en = {
   jProgrammeHelp: (rank: string) => `Ordered by how often you meet each corner at ${rank} × the points it costs there.`,
   jMet: (n: number) => `met about 1 corner in ${f.num(n)}`, jOpenFamily: (name: string) => `Explore ${name}`,
   // fuseki trainer: the joseki trainer's other book
-  bookMissing: 'the book is missing from this version of Masame',
-  fuseki: 'Fuseki', fFamily: 'Book', fLoading: 'Loading the fuseki.', fFailed: (m: string) => `Couldn’t load the fuseki: ${m}`, fFirst: 'First move',
+  bookMissing: 'the book is missing from this version of Masame', bookUnreadable: 'the book can’t be read',
+  fuseki: 'Fuseki', fFamily: 'Book', fLoading: 'Loading the fuseki.', fFailed: (m: string) => `Couldn’t load the fuseki: ${m}.`, fFirst: 'First move',
   fExploreNote: (n: number) => `Fuseki · move ${n}. A letter follows a move: A loses least.`,
   fContext: 'The empty board, Black first, komi 6.5, Japanese rules. An opening and its mirror images count as one.',
   fPractiseHelp: 'Each opening is turned at random, and you play Black or White. Your opponent plays like a player of your level, mistakes included: punish them.',
@@ -235,7 +237,7 @@ export const en = {
   tdStreak: (n: number) => f.plural(n, 'day', 'days'), tdStreakLab: 'Streak',
   tdStart: 'Start', tdContinue: 'Continue', tdAllDone: 'Today’s ritual is done. See you tomorrow.',
   tdNothing: 'Nothing to do yet: install an analysis network, or practise the joseki.',
-  ritualGo: 'Continue the ritual', ritualDone: (n: number) => `Today’s ritual done · ${f.plural(n, 'day', 'days')} in a row.`,
+  ritualGo: 'Continue the ritual', ritualDone: (n: number) => `Ritual done · ${f.plural(n, 'day', 'days')} in a row.`,
   // exercises from your own games (s: the colour that made the mistake)
   exercises: 'Exercises',
   exNeedsNet: 'Install an analysis network to practise: KataGo checks each answer.',
@@ -255,7 +257,7 @@ export const en = {
   exPhases: { opening: 'Opening', middle: 'Middle game', endgame: 'Endgame' },
   exPerGame: (x: number, share: number) => `−${f.plural(Math.round(x), 'point', 'points')} per game · ${f.pct(share)} of what you lose`,
   exLost: (x: number) => (Math.round(x) ? `−${f.num(Math.round(x))}` : '0'),
-  exWhereNone: 'Review a game you played (against the AI, on OGS, or a file with your colour picked) to see where you lose points.',
+  exWhereNone: 'Review one of your games to see where you lose points.',
   exWhereHelp: (n: number) => `Points lost per game by your moves, over your last ${n === 1 ? 'reviewed game' : `${f.num(n)} reviewed games`}. Opening: the first 50 moves; endgame: from move 151 (19×19, scaled on smaller boards).`,
   // the monthly letter (Learn › Progress, src/letter.ts): one sentence per fact, in Masame's voice, no praise
   letterSection: 'The letter of the month',
@@ -332,8 +334,8 @@ export const en = {
   clNext: 'Next move', clAgain: 'Play it again', clOther: 'Another game', clOffer: 'Guess the moves',
   clOfferLine: 'Guess this game’s moves, one at a time.',
   // automatic review
-  autoDone: (n: number, rank?: string) => rank ? `You played like ${aRank(rank).replace(' ', '\u00a0')}\u00a0· ${n ? `${f.plural(n, 'key moment', 'key moments').replace(' ', '\u00a0')} for your exercises` : 'no decisive moment'}.`
-    : `Review done: ${n ? `${f.plural(n, 'key moment joins', 'key moments join')} your exercises` : 'no decisive moment'}.`,
+  // said on the result card in two lines at most, beside the title: short
+  autoDone: (n: number, rank?: string) => `${rank ? `Your play: ${rank}` : 'Review done'}\u00a0· ${n ? `+${f.plural(n, 'exercise', 'exercises').replace(' ', '\u00a0')}` : 'no exercise'}.`,
   aiNext: (r: string) => `AI moves to\u00a0${r}.`,
   autoPending: (n: number) => `Automatic review: ${f.plural(n, 'game', 'games')} waiting`,
   autoRunning: (pct: number) => `Automatic review: in progress… ${f.pct(pct)}`,
@@ -449,7 +451,8 @@ export const en = {
   countVerdict: (v: 'right' | 'close' | 'far', lead: number) => `${({ right: 'Right', close: 'Close', far: 'Far' })[v]}: KataGo counts ${lead ? `${color(lead > 0 ? 1 : -1)} +${f.half(lead)}` : 'it even'}.`,
   countYours: (lead: number) => `You said ${lead ? `${color(lead > 0 ? 1 : -1)} +${f.num(Math.abs(lead))}` : 'even'}.`,
   countLight: 'See the light', countNext: 'Next position', countAgain: 'Five more',
-  countSession: (n: number, right: number, med: number) => `${f.plural(n, 'position', 'positions')} counted, ${f.num(right)} right. Median error: ${pts(med)}.`,
+  countSession: (n: number, right: number) => `${f.num(right)}\u00a0of ${f.num(n)}\u00a0right.`, // short: the caption keeps two lines beside its links (the running median is in the card)
+  countSpent: 'No new position left in your reviewed games.',
   countNone: 'No reviewed game yet. Review a game, and its positions come here to be counted.',
   countLoading: 'Choosing a position', countFailed: (m: string) => `Couldn’t open this position. ${m}`, countLightFailed: (m: string) => `Couldn’t light the position. ${m}`,
   countSection: 'Your counting error', countMedian: (med: number, n: number) => `${pts(med)} median over ${n === 1 ? 'your last count' : `your last ${f.num(n)} counts`}`,
@@ -460,7 +463,7 @@ export const en = {
   memWrong: (n: number) => `Not that one. Move ${n}: try again.`,
   memHelp: (n: number) => `Move ${n} was here. It counts as a help.`, memHelpPass: (n: number) => `Move ${n} was a pass. It counts as a help.`,
   memDone: (r: number, n: number, h: number) => `${f.plural(r, 'move', 'moves')} replayed from memory out of ${f.num(n)}, ${f.plural(h, 'help', 'helps')}`,
-  memStopped: (at: number) => `Stopped at move ${at}.`,
+  memSaid: (r: number, n: number, h: number) => `${r}/${n} from memory, ${f.plural(h, 'help', 'helps')}.`, // the result card's line
   memAgain: 'Start again', memFound: 'found', memHelps: 'helps', memLeft: 'to go',
   memHelpText: 'Place the moves in order, both sides. A second miss shows the move.',
   libraryShown: 'A game from your library.',
