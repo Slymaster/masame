@@ -412,6 +412,17 @@ fn set_language(app: AppHandle, labels: menu::Labels) -> Res<()> {
     Ok(())
 }
 
+/// Greys the macOS menu items that make no sense now (`enabled`: id → on, from the frontend); kept for later rebuilds.
+#[tauri::command]
+fn set_menu_enabled(app: AppHandle, enabled: HashMap<String, bool>) -> Res<()> {
+    menu::set_enabled(enabled);
+    #[cfg(target_os = "macos")]
+    if let Some(m) = app.menu() { menu::apply(&m).map_err(|e| Failure::with("menu_failed", e))?; }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+    Ok(())
+}
+
 /// The SGF size cap, in bytes; the webview caps the text it opens at the same figure (MAX_SGF in src/sgf.ts).
 const MAX_SGF: u64 = 5 * 1024 * 1024;
 
@@ -491,7 +502,7 @@ pub fn run() {
         .on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); })
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
-            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, update_check, update_install, take_opened,
+            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, set_menu_enabled, update_check, update_install, take_opened,
             ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history
         ])
         .build(tauri::generate_context!())
