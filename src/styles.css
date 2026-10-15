@@ -221,9 +221,9 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
   .board-wrap > .note > .res:has(.link + .link) .link { height: 25px; padding: 0 11px; gap: 5px; font-size: 12.5px }
   .board-wrap > .note > .res:has(.link + .link) .link[data-act=review] { padding-left: 9px }
 }
-/* the smallest windows: the AI level's box keeps its rank and drops its label */
+/* the smallest windows: the AI level's box keeps only the new level */
 @container (max-width: 450px) {
-  .res .chip { display: none }
+  .res .chip i { display: none }
 }
 /* narrow: smaller title and compact buttons */
 @container (max-width: 460px) {
