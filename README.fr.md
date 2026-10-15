@@ -163,7 +163,7 @@ Masame est un client OGS. Choisis OGS comme adversaire dans Jouer et connecte-to
 - **Regarder :** les meilleures parties en direct, ou n'importe quelle partie depuis un lien OGS, même sans être connecté. L'aide du moteur reste coupée jusqu'à la fin de la partie.
 - **Notifications :** quand Masame est ouvert en arrière-plan, une notification système t'avertit quand c'est à toi de jouer dans une partie par correspondance, quand un défi arrive, et quand une partie commence ou se termine.
 
-OGS n'autorise aucune aide d'un moteur pendant une partie : tant qu'une partie OGS est en cours, Ombre et lumière, l'analyse libre, les suggestions de comptage du moteur, la revue, le mentor et les entraîneurs qui utilisent le moteur sont coupés. Elles reviennent dès la fin de la partie, et tes parties OGS terminées sont alors revues automatiquement.
+OGS n'autorise aucune aide d'un moteur pendant une partie : tant qu'une partie OGS est en cours, Ombre et lumière, l'analyse libre, les suggestions de comptage du moteur, la revue, le mentor et les entraîneurs qui utilisent le moteur sont coupés. Ils reviennent dès la fin de la partie, et tes parties OGS terminées sont alors revues automatiquement.
 
 ## Vie privée
 
