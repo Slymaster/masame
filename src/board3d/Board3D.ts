@@ -18,7 +18,7 @@ import { paintMarks, type BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
 import { centreShift } from '../board/frame'
-import { bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, todAt, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
+import { bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
 import { cropRect, postcardCanvas, signatureFonts, toPng } from '../postcard'
 
@@ -41,6 +41,11 @@ export interface Board3DInit {
 }
 
 // Nothing moves but the stone being placed: view, décor and light changes crossfade (FADE_MS) instead of travelling
+// dev only: ?clock=2026-01-15T17:00 pins "Auto"'s clock (season captures); builds always read the real time
+const now = () => {
+  const pin = import.meta.env.DEV ? new URLSearchParams(location.search).get('clock') : null
+  return pin ? new Date(pin) : new Date()
+}
 const FADE_MS = 230, OMBRE_MS = 900, AUTO_MS = 15_000
 const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
 const AO_K = 1.4 // contact-shadow quad half size, in stone radii
@@ -404,7 +409,7 @@ export class Board3D {
   private orbit: Orbit = { ...HOME }
   private orbitGoal: Orbit = { ...HOME }
   private seatH = 1
-  private tod: Tod = { ...TOD.afternoon }
+  private clock = new Date()
   private ombreK = 0; private ombreFrom = 0; private ombreOn = false; private ombreT0 = -1e9
   private hcK = 0
   private noGrid = false // measurements only: the ink lines would pass for stone edges
@@ -891,19 +896,19 @@ export class Board3D {
 
   private instant() { return this.reducedMotion.matches }
 
-  private todNow(): Tod {
-    const d = new Date()
-    return this.opts.time === 'auto' ? todAt(d.getHours() + d.getMinutes() / 60) : TOD[this.opts.time]
+  /** The hour's light for a décor: "Auto" follows the clock and the season, the presets are fixed. */
+  private todFor(decor: Decor): Tod {
+    return this.opts.time === 'auto' ? seasonTod(this.clock, decor) : TOD[this.opts.time]
   }
 
   private applyOptions() {
     const cam = this.opts.camera === 'contemplation' ? 1 : 0
     if (cam !== this.camE) { this.camE = cam; this.hover = null; this.homeCamera(); this.placeFrame() }
     this.extrasOn()
-    this.tod = this.todNow()
+    this.clock = now()
     clearInterval(this.autoTimer)
     // "Auto" follows the clock in steps too small to see (a fraction of a degree, a few kelvin), applied at once
-    if (this.opts.time === 'auto') this.autoTimer = window.setInterval(() => { this.tod = this.todNow(); this.invalidate() }, AUTO_MS)
+    if (this.opts.time === 'auto') this.autoTimer = window.setInterval(() => { this.clock = now(); this.invalidate() }, AUTO_MS)
     this.hcK = this.opts.highContrast ? 1 : 0
     this.invalidate()
   }
@@ -1427,7 +1432,7 @@ export class Board3D {
     const ot = Math.min(1, (now - this.ombreT0) / OMBRE_MS)
     this.ombreK = lerp(this.ombreFrom, this.ombreOn ? 1 : 0, easeIO(ot))
     if (ot < 1) busy = true
-    const L = LOOKS[this.decorOn ?? this.opts.decor], tod = L.tod ?? this.tod, ok = this.ombreK, ce = this.camE
+    const dk = this.decorOn ?? this.opts.decor, L = LOOKS[dk], tod = L.tod ?? this.todFor(dk), ok = this.ombreK, ce = this.camE
     const az = THREE.MathUtils.degToRad(tod.az), el0 = THREE.MathUtils.degToRad(tod.el)
     // Study keeps the hour's colour and direction but never lets the sun rake so low that stones shade their neighbours
     const el = lerp(Math.max(el0, THREE.MathUtils.degToRad(22)), el0, ce), lift = lerp(Math.min(1.15, Math.sin(el0) / Math.sin(el) * 1.25), 1, ce)

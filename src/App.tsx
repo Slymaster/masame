@@ -1314,7 +1314,7 @@ export function App() {
                 </div>
                 <div className="field">
                   <span>{t.light} <kbd>L</kbd></span>
-                  <Seg label={t.light} value={settings.light} options={LIGHTS.map(l => [l, t.lights[l]])} set={v => set('light', v)}
+                  <Seg label={t.light} value={settings.light} options={LIGHTS.map(l => [l, t.lights[l], l === 'auto' ? t.lightAutoHint : undefined])} set={v => set('light', v)}
                     disabled={settings.decor === 'lanterne'} title={settings.decor === 'lanterne' ? t.noEffectAtNight : undefined} />
                 </div>
                 <Switch label={t.highContrast} on={settings.highContrast} toggle={() => set('highContrast', !settings.highContrast)} />
