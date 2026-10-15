@@ -305,3 +305,28 @@ Ce qu'on en retient :
 - Les transformers sont mauvais sur l'ANE (conversion CoreML à chaque lancement, jusqu'à 1,9 Go). Un CNN y est 7 fois plus rapide que sur le GPU. Un réseau kata1 convolutif récent (b18c384nbt, ≈ 100 Mo, non téléchargé) sur l'ANE pourrait donc dépasser 250 v/s ; à mesurer, téléchargement à valider. KataGo applique le même `metalDeviceToUse…` à ses deux réseaux d'un même `analysis`, donc « léger sur GPU + humain sur ANE » n'est pas réglable sans modifier KataGo.
 - Simulateur (Eigen, CPU) : 3 à 8 v/s, il ne sert qu'à valider l'adaptateur. Relances, exceptions puis relance, et arrêt par fermeture de l'entrée y fonctionnent aussi.
 - Non testé (il faut manipuler le téléphone) : le passage en arrière-plan. iOS tue l'app si elle soumet du travail GPU en arrière-plan : l'app devra suspendre KataGo (`terminate_all`, requêtes retenues) avant. Une erreur de KataGo qui passe par `Global::fatalError` (`quick_exit`) emporte toujours l'app : c'est le rôle du fichier sentinelle prévu à l'étape 2.
+
+### Réseau par défaut sur iPhone : CNN sur l'ANE ou léger sur GPU
+
+*Mesuré le 15 octobre 2026 sur le même iPhone 16 Pro, avec l'app de test. Le réseau humain est chargé comme dans l'app (`-human-model b18c384nbt-humanv0.bin.gz`), avec les réglages mobiles et `homeDataDir`. Chaque lancement attend d'abord l'état thermique « nominal ». Les requêtes chronométrées partent d'un cache vidé (`clear_cache`) et portent sur des positions différentes. On donne la médiane de 3 lancements, ou de 2 quand c'est indiqué.*
+
+Configurations : `kata1-b18c384nbt-s9996604416-d4316597426` (CNN, 98 Mo), sur l'ANE (`metalDeviceToUseThread0=100`, CoreML) ou sur le GPU (MPSGraph), et le léger `b10c384` (transformer, 38 Mo) sur le GPU, qui est le réglage actuel.
+
+| Médiane | CNN b18 sur l'ANE (3 lancements) | CNN b18 sur GPU (2) | Léger b10c384 sur GPU (2) |
+|---|---|---|---|
+| « ready », 1ᵉʳ lancement / 2ᵉ | 11,1 s / 11,0 s | 1,6 s / 1,2 s | 0,9 s / 0,8 s |
+| Chauffe de l'app (64 visites, humain `rank_10k`), 1ᵉʳ / 2ᵉ | 0,21 s / 0,20 s | 1,8 s / 1,4 s | 1,3 s / 1,5 s |
+| Coup du bot (60 visites, policy + ownership, `rank_5k`) | **0,18 s** | 1,22 s | 0,72 s |
+| Analyse de 200 visites avec ownership | **0,61 s, 330 v/s** | 3,3 s, 60 v/s | 2,3 s, 86 v/s |
+| Mémoire maximale | **490 Mo** | 750 Mo | 670 Mo |
+| Endurance de 5 min, coup du bot à la 1ʳᵉ puis à la 4ᵉ minute | 0,21 → 0,23 s (+10 %) | 1,3 → 3,6 s (×2,7) | 0,89 → 1,08 s (+21 %) |
+| Requêtes en 5 min (bot et 200 visites en alternance) | 625 | 63 | 143 |
+| État thermique pendant l'endurance | nominal à « serious » (atteint à la 2ᵉ minute pour 2 lancements sur 3) | « fair » ou « serious » dès la 1ʳᵉ minute | « serious » dès la 1ʳᵉ minute |
+
+Observations :
+- **Sur l'ANE, « ready » coûte environ 11 s à chaque lancement, et le 2ᵉ lancement n'est pas plus rapide.** KataGo convertit les deux réseaux en CoreML dans `tmp/`, les compile, puis supprime le modèle source ; rien n'est réutilisé d'un lancement à l'autre. En échange, la chauffe tombe à 0,2 s. Il faut donc environ 11,3 s avant le premier coup, contre environ 2,3 s pour le léger sur GPU.
+- **Le GPU chauffe et ralentit.** Le CNN sur GPU passe de 1,2 s à 3,6 s par coup en 3 minutes. Le léger tient (+21 %), mais il est déjà « serious » à la 1ʳᵉ minute. Sur l'ANE, le coup du bot reste vers 0,2 s, avec 4 fois plus de requêtes servies. L'état thermique, faute de mesure de batterie, sert ici d'indicateur de consommation.
+- **Un seul réglage d'appareil pour les deux réseaux.** Dans `analysis`, KataGo 1.18.2 crée le réseau principal et le réseau humain avec l'indice de modèle 0 (`Setup::initializeNNEvaluator`). `metalDeviceToUse[Model0]Thread0` vaut donc pour les deux : « CNN sur l'ANE et humain sur GPU » n'est pas réglable sans modifier KataGo. Avec les deux réseaux sur l'ANE, la chauffe, qui passe par le réseau humain, prend 0,20 s au lieu de 1,4 s, et le coup du bot 0,18 s au lieu de 1,2 s (même CNN sur GPU). Pour le léger, l'ANE reste écarté (mesure plus haut : 45 v/s, 14 s de chargement, 1,1 Go).
+- Deux lancements ont été suspendus quand le téléphone a été verrouillé ou qu'une autre app est passée au premier plan : un sur l'ANE (endurance), un sur GPU. Le processus s'est figé sans planter. Celui de l'ANE a repris à la fin de la suspension. Une seule observation : ça ne remplace pas la pause prévue à l'étape 2.
+
+**Recommandation : sur iPhone, le CNN `kata1-b18c384nbt-s9996604416-d4316597426` sur l'ANE par défaut** (`metalDeviceToUseThread0=100`, qui met aussi le réseau humain sur l'ANE). Il donne des coups 4 fois plus rapides (0,18 s contre 0,72 s), 3,8 fois plus de visites par seconde, chauffe moins et prend moins de mémoire, pour une force par visite comparable au léger. En contrepartie, le téléchargement passe de 38 à 98 Mo, et il faut environ 11 s de « Préparation du moteur… » à chaque lancement du moteur, contre environ 2 s. Le léger sur GPU reste un repli raisonnable, par exemple pour un premier lancement avant la fin du téléchargement.
