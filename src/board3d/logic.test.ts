@@ -1,5 +1,7 @@
+declare const process: { env: Record<string, string> } // node's, without its types
+process.env.TZ = 'Europe/Paris' // the seasons' tests read local clock times, DST included
 import { describe, expect, it } from 'vitest'
-import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, DROP_MS, dropPose, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panBy, panFor, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SX, SZ, silhouette, SLIDE_MS, stepOrbit, TOD, todAt, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
+import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, DROP_MS, dropPose, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panBy, panFor, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SX, SZ, silhouette, SLIDE_MS, stepOrbit, TOD, todAt, seasonTod, snowOn, sunOn, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -116,6 +118,72 @@ describe('time of day', () => {
     expect(el).toBeLessThan(0.2)
     expect(K).toBeLessThan(15)
     expect(exp).toBeLessThan(0.003)
+  })
+})
+
+describe('seasons', () => {
+  // local times in Paris (vitest shares one process: set before any Date is built here)
+  const at = (iso: string) => new Date(iso)
+  // the golden hour: minutes after noon while the key brightens from its afternoon level to its evening one (10–90 %)
+  const golden = (day: string) => {
+    const I = Array.from({ length: 12 * 60 }, (_, m) => seasonTod(new Date(at(day + 'T12:00').getTime() + m * 60_000), 'atelier').I)
+    const lo = Math.min(...I), hi = Math.max(...I)
+    return I.filter(v => v > lo + 0.1 * (hi - lo) && v < lo + 0.9 * (hi - lo)).length
+  }
+
+  it('puts the summer noon sun higher than the winter one, and winter light colder and dimmer', () => {
+    const jul = seasonTod(at('2026-07-15T13:00'), 'atelier'), jan = seasonTod(at('2026-01-15T12:00'), 'atelier')
+    expect(jul.el).toBeGreaterThan(jan.el + 10)
+    expect(jan.K).toBeGreaterThan(jul.K + 1500)
+    expect(jan.I).toBeLessThan(jul.I)
+    expect(sunOn(at('2026-06-21T12:00')).halfDay).toBeGreaterThan(7.5)
+    expect(sunOn(at('2026-12-21T12:00')).halfDay).toBeLessThan(4.6)
+  })
+
+  it('keeps today\'s "Auto" at the equinox', () => {
+    for (const h of [3, 8, 10, 12.5, 15, 17, 18.5, 21]) {
+      const t = at('2026-03-20T00:00').getTime() + h * 3_600_000, a = seasonTod(new Date(t), 'atelier'), b = todAt(h)
+      expect(Math.abs(a.K - b.K)).toBeLessThan(60); expect(Math.abs(a.el - b.el)).toBeLessThan(1); expect(Math.abs(a.az - b.az)).toBeLessThan(2)
+    }
+  })
+
+  it('makes 17 h a summer afternoon and a cold winter dusk', () => {
+    const jul = seasonTod(at('2026-07-15T17:00'), 'atelier'), jan = seasonTod(at('2026-01-15T17:00'), 'atelier')
+    expect(jul.el).toBeGreaterThan(2 * jan.el)
+    expect(jan.K - jul.K).toBeGreaterThan(1500)
+  })
+
+  it('stretches the golden hour in summer and shortens it in winter', () => {
+    const jul = golden('2026-07-15'), jan = golden('2026-01-15')
+    expect(jul).toBeGreaterThan(1.4 * jan); expect(jan).toBeGreaterThan(60)
+  })
+
+  it('brightens and cools the Washitsu in Dec–Feb only, and leaves the other décors alone', () => {
+    const jan = at('2026-01-15T15:00'), jul = at('2026-07-15T15:00')
+    const w = seasonTod(jan, 'washitsu'), a = seasonTod(jan, 'atelier')
+    expect(w.env).toBeGreaterThan(a.env * 1.3); expect(w.K).toBeGreaterThan(a.K); expect(w.exp).toBeGreaterThan(a.exp)
+    expect(seasonTod(jul, 'washitsu')).toEqual(seasonTod(jul, 'atelier'))
+    expect(seasonTod(jan, 'clair')).toEqual(a); expect(seasonTod(jan, 'lanterne')).toEqual(a)
+    expect(snowOn(at('2026-04-15T12:00'))).toBe(0); expect(snowOn(at('2026-12-15T12:00'))).toBeGreaterThan(0.6); expect(snowOn(at('2027-02-20T12:00'))).toBeGreaterThan(0.6)
+  })
+
+  it('is continuous across the day, the year, the new year and the clock changes', () => {
+    // per 15 s (minute steps / 4), the "Auto" bounds above; az a little looser for summer's short nights' quicker dawn
+    const lim = { az: 0.4, el: 0.2, K: 15, I: 0.01, env: 0.002, exp: 0.003, room: 0.003 }
+    const keys = Object.keys(lim) as (keyof typeof lim)[]
+    let worst = 0
+    for (const decor of ['atelier', 'washitsu'] as const) {
+      let prev = seasonTod(at('2025-12-31T00:00'), decor)
+      for (let t = at('2025-12-31T00:00').getTime() + 60_000; t < at('2027-01-02T00:00').getTime(); t += 60_000) {
+        const cur = seasonTod(new Date(t), decor)
+        for (const k of keys) worst = Math.max(worst, Math.abs(cur[k] - prev[k]) / 4 / lim[k])
+        prev = cur
+      }
+    }
+    expect(worst).toBeLessThan(1)
+    // spring forward in Paris: 01:59 and 03:00 are a minute apart, and so is their light
+    const a = seasonTod(at('2026-03-29T01:59'), 'atelier'), b = seasonTod(at('2026-03-29T03:00'), 'atelier')
+    expect(Math.abs(a.K - b.K)).toBeLessThan(5); expect(Math.abs(a.el - b.el)).toBeLessThan(0.1)
   })
 })
 

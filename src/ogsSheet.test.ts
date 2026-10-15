@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { setLang, t } from './i18n'
-import { activeOrder, timeLeft } from './OgsGames'
+import { activeOrder, filtered, notImported, outcome, paged, timeLeft } from './GamesSheet'
+import { storedTab } from './OgsSection'
+import type { Entry } from './library'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { RankChart, rankTicks } from './RankChart'
@@ -10,6 +12,11 @@ const nb = (s: string) => s.replace(/ /g, ' ')
 
 describe('OGS sheet helpers', () => {
   afterEach(() => setLang('fr'))
+  it('falls back to Play for a stored tab that no longer exists', () => {
+    const st = (v: string | null) => ({ getItem: () => v })
+    expect([storedTab(st('watch')), storedTab(st('games')), storedTab(st(null)), storedTab(st('junk'))]).toEqual(['watch', 'play', 'play', 'play'])
+    expect(storedTab({ getItem: () => { throw new Error('denied') } })).toBe('play')
+  })
   it('puts my turn first, the most urgent first, then the newest', () => {
     const row = (id: number, myTurn: boolean, expires?: number) => ({ id, myTurn, expires }) as ActiveRow
     const rows = [row(1, false), row(2, true, 900), row(3, true), row(4, false), row(5, true, 100)]
@@ -43,5 +50,42 @@ describe('OGS sheet helpers', () => {
     expect(svg()).toContain('aria-label="OGS rank: from 8k to 3k over 13 months"')
     expect(svg()).toContain('<polyline')
     expect(renderToStaticMarkup(createElement(RankChart, { points: [points[0]] }))).not.toContain('NaN')
+  })
+})
+
+describe('Mes parties', () => {
+  const side = (name: string, rank = '') => ({ name, rank })
+  const e = (id: string, source: Entry['source'], me: Entry['me'], b: string, w: string, result?: string): Entry =>
+    ({ id, date: 0, source, size: 19, komi: 6.5, handicap: 0, black: side(b), white: side(w), me, result })
+  const xs = [e('1', 'ai', 1, 'Moi', 'KataGo human 5k', 'B+R'), e('2', 'ogs', -1, 'Shusaku', 'moi', 'B+4.5'), e('3', 'two', 0, 'Ann', 'Bob', '0'),
+    e('4', 'file', 0, 'Honinbo Dosaku', 'Yasui Sanchi'), e('5', 'position', 1, '', 'Lee')]
+  it('filters by source, files and positions together', () => {
+    const ids = (f: Parameters<typeof filtered>[1], q = '') => filtered(xs, f, q).map(x => x.id)
+    expect(ids('all')).toEqual(['1', '2', '3', '4', '5'])
+    expect([ids('ai'), ids('ogs'), ids('two'), ids('file')]).toEqual([['1'], ['2'], ['3'], ['4', '5']])
+  })
+  it('searches the opponent only, both sides when the colour is unknown', () => {
+    const ids = (q: string) => filtered(xs, 'all', q).map(x => x.id)
+    expect(ids('shu')).toEqual(['2'])
+    expect(ids('MOI')).toEqual([]) // the player's own name is not an opponent
+    expect(ids('bob')).toEqual(['3'])
+    expect(ids('  dosaku ')).toEqual(['4'])
+    expect(filtered(xs, 'ai', 'shu')).toEqual([])
+  })
+  it('offers only the finished OGS games not kept yet', () => {
+    const g = (id: number) => ({ id, size: 19, opponent: { id, username: 'x', rank: '' }, color: 1 as const, date: 0 })
+    const kept = [{ ...xs[1], ogsId: 7 }, xs[0]]
+    expect(notImported([g(7), g(8), g(9)], kept).map(r => r.id)).toEqual([8, 9])
+    expect(notImported([g(7)], [])).toHaveLength(1)
+  })
+  it('pages 50 rows at a time', () => {
+    const many = Array.from({ length: 120 }, (_, i) => i)
+    expect([paged(many, 1).rows.length, paged(many, 1).more, paged(many, 2).rows.length, paged(many, 3).rows.length, paged(many, 3).more]).toEqual([50, true, 100, 120, false])
+    expect(paged([], 1)).toEqual({ rows: [], more: false })
+  })
+  it('reads the result from the player’s side', () => {
+    setLang('en')
+    expect(xs.map(outcome)).toEqual(['Won · B+R', 'Lost · B+4.5', 'Draw', 'Unfinished', 'Unfinished'])
+    expect(outcome({ ...xs[2], result: 'W+R' })).toBe('W+R')
   })
 })
