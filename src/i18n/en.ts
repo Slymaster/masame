@@ -363,6 +363,10 @@ export const en = {
     ogs_http: 'OGS answered with an error.',
     ogs_offline: 'Not connected to OGS.',
     ogs_refused: 'OGS refused this move.',
+    library_bad_id: 'Invalid game name in the library.',
+    library_not_found: 'This game is no longer in the library.',
+    library_too_big: 'Too large to keep in the library.',
+    library_io: 'Couldn’t read or write your games folder.',
   },
 }
 

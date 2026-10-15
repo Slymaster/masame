@@ -363,5 +363,9 @@ export const fr: Dict = {
     ogs_http: 'OGS a répondu par une erreur.',
     ogs_offline: 'Pas connecté à OGS.',
     ogs_refused: 'OGS a refusé ce coup.',
+    library_bad_id: 'Nom de partie invalide dans la bibliothèque.',
+    library_not_found: 'Cette partie n’est plus dans la bibliothèque.',
+    library_too_big: 'Trop gros pour la bibliothèque.',
+    library_io: 'Impossible de lire ou d’écrire le dossier de tes parties.',
   },
 }
