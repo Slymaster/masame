@@ -187,3 +187,44 @@ Correctif proposé (petit, local à `apply`, à proposer en amont) :
 4. Optionnel : préchauffer chaque seau au chargement (un `apply` factice par taille), pour payer les compilations au démarrage pendant « Préparation du moteur… » plutôt que pendant l'analyse. On peut aussi compiler explicitement avec `MPSGraph.compile(with:feeds:targetTensors:targetOperations:compilationDescriptor:)` (macOS 12+) et garder les `MPSGraphExecutable`.
 
 Gain attendu : 4 compilations au plus au lieu de 8 (1 avec `maxBatchSize` fixe), et une chauffe prévisible. Non mesuré. Le patch n'a pas été appliqué aux sources vendorisées : il touche au chemin de sortie (taille des tampons) et demande une validation numérique (`katago runtests` / `testgpuerror`) qui sort du cadre de cette tâche.
+
+## 7. Android (arm64-v8a, backend Eigen)
+
+Script : `scripts/build-katago-android.sh`. Sur Android, KataGo reste un processus séparé, comme sur ordinateur : un exécutable PIE nommé `libkatago.so`, livré dans `jniLibs/arm64-v8a` de l'APK pour qu'Android l'extraie dans `nativeLibraryDir` (packaging « legacy »), seul dossier de l'app d'où l'on peut lancer un exécutable.
+
+- Même KataGo que les autres scripts (`v1.18.2`, commit vérifié), Eigen `3.4.0` (même sha256 que `build-katago-macos-x86_64.sh`), NDK `27.2.12479018` via son fichier de toolchain CMake, `ANDROID_PLATFORM=android-24` (minSdk de Tauri 2), `ANDROID_STL=c++_static`, `-DLIBZIP_LIBRARY=OFF`, zlib du sysroot du NDK, `-DEIGEN_MPL2_ONLY`. Pas d'AVX (x86 seulement) : Eigen utilise NEON sur aarch64.
+- Seul ajustement : `-include endian.h`, car `core/sha2.cpp` a besoin de `BYTE_ORDER`, que `<sys/types.h>` de bionic n'inclut pas (contrairement à glibc). Les sources vendorisées ne sont pas modifiées.
+- `MASAME_VENDOR` (par défaut `vendor/`) désigne l'arbre vendor ; sortie : `$MASAME_VENDOR/katago-android/arm64-v8a/libkatago.so`, passé à `llvm-strip --strip-all`.
+- Contrôles qui font échouer le script : AArch64, `FLAGS_1 PIE`, interpréteur `/system/bin/linker64`, et `NEEDED` limité à `libc`, `libm`, `libdl`, `liblog`, `libz`.
+
+Résultat (15 octobre 2026) : **7,1 Mo** (7 484 424 octets), `ELF64 DYN`, `FLAGS_1: NOW PIE`, `NEEDED: libz.so libm.so libdl.so libc.so`.
+
+### Mesures en émulateur (15 octobre 2026)
+
+**L'émulateur n'est pas un téléphone** : ses 4 vCPU sont des cœurs de M2 Max virtualisés (Hypervisor.Framework), sans throttling thermique ni cœurs big.LITTLE. Surtout, le Mac était saturé pendant les mesures (load average 50 à 300 sur 12 cœurs, d'autres sessions compilaient) : qemu n'obtenait que 0,8 à 2,4 cœurs. Les chiffres absolus sont donc pessimistes, et seuls les ordres de grandeur comptent.
+
+AVD `masame_engine` : `system-images;android-35;google_apis;arm64-v8a` (Android 15), 4 vCPU, 4 Go de RAM, 8 Go de données, lancé avec `-no-window -no-audio -no-boot-anim`. Fichiers poussés dans `/data/local/tmp` : `libkatago.so`, `analysis.cfg`, le réseau léger b10c384 et le réseau humain b18c384nbt.
+
+- `libkatago.so version` → `Using Eigen(CPU) backend`, révision `fd0723fd…` : le binaire se charge et tourne sous bionic (API 35, alors qu'il est compilé pour l'API 24).
+- `katago benchmark` (réseau léger, `numSearchThreads` 1 puis 4) : **0,6 v/s** avec 1 thread (sous load ≈ 380), **1,8 v/s** avec 4 threads (2 positions × 40 visites, load ≈ 70–150, `avgBatchSize` 1,0). Pour comparer, le même code Eigen compilé nativement sur le M2 Max (même réseau, 4 threads, load ≈ 60) : **4,9 v/s**. Avec Eigen, le réseau transformer b10c384 coûte donc environ 1 s de CPU par évaluation. Le réseau humain n'a pas été passé au benchmark.
+- Moteur `analysis` (`-model` léger, `-human-model b18c384nbt-humanv0`, `-override-config numAnalysisThreads=1,numSearchThreadsPerAnalysisThread=4,nnMaxBatchSize=4,nnCacheSizePowerOfTwo=16,nnMutexPoolSizePowerOfTwo=14`), position 19×19 de milieu de partie (52 à 60 coups), `humanSLProfile` `rank_5k`, trois sessions :
+
+  | Mesure | Valeurs |
+  |---|---|
+  | Lancement → `Started, ready to begin handling requests` (2 réseaux) | 6,4 à 15,2 s |
+  | `maxVisits` 60 + `includeOwnership` (63 visites racine) | 28,6 à 46,0 s, soit **1,4 à 2,2 v/s** |
+  | `maxVisits` 1 + `includePolicy`, position jamais vue | **3,6 à 5,7 s** (une évaluation de chaque réseau). `humanPolicy` 362 valeurs (somme 1,000), `policy` 362 valeurs |
+  | Même requête, position déjà dans le cache NN | 0,02 s |
+  | Mémoire résidente maximale (`VmHWM`) | **≈ 665 Mo** (15 threads) |
+  | Fermeture de stdin | sortie propre, code 0, en 0,1 à 0,3 s |
+
+  Les réponses sont cohérentes : `ownership` à 361 valeurs, `humanPrior` présent dans `moveInfos`, même meilleur coup (R16) à chaque session.
+
+Conclusion provisoire : avec Eigen, même en divisant ces chiffres par trois pour la saturation, 60 visites prendront de l'ordre de 10 à 30 s sur un téléphone. C'est trop pour un coup de l'adversaire. Il faudrait plutôt jouer à 1 visite ou quelques visites avec la policy humaine, garder les 60 visites pour l'analyse et la revue, et mesurer sur un vrai téléphone avant de fixer `maxVisits`. Un réseau convolutif plus petit que b10c384 serait sans doute bien plus rapide sur CPU, mais ce serait un téléchargement à décider.
+
+Réglages Eigen suggérés pour un téléphone (ceux de la session `analysis` ci-dessus ; à confirmer sur un appareil réel) :
+- `numAnalysisThreads = 1` : l'app n'analyse qu'une position à la fois.
+- `numSearchThreadsPerAnalysisThread = 4` : environ le nombre de cœurs « performance » ; au-delà, les cœurs efficaces ralentissent les batchs et chauffent le téléphone.
+- `numEigenThreadsPerModel` : laisser la valeur par défaut, min(threads de recherche, cœurs).
+- `nnMaxBatchSize = 4` (= threads de recherche) ; `nnCacheSizePowerOfTwo = 16` (65 536 entrées au lieu de 2^20 sur ordinateur : le cache ne se remplit qu'au rythme des évaluations, quelques milliers par minute sur CPU, et chaque entrée garde policy et ownership, donc quelques Ko) ; `nnMutexPoolSizePowerOfTwo = 14`.
+- Réseau « léger » b10c384 par défaut ; `maxVisits` à régler d'après les visites/s mesurées sur téléphone (voir la conclusion ci-dessus).
