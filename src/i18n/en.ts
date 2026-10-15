@@ -451,7 +451,8 @@ export const en = {
   countVerdict: (v: 'right' | 'close' | 'far', lead: number) => `${({ right: 'Right', close: 'Close', far: 'Far' })[v]}: KataGo counts ${lead ? `${color(lead > 0 ? 1 : -1)} +${f.half(lead)}` : 'it even'}.`,
   countYours: (lead: number) => `You said ${lead ? `${color(lead > 0 ? 1 : -1)} +${f.num(Math.abs(lead))}` : 'even'}.`,
   countLight: 'See the light', countNext: 'Next position', countAgain: 'Five more',
-  countSession: (n: number, right: number) => `${f.num(right)} of ${f.num(n)} right.`, // short: the caption keeps two lines beside its links (the running median is in the card)
+  countSession: (n: number, right: number) => `${f.num(right)}\u00a0of ${f.num(n)}\u00a0right.`, // short: the caption keeps two lines beside its links (the running median is in the card)
+  countSpent: 'No new position left in your reviewed games.',
   countNone: 'No reviewed game yet. Review a game, and its positions come here to be counted.',
   countLoading: 'Choosing a position', countFailed: (m: string) => `Couldn’t open this position. ${m}`, countLightFailed: (m: string) => `Couldn’t light the position. ${m}`,
   countSection: 'Your counting error', countMedian: (med: number, n: number) => `${pts(med)} median over ${n === 1 ? 'your last count' : `your last ${f.num(n)} counts`}`,
