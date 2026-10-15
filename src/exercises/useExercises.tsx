@@ -89,6 +89,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
   /** Progrès › Travailler: opening, the phase-0 exercises then `opening` (joseki or fuseki practice); middle game, a mixed
    *  session of WORK_N cards; endgame, a yose session. */
   const work = (phase: 0 | 1 | 2, opening: () => void) => {
+    if (blocked) return
     if (phase === 2) return yoseSession()
     const keys = sessionKeys(store.p, Date.now(), WORK_N, phase)
     if (phase === 0 && !keys.length) return opening()
@@ -200,7 +201,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
   const nextLink: Link = ['next', ld ? t.tsNext : t.exNext, () => next()]
   const links: Link[] = !run || !x ? session.then && !session.keys?.length && session.gen === null ? [session.then] : []
     : run.error ? [['retry', t.retry, () => setRun({ ...run, error: null })], nextLink] : run.gap === null || replaying && run.line === 'reply' ? [] : [
-      ...run.line === 'better' && replaying || ld && verdict === 'found' ? [] : [['better', ld ? t.tsSeeAnswer : t.seeBetter, () => show('better')] as Link],
+      ...run.line === 'better' && (replaying || ld || yose) || ld && verdict === 'found' ? [] : [['better', ld ? t.tsSeeAnswer : t.seeBetter, () => show('better')] as Link],
       ...!punish.length || run.line === 'punish' && replaying ? [] : [['punish', t.seePunishment, () => show('punish')] as Link],
       nextLink,
     ]

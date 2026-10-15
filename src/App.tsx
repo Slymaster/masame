@@ -356,7 +356,7 @@ export function App() {
     ask: (g, q = REPLY) => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, q as Record<string, unknown>)); scanRun.current = run; return run },
   })
   useMining({ free: bgFree, ask: (g, q) => analyze(g, { ...q, priority: -1 }), scanRun, known: ex.has, add: ex.addItems }) // tsumego from reviewed games
-  const workOpening = () => { setPanel('joseki'); jt.practise() } // Travailler › Ouverture: joseki practice (the fuseki's once it exists)
+  const workOpening = () => { if (ongoing || review) return; setPanel('joseki'); jt.practise() } // Travailler › Ouverture: joseki practice (the fuseki's once it exists)
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
   useEffect(() => setRitualSaid(null), [panel])
   const netsUnknown = inTauri() && !nets // at launch: the steps needing a net are neither done nor off yet
@@ -1127,7 +1127,7 @@ export function App() {
   const progressSections: ProgressSection[] = [
     { key: 'rank', title: t.rankSection, body: <RankProgress ranks={ranks.p.games} follows={settings.autoAdjust} /> },
     ...ogs.me && !ogs.isGuest() ? [{ key: 'ogs', title: t.ogsRatingSection, body: <OgsRating /> }] : [],
-    { key: 'where', title: t.exWhere, side: ex.games.length ? t.exGames(ex.games.length) : '', body: <WhereLost games={ex.games} work={p => { closeSheet(); ex.work(p, workOpening) }} /> },
+    { key: 'where', title: t.exWhere, side: ex.games.length ? t.exGames(ex.games.length) : '', body: <WhereLost games={ex.games} blocked={ongoing || !!review} work={p => { closeSheet(); ex.work(p, workOpening) }} /> },
   ]
   const cta = settings.opponent === 'ai' && !canPlayAI && (
     <div className="cta">
