@@ -21,7 +21,7 @@ export const en = {
   game: 'Game',
   moveOf: (i: number, n: number) => (i < n ? `Move ${i} / ${n}` : `Move ${n}`),
   move: (i: number) => `Move ${i}`,
-  you: 'You', yourMove: 'Your move', thinking: 'thinking…', waiting: 'waiting', passed: 'passed', resigned: 'resigned', wins: 'wins',
+  you: 'You', yourMove: 'Your move', thinking: 'thinking…', waiting: 'waiting', yourChoice: 'your choice', passed: 'passed', resigned: 'resigned', wins: 'wins',
   points: (n: number) => f.plural(n, 'point', 'points'),
   tally: (territory: number, prisoners: number, komi?: number) =>
     `${f.num(territory)} territory · ${f.plural(prisoners, 'prisoner', 'prisoners')}${komi ? ` · komi ${f.num(komi)}` : ''}`,
@@ -143,6 +143,7 @@ export const en = {
   eraHelp: 'These masters play at professional strength: auto-adjust is paused during these games.',
   eraHandicap: (n: number) => `You take ${n} stones against the master, as in the teaching games of old.`,
   mentor: 'Mentor',
+  mentorNeedsNet: 'The mentor needs an analysis network.',
   mentorHelp: 'A game with the mentor is a lesson: it feeds neither your rank reading nor auto-adjust.',
   mentorStop: (points: number) => `This move costs ${Math.round(points)} points. There is better.`,
   mentorLate: 'The engine is too busy: the mentor lets your moves pass for now.',

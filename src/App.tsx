@@ -1203,6 +1203,7 @@ export function App() {
     : re ? re[0] === (s === 1 ? 'B' : 'W') ? t.wins : resignation ? t.resigned : timeout ? t.onTime : ''
     : last && !last.vertex && last.sign === s ? t.passed
     : !playing ? ''
+    : mt.stopped && bot && s !== bot.sign ? t.yourChoice // the mentor stopped the move: Try again or Keep it is the player's
     : toPlay === s ? bot?.sign === s ? thinking ? t.thinking : t.waiting : online && online.me !== s ? t.thinking : t.yourMove
     : t.waiting
   // the doors' dots: a challenge awaits my answer (Play), the ritual waits (Learn), an OGS game awaits my move (My games)
@@ -1439,11 +1440,14 @@ export function App() {
                   <Switch label={t.autoAdjust} on={settings.autoAdjust} toggle={() => set('autoAdjust', !settings.autoAdjust)} title={t.autoAdjustHelp} />
                   <Switch label={t.thinkTime} on={settings.delay} toggle={() => set('delay', !settings.delay)} />
                   <Switch label={t.botResign} on={settings.botResign} toggle={() => set('botResign', !settings.botResign)} />
-                  {/* without an analysis network there is no AI to play, so the sheet shows the call to install one instead */}
                   <Switch label={t.mentor} on={settings.mentor} toggle={() => set('mentor', !settings.mentor)} />
                   <p className="say">{t.mentorHelp}</p>
                 </details>
-              </> : cta)}
+              </> : <>
+                {cta}
+                {/* no AI to play without a network; the mentor still shows what it needs */}
+                {!canAnalyze && <><Switch label={t.mentor} on={false} toggle={() => {}} disabled /><p className="say">{t.mentorNeedsNet}</p></>}
+              </>)}
               <div className="field">
                 <span>{t.clock}</span>
                 <Seg label={t.clock} value={settings.clock} set={v => set('clock', v)} options={[['off', t.clockOff, t.clockNone],

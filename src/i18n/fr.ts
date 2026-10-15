@@ -21,7 +21,7 @@ export const fr: Dict = {
   game: 'Partie',
   moveOf: (i: number, n: number) => (i < n ? `Coup ${i} / ${n}` : `Coup ${n}`),
   move: (i: number) => `Coup ${i}`,
-  you: 'Toi', yourMove: 'À toi de jouer', thinking: 'réfléchit…', waiting: 'attend', passed: 'a passé', resigned: 'a abandonné', wins: 'gagne',
+  you: 'Toi', yourMove: 'À toi de jouer', thinking: 'réfléchit…', waiting: 'attend', yourChoice: 'à toi de choisir', passed: 'a passé', resigned: 'a abandonné', wins: 'gagne',
   points: (n: number) => f.plural(n, 'point', 'points'),
   tally: (territory: number, prisoners: number, komi?: number) =>
     `${f.num(territory)} de territoire · ${f.plural(prisoners, 'prisonnier', 'prisonniers')}${komi ? ` · komi ${f.num(komi)}` : ''}`,
@@ -143,6 +143,7 @@ export const fr: Dict = {
   eraHelp: 'Ces maîtres jouent à force professionnelle : l’ajustement automatique est suspendu pendant ces parties.',
   eraHandicap: (n: number) => `Tu prends ${n} pierres contre le maître, comme dans les parties d’enseignement d’autrefois.`,
   mentor: 'Mentor',
+  mentorNeedsNet: 'Le mentor demande un réseau d’analyse.',
   mentorHelp: 'Une partie avec le mentor est une leçon : elle ne nourrit ni ton rang lu ni l’ajustement automatique.',
   mentorStop: (points: number) => `Ce coup coûte ${Math.round(points)} points. Il y a mieux.`,
   mentorLate: 'Le moteur est trop occupé : le mentor laisse passer tes coups pour l’instant.',

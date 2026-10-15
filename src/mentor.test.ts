@@ -12,9 +12,11 @@ const fake = (leads: (number | Read)[], o: { budget?: number; never?: number; fa
     if (o.fail) return Promise.reject(new Error('engine'))
     const r = leads[g.cursor]
     return g.cursor === o.never ? new Promise<Read>(() => {}) : Promise.resolve(typeof r === 'number' ? lead(r) : r)
-  }, o.budget)
+  }, o.budget, o.budget)
   return { m, asked }
 }
+/** The position before the shown move read first, as while the player thinks (a move checked cold is not counted). */
+const warm = (m: Mentor, g: Game) => { const i = g.cursor; g.goTo(i - 1); m.prefetch(g); g.goTo(i); return g }
 const at = (size: number, ...moves: ([number, number] | null)[]) => { const g = new Game({ size }); for (const v of moves) g.play(v); return g }
 
 describe('the mentor', () => {
@@ -27,7 +29,7 @@ describe('the mentor', () => {
 
   it('stops a move that costs the threshold or more, and lets a cheaper one pass', async () => {
     const stop = fake([0.5, -1.5]), g = at(9, [4, 4]) // Black's move: lead 0.5 → −1.5, 2 points
-    expect(await stop.m.check(g)).toBeCloseTo(2)
+    expect(await stop.m.check(warm(stop.m, g))).toBeCloseTo(2)
     expect(stop.m.stops).toBe(1)
     const pass = fake([0.5, -1.4])
     expect(await pass.m.check(at(9, [4, 4]))).toBeNull()
@@ -59,6 +61,7 @@ describe('the mentor', () => {
 
   it('answers the same for a move asked twice, counting one stop', async () => {
     const { m, asked } = fake([0, -10]), g = at(9, [4, 4])
+    warm(m, g)
     expect(await m.check(g)).toBe(10)
     expect(await m.check(g)).toBe(10)
     expect(m.stops).toBe(1)
@@ -67,7 +70,7 @@ describe('the mentor', () => {
 
   it('never examines a kept move again', async () => {
     const { m, asked } = fake([0, -10]), g = at(9, [4, 4])
-    expect(await m.check(g)).toBe(10)
+    expect(await m.check(warm(m, g))).toBe(10)
     m.keep(g.nodes[g.cursor])
     expect(await m.check(g)).toBeNull()
     expect(m.stops).toBe(1)
@@ -76,8 +79,8 @@ describe('the mentor', () => {
 
   it('counts every stop of the game', async () => {
     const { m } = fake([0, -5, -5, -10, -10]), g = at(9, [4, 4])
-    await m.check(g); g.play([2, 2]); g.play([6, 6])
-    expect(await m.check(g)).toBe(5)
+    await m.check(warm(m, g)); g.play([2, 2]); g.play([6, 6])
+    expect(await m.check(warm(m, g))).toBe(5)
     expect(m.stops).toBe(2)
   })
 
@@ -102,6 +105,15 @@ describe('the mentor', () => {
     g.goTo(1); await slow.m.check(g); expect(slow.m.late).toBe(1)
     const h = g.branch(3); await slow.m.check(h); expect(slow.m.late).toBe(0) // move 3 read in time (searches 2 and 3)
     const k = at(9, [0, 0]); await slow.m.check(k); expect(slow.m.late).toBe(1)
+  })
+
+  it('stops again a move restored unread, given the time a starting engine needs, without counting it twice', async () => {
+    const slow = new Mentor(g => new Promise<Read>(r => setTimeout(r, 60, lead(g.cursor ? -10 : 0))), 30, 500)
+    expect(await slow.check(at(9, [4, 4]))).toBe(10) // never prefetched: the cold budget
+    expect(slow.stops).toBe(0)
+    const warm = new Mentor(g => new Promise<Read>(r => setTimeout(r, 60, lead(g.cursor ? -10 : 0))), 30, 500), g = new Game({ size: 9 })
+    warm.prefetch(g); g.play([4, 4])
+    expect(await warm.check(g)).toBeNull() // read while the player thought: the one-second budget
   })
 
   it('does not examine a pass', async () => {

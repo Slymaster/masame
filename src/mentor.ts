@@ -11,6 +11,9 @@ export const BUDGET = 1000
 /** 100 visits, each search at most 0.5 s: the position before the move is usually read while the player thinks. Below the
  * AI's own query: a search given up at the budget yields to it. */
 export const MENTOR_QUERY = { ...scanQuery(240), priority: -1 }
+/** A move whose position before was never read while the player thought (a game restored or resumed on a stopped move)
+ * gets this long: the engine may be starting, and the stop must hold again. */
+export const COLD_BUDGET = 10_000
 /** A move the search before it never looked at is judged by comparing two short searches, only when each read at least this much. */
 export const MIN_VISITS = 30
 
@@ -26,7 +29,7 @@ export class Mentor {
   private checks = new WeakMap<GameNode, Promise<number | null>>() // per move: its cost when it stopped, else null
 
   /** `ask`: the search of the position shown by the game it is given (Black's leads). */
-  constructor(private ask: (g: Game) => Promise<Read>, private budget = BUDGET) {}
+  constructor(private ask: (g: Game) => Promise<Read>, private budget = BUDGET, private coldBudget = COLD_BUDGET) {}
 
   private read(g: Game, i: number) {
     const n = g.nodes[i]
@@ -60,13 +63,14 @@ export class Mentor {
     const i = g.cursor, n = g.nodes[i], m = g.moves[i - 1]
     let c = this.checks.get(n)
     if (c) return c
+    const cold = i > 0 && !this.reads.has(g.nodes[i - 1])
     c = !m?.vertex ? Promise.resolve(null) : Promise.race([
       this.cost(g, i),
-      new Promise<'late'>(r => setTimeout(r, this.budget, 'late')),
+      new Promise<'late'>(r => setTimeout(r, cold ? this.coldBudget : this.budget, 'late')),
     ]).then(loss => {
       this.late = loss === 'late' ? this.late + 1 : 0
       if (loss === 'late' || loss === null || loss < threshold(g.info.size)) return null
-      this.stops++
+      if (!cold) this.stops++ // a cold stop is one counted before the game was closed (the entry's count comes back)
       return loss
     }, () => null) // the engine failed: the move passes
     this.checks.set(n, c)
