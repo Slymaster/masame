@@ -1178,9 +1178,8 @@ export function App() {
               {message === resultLine ? <>
                 {/* the result as a score sheet: winner's stone, who and how, the AI's next level; read in that order */}
                 {res.winner !== 0 && <span className={`stone ${res.winner === 1 ? 'b' : 'w'}`} aria-hidden="true">{re}</span>}
-                <span className="txt"><b>{t.ended(res.winner, res.how, res.points)}</b>{' '}
-                  <small>{[res.winner !== 0 && t.endedHow(res.how, res.points), note?.(t)].filter(Boolean).join(' · ')}</small>
-                  {mentorLine && <span className="said">{mentorLine}</span>}</span>
+                <span className="txt"><b>{t.ended(res.winner, res.how, res.points)}{mentorLine && <span className="said"> · {mentorLine}</span>}</b>{' '}
+                  <small>{[res.winner !== 0 && t.endedHow(res.how, res.points), note?.(t)].filter(Boolean).join(' · ')}</small></span>
                 {aiMoved && <span className="chip">{t.aiLevel}{' '}<b>{bot && <i>{bot.rank} →</i>} {aiMoved}</b></span>}
               </> : <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>}
               {!anLine && links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>
@@ -1323,18 +1322,18 @@ export function App() {
               {settings.opponent === 'ai' && (canPlayAI ? <>
                 <Seg label={t.yourColor} value={settings.handicap ? 'b' : settings.color} options={[['b', t.black], ['w', t.white], ['r', t.random]]} set={v => set('color', v)}
                   disabled={!!settings.handicap} title={settings.handicap ? t.handicapBlack : undefined} />
-                {!master && <Stepper label={t.aiLevel} value={settings.aiRank} step={d => propose({ aiRank: stepRank(settings.aiRank, d) })} />}
-                <Stepper label={t.handicap} value={t.handicapStones(settings.handicap)} step={d => set('handicap', stepHandicap(settings.handicap, -d))} names={[t.fewerStones, t.moreStones]} />
-                {settings.handicap > 0 && settings.handicap === proposeHandicap(settings.myRank, master ? MASTER_RANK : settings.aiRank, nextSize)
-                  && <p className="quiet">{master ? t.eraHandicap(settings.handicap) : t.handicapProposed}</p>}
+                {/* the style first: a Master of an era takes the AI level's place, and sets the handicap below */}
                 <div className="field">
                   <span>{t.style}</span>
                   <Seg label={t.style} value={settings.style} options={[['level', t.styleLevel], ['era', t.styleEra]]} set={v => propose({ style: v })} />
                 </div>
-                {master && <>
+                {master ? <>
                   <Stepper label={t.era} value={String(settings.era)} step={d => set('era', stepEra(settings.era, -d))} names={[t.earlier, t.later]} />
                   <p className="quiet">{t.eraHelp}</p>
-                </>}
+                </> : <Stepper label={t.aiLevel} value={settings.aiRank} step={d => propose({ aiRank: stepRank(settings.aiRank, d) })} />}
+                <Stepper label={t.handicap} value={t.handicapStones(settings.handicap)} step={d => set('handicap', stepHandicap(settings.handicap, -d))} names={[t.fewerStones, t.moreStones]} />
+                {settings.handicap > 0 && settings.handicap === proposeHandicap(settings.myRank, master ? MASTER_RANK : settings.aiRank, nextSize)
+                  && <p className="quiet">{master ? t.eraHandicap(settings.handicap) : t.handicapProposed}</p>}
                 <details className="more">
                   <summary>{t.aiSettings}</summary>
                   <Stepper label={t.myLevel} value={settings.myRank} step={d => { const v = stepRank(settings.myRank, d); propose({ myRank: v, aiRank: v }) }} />
