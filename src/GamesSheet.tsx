@@ -44,6 +44,8 @@ export function outcome(e: Entry): string {
   if (!e.me) return re
   return `${re[0] === (e.me === 1 ? 'B' : 'W') ? t.lbWon : t.lbLost} · ${re}`
 }
+/** Finished OGS games not in the library yet: opening one imports it. */
+export const notImported = (rows: ogs.GameRow[], xs: Entry[]) => rows.filter(g => !xs.some(e => e.ogsId === g.id))
 /** A row's badges. Later activities add theirs here (from their Entry fields). */
 export const badges = (e: Entry): string[] => [
   e.review && t.lbMoments(e.review.moments),
@@ -54,11 +56,12 @@ export const badges = (e: Entry): string[] => [
 const who = (p: { name: string; rank: string }, sign: 1 | -1) =>
   <span key={sign} className="who"><span className="nm">{p.name || t.color(sign)}</span>{p.rank && <span className="rk">{p.rank}</span>}</span>
 
-export function GamesSheet({ onClose, opener, onResume, onOpen, onImport }: {
+export function GamesSheet({ onClose, opener, onResume, onOpen, onImport, onImportOgs }: {
   onClose: () => void; opener: HTMLElement | null
   onResume: (id: number) => void // an ongoing OGS game
   onOpen: (e: Entry) => void // a library game, shown on the board
   onImport: () => void // Import an SGF…
+  onImportOgs: (id: number) => void // a finished OGS game not in the library yet
 }) {
   const active = useSyncExternalStore(ogs.active.subscribe, ogs.active.get)
   const searches = useSyncExternalStore(ogs.searches.subscribe, ogs.searches.get)
@@ -66,6 +69,15 @@ export function GamesSheet({ onClose, opener, onResume, onOpen, onImport }: {
   const [error, setError] = useState<unknown>(null)
   const [filter, setFilter] = useState<Filter>('all'), [q, setQ] = useState(''), [pages, setPages] = useState(1)
   useEffect(() => { if (inTauri()) library.load().catch(setError) }, [])
+  // OGS filter: the finished OGS games, 20 a page, fetched only when asked for
+  const [done, setDone] = useState<{ rows: ogs.GameRow[]; page: number; more: boolean } | null>(null)
+  const [doneErr, setDoneErr] = useState<unknown>(null), [loading, setLoading] = useState(false)
+  const loadDone = (page: number) => {
+    setLoading(true); setDoneErr(null)
+    ogs.history(page).then(r => setDone(d => ({ rows: [...(page > 1 && d ? d.rows : []), ...r.rows], page, more: r.more })), setDoneErr)
+      .finally(() => setLoading(false))
+  }
+  const showOgs = filter === 'ogs' && !!ogs.me && inTauri()
   const now = Date.now()
   const ongoing = ogs.me ? [...active ?? []].sort(activeOrder) : []
   const detail = (g: ogs.ActiveRow) => [
@@ -115,7 +127,21 @@ export function GamesSheet({ onClose, opener, onResume, onOpen, onImport }: {
                 </button></li>
               })}
             </ul>}
-          {page?.more && <button className="link ogs-more" onClick={() => setPages(p => p + 1)}>{t.ogsMore}</button>}
+          {page?.more ? <button className="link ogs-more" onClick={() => setPages(p => p + 1)}>{t.ogsMore}</button>
+            : showOgs && !done && !loading && !doneErr && <button className="link ogs-more" onClick={() => loadDone(1)}>{t.ogsMore}</button>}
+          {showOgs && (done || loading || doneErr) && <>
+            <div className="lab"><span>{t.gamesOgsFinished}</span><span /></div>
+            {done && (notImported(done.rows, entries ?? []).length
+              ? notImported(done.rows, entries ?? []).map(g => (
+                <button key={g.id} className="game-row" onClick={() => onImportOgs(g.id)}>
+                  <span className="who"><span className="nm">{g.opponent.username}</span>{g.opponent.rank && <span className="rk">{g.opponent.rank}</span>}</span>
+                  <span className="dim">{[`${g.size}×${g.size}`, g.result, t.date(g.date)].filter(Boolean).join(' · ')}</span>
+                </button>))
+              : !done.more && <p className="say">{t.gamesOgsAllKept}</p>)}
+            {loading && <p className="say">{t.ogsLoading}</p>}
+            {!!doneErr && <p className="say err" role="alert">{failureText(doneErr)}</p>}
+            {done?.more && !loading && <button className="link ogs-more" onClick={() => loadDone(done.page + 1)}>{t.ogsMore}</button>}
+          </>}
         </>}
       </section>
 

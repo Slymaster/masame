@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { setLang, t } from './i18n'
-import { activeOrder, filtered, outcome, paged, timeLeft } from './GamesSheet'
+import { activeOrder, filtered, notImported, outcome, paged, timeLeft } from './GamesSheet'
 import { storedTab } from './OgsSection'
 import type { Entry } from './library'
 import { createElement } from 'react'
@@ -71,6 +71,12 @@ describe('Mes parties', () => {
     expect(ids('bob')).toEqual(['3'])
     expect(ids('  dosaku ')).toEqual(['4'])
     expect(filtered(xs, 'ai', 'shu')).toEqual([])
+  })
+  it('offers only the finished OGS games not kept yet', () => {
+    const g = (id: number) => ({ id, size: 19, opponent: { id, username: 'x', rank: '' }, color: 1 as const, date: 0 })
+    const kept = [{ ...xs[1], ogsId: 7 }, xs[0]]
+    expect(notImported([g(7), g(8), g(9)], kept).map(r => r.id)).toEqual([8, 9])
+    expect(notImported([g(7)], [])).toHaveLength(1)
   })
   it('pages 50 rows at a time', () => {
     const many = Array.from({ length: 120 }, (_, i) => i)

@@ -55,7 +55,7 @@ export const fr: Dict = {
     `Pour jouer contre l’IA, installe le réseau Humain${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' et un réseau d’analyse' : ''}.`,
   openNetworks: 'Ouvrir les réseaux',
   atelier: 'Atelier', coords: 'Coordonnées', sound: 'Son', territory: 'Ombre et lumière', language: 'Langue',
-  rendering: 'Rendu', render3d: 'Atelier vivant (3D)', render2d: 'Léger (2D)',
+  renderToggle: '3D / 2D', rendering: 'Rendu', render3d: 'Atelier vivant (3D)', render2d: 'Léger (2D)',
   view: 'Regard', study: 'Étude', contemplation: 'Contemplation',
   contemplationHint: 'Clic droit et glisser pour tourner, avec Maj ou clic molette pour déplacer, molette ou pincement pour zoomer, R ou double-clic hors du plateau pour recentrer',
   light: 'Lumière', lights: { auto: 'Auto', morning: 'Matin', afternoon: 'Après-midi', evening: 'Soir' },
@@ -87,7 +87,7 @@ export const fr: Dict = {
   updateDownloading: (p: number | null) => (p === null ? 'Téléchargement de la mise à jour…' : `Téléchargement de la mise à jour… ${f.pct(p)}`),
   updateInstalling: 'Installation de la mise à jour…',
   fullscreen: 'Plein écran', autoUpdate: 'Rechercher les mises à jour automatiquement',
-  footer: { browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', exercises: 'exercices', today: 'aujourd’hui', games: 'mes parties', candidates: 'coups candidats (maintenue)', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
+  footer: { open: 'importer un SGF', save: 'enregistrer', coords: 'coordonnées', sound: 'son', view: 'étude / contemplation', light: 'lumière', browse: 'parcourir', pass: 'passer', territory: 'ombre et lumière', undo: 'annuler', newGame: 'nouvelle partie', panel: 'panneau', variations: 'variantes', autoplay: 'lecture auto', joseki: 'joseki', exercises: 'exercices', today: 'aujourd’hui', games: 'mes parties', candidates: 'coups candidats (maintenue)', recentre: 'recentrer la vue 3D', fullscreen: 'plein écran' },
   // les quatre portes (en-tête), Partager et Atelier sur la ligne méta, et leurs feuilles
   doors: { play: 'Jouer', learn: 'Apprendre', games: 'Mes parties', settings: 'Réglages' },
   share: 'Partager', shareSave: 'Enregistrer la partie (SGF)', sharePostcard: 'Carte postale (PNG)', shareKifu: 'Kifu (imprimer ou PDF)', shareLink: 'Copier le lien OGS',
@@ -103,7 +103,7 @@ export const fr: Dict = {
   gamesSearch: 'Chercher un adversaire', gamesLoading: 'Chargement de tes parties…', gamesFailed: (m: string) => `Impossible de lire tes parties : ${m}`,
   gamesEmpty: 'Pas encore de partie. Chaque partie que tu joues ou ouvres est gardée ici.', gamesNoMatch: 'Aucune partie ne correspond.',
   gamesInAppOnly: 'Tes parties sont gardées dans l’application.', gamesImport: 'Importer un SGF…',
-  gamesVs: (b: string, w: string) => `${b} contre ${w}`,
+  gamesOgsFinished: 'Terminées sur OGS, pas encore gardées', gamesOgsAllKept: 'Toutes tes parties OGS terminées sont déjà ici.',
   lbWon: 'Gagnée', lbLost: 'Perdue', lbDraw: 'Nulle', lbUnfinished: 'Inachevée',
   lbPlayedLike: (r: string) => `joué comme un ${r}`, lbMoments: (n: number) => f.plural(n, 'moment', 'moments'),
   lbMemory: (r: number, n: number) => `mémoire ${f.num(r)}/${f.num(n)}`, lbCounted: 'comptée',
@@ -339,6 +339,10 @@ export const fr: Dict = {
   postcardSaved: 'Carte postale enregistrée.', postcardNotReady: 'le goban n’est pas encore dessiné', postcardFailed: (m: string) => `Impossible d’enregistrer la carte postale : ${m}`,
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
+    library_bad_id: 'Le nom de cette partie n’est pas valide.',
+    library_not_found: 'Cette partie n’est plus dans ta bibliothèque.',
+    library_too_big: 'Cette partie est trop grande pour être gardée.',
+    library_io: 'Impossible de lire ou d’écrire tes parties sur cet ordinateur.',
     open_too_big: 'Plus de 5 Mo : ce n’est pas une partie.',
     open_unreadable: 'Le fichier est illisible.',
     invalid_name: 'Nom de réseau invalide.',

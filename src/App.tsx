@@ -936,7 +936,7 @@ export function App() {
   }, [])
   // The macOS menu bar greys what makes no sense now (sent again whenever that changes)
   const enabled = menuEnabled(commands, {
-    hasGame: game.moves.length > 0, canUndo: !panel && !review && !online && game.cursor > 0 && !(bot && result),
+    hasGame: game.moves.length > 0 || game.info.setup.black.length + game.info.setup.white.length > 0, canUndo: !panel && !review && !online && game.cursor > 0 && !(bot && result),
     canPass: !panel && !review && !countingNow && !removal && !game.ended && !locked && humanTurn && !online?.placing,
     canResign: !panel && !review && !result && (!!bot || !!myGame), canReview: !panel && !review && canReview,
     engineHelp: !ongoing && !review, canAnalyze, is3d: renderer === '3d',
@@ -1198,7 +1198,7 @@ export function App() {
                 <Icon name={sound ? 'volume' : 'volume-off'} />
               </button>
               <button className="icon sm" aria-pressed={renderer === '3d'} onClick={() => { setSession2d(false); set('renderer', renderer === '3d' ? '2d' : '3d') }}
-                aria-label={t.render3d} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
+                aria-label={t.renderToggle} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
               <button className="icon sm" onClick={openSheet('atelier')} aria-label={t.atelier} title={t.atelier}><Icon name="view" /></button>
             </div>
             <div className="body">
@@ -1401,7 +1401,7 @@ export function App() {
 
           <section>
             <div className="lab"><span>{t.keyboard}</span><span /></div>
-            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>H</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki} · <kbd>E</kbd> {t.footer.exercises} · <kbd>D</kbd> {t.footer.today} · <kbd>B</kbd> {t.footer.games} · <kbd>A</kbd> {t.footer.candidates}{renderer === '3d' && <> · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
+            <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>{shortcut('O')}</kbd> {t.footer.open} · <kbd>{shortcut('S')}</kbd> {t.footer.save} · <kbd>H</kbd> <kbd>{shortcut('\\')}</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki} · <kbd>E</kbd> {t.footer.exercises} · <kbd>D</kbd> {t.footer.today} · <kbd>B</kbd> {t.footer.games} · <kbd>A</kbd> {t.footer.candidates} · <kbd>C</kbd> {t.footer.coords} · <kbd>M</kbd> {t.footer.sound}{renderer === '3d' && <> · <kbd>V</kbd> {t.footer.view} · <kbd>L</kbd> {t.footer.light} · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
           </section>
         </Sheet>
       )}
@@ -1411,7 +1411,8 @@ export function App() {
       )}
       {sheet === 'games' && (
         <GamesSheet onClose={closeSheet} opener={opener.current} onResume={id => { closeSheet(); resume(id) }}
-          onOpen={e => { closeSheet(); open(() => library.read(e.id)) }} onImport={() => { closeSheet(); open() }} />
+          onOpen={e => { closeSheet(); open(() => library.read(e.id)) }} onImport={() => { closeSheet(); open() }}
+          onImportOgs={id => { closeSheet(); importGame(id) }} />
       )}
       {sheet === 'share' && (
         <ShareSheet onClose={closeSheet} opener={opener.current} onSave={() => { closeSheet(); save() }} onPostcard={() => { closeSheet(); postcard() }}

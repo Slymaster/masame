@@ -55,7 +55,7 @@ export const en = {
     `To play against the AI, install the Human network${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' and an analysis network' : ''}.`,
   openNetworks: 'Open networks',
   atelier: 'Workshop', coords: 'Coordinates', sound: 'Sound', territory: 'Light and shadow', language: 'Language',
-  rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
+  renderToggle: '3D / 2D', rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
   view: 'View', study: 'Study', contemplation: 'Contemplation',
   contemplationHint: 'Right-drag to turn, middle- or Shift+right-drag to move, scroll or pinch to zoom, R or double-click outside the board to recentre',
   light: 'Lighting', lights: { auto: 'Auto', morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' },
@@ -87,7 +87,7 @@ export const en = {
   updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
   updateInstalling: 'Installing the update…',
   fullscreen: 'Full screen', autoUpdate: 'Check for updates automatically',
-  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', today: 'today', games: 'my games', candidates: 'candidate moves (hold)', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
+  footer: { open: 'import an SGF', save: 'save', coords: 'coordinates', sound: 'sound', view: 'study / contemplation', light: 'lighting', browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', today: 'today', games: 'my games', candidates: 'candidate moves (hold)', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
   // the four doors (header), the meta row's Share and Atelier, and their sheets
   doors: { play: 'Play', learn: 'Learn', games: 'My games', settings: 'Settings' },
   share: 'Share', shareSave: 'Save the game (SGF)', sharePostcard: 'Postcard (PNG)', shareKifu: 'Kifu (print or PDF)', shareLink: 'Copy the OGS link',
@@ -103,7 +103,7 @@ export const en = {
   gamesSearch: 'Search an opponent', gamesLoading: 'Loading your games…', gamesFailed: (m: string) => `Couldn’t read your games: ${m}`,
   gamesEmpty: 'No games yet. Every game you play or open is kept here.', gamesNoMatch: 'No game matches.',
   gamesInAppOnly: 'Your games are kept in the app.', gamesImport: 'Import an SGF…',
-  gamesVs: (b: string, w: string) => `${b} vs ${w}`,
+  gamesOgsFinished: 'Finished on OGS, not yet kept', gamesOgsAllKept: 'All your finished OGS games are already here.',
   lbWon: 'Won', lbLost: 'Lost', lbDraw: 'Draw', lbUnfinished: 'Unfinished',
   lbPlayedLike: (r: string) => `played like ${aRank(r)}`, lbMoments: (n: number) => f.plural(n, 'moment', 'moments'),
   lbMemory: (r: number, n: number) => `memory ${f.num(r)}/${f.num(n)}`, lbCounted: 'counted',
@@ -339,6 +339,10 @@ export const en = {
   postcardSaved: 'Postcard saved.', postcardNotReady: 'the board isn’t drawn yet', postcardFailed: (m: string) => `Couldn’t save the postcard: ${m}`,
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
+    library_bad_id: 'This game’s name isn’t valid.',
+    library_not_found: 'This game is no longer in your library.',
+    library_too_big: 'This game is too large to keep.',
+    library_io: 'Couldn’t read or write your games on this computer.',
     open_too_big: 'Larger than 5 MB: not a game record.',
     open_unreadable: 'The file can’t be read.',
     invalid_name: 'Invalid network name.',
