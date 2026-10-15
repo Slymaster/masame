@@ -5,7 +5,7 @@ import { Game, type Move, type Sign, type Vertex } from '../game'
 import type { Card, Rating } from '../joseki/fsrs'
 import { isCard, NEW_PER_DAY, today } from '../joseki/store'
 import { hash64 } from '../joseki/sym'
-import { phaseLosses, reviewEnd, verdict, type Moment } from '../review'
+import { phaseLosses, phaseOf, reviewEnd, verdict, type Moment } from '../review'
 
 /** A key moment as a card: the position before the mistake (2-letter SGF codes, 'tt' = pass), its player to find better. */
 export interface Exercise {
@@ -72,15 +72,24 @@ const fresh = (d: Deck, now: number) => (d.day === today(now) ? d.fresh : 0)
 const midnight = (now: number) => new Date(now).setHours(0, 0, 0, 0)
 const isNew = (d: Deck) => Object.entries(d.items).filter(([k]) => !Object.hasOwn(d.cards, k))
 
-/** The most overdue card first; then, within today's quota, the oldest new exercise made before today (in game order). */
-export function nextExercise(d: Deck, now: number): string | null {
-  const due = Object.entries(d.cards).filter(([k, c]) => Object.hasOwn(d.items, k) && c.due <= now).sort((a, b) => a[1].due - b[1].due)
-  if (due.length) return due[0][0]
-  if (fresh(d, now) >= NEW_PER_DAY) return null
-  // made today: the review itself was today's lesson
-  const m = midnight(now), news = isNew(d).filter(([, x]) => x.t < m).sort(([, a], [, b]) => a.t - b.t || mv(a) - mv(b))
-  return news[0]?.[0] ?? null
+/** The weakest phase (most points lost per game: 0 opening, 1 middle game, 2 endgame), null before any loss. */
+export function weakest(games: Played[]): 0 | 1 | 2 | null {
+  const w = whereLost(games), top = Math.max(...w)
+  return Math.round(top) > 0 ? w.indexOf(top) as 0 | 1 | 2 : null
 }
+/** The next `n` exercises: the due cards, most overdue first, then within today's quota the oldest new ones made before
+ *  today (in game order); with `weak`, that phase's exercises come first in each group (the daily ritual's hand). */
+export function hand(d: Deck, now: number, n: number, weak: 0 | 1 | 2 | null = null): string[] {
+  const lean = (x: Exercise) => (weak !== null && phaseOf(mv(x), x.size) !== weak ? 1 : 0)
+  const due = Object.entries(d.cards).filter(([k, c]) => Object.hasOwn(d.items, k) && c.due <= now)
+    .sort((a, b) => lean(d.items[a[0]]) - lean(d.items[b[0]]) || a[1].due - b[1].due).map(([k]) => k)
+  // made today: the review itself was today's lesson
+  const m = midnight(now), quota = Math.max(0, NEW_PER_DAY - fresh(d, now))
+  const news = isNew(d).filter(([, x]) => x.t < m).sort(([, a], [, b]) => lean(a) - lean(b) || a.t - b.t || mv(a) - mv(b)).slice(0, quota).map(([k]) => k)
+  return [...due, ...news].slice(0, n)
+}
+/** The most overdue card first; then, within today's quota, the oldest new exercise made before today (in game order). */
+export const nextExercise = (d: Deck, now: number, weak: 0 | 1 | 2 | null = null): string | null => hand(d, now, 1, weak)[0] ?? null
 
 /** Due cards, new exercises available today (within the quota), new ones made today (from tomorrow). */
 export function counts(d: Deck, now: number) {

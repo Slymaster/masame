@@ -96,7 +96,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 :is(.icon, .act, .chev, .tl input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
 
 .meta { display: flex; align-items: center; gap: 2px; margin: 4px 0 10px; font-size: 11.5px; color: var(--muted) }
-.meta > span { margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.meta > span { margin-right: auto; line-height: 1.35; text-wrap: balance } /* wraps rather than cut: the OGS rules line is long */
 .body { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; margin: 0 -14px; padding: 0 14px 12px; scrollbar-width: thin; scrollbar-color: var(--rule-2) transparent }
 
 /* player cards: Black on lacquer, White on paper, whatever the skin */
@@ -395,7 +395,6 @@ body[data-drop]::after {
 }
 
 /* the daily ritual (Today) */
-.brand { gap: 2px } /* six header icons in the 336 px card */
 .td-rail { list-style: none; margin: 4px 0 0; padding: 0 }
 .td-rail li { position: relative; display: grid; grid-template-columns: 26px 1fr; column-gap: 12px; padding-bottom: 16px }
 .td-rail li:not(:last-child)::before { content: ""; position: absolute; left: 12.5px; top: 26px; bottom: 0; width: 1px; background: var(--rule-2) }
@@ -412,3 +411,61 @@ body[data-drop]::after {
 .rv-rank { display: flex; flex-direction: column; gap: 2px }
 .rv-rank .estimate { color: var(--ink) }
 .ex .rc-now { stroke: var(--card) }
+
+/* ---------- the four doors and their sheets (Apprendre, Mes parties, Partager) ---------- */
+.brand { gap: 2px; flex-wrap: wrap; row-gap: 10px }
+/* the four doors: a row of their own under the seal, the title and the eye, each named */
+.brand::after { content: ""; order: 2; flex-basis: 100% }
+.card.off .brand::after { content: none }
+.panel-toggle { order: 1 }
+.door {
+  order: 3; position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px 6px;
+  border: 1px solid var(--rule); border-radius: 10px; background: none; color: var(--muted); font: inherit; font-size: 12.5px; line-height: 1.1; white-space: nowrap;
+  cursor: pointer; transition: color .25s, background .25s, border-color .25s
+}
+.door svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round }
+.door:hover { color: var(--accent); background: var(--hover); border-color: var(--rule-2) }
+.door:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.door .dot { top: 6px; right: 6px }
+.say { font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.35; color: var(--ink) }
+.say.err { color: var(--accent) }
+:is(.share-row, .deck-row, .lib-row) {
+  display: flex; width: calc(100% + 20px); margin: 0 -10px; padding: 12px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer; transition: background .25s
+}
+:is(.share-row, .deck-row, .lib-row):hover:not(:disabled) { background: var(--hover) }
+:is(.share-row, .deck-row, .lib-row):focus-visible { outline: 1px solid var(--accent); outline-offset: -1px }
+:is(.share-row, .deck-row, .lib-row):disabled { cursor: default; opacity: .5 }
+:is(.decks, .lib) ul, ul.lib, ul.phases { list-style: none; margin: 0; padding: 0 }
+:is(.decks, .lib) li + li, .share-row + .share-row { border-top: 1px solid var(--rule) }
+.share-list { display: flex; flex-direction: column }
+.share-row { justify-content: space-between; align-items: baseline; gap: 12px; font-family: var(--f-title); font-style: italic; font-size: 20px; line-height: 1.2 }
+.share-row kbd { font-family: var(--f-ui); font-style: normal; font-size: 12px; color: var(--muted) }
+.share-list .say { margin-top: 10px; overflow-wrap: anywhere }
+.deck-row { flex-direction: column; gap: 2px }
+.deck-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px }
+.deck-top b { font-family: var(--f-title); font-style: italic; font-weight: 500; font-size: 20px; line-height: 1.2 }
+.deck-n { flex: none; font-size: 13px; font-variant-numeric: tabular-nums }
+.deck-phrase { font-size: 13px; color: var(--muted) }
+.decks .say { margin-bottom: 6px }
+.lib { margin-top: 8px }
+.lib-row { flex-direction: column; gap: 3px }
+.lib-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px }
+.lib-who { display: flex; align-items: baseline; min-width: 0; overflow: hidden }
+.lib-who .who { display: flex; align-items: baseline; font-family: var(--f-title); font-style: italic; font-size: 18px; line-height: 1.2; white-space: nowrap }
+.lib-who .rk { margin-left: 6px; font-size: 14px }
+.lib-res { flex: none; font-size: 13px; font-variant-numeric: tabular-nums }
+.lib-sub { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums }
+.lib-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px }
+.lib-badges i { font-style: normal; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--well); color: var(--ink) }
+section > .seg + .ogs-input { margin-top: 10px }
+.progress { display: flex; flex-direction: column; gap: 4px }
+.progress .lab { margin-bottom: 6px }
+.phases li { display: flex; align-items: baseline; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--rule); font-size: 14px }
+.phases li > span { flex: 1 }
+.phases li > b { font-weight: 500; font-variant-numeric: tabular-nums }
+.phases li.top > b { color: var(--accent) }
+.progress .state { margin: 0 }
+.lib-who .vs { margin: 0 8px; color: var(--muted) }
+section > .seg + .ogs-input { display: block; width: 100% }
+.td .say { margin-bottom: 8px }

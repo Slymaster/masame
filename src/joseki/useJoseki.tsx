@@ -90,15 +90,12 @@ export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked
   /** The daily ritual's joseki step: the Practise tab, a line started at once. */
   const practise = () => { setTab('practise'); newLine() }
   const left = db && counts(db, store.p.cards, fresh, now), todayStep = left && deckStep(store.p.cards, left.due + left.fresh, now) // null until loaded
-  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, today: todayStep, practise }
-  const button = (
-    <button className="icon" aria-pressed={open} onClick={toggle} disabled={blocked} aria-label={t.joseki} title={`${t.joseki} (J)`}><Icon name="book" /></button>
-  )
-  if (!open) return { ...none, button }
+  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, today: todayStep, practise, counts: left }
+  if (!open) return none
   const acts = <button className="act" onClick={close} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button>
   if (!db || !R) {
     const note = error ? t.jFailed(failureText(error)) : t.jLoading
-    return { ...none, button, acts, note, body: <section className="rv"><p className="estimate">{note}</p></section> }
+    return { ...none, acts, note, body: <section className="rv"><p className="estimate">{note}</p></section> }
   }
 
   const lens = db.profiles[p]
@@ -255,7 +252,7 @@ export function useJoseki({ view, open, preload, setOpen, rank, setRank, blocked
     escape: close, ' ': undefined, arrowup: () => {}, arrowdown: () => {}, home: () => {}, end: () => {}, p: () => {},
     arrowleft: () => { if (tab === 'explore') back() }, arrowright: () => { if (tab === 'explore' && frequent >= 0) down(frequent) },
   }
-  return { ...none, play, board, note, links, body, acts, keys, button }
+  return { ...none, play, board, note, links, body, acts, keys }
 }
 
 /** A family's corner (the top-right 12×12 of the explorer's frame), as a small SVG diagram. */

@@ -54,8 +54,8 @@ export const en = {
   aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
     `To play against the AI, install the Human network${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' and an analysis network' : ''}.`,
   openNetworks: 'Open networks',
-  display: 'Display', coords: 'Coordinates', sound: 'Sound', territory: 'Light and shadow', language: 'Language',
-  rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
+  atelier: 'Workshop', coords: 'Coordinates', sound: 'Sound', territory: 'Light and shadow', language: 'Language',
+  renderToggle: '3D / 2D', rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
   view: 'View', study: 'Study', contemplation: 'Contemplation',
   contemplationHint: 'Right-drag to turn, middle- or Shift+right-drag to move, scroll or pinch to zoom, R or double-click outside the board to recentre',
   light: 'Lighting', lights: { auto: 'Auto', morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' },
@@ -87,13 +87,37 @@ export const en = {
   updateDownloading: (p: number | null) => (p === null ? 'Downloading the update…' : `Downloading the update… ${f.pct(p)}`),
   updateInstalling: 'Installing the update…',
   fullscreen: 'Full screen', autoUpdate: 'Check for updates automatically',
-  footer: { browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', today: 'today', candidates: 'candidate moves (hold)', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
+  footer: { open: 'import an SGF', save: 'save', coords: 'coordinates', sound: 'sound', view: 'study / contemplation', light: 'lighting', browse: 'browse', pass: 'pass', territory: 'light and shadow', undo: 'undo', newGame: 'new game', panel: 'panel', variations: 'variations', autoplay: 'autoplay', joseki: 'joseki', exercises: 'exercises', today: 'today', games: 'my games', candidates: 'candidate moves (hold)', recentre: 'recentre the 3D view', fullscreen: 'full screen' },
+  // the four doors (header), the meta row's Share and Atelier, and their sheets
+  doors: { play: 'Play', learn: 'Learn', games: 'My games', settings: 'Settings' },
+  share: 'Share', shareSave: 'Save the game (SGF)', sharePostcard: 'Postcard (PNG)', shareKifu: 'Kifu (print or PDF)', shareLink: 'Copy the OGS link',
+  shareCopied: (url: string) => `Link copied: ${url}`, shareCopyFailed: 'Couldn’t copy the link.',
+  learnTabs: { today: 'Today', progress: 'Progress' }, learnTabsLabel: 'Learn',
+  decksLab: 'Your decks', deckCount: (due: number, fresh: number) => `${f.num(due)} to review · ${f.num(fresh)} new`,
+  decks: { exercises: 'Exercises from your games', joseki: 'Joseki' },
+  deckPhrases: { exercises: 'find better', joseki: 'explore, practise, programme' },
+  learnBlocked: 'Not during an OGS game or a review: finish it first.',
+  rankSection: 'Your rank read in your moves', ogsRatingSection: 'OGS rating',
+  gamesAll: 'All your games', gamesFilterLabel: 'Games shown',
+  gamesFilters: { all: 'All', ai: 'AI', ogs: 'OGS', two: 'Two players', file: 'Files' },
+  gamesSearch: 'Search an opponent', gamesLoading: 'Loading your games…', gamesFailed: (m: string) => `Couldn’t read your games: ${m}`,
+  gamesEmpty: 'No games yet. Every game you play or open is kept here.', gamesNoMatch: 'No game matches.',
+  gamesInAppOnly: 'Your games are kept in the app.', gamesImport: 'Import an SGF…',
+  gamesOgsFinished: 'Finished on OGS, not yet kept', gamesOgsAllKept: 'All your finished OGS games are already here.',
+  lbWon: 'Won', lbLost: 'Lost', lbDraw: 'Draw', lbUnfinished: 'Unfinished',
+  lbPlayedLike: (r: string) => `played like ${aRank(r)}`, lbMoments: (n: number) => f.plural(n, 'moment', 'moments'),
+  lbMemory: (r: number, n: number) => `memory ${f.num(r)}/${f.num(n)}`, lbCounted: 'counted',
+  ritualWaiting: 'today’s ritual is waiting', rankNone: 'Your rank shows once a game you played is reviewed.', work: 'Practise',
+  settingsOgs: (who: string) => `OGS · Signed in: ${who}`,
   // macOS menu bar (src-tauri/src/menu.rs)
   menu: {
     about: 'About Masame', hide: 'Hide Masame', hideOthers: 'Hide Others', showAll: 'Show All', quit: 'Quit Masame',
-    file: 'File', newGame: 'New Game', open: 'Open…', save: 'Save…',
+    file: 'File', newGame: 'New Game', position: 'From a Position…', open: 'Import an SGF…', save: 'Save…', postcard: 'Postcard…', kifu: 'Kifu…',
     edit: 'Edit', undoMove: 'Undo Move', copy: 'Copy', selectAll: 'Select All',
-    window: 'Window', minimize: 'Minimize', zoom: 'Zoom', fullScreen: 'Enter Full Screen', hidePanel: 'Hide Panel', showPanel: 'Show Panel',
+    game: 'Game', pass: 'Pass', resign: 'Resign', territory: 'Light and Shadow', review: 'Review the Game', memory: 'Replay from Memory',
+    learn: 'Learn', today: 'Today', exercises: 'Exercises', tsumego: 'Tsumego', count: 'Counting', joseki: 'Joseki', fuseki: 'Fuseki', classics: 'The Classics', games: 'My Games',
+    view: 'View', camera: 'Study / Contemplation', fullScreen: 'Enter Full Screen', hidePanel: 'Hide Panel', showPanel: 'Show Panel',
+    window: 'Window', minimize: 'Minimize', zoom: 'Zoom',
   },
   // games against the bot
   botName: (rank: string) => `KataGo human ${rank}`,
@@ -172,7 +196,7 @@ export const en = {
   jMet: (n: number) => `met about 1 corner in ${f.num(n)}`, jOpenFamily: (name: string) => `Explore ${name}`,
   // the daily ritual
   today: 'Today', tdIntro: 'Ten minutes a day: your exercises, a few joseki, a quick game.',
-  tdSteps: { exercises: 'Exercises from your games', joseki: 'Joseki', game: 'A 9×9 at your level' },
+  tdSteps: { exercises: 'Exercises', joseki: 'Joseki or fuseki', game: 'A 9×9 at your level' },
   tdGameAt: (rank: string) => `against the AI at ${rank}, even`,
   tdLeft: (n: number) => `${f.num(n)} to do`, tdDoneStep: 'done', tdLoading: 'loading…',
   tdOff: { exercises: 'needs an analysis network', game: 'needs the AI networks' },
@@ -218,7 +242,7 @@ export const en = {
   rankChartLabel: (from: string, to: string, n: number) => `Your rank read in your moves: from ${from} to ${to} over ${f.plural(n, 'game', 'games')}`,
   // OGS (online-go.com)
   // OGS sheet: tabs, play, my games, watch
-  ogsTabs: { play: 'Play', games: 'My games', watch: 'Watch' }, ogsTabsLabel: 'OGS',
+  ogsTabs: { play: 'Play', watch: 'Watch' }, ogsTabsLabel: 'OGS',
   ogsCorrShort: 'Corresp.',
   ogsCorrSearch: (n: number) => `Correspondence search · ${n}×${n}`,
   ogsChallengeTitle: 'Challenge a player', ogsUsername: 'OGS username',
@@ -315,6 +339,10 @@ export const en = {
   postcardSaved: 'Postcard saved.', postcardNotReady: 'the board isn’t drawn yet', postcardFailed: (m: string) => `Couldn’t save the postcard: ${m}`,
   // stable error codes from the Rust side (src-tauri/src/failure.rs)
   failures: {
+    library_bad_id: 'This game’s name isn’t valid.',
+    library_not_found: 'This game is no longer in your library.',
+    library_too_big: 'This game is too large to keep.',
+    library_io: 'Couldn’t read or write your games on this computer.',
     open_too_big: 'Larger than 5 MB: not a game record.',
     open_unreadable: 'The file can’t be read.',
     invalid_name: 'Invalid network name.',
@@ -363,10 +391,6 @@ export const en = {
     ogs_http: 'OGS answered with an error.',
     ogs_offline: 'Not connected to OGS.',
     ogs_refused: 'OGS refused this move.',
-    library_bad_id: 'Invalid game name in the library.',
-    library_not_found: 'This game is no longer in the library.',
-    library_too_big: 'Too large to keep in the library.',
-    library_io: 'Couldn’t read or write your games folder.',
   },
 }
 
