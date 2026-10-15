@@ -14,6 +14,9 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// ${MASAME_VENDOR}/katago-android, by default the repo's vendor/ (gitignored, filled by the build scripts).
+val katagoLibs = file(providers.environmentVariable("MASAME_VENDOR").getOrElse(rootDir.resolve("../../../vendor").path)).resolve("katago-android").canonicalFile
+
 android {
     compileSdk = 37
     namespace = "com.sylvainrey.masame"
@@ -56,6 +59,19 @@ android {
     }
     buildFeatures {
         buildConfig = true
+    }
+    // KataGo runs as its own process, and Android only lets an app exec files from nativeLibraryDir: shipped as a native
+    // lib, with legacy packaging so the installer extracts it there with exec permission.
+    sourceSets["main"].jniLibs.srcDir(katagoLibs)
+    packaging {
+        jniLibs.useLegacyPackaging = true
+    }
+}
+
+tasks.named("preBuild") {
+    val katago = katagoLibs.resolve("arm64-v8a/libkatago.so")
+    doFirst {
+        if (!katago.isFile) throw GradleException("KataGo for Android is missing: $katago (build it with scripts/build-katago-android.sh, or point MASAME_VENDOR at a vendor/ folder holding katago-android/arm64-v8a/libkatago.so)")
     }
 }
 

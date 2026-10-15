@@ -76,9 +76,32 @@ fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
         .ok_or(Failure::new("engine_missing"))
 }
 
-/// Phones: KataGo is not wired in yet.
-#[cfg(mobile)]
+/// iPhone: KataGo is not wired in yet.
+#[cfg(target_os = "ios")]
 fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> { Err(Failure::new("engine_unavailable")) }
+
+/// Android: one CPU (Eigen) build, shipped as a native lib so the package installer extracts it, executable, into
+/// nativeLibraryDir (the only app location Android lets a process exec from). Smaller search batches and caches for a phone.
+#[cfg(target_os = "android")]
+fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
+    let dir = native_library_dir().map_err(|e| Failure::with("engine_missing", e))?;
+    let overrides = ["homeDataDir=katago", "numSearchThreadsPerAnalysisThread=4", "nnMaxBatchSize=4", "nnCacheSizePowerOfTwo=16", "nnMutexPoolSizePowerOfTwo=14"];
+    Ok((dir.join("libkatago.so"), overrides.map(OsString::from).into()))
+}
+
+/// Context.getApplicationInfo().nativeLibraryDir, through the JVM context tao registered.
+#[cfg(target_os = "android")]
+fn native_library_dir() -> Result<PathBuf, jni::errors::Error> {
+    use jni::{jni_sig, jni_str, objects::{JObject, JString}};
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) };
+    vm.attach_current_thread(|env| {
+        let context = unsafe { JObject::from_raw(env, ctx.context().cast()) };
+        let info = env.call_method(&context, jni_str!("getApplicationInfo"), jni_sig!("()Landroid/content/pm/ApplicationInfo;"), &[])?.l()?;
+        let dir = env.get_field(&info, jni_str!("nativeLibraryDir"), jni_sig!("Ljava/lang/String;"))?.l()?;
+        Ok(PathBuf::from(env.cast_local::<JString>(dir)?.try_to_string(env)?))
+    })
+}
 
 /// Windows: resources/katago-win/<variant>/katago.exe (next to its DLLs); Linux:
 /// resources/katago-linux/<variant>/katago; Intel Macs: the sidecar katago-<variant> next to the app executable (sidecars,
@@ -169,7 +192,8 @@ const CONFIG: &str = "analysis.cfg";
 fn install_config(app: &AppHandle) -> Res<()> {
     let src = app.path().resolve(Path::new("resources").join("katago").join(CONFIG), BaseDirectory::Resource)
         .map_err(|e| Failure::with("config_missing", e))?;
-    let bytes = std::fs::read(&src).map_err(|e| Failure::with("config_missing", e))?;
+    // Through the fs plugin: on Android resources are APK assets, not files.
+    let bytes = tauri_plugin_fs::FsExt::fs(app).read(src).map_err(|e| Failure::with("config_missing", e))?;
     let dir = data_dir(app)?;
     if std::fs::read(dir.join(CONFIG)).ok().as_ref() != Some(&bytes) {
         std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(CONFIG), &bytes)).map_err(|e| Failure::with("config_missing", e))?;
