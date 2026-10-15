@@ -247,6 +247,36 @@ export const fr: Dict = {
   exLost: (x: number) => (Math.round(x) ? `−${f.num(Math.round(x))}` : '0'),
   exWhereNone: 'Revois une partie que tu as jouée (contre l’IA, sur OGS, ou un fichier en choisissant ta couleur) pour voir où tu perds tes points.',
   exWhereHelp: (n: number) => `Points perdus par partie par tes coups, sur ${n === 1 ? 'ta dernière partie revue' : `tes ${f.num(n)} dernières parties revues`}. Ouverture : les 50 premiers coups ; fin de partie : à partir du coup 151 (19×19, proportionnellement sur les petits gobans).`,
+  // la lettre du mois (Apprendre › Progrès, src/letter.ts) : une phrase par fait, dans la voix de Masame, sans éloge
+  letterSection: 'La lettre du mois',
+  letter: {
+    title: (y: number, m: number) => { const s = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(new Date(y, m, 1)); return s[0].toUpperCase() + s.slice(1) },
+    soFar: 'jusqu’ici', nothing: 'Rien ce mois-ci.',
+    played: (p: { ai: number; ogs: number; two: number; position: number }) => {
+      const parts = ([[p.ai, 'contre l’IA'], [p.ogs, 'sur OGS'], [p.two, 'à deux'], [p.position, 'depuis une position']] as const).filter(([n]) => n)
+      const all = f.plural(p.ai + p.ogs + p.two + p.position, 'partie', 'parties')
+      if (parts.length === 1) return `Tu as joué ${all} ${parts[0][1]}.`
+      const list = parts.map(([n, w]) => `${f.num(n)} ${w}`)
+      return `Tu as joué ${all} : ${list.slice(0, -1).join(', ')} et ${list.at(-1)}.`
+    },
+    files: (n: number) => (n === 1 ? 'Tu as revu une partie venue d’un fichier.' : `Tu as revu ${f.num(n)} parties venues de fichiers.`),
+    wins: (won: number, of: number) => of === 1 ? `Tu as ${won ? 'gagné' : 'perdu'} ta partie contre l’IA.`
+      : won ? `Contre l’IA, tu as gagné ${f.plural(won, 'partie', 'parties')} sur ${f.num(of)}.` : `Contre l’IA, aucune victoire en ${f.num(of)} parties.`,
+    rank: (from: string, to: string) => (from === to ? `Ton rang lu dans tes coups est resté à ${to}.` : `Ton rang lu dans tes coups est passé de ${from} à ${to}.`),
+    phase: (p: number, lost: number) => `Tes points sont partis surtout ${['dans l’ouverture', 'en milieu de partie', 'en fin de partie'][p]} : ${f.plural(Math.round(lost), 'point', 'points')} par partie.`,
+    joseki: (n: number) => (n === 1 ? 'Tu as appris une nouvelle séquence de joseki.' : `Tu as appris ${f.num(n)} nouvelles séquences de joseki.`),
+    fuseki: (n: number) => (n === 1 ? 'Tu as appris un nouveau fuseki.' : `Tu as appris ${f.num(n)} nouveaux fuseki.`),
+    tsumego: (n: number) => (n === 1 ? 'Tu as résolu un tsumego.' : `Tu as résolu ${f.num(n)} tsumego.`),
+    counting: (n: number, err: number) => {
+      const e = Math.round(err), how = e ? `à ${f.plural(e, 'point', 'points')} près` : 'au point près'
+      return n === 1 ? `Tu as compté une position, ${how}.` : `Tu as compté ${f.num(n)} positions, en général ${how}.`
+    },
+    ritual: (days: number, run: number) => days === 1 ? 'Tu as fait le rituel un jour.'
+      : run === days ? `Tu as fait le rituel ${f.num(days)} jours de suite.`
+      : run > 1 ? `Tu as fait le rituel ${f.num(days)} jours, jusqu’à ${f.num(run)} de suite.` : `Tu as fait le rituel ${f.num(days)} jours.`,
+    save: 'Enregistrer en image', saveTitle: 'Enregistrer la lettre', saved: 'Lettre enregistrée.', failed: (m: string) => `Impossible d’enregistrer la lettre : ${m}`,
+    fileName: (y: number, m: number) => `masame-lettre-${y}-${String(m + 1).padStart(2, '0')}.png`,
+  },
   exReset: 'Effacer les exercices', exResetAsk: 'Effacer tous tes exercices et leurs statistiques ?',
   exReadOnly: 'Ces exercices viennent d’une version plus récente de Masame : l’entraînement ici ne sera pas enregistré.',
   // tsumego from your games (E1), phase practice and yose (E3)

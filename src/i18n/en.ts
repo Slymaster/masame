@@ -247,6 +247,36 @@ export const en = {
   exLost: (x: number) => (Math.round(x) ? `−${f.num(Math.round(x))}` : '0'),
   exWhereNone: 'Review a game you played (against the AI, on OGS, or a file with your colour picked) to see where you lose points.',
   exWhereHelp: (n: number) => `Points lost per game by your moves, over your last ${n === 1 ? 'reviewed game' : `${f.num(n)} reviewed games`}. Opening: the first 50 moves; endgame: from move 151 (19×19, scaled on smaller boards).`,
+  // the monthly letter (Learn › Progress, src/letter.ts): one sentence per fact, in Masame's voice, no praise
+  letterSection: 'The letter of the month',
+  letter: {
+    title: (y: number, m: number) => new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(new Date(y, m, 1)),
+    soFar: 'so far', nothing: 'Nothing this month.',
+    played: (p: { ai: number; ogs: number; two: number; position: number }) => {
+      const parts = ([[p.ai, 'against the AI'], [p.ogs, 'on OGS'], [p.two, 'between two players'], [p.position, 'from a position']] as const).filter(([n]) => n)
+      const all = f.plural(p.ai + p.ogs + p.two + p.position, 'game', 'games')
+      if (parts.length === 1) return `You played ${all} ${parts[0][1]}.`
+      const list = parts.map(([n, w]) => `${f.num(n)} ${w}`)
+      return `You played ${all}: ${list.slice(0, -1).join(', ')} and ${list.at(-1)}.`
+    },
+    files: (n: number) => (n === 1 ? 'You went back over a game from a file.' : `You went back over ${f.num(n)} games from files.`),
+    wins: (won: number, of: number) => of === 1 ? `You ${won ? 'won' : 'lost'} your game against the AI.`
+      : won ? `Against the AI, you won ${f.num(won)} of ${f.num(of)} games.` : `Against the AI, no win in ${f.num(of)} games.`,
+    rank: (from: string, to: string) => (from === to ? `Your rank read in your moves stayed at ${to}.` : `Your rank read in your moves went from ${from} to ${to}.`),
+    phase: (p: number, lost: number) => `Your points went mostly in the ${['opening', 'middle game', 'endgame'][p]}: ${f.plural(Math.round(lost), 'point', 'points')} per game.`,
+    joseki: (n: number) => (n === 1 ? 'You learned a new joseki sequence.' : `You learned ${f.num(n)} new joseki sequences.`),
+    fuseki: (n: number) => (n === 1 ? 'You learned a new fuseki.' : `You learned ${f.num(n)} new fuseki.`),
+    tsumego: (n: number) => (n === 1 ? 'You solved a tsumego.' : `You solved ${f.num(n)} tsumego.`),
+    counting: (n: number, err: number) => {
+      const e = Math.round(err), how = e ? `within ${f.plural(e, 'point', 'points')}` : 'to the point'
+      return n === 1 ? `You counted a position, ${how}.` : `You counted ${f.num(n)} positions, usually ${how}.`
+    },
+    ritual: (days: number, run: number) => days === 1 ? 'You did the ritual on one day.'
+      : run === days ? `You did the ritual ${f.num(days)} days in a row.`
+      : run > 1 ? `You did the ritual on ${f.num(days)} days, up to ${f.num(run)} in a row.` : `You did the ritual on ${f.num(days)} days.`,
+    save: 'Save as an image', saveTitle: 'Save the letter', saved: 'Letter saved.', failed: (m: string) => `Couldn’t save the letter: ${m}`,
+    fileName: (y: number, m: number) => `masame-letter-${y}-${String(m + 1).padStart(2, '0')}.png`,
+  },
   exReset: 'Delete the exercises', exResetAsk: 'Delete all your exercises and their statistics?',
   exReadOnly: 'These exercises were saved by a newer Masame: practice here won’t be recorded.',
   // tsumego from your games (E1), phase practice and yose (E3)
