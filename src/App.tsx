@@ -41,6 +41,7 @@ import { GamesSheet } from './GamesSheet'
 import { ShareSheet } from './ShareSheet'
 import { menuEnabled } from './menu'
 import * as library from './library'
+import { isLocal, local, noteRank, noteReview, resumable, unfinished, useCurrentGame, type Bot } from './current'
 
 // free analysis: a near-instant read, then one that sharpens it
 const QUICK = { maxVisits: 80, overrideSettings: { maxTime: 0.3 } }, DEEP = { maxVisits: 800, overrideSettings: { maxTime: 2.5 } }
@@ -144,6 +145,9 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, child
 /** The signed-in OGS player's colour in an imported game, by name (OGS writes usernames in PB/PW). */
 const ogsSide = ({ info }: Game): Sign | 0 => !ogs.me ? 0 : info.playerBlack === ogs.me.username ? 1 : info.playerWhite === ogs.me.username ? -1 : 0
 
+/** Keeps an OGS game of mine in the library (once), at its end or when imported. */
+const keepOgs = (g: Game, me: Sign | 0, ogsId: number, extra: Partial<library.Entry> = {}) => { library.keep(g, 'ogs', me, { ogsId, ...extra }).catch(e => console.error('library', e)) }
+
 /** State holding a Msg, rendered at display time (a bare function given to useState's setter would run as an updater). */
 function useMsg() {
   const [m, set] = useState<Msg | null>(null)
@@ -181,7 +185,7 @@ export function App() {
   useEffect(() => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch { /* private mode */ } }, [settings])
 
   // the current match against the bot (null = two players), the results by line (keyed by its leaf), the bot's winrates for resigning
-  const [bot, setBot] = useState<{ sign: Sign; rank: string; ritual?: true } | null>(null) // ritual: the daily 9×9, which never moves the AI level
+  const [bot, setBot] = useState<Bot | null>(null)
   const outcomes = useRef(new WeakMap<GameNode, { msg: Msg; re: string }>())
   const outcome = outcomes.current.get(game.leaf), result = outcome?.msg ?? null
   const setResult = (g: Game, o: { msg: Msg; re: string } | null) => { if (o) outcomes.current.set(g.leaf, o); else outcomes.current.delete(g.leaf); rerender() }
@@ -216,6 +220,7 @@ export function App() {
   // counting phase after two passes: which stones are dead (suggested by KataGo, toggled by the player)
   const [counting, setCounting] = useState<{ game: Game; dead: Dead; own: number[] | null } | null>(null)
   const [clock, setClock] = useState<LocalClock | null>(null) // a local game's byo-yomi clock, dropped with its game
+  const [paused, setPaused] = useState<{ game: Game; len: number } | null>(null) // a restored game's clock waits for the next move
 
   const [engine, setEngine] = useState<EngineStatus>({ state: 'stopped' })
   const [nets, setNets] = useState<NetState | null>(null)
@@ -235,6 +240,7 @@ export function App() {
   const [reviewTry, retryReview] = useReducer((x: number) => x + 1, 0)
   const scan = useRef<{ last: Game['board']; leads: (number | undefined)[] } | null>(null) // scan leads of the record ending on `last`
   const scanRun = useRef<Promise<unknown>>(Promise.resolve()) // the last readGame or answer: the next one starts once it settles (2 queries at most)
+  const reviewId = useRef<Promise<string | undefined>>(Promise.resolve(undefined)) // the reviewed game's library id
 
   const refreshNets = useCallback(() => { if (inTauri()) call<NetState>('networks_state').then(setNets, () => {}) }, [])
   useEffect(() => {
@@ -315,7 +321,7 @@ export function App() {
   const [auto, setAuto] = useState<Game | null>(null)
   const [held, setHeld] = useState(false) // A held: free analysis of the shown position
   // the automatic review reads only when nothing else wants the engine, nor a local game the player's attention
-  const playingLocal = !result && (!!bot || dirty)
+  const playingLocal = !result && (!!bot || dirty || unfinished(game))
   // the player's rank read in their moves (src/rank.ts); with "Auto-adjust", it sets their level and anchors the AI's
   const [ranks, setRanks] = useState(loadRanks)
   const ranksRef = useRef(ranks) // the latest store, so two readings completing close together both count
@@ -336,8 +342,9 @@ export function App() {
     free: canAnalyze && engine.state !== 'error' && !thinking && !review && !panel && !ongoing && !joining && !playingLocal && !auto && !held,
     ask: (g, q) => analyze(g, { ...q, priority: -1 }), // KataGo serves higher priorities first: the bot, the trainers jump the queue
     scanRun, add: (...x) => ex.add(...x),
-    done: (k, ms, r) => { // a job is always the player's own game
+    done: (k, ms, r, j) => { // a job is always the player's own game
       const prev = note, ai = r && keepRank(k, r)
+      noteReview(j.id, j.leads, ms).then(() => r && noteRank(j.id, r)).catch(console.error)
       if (ai) setNextAi(ai) // the next game's level, whichever game the line shows
       if (!result || recordKey(game) !== k) return
       setNote(d => [prev?.(d), d.autoDone(ms.length, r ? rankName(r.all) : undefined)].filter(Boolean).join(' '))
@@ -460,10 +467,17 @@ export function App() {
   const show = (g: Game, b: typeof bot) => {
     setGame(g); setBot(b); setNote(null); setStarted(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); setClock(null); setNextAi(null)
   }
+  // the local game is written as it goes; at launch an unfinished one comes back without asking, its clock paused
+  useCurrentGame({ game, bot, clock, myRank: settings.myRank }, ver, r => {
+    show(r.game, r.bot); setClock(r.clock); setPaused({ game: r.game, len: r.game.moves.length })
+    if (SIZES.includes(r.game.info.size)) resize(r.game.info.size)
+    setNote(d => d.gameResumed)
+  })
   /** Leaving the shown game: an unfinished OGS game goes on without us; unsaved moves are lost. */
   // only a live game I play goes on with my clock running; spectated and correspondence games are left silently
   const leaveAsked = !!myGame && !myGame.corr
-  const canLeave = async () => leaveAsked ? askFirst(t.ogsLeaveAsk, t.ogsLeave) : !dirty || confirmDiscard()
+  // an unfinished local game stays in the library, unfinished; a file played on and not saved loses its moves
+  const canLeave = async () => leaveAsked ? askFirst(t.ogsLeaveAsk, t.ogsLeave) : unfinished(game) ? askFirst(t.abandonAsk, t.abandon) : !dirty || isLocal(game) || confirmDiscard()
   // an action that may replace the game cancels a pending search or live challenge before any picker, download or
   // dialog: a match starting meanwhile would replace the game without the leave question; backing out leaves it cancelled
   // o: the daily ritual's game (always against the AI, at your level, even)
@@ -480,11 +494,12 @@ export function App() {
       g = new Game({ size, playerBlack: me === 1 ? '' : name, playerWhite: me === 1 ? name : '',
         ...h > 0 && { komi: 0.5, setup: { black: handicapStones(size, h), white: [] }, firstSign: -1 as Sign } })
       if (h > 0) g.root.data.HA = [String(h)]
-      start(g, { sign: -me as Sign, rank, ...o.ritual && { ritual: true as const } })
-    } else start(g = new Game({ size }), null)
+      start(local(g), { sign: -me as Sign, rank, ...o.ritual && { ritual: true as const } })
+    } else start(g = local(new Game({ size })), null)
     if (settings.clock !== 'off') { Object.assign(g.root.data, sgfTime(CLOCKS[settings.clock])); setClock(startClock(CLOCKS[settings.clock])) }
   }
-  const open = async (read: () => Promise<string | null> = openSgfFile, asked = false, imported = false) => {
+  // from: an OGS game imported (kept in the library), or a game of the library (an unfinished local one is played again)
+  const open = async (read: () => Promise<string | null> = openSgfFile, asked = false, from: { ogsId?: number; entry?: library.Entry } = {}) => {
     abandon()
     try {
       const text = await read()
@@ -492,8 +507,10 @@ export function App() {
       if (text.length > MAX_SGF) throw new LocalizedError(l => l.sgfTooBig)
       const g = loadSgf(text)
       if (!asked && !(await canLeave())) return
-      start(g, null); if (SIZES.includes(g.info.size)) resize(g.info.size)
-      if (imported) ar.enqueue(g, ogsSide(g)) // an ended OGS game of mine
+      const e = from.entry, again = e && resumable(e)
+      if (e) library.bind(g, e.id)
+      start(again ? local(g, e) : g, again ? again.bot : null); if (SIZES.includes(g.info.size)) resize(g.info.size)
+      if (from.ogsId !== undefined) { keepOgs(g, ogsSide(g), from.ogsId); ar.enqueue(g, ogsSide(g), library.idOf(g)) } // an ended OGS game of mine
     } catch (e) {
       setNote(d => d.openFailed(failureText(e, d)))
     }
@@ -503,7 +520,7 @@ export function App() {
     abandon()
     if (!(await canLeave())) return false
     const me = -moves.at(-1)!.sign as Sign, ai = settings.opponent === 'ai' && canPlayAI, name = t.botName(settings.aiRank)
-    start(Game.fromRecord({ size: 19, playerBlack: ai && me === -1 ? name : '', playerWhite: ai && me === 1 ? name : '' }, moves), ai ? { sign: -me as Sign, rank: settings.aiRank } : null)
+    start(local(Game.fromRecord({ size: 19, playerBlack: ai && me === -1 ? name : '', playerWhite: ai && me === 1 ? name : '' }, moves)), ai ? { sign: -me as Sign, rank: settings.aiRank } : null)
     return true
   }
   const save = async () => {
@@ -559,7 +576,7 @@ export function App() {
   const latestFollow = useRef(follow)
   latestFollow.current = follow
   const resume = async (id: number) => { if (online?.id === id) return; abandon(); if (await canLeave()) follow(id) }
-  const importGame = async (id: number) => { abandon(); if (await canLeave()) open(() => ogs.sgf(id), true, true) }
+  const importGame = async (id: number) => { abandon(); if (await canLeave()) open(() => ogs.sgf(id), true, { ogsId: id }) }
   const find = async () => {
     if (!(await canLeave())) return // the shown game is left once a match starts
     abandon()
@@ -641,21 +658,27 @@ export function App() {
     if (n.kind === 'challenge' && !result) setNote(null)
     if (n.gameId === undefined) return
     // a game of mine that ended outside Masame (correspondence, the website): reviewed too, the game being over
-    if (n.kind === 'ended' && n.outcome !== 'Void') ogs.sgf(n.gameId).then(s => { const g = loadSgf(s); ar.enqueue(g, ogsSide(g)) }).catch(console.error)
+    const id = n.gameId
+    if (n.kind === 'ended' && n.outcome !== 'Void') ogs.sgf(id).then(s => { const g = loadSgf(s); keepOgs(g, ogsSide(g), id); ar.enqueue(g, ogsSide(g), library.idOf(g)) }).catch(console.error)
     if (n.kind === 'declined' && n.gameId === waiting.current?.gameId) { stopWait(); setNote(d => d.ogsDeclined(who)) }
     else if (n.kind === 'started' && n.gameId !== online?.id && n.gameId !== waiting.current?.gameId && document.hasFocus()) { if (!result) setNote(null); setStarted({ id: n.gameId, who }) }
   }
   useEffect(() => ogs.onNotice(n => onNotice.current(n)), [])
   // a followed OGS game of mine that finished (not cancelled): reviewed in the background, OGS's rules no longer apply
   const ogsEnded = online?.phase === 'finished' && online.me !== 0 && !!online.result && online.result.re !== 'Void' && online.result.how !== 'cancel'
-  useEffect(() => { if (ogsEnded) ar.enqueue(online.game, online.me as Sign) }, [ogsEnded, online?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!ogsEnded) return
+    const { black: b, white: w } = online.players
+    keepOgs(online.game, online.me, online.id, { result: online.result!.re, black: { name: b.username, rank: b.rank }, white: { name: w.username, rank: w.rank } })
+    ar.enqueue(online.game, online.me as Sign, library.idOf(online.game))
+  }, [ogsEnded, online?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** End of a game: record the result (and, against the bot, nudge its rank toward a 50 % win rate, once). */
   const finish = (text: Msg, botWon: boolean | null, re: string) => {
     game.promote() // the decided line is the record's main line, which RE describes
     game.info.result = re
     setResult(game, { msg: text, re })
-    if (bot) ar.enqueue(game, -bot.sign as Sign)
+    if (bot) ar.enqueue(game, -bot.sign as Sign, library.idOf(game))
     if (bot?.ritual) td.played()
     if (!bot || scored.current === game || botWon === null) return
     scored.current = game
@@ -675,7 +698,7 @@ export function App() {
   }
   // the local clock runs for the side to move at the end of the line; stopped after two passes, once decided, under a trainer
   const tail = game.moves.slice(-2), endTurn = (game.moves.length ? -game.moves.at(-1)!.sign : game.info.firstSign) as Sign
-  const clockTurn = result || panel || tail.length === 2 && tail.every(m => !m.vertex) ? null : endTurn
+  const clockTurn = result || panel || tail.length === 2 && tail.every(m => !m.vertex) || paused?.game === game && paused.len === game.moves.length ? null : endTurn
   useEffect(() => { if (clock) { const c = sync(clock, clockTurn, Date.now(), game.moves.length); if (c !== clock) setClock(c) } })
   // a human side out of time loses (checked late too, after a sleep); the bot's clock runs but it never loses on time
   const loseOnTime = (s: Sign) => finish(d => d.losesOnTime(s), bot ? true : null, timeResult(-s as Sign))
@@ -699,6 +722,8 @@ export function App() {
     const last = game.boards.at(-1)!
     if (scan.current?.last !== last) scan.current = { last, leads: ar.leadsOf(game) } // a background review's leads, if any
     setReview({ side, pct: 0, error: null, moments: null, k: 0, step: 'try', branch: null, ask: null, gap: null, explored: false })
+    // a reviewed game enters the library (a local or OGS game of mine is in it already)
+    reviewId.current = (online ? library.keep(game, 'ogs', online.me, { ogsId: online.id }) : library.keep(game, 'file', side)).catch(e => { console.error('library', e); return undefined })
     changed()
   }
   const openMoment = (k: number, step: Step, moments = review!.moments!) => {
@@ -791,6 +816,7 @@ export function App() {
     run.then(ms => {
       if (!live) return
       ex.add(game, ms, leads, mine || review.side)
+      noteReview(reviewId.current, leads, ms).catch(console.error)
       if (!canPlayAI || !review.side || review.side !== mine) ar.reviewed(game) // else once the rank is read too
       openMoment(0, 'try', ms)
     }, e => live && setReview(x => x && { ...x, error: e }))
@@ -807,6 +833,7 @@ export function App() {
       setReview(x => x && { ...x, rank: r })
       if (rankSide !== mine) return
       const ai = r && keep.current(recordKey(game), r) // no note: it would replace the lesson's caption
+      if (r) noteRank(reviewId.current, r).catch(console.error)
       if (ai) setNextAi(ai)
       ar.reviewed(game)
     }, e => { if (live) { console.error('rank', e); setReview(x => x && { ...x, rank: null }) } })
@@ -1029,7 +1056,7 @@ export function App() {
       ...(online && online.me !== 0 && online.phase === 'finished' ? [['rematch', t.ogsRematch, rematch] as Link] : [])]]
     : countingNow ? [t.countingHelp, []]
     : game.ended ? [t.countingWait, []]
-    : [(botError ?? note)?.(t) ?? engineWait ?? (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null),
+    : [[(botError ?? note)?.(t), engineWait].filter(Boolean).join(' ') || (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null),
       botError ? [['retry', t.retry, retryBot]] : []]
   const [gameLine, gameLinks]: [string | null | undefined, Link[]] = line ? [line, lineLinks]
     : started ? [t.ogsStartedVs(started.who), [['open', t.ogsOpen, () => resume(started.id)]]]
@@ -1411,7 +1438,7 @@ export function App() {
       )}
       {sheet === 'games' && (
         <GamesSheet onClose={closeSheet} opener={opener.current} onResume={id => { closeSheet(); resume(id) }}
-          onOpen={e => { closeSheet(); open(() => library.read(e.id)) }} onImport={() => { closeSheet(); open() }}
+          onOpen={e => { closeSheet(); open(() => library.read(e.id), false, { entry: e }) }} onImport={() => { closeSheet(); open() }}
           onImportOgs={id => { closeSheet(); importGame(id) }} />
       )}
       {sheet === 'share' && (
