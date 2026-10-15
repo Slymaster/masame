@@ -13,19 +13,25 @@ export function useMentor({ game, bot, thinkingTime, changed }: {
 }) {
   const mentors = useRef(new WeakMap<Game, Mentor>())
   let mentor = bot?.mentor ? mentors.current.get(game) : undefined
-  if (bot?.mentor && !mentor) mentors.current.set(game, mentor = new Mentor(g => analyze(g, MENTOR_QUERY).then(a => a.scoreLead)))
+  if (bot?.mentor && !mentor) mentors.current.set(game, mentor = new Mentor(g => analyze(g, MENTOR_QUERY)))
   const [stop, setStop] = useState<{ node: GameNode; loss: number } | null>(null)
   // the stop holds while its move is the end of the shown line (an undo or another game ends it)
   const stopped = mentor && stop && stop.node === game.nodes[game.cursor] && game.cursor === game.moves.length ? stop : null
   useEffect(() => { if (mentor && thinkingTime) mentor.prefetch(game) })
 
-  const patched = useRef('')
+  // the one writer of the entry's mentor.stops: a resumed game keeps its count (stops only grow)
+  const patched = useRef(''), [, seeded] = useState(0)
   useEffect(() => {
-    const id = library.idOf(game), p = { ...bot?.era && { era: bot.era }, ...mentor && { mentor: { stops: mentor.stops } } }
-    const k = id && Object.keys(p).length ? id + JSON.stringify(p) : ''
-    if (!k || k === patched.current) return
-    patched.current = k
-    library.patch(id!, p).catch(() => {}) // outside the app there is no library
+    const id = library.idOf(game)
+    if (!id || (!bot?.era && !mentor)) return
+    library.load().then(xs => {
+      const had = xs.find(e => e.id === id)?.mentor?.stops ?? 0
+      if (mentor && had > mentor.stops) { mentor.stops = had; seeded(n => n + 1) }
+      const k = id + JSON.stringify({ era: bot?.era, stops: mentor?.stops })
+      if (k === patched.current) return
+      patched.current = k
+      return library.patch(id, { ...bot?.era && { era: bot.era }, ...mentor && { mentor: { stops: mentor.stops } } })
+    }).catch(() => {}) // outside the app there is no library
   })
 
   return {
