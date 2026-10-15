@@ -3,7 +3,7 @@ import { readV1, writeV1 } from './store'
 import * as counting from './count/counting'
 import * as classics from './classics/classics'
 import * as ritual from './today/ritual'
-import { KEY as TSUMEGO, loadMined, saveMined, emptyMined } from './tsumego/mine'
+import { KEY as TSUMEGO, saveMined, emptyMined } from './tsumego/mine'
 
 const mem = (init: Record<string, string> = {}) => {
   const m = new Map(Object.entries(init))
