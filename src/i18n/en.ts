@@ -54,7 +54,7 @@ export const en = {
     `To play against the AI, install the Human network${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' and an analysis network' : ''}.`,
   openNetworks: 'Open networks',
   atelier: 'Workshop', coords: 'Coordinates', sound: 'Sound', territory: 'Light and shadow', language: 'Language',
-  renderToggle: '3D / 2D', rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
+  candidates: 'Candidate moves', renderToggle: '3D / 2D', rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
   view: 'View', study: 'Study', contemplation: 'Contemplation',
   contemplationHint: 'Right-drag to turn, middle- or Shift+right-drag to move, scroll or pinch to zoom, R or double-click outside the board to recentre',
   light: 'Lighting', lights: { auto: 'Auto', morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' }, lightAutoHint: 'Follows the hour and the season',
