@@ -37,7 +37,8 @@ export function dateText(d: string) {
   const [y, m, day] = d.split('-').map(Number)
   if (!m) return String(y)
   const date = new Date(Date.UTC(y, m - 1, day || 1))
-  return new Intl.DateTimeFormat(lang === 'fr' ? 'fr-FR' : 'en-GB', { year: 'numeric', month: 'long', ...day && { day: 'numeric' }, timeZone: 'UTC' }).format(date)
+  const text = new Intl.DateTimeFormat(lang === 'fr' ? 'fr-FR' : 'en-GB', { year: 'numeric', month: 'long', ...day && { day: 'numeric' }, timeZone: 'UTC' }).format(date)
+  return lang === 'fr' && day === 1 ? text.replace(/^1(?=\s)/, '1er') : text // « 1er décembre 1851 »
 }
 /** A game worth guessing: real moves to guess, on a board KataGo reads. */
 export const canGuess = (g: Game) => g.info.size <= 19 && g.moves.filter(m => !m.setup && m.vertex).length >= 10
