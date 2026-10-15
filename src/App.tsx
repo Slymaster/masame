@@ -419,6 +419,7 @@ export function App() {
   })
   const trainers = [jt, ft, ex, ct, mem, ed, cl] // every takeover of the card, in no particular order: at most one is open
   const tr = trainers.find(x => x.open) ?? ex
+  const trInfo = cl.info ?? ed.info ?? ct.info ?? ex.info // a trainer's own position: its board size and komi on the meta line
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
   const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && (online.placing ? online.me === 1 : game.toPlay === online.me) : !bot || game.toPlay !== bot.sign
   const mt = useMentor({ game, bot, changed, thinkingTime: !!bot && humanTurn && atEnd && !result && !game.ended && !panel })
@@ -1312,7 +1313,7 @@ export function App() {
           <div className="card-in" id="card" hidden={settings.panelHidden}>
             <div className="meta">
               {/* wraps only between its parts, never inside one */}
-              <span>{(online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : cl.info ? t.board(cl.info.size, cl.info.komi) : ed.info ? t.board(ed.info.size, ed.info.komi) : t.board(size, komi)).split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
+              <span>{(online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : trInfo ? t.board(trInfo.size, trInfo.komi) : t.board(size, komi)).split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
               <button className="icon sm" onClick={openSheet('share')} aria-label={t.share} title={t.share}><Icon name="share" /></button>
               <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
                 <Icon name={sound ? 'volume' : 'volume-off'} />

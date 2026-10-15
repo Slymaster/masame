@@ -155,7 +155,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
   const now = Date.now(), all = counts(store.p, now)
   const today = deckStep(store.p.cards, all.due + all.fresh, now, hand) // the daily ritual's first step: a hand of `hand` cards, tsumego included
   const none = {
-    open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, add, addItems, has, today,
+    open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, info: null as { size: number; komi: number } | null, add, addItems, has, today,
     counts: counts(store.p, now, 'find'), tsCounts: counts(store.p, now, 'ld'), games: store.p.games,
     start, work, tsumego: () => start({ ...DECK, only: 'ld' }),
   }
@@ -234,5 +234,5 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
   const keys: Record<string, (() => void) | undefined> = {
     escape: close, ' ': undefined, arrowup: () => {}, arrowdown: () => {}, arrowleft: () => {}, arrowright: () => {}, home: () => {}, end: () => {}, p: () => {},
   }
-  return { ...none, play, board, note, links, body, acts, keys }
+  return { ...none, play, board, note, links, body, acts, keys, info: x ? { size: x.size, komi: x.komi } : null } // the meta line reads the exercise's board and komi
 }

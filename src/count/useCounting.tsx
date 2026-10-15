@@ -81,7 +81,7 @@ export function useCounting({ open, setOpen, blocked, canAnalyze, light, setThin
   const close = () => setOpen(false)
   const now = Date.now(), fig = recent(store)
   const available = !!entries?.some(countable)
-  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null,
+  const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, info: null as { size: number; komi: number } | null,
     available, today: countedToday(store, now), median: fig.median, n: fig.n }
   if (!open) return none
 
@@ -129,6 +129,6 @@ export function useCounting({ open, setOpen, blocked, canAnalyze, light, setThin
   const keys: Record<string, (() => void) | undefined> = {
     escape: close, ' ': undefined, arrowup: () => {}, arrowdown: () => {}, arrowleft: () => {}, arrowright: () => {}, home: () => {}, end: () => {}, p: () => {},
   }
-  return { ...none, board, note, links, body, acts, keys }
+  return { ...none, board, note, links, body, acts, keys, info: r?.game.info ?? null } // the meta line reads the position's board and komi
 }
 
