@@ -72,6 +72,14 @@ describe('Mes parties', () => {
     expect(ids('  dosaku ')).toEqual(['4'])
     expect(filtered(xs, 'ai', 'shu')).toEqual([])
   })
+  it('names the AI in the language shown', () => {
+    setLang('en')
+    const master = { ...e('6', 'ai', 1, 'Moi', 'Maître de 1850', 'W+R'), era: 1850 }, bot = e('7', 'ai', -1, 'KataGo humain 3k', 'Moi')
+    bot.black.rank = '3k'
+    expect(filtered([master, bot], 'all', 'master of').map(x => x.id)).toEqual(['6'])
+    expect(filtered([master, bot], 'all', 'human 3k').map(x => x.id)).toEqual(['7'])
+    setLang('fr')
+  })
   it('offers only the finished OGS games not kept yet', () => {
     const g = (id: number) => ({ id, size: 19, opponent: { id, username: 'x', rank: '' }, color: 1 as const, date: 0 })
     const kept = [{ ...xs[1], ogsId: 7 }, xs[0]]

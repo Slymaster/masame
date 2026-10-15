@@ -28,7 +28,9 @@ export type Filter = 'all' | 'ai' | 'ogs' | 'two' | 'file'
 export const FILTERS: Filter[] = ['all', 'ai', 'ogs', 'two', 'file']
 const SOURCES: Record<Exclude<Filter, 'all'>, Source[]> = { ai: ['ai'], ogs: ['ogs'], two: ['two'], file: ['file', 'position'] }
 /** Who the player faced: the other side, or both sides when the player's colour is unknown. */
-export const opponents = (e: Entry) => (e.me === 1 ? [e.white] : e.me === -1 ? [e.black] : [e.black, e.white])
+// the AI is named in the language shown, not the one its game was saved in
+const named = (e: Entry, p: Entry['black']) => e.source !== 'ai' ? p : { ...p, name: e.era ? t.masterOf(e.era) : p.rank ? t.botName(p.rank) : p.name }
+export const opponents = (e: Entry) => (e.me === 1 ? [named(e, e.white)] : e.me === -1 ? [named(e, e.black)] : [e.black, e.white])
 /** The entries a filter and an opponent search keep, in the library's order (newest first). */
 export function filtered(xs: Entry[], f: Filter, q: string): Entry[] {
   const s = q.trim().toLocaleLowerCase()
