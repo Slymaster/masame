@@ -83,6 +83,13 @@ describe('restoring', () => {
     expect(unfinished(r.game)).toBe(false) // made local by resumeCurrent, not by restore
   })
 
+  it('keeps the player\'s stored rank once the entry exists, whatever the settings say now', () => {
+    const g = local(new Game({ size: 9 })); g.play([2, 2])
+    const prev = snapshot('ai-r', shown(g), 1000).entry
+    expect(prev.black.rank).toBe('8k')
+    expect(snapshot('ai-r', shown(g, { myRank: '2k' }), 2000, prev).entry.black).toEqual({ name: '', rank: '8k' })
+  })
+
   it('reads a bare current.json: main line, two players, no clock', () => {
     const g = new Game({ size: 9 }); g.play([2, 2]); g.play([3, 3])
     const r = restore({ id: 'two-x', cursor: 1, bot: null, clock: null, handicap: 0 }, saveSgf(g))
