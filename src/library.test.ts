@@ -141,3 +141,34 @@ describe('newId', () => {
     expect(lib.newId('ai')).toMatch(ID)
   })
 })
+
+describe('a game and its entry', () => {
+  const game = async (sgf: string) => (await import('./sgf')).loadSgf(sgf)
+  it('reads the entry from the SGF: players, ranks, handicap, date, result', async () => {
+    const g = await game('(;SZ[19]KM[0.5]HA[3]PB[Ana]BR[12k]PW[Masame]WR[9k]DT[2026-10-14,15]RE[W+R];B[pd];W[dd])')
+    expect(lib.entryOf(g, { id: 'x', source: 'file', me: 0 })).toEqual({
+      id: 'x', source: 'file', me: 0, date: Date.parse('2026-10-14'), size: 19, komi: 0.5, handicap: 3,
+      black: { name: 'Ana', rank: '12k' }, white: { name: 'Masame', rank: '9k' }, result: 'W+R',
+    })
+    const bare = lib.entryOf(await game('(;SZ[9];B[ee])'), { id: 'y', source: 'two', me: 0, date: 5 })
+    expect(bare).toMatchObject({ date: 5, size: 9, komi: 6.5, handicap: 0, black: { name: '', rank: '' } })
+    expect('result' in bare).toBe(false)
+  })
+  it('keeps a game once, binds it, and finds the same file again by its content', async () => {
+    host.answer = cmd => (cmd === 'library_list' ? [] : undefined)
+    const sgf = '(;SZ[9]PB[a]PW[b];B[ee];W[gc])'
+    const g = await game(sgf), id = await lib.keep(g, 'file', 1)
+    expect(id).toMatch(/^file-[0-9a-z]+$/)
+    expect(lib.idOf(g)).toBe(id)
+    expect(await lib.keep(g, 'file', 1)).toBe(id) // bound: nothing written again
+    const again = await game(sgf)
+    expect(await lib.keep(again, 'file', 1)).toBe(id) // the same file opened again: already in the library
+    expect(host.log.filter(x => x.startsWith('library_write'))).toEqual([`library_write ${id}`])
+    expect(lib.get()?.[0]).toMatchObject({ id, source: 'file', me: 1, black: { name: 'a' } })
+  })
+  it('keeps an imported OGS game under its OGS id', async () => {
+    host.answer = cmd => (cmd === 'library_list' ? [] : undefined)
+    expect(await lib.keep(await game('(;SZ[19];B[pd])'), 'ogs', -1, { ogsId: 42 })).toBe('ogs-42')
+    expect(lib.get()?.[0]).toMatchObject({ id: 'ogs-42', ogsId: 42, me: -1 })
+  })
+})

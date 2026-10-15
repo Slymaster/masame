@@ -1,9 +1,12 @@
 // The library: every game played or opened lives on this machine, as an SGF file per game plus one index, in the app
 // data dir's games/ folder (Rust: src-tauri/src/library.rs). Outside the app every call rejects, and Mes parties says so.
 // One store for the whole UI (Mes parties, Apprendre, Progrès), loaded once; every write goes through one queue, in order.
+import type { Game, Sign } from './game'
+import { hash64 } from './joseki/sym'
 import { call } from './katago'
 import type { Reading } from './rank'
 import type { Moment } from './review'
+import { saveSgf } from './sgf'
 
 export type Source = 'ai' | 'two' | 'ogs' | 'file' | 'position'
 export interface Side { name: string; rank: string }
@@ -92,4 +95,37 @@ export function newId(source: Source, o: { ogsId?: number; hash?: string; now?: 
   if (source === 'ogs' && o.ogsId !== undefined) return `ogs-${o.ogsId}`
   if (source === 'file' && o.hash) return `file-${o.hash}`
   return `${source}-${(o.now ?? Date.now()).toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+// ---------- a game and its entry ----------
+const ids = new WeakMap<Game, string>()
+/** The id a shown game is kept under in the library, once it entered it. */
+export const idOf = (g: Game) => ids.get(g)
+/** Ties a game to its library id (a game opened from the library, a local game given its id at its first move). */
+export const bind = (g: Game, id: string) => { ids.set(g, id) }
+
+/** An entry for a game, from its info and its SGF root properties (BR/WR ranks, HA, DT); `o` sets or overrides the rest. */
+export function entryOf(g: Game, o: { id: string; source: Source; me: Sign | 0 } & Partial<Entry>): Entry {
+  const d = g.root.data, first = (k: string) => d[k]?.[0] ?? ''
+  const dt = Date.parse(first('DT').slice(0, 10)) // "2026-10-14", or a range "2026-10-14,15": its first day
+  const ha = parseInt(first('HA'), 10)
+  return {
+    date: Number.isFinite(dt) ? dt : Date.now(), size: g.info.size, komi: g.info.komi, handicap: ha >= 2 ? ha : 0,
+    black: { name: g.info.playerBlack, rank: first('BR') }, white: { name: g.info.playerWhite, rank: first('WR') },
+    ...g.info.result && { result: g.info.result }, ...o,
+  }
+}
+
+/**
+ * Keeps a game in the library once — a file reviewed, replayed from memory or guessed, an OGS game imported — and
+ * returns its id. A file is keyed by its content, so opening the same file again finds the same entry.
+ */
+export async function keep(g: Game, source: Source, me: Sign | 0, extra: Partial<Entry> = {}): Promise<string> {
+  const known = ids.get(g)
+  if (known) return known
+  const sgf = saveSgf(g), id = newId(source, { ogsId: extra.ogsId, hash: source === 'file' ? hash64(sgf) : undefined })
+  ids.set(g, id)
+  const xs = await load().catch(() => null)
+  if (!xs?.some(e => e.id === id)) await write(id, sgf, entryOf(g, { id, source, me, ...extra }))
+  return id
 }
