@@ -1,6 +1,8 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Theme.baduk" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+        <!-- Linen behind the webview and on the launch splash, so the app never flashes white. -->
+        <item name="android:windowBackground">@color/linen</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/linen</item>
     </style>
 </resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 6-11 Auto Backup: the KataGo nets (100+ MB, downloaded again from the app) stay off the user's Drive quota,
+     and the OGS refresh token never leaves the device (signing in again restores it). -->
+<full-backup-content>
+    <exclude domain="root" path="models/" />
+    <exclude domain="root" path="ogs.json" />
+</full-backup-content>
