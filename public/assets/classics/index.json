@@ -53,7 +53,7 @@
  {
   "id": "retsugen-senkaku-1792",
   "file": "retsugen-senkaku-1792.sgf",
-  "date": "1792",
+  "date": "1792-12-30",
   "black": "Honinbo Retsugen",
   "white": "Yasui Senkaku",
   "result": "W+R",
@@ -87,7 +87,7 @@
  {
   "id": "rittetsu-jowa-1815",
   "file": "rittetsu-jowa-1815.sgf",
-  "date": "1815-03-07",
+  "date": "1815",
   "black": "Hattori Rittetsu",
   "white": "Honinbo Jowa",
   "result": "B+4",
@@ -104,7 +104,7 @@
  {
   "id": "jowa-chitoku-1820",
   "file": "jowa-chitoku-1820.sgf",
-  "date": "1820-05-21",
+  "date": "1820",
   "black": "Honinbo Jowa",
   "white": "Yasui Chitoku",
   "result": "B+2",
@@ -172,7 +172,7 @@
  {
   "id": "sanchi-shuwa-1844",
   "file": "sanchi-shuwa-1844.sgf",
-  "date": "1844",
+  "date": "1844-12-26",
   "black": "Yasui Sanchi",
   "white": "Honinbo Shuwa",
   "result": "B+1",
