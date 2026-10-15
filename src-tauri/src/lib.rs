@@ -1,7 +1,7 @@
 mod backend;
 mod engine;
 mod failure;
-#[cfg(any(target_os = "ios", test))]
+#[cfg(any(target_os = "ios", all(test, unix)))]
 mod inproc;
 #[cfg(target_os = "ios")]
 mod ios;
