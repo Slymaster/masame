@@ -1326,13 +1326,13 @@ export class Board3D {
     }
     t1.count = n1; t2.count = n2; t1.instanceMatrix.needsUpdate = t2.instanceMatrix.needsUpdate = true
 
-    // hover ghost
-    const h = this.hover, st = s0
-    const ok = !!(h && st && st.interactive && !st.counting && !st.signMap[h[1]]?.[h[0]] && this.ready)
+    // hover ghost, or the half-tone stone the mentor stopped (the board is not interactive then)
+    const st = s0, p = st?.pending, h = p?.v ?? this.hover, sign = p?.sign ?? st?.toPlay
+    const ok = !!(h && st && (p || st.interactive && !st.counting && !st.signMap[h[1]]?.[h[0]]) && this.ready)
     this.ghost.visible = ok
     if (ok && st && h) {
-      this.ghost.geometry = st.toPlay === 1 ? this.geoB : this.geoW
-      this.ghost.material = this.ghostMats[st.toPlay === 1 ? 1 : -1]
+      this.ghost.geometry = sign === 1 ? this.geoB : this.geoW
+      this.ghost.material = this.ghostMats[sign === 1 ? 1 : -1]
       this.ghost.position.set(gx(N, h[0]), SH, gz(N, h[1]))
     }
     return busy

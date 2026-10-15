@@ -5,7 +5,7 @@ import type { Game, Sign } from '../game'
 import type { Analysis } from '../katago'
 import type { Reading } from '../rank'
 import type { Moment } from '../review'
-import { enqueue, leadsOf, loadQueue, ranksOf, newAuto, nextJob, RETRY_MS, reviewed, runJob, saveQueue, type Auto, type Job } from './autoReview'
+import { enqueue, leadsOf, loadQueue, ranksOf, newAuto, nextJob, RETRY_MS, reviewed, runJob, saveQueue, type Auto, type Job, type JobFlags } from './autoReview'
 import { recordKey } from './deck'
 
 export function useAutoReview({ free, ask, scanRun, add, done, human }: {
@@ -13,7 +13,7 @@ export function useAutoReview({ free, ask, scanRun, add, done, human }: {
   ask: (g: Game, q: object) => Promise<Analysis>
   scanRun: RefObject<Promise<unknown>> // App's chain of readings: 2 queries in flight at most
   add: (g: Game, ms: Moment[], leads: (number | undefined)[], side: Sign) => void
-  done: (k: string, ms: Moment[], r: Reading | null) => void // a background review complete, with the player's rank when read
+  done: (k: string, ms: Moment[], r: Reading | null, j: Job) => void // a background review complete, with the player's rank when read
   human: boolean // the human network is there: the player's rank is read too
 }) {
   const a = useRef<Auto>(null as unknown as Auto)
@@ -37,14 +37,14 @@ export function useAutoReview({ free, ask, scanRun, add, done, human }: {
     run.then(r => {
       if (current.current === j) current.current = null
       if (r === 'failed') setTimeout(bump, RETRY_MS)
-      else if (r !== 'paused') { setPct(null); latest.current.done(j.k, r, got) } // before changed() saves the queue without the job
+      else if (r !== 'paused') { setPct(null); latest.current.done(j.k, r, got, j) } // before changed() saves the queue without the job
       changed()
     }, e => { console.error('automatic review', e); if (current.current === j) current.current = null }) // never leaves the runner stuck
   }, [free, ver, scanRun])
 
   return {
     /** A finished game whose player is `side` (0: unknown, ignored). */
-    enqueue: (game: Game, side: Sign | 0) => { const q = enqueue(a.current, game, side, Date.now()); if (q !== a.current.queue) { a.current.queue = q; changed() } },
+    enqueue: (game: Game, side: Sign | 0, flags?: JobFlags) => { const q = enqueue(a.current, game, side, Date.now(), flags); if (q !== a.current.queue) { a.current.queue = q; changed() } },
     /** The scan leads of this record, shared by the foreground review. */
     leadsOf: (game: Game) => leadsOf(a.current, recordKey(game)),
     /** The rank probabilities of this record, shared by the foreground review. */

@@ -126,6 +126,18 @@ export const fr: Dict = {
   retry: 'Réessayer',
   humanSilent: 'Le réseau Humain ne répond pas. Vérifie qu’il est installé.',
   badAnswer: 'Réponse de KataGo illisible.',
+  // Masters of an era and the Mentor (v0.5, B)
+  style: 'Style', styleLevel: 'À ton niveau', styleEra: 'Maître d’une époque',
+  era: 'Époque', earlier: 'Époque : plus ancienne', later: 'Époque : plus récente',
+  masterOf: (year: number) => `Maître de ${year}`,
+  eraHelp: 'Ces maîtres jouent à force professionnelle : l’ajustement automatique est suspendu pendant ces parties.',
+  eraHandicap: (n: number) => `Tu prends ${n} pierres contre le maître, comme dans les parties d’enseignement d’autrefois.`,
+  mentor: 'Mentor',
+  mentorHelp: 'Une partie avec le mentor est une leçon : elle ne nourrit ni ton rang lu ni l’ajustement automatique.',
+  mentorNeedsNet: 'Demande un réseau d’analyse.',
+  mentorStop: (points: number) => `Ce coup coûte ${Math.round(points)} points. Il y a mieux.`,
+  mentorKeep: 'Garder',
+  mentorStops: (n: number) => (n ? `Le mentor t’a arrêté ${n} fois.` : 'Le mentor ne t’a pas arrêté.'),
   // handicap and the local clock
   handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} pierres` : 'Aucun'),
   fewerStones: 'Handicap : moins de pierres', moreStones: 'Handicap : plus de pierres',

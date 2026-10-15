@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Game } from './game'
 import { gtp } from './katago'
 import { handicapStones, proposeHandicap, stepHandicap } from './handicap'
+import { MASTER_RANK } from './bot'
 import { loadSgf, saveSgf } from './sgf'
 
 const names = (size: number, n: number) => handicapStones(size, n).map(v => gtp(v, size))
@@ -60,5 +61,14 @@ describe('a handicap game', () => {
     expect(h.moves.map(m => m.sign)).toEqual([-1])
     h.goTo(0)
     expect(h.toPlay).toBe(-1)
+  })
+})
+
+describe('the handicap against a Master of an era', () => {
+  it('comes from the gap between your level and 9d, capped at 9 stones', () => {
+    expect(proposeHandicap('10k', MASTER_RANK, 19)).toBe(9)
+    expect(proposeHandicap('3d', MASTER_RANK, 19)).toBe(6)
+    expect(proposeHandicap('10k', MASTER_RANK, 9)).toBe(4) // scaled by board area, as against the AI
+    expect(proposeHandicap('9d', MASTER_RANK, 19)).toBe(0)
   })
 })

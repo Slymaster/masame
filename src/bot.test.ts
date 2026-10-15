@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { rng } from './board/noise'
-import { adjustRank, decide, entropy, humanDistribution, humanProfile, RANKS, resignFrom, sample, settled, stepRank, thinkDelay, type BotInput } from './bot'
+import { adjustRank, botProfile, clampEra, decide, entropy, ERAS, humanDistribution, humanProfile, lessonFlags, RANKS, resignFrom, sample, settled, stepEra, stepRank, thinkDelay, type BotInput } from './bot'
+import { en } from './i18n/en'
+import { fr } from './i18n/fr'
 
 const all = () => true
 const empty = (n: number) => Array.from({ length: n }, () => Array<number>(n).fill(0))
@@ -93,5 +95,27 @@ describe('decisions', () => {
     const s = empty(3); s[1][1] = 1
     expect(settled([0.9, -0.9, 0.05, 0.9, 0.0, -0.8, 0.9, 0.9, 0.9], s)).toBe(true)
     expect(settled([0.9, -0.9, 0.5, 0.9, 0.0, -0.8, 0.9, 0.9, 0.9], s)).toBe(false)
+  })
+})
+
+describe('Masters of an era', () => {
+  it('play with the professional profile of their year, the others with their rank', () => {
+    expect(ERAS).toEqual([1850, 1900, 1935, 1970, 2005, 2023])
+    expect(botProfile({ rank: '5k', era: 1850 })).toBe('proyear_1850')
+    expect(botProfile({ rank: '5k' })).toBe('rank_5k')
+    expect(clampEra(1901)).toBe(1850)
+    expect([stepEra(1850, -1), stepEra(1850, 1), stepEra(2023, 1)]).toEqual([1850, 1900, 2023])
+  })
+
+  it('are named after their year in both languages', () => {
+    expect(en.masterOf(1850)).toBe('Master of 1850')
+    expect(fr.masterOf(1850)).toBe('Maître de 1850')
+  })
+
+  it('suspend auto-adjust; a mentor game feeds neither the rank nor auto-adjust', () => {
+    expect(lessonFlags({})).toEqual({})
+    expect(lessonFlags({ era: 1935 })).toEqual({ noAdjust: true })
+    expect(lessonFlags({ mentor: true })).toEqual({ noRank: true, noAdjust: true })
+    expect(lessonFlags({ era: 1935, mentor: true })).toEqual({ noRank: true, noAdjust: true })
   })
 })
