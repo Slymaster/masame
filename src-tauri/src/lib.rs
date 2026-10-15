@@ -56,10 +56,10 @@ fn write_setting(app: &AppHandle, key: &str, value: Value) -> Res<()> {
     std::fs::write(&path, serde_json::to_vec_pretty(&settings).unwrap()).map_err(|e| Failure::with("settings_write", e))
 }
 
-/// Active analysis net: the saved choice if installed, else the default, else any installed kata1 net.
+/// Active analysis net: the saved choice if installed and listed here, else the default, else any installed listed net.
 fn active_network(app: &AppHandle) -> Option<String> {
     let dir = models_dir(app).ok()?;
-    let ok = |n: &str| networks::valid_name(n) && n != networks::HUMAN && networks::file(&dir, n).is_file();
+    let ok = |n: &str| networks::valid_name(n) && n != networks::HUMAN && networks::listed(n) && networks::file(&dir, n).is_file();
     let saved = read_settings(app)["activeNetwork"].as_str().map(String::from);
     saved.filter(|n| ok(n))
         .or_else(|| ok(networks::DEFAULT_NETWORK).then(|| networks::DEFAULT_NETWORK.into()))

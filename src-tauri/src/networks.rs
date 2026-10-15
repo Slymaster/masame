@@ -37,6 +37,11 @@ const ANDROID: &[&str] = &["human", "compact"];
 const SHOWN: &[&str] = if cfg!(target_os = "ios") { IPHONE } else if cfg!(target_os = "android") { ANDROID }
     else { &["human", "balanced", "maximum", "light", "strongest", "newest"] };
 
+/// Whether this platform lists a net, so it may be the active one: phones only their pinned presets; desktop any name,
+/// as it also lists live nets.
+pub fn listed(name: &str) -> bool { listed_in(name, SHOWN) }
+fn listed_in(name: &str, shown: &[&str]) -> bool { shown.contains(&"newest") || preset(name).is_some_and(|p| shown.contains(&p.key)) }
+
 struct Preset { key: &'static str, name: &'static str, bytes: u64, sha256: &'static str, created: &'static str, extra: bool }
 
 // Pinned 2026-10-11 from the official rating list; the live API only adds ratings. humanv0 is not in the API:
@@ -375,6 +380,14 @@ mod tests {
         assert_eq!(keys(IPHONE), [k("human", HUMAN), k("fast", FAST), k("light", LIGHT)]);
         assert_eq!(keys(ANDROID), [k("human", HUMAN), k("compact", COMPACT)]);
         assert!(catalog(&[]).iter().all(|e| e.name != FAST && e.name != COMPACT), "desktop unchanged");
+    }
+
+    #[test]
+    fn phones_only_activate_listed_nets() {
+        // A Balanced net left on an iPhone is passed over, so the default (then Light) takes over.
+        assert!(!listed_in(BALANCED, IPHONE) && listed_in(FAST, IPHONE) && listed_in(LIGHT, IPHONE));
+        assert!(listed_in(COMPACT, ANDROID) && !listed_in(LIGHT, ANDROID) && !listed_in("kata1-x", ANDROID));
+        assert!(listed(BALANCED) && listed("kata1-x"), "desktop unchanged");
     }
 
     #[test]
