@@ -1,7 +1,7 @@
 node_modules/
 dist/
 src-tauri/target/
-src-tauri/gen/
+src-tauri/gen/schemas/
 .DS_Store
 *.log
 .playwright-mcp/

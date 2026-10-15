@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "iOS": {
+      "minimumSystemVersion": "16.4",
+      "developmentTeam": "CN9TKA949C"
+    }
+  }
+}
