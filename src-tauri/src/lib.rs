@@ -82,10 +82,12 @@ fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> { Err(Failure::
 
 /// Android: one CPU (Eigen) build, shipped as a native lib so the package installer extracts it, executable, into
 /// nativeLibraryDir (the only app location Android lets a process exec from). Smaller search batches and caches for a phone.
+/// maxTime caps every query that sets no time of its own (bot move, territory, final count): on a phone CPU their
+/// 60–300 visits take minutes, while the bot's move itself comes from the human policy.
 #[cfg(target_os = "android")]
 fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
     let dir = native_library_dir().map_err(|e| Failure::with("engine_missing", e))?;
-    let overrides = ["homeDataDir=katago", "numSearchThreadsPerAnalysisThread=4", "nnMaxBatchSize=4", "nnCacheSizePowerOfTwo=16", "nnMutexPoolSizePowerOfTwo=14"];
+    let overrides = ["homeDataDir=katago", "numSearchThreadsPerAnalysisThread=4", "nnMaxBatchSize=4", "nnCacheSizePowerOfTwo=16", "nnMutexPoolSizePowerOfTwo=14", "maxTime=3"];
     Ok((dir.join("libkatago.so"), overrides.map(OsString::from).into()))
 }
 
