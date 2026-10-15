@@ -34,6 +34,16 @@ describe('the queue', () => {
     expect(a.queue.map(j => j.t)).toEqual(Array.from({ length: CAP }, (_, i) => i + 2))
     expect(nextJob(a, 0)?.t).toBe(2) // the oldest first
   })
+  it('keeps one job per library entry: the same moves under two ids are two jobs, each dropped on its own', () => {
+    const a = newAuto([])
+    a.queue = enqueue(a, game(12), 1, 1, { id: 'file-a' })
+    a.queue = enqueue(a, game(12), 1, 2, { id: 'ogs-1' })
+    expect(a.queue.map(j => j.id)).toEqual(['file-a', 'ogs-1'])
+    expect(enqueue(a, game(12), 1, 3, { id: 'ogs-1' })).toBe(a.queue)
+    reviewed(a, a.queue[0].k, 'file-a')
+    expect(a.queue.map(j => j.id)).toEqual(['ogs-1'])
+    expect(enqueue(a, game(12), 1, 4, { id: 'file-a' })).toBe(a.queue) // reviewed this session
+  })
   it('snapshots the record: moves added later are not in the job', () => {
     const a = newAuto([]), g = game(12)
     a.queue = enqueue(a, g, 1, 0)

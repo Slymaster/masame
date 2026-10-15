@@ -883,7 +883,7 @@ export function App() {
       if (!live) return
       ex.add(game, ms, leads, mine || review.side)
       noteReview(reviewId.current, leads, ms).catch(console.error)
-      if (!canPlayAI || !review.side || review.side !== mine) ar.reviewed(game) // else once the rank is read too
+      if (!canPlayAI || !review.side || review.side !== mine) ar.reviewed(game, library.idOf(game)) // else once the rank is read too
       openMoment(0, 'try', ms)
     }, e => live && setReview(x => x && { ...x, error: e }))
     return () => { live = false }
@@ -902,7 +902,7 @@ export function App() {
       const f = lesson ? lessonFlags(lesson) : {}, ai = r && !f.noRank && keep.current(recordKey(game), r, !f.noAdjust) // no note: it would replace the lesson's caption
       if (r && !f.noRank) noteRank(reviewId.current, r).catch(console.error)
       if (ai) setNextAi(ai)
-      ar.reviewed(game)
+      ar.reviewed(game, library.idOf(game))
     }, e => { if (live) { console.error('rank', e); setReview(x => x && { ...x, rank: null }) } })
     return () => { live = false }
   }, [rankSide, game]) // eslint-disable-line react-hooks/exhaustive-deps

@@ -50,10 +50,10 @@ export function useAutoReview({ free, ask, scanRun, add, done, human }: {
     /** The rank probabilities of this record, shared by the foreground review. */
     ranksOf: (game: Game) => ranksOf(a.current, recordKey(game)),
     /** The player reviewed this record: its job goes. */
-    reviewed: (game: Game) => {
+    reviewed: (game: Game, id?: string) => {
       const k = recordKey(game)
-      if (current.current?.k === k) { current.current = null; setPct(null) }
-      reviewed(a.current, k); changed()
+      if (current.current?.k === k && (!id || !current.current.id || current.current.id === id)) { current.current = null; setPct(null) }
+      reviewed(a.current, k, id); changed()
     },
     /** Games waiting, and the current one's progress while it is being read. */
     pending: a.current.queue.length, pct: current.current ? pct : null,

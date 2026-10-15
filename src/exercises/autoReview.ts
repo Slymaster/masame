@@ -28,7 +28,8 @@ export function enqueue(a: Auto, game: Game, side: Sign | 0, now: number, flags:
   const sgf = saveSgf(game), g = loadSgf(sgf) // the record as the job will read it
   if (!eligible(g, side)) return a.queue
   const k = recordKey(g)
-  if (a.reviewed.has(k) || a.queue.some(j => j.k === k)) return a.queue
+  // two library entries with the same moves (a file and its OGS copy) are two jobs: each gets its review written
+  if (a.reviewed.has(flags.id ?? k) || a.queue.some(j => sameJob(j, k, flags.id))) return a.queue
   return [...a.queue, { k, sgf, side: side as Sign, t: now, ...flags.id && { id: flags.id }, ...flags.noRank && { noRank: true as const }, ...flags.noAdjust && { noAdjust: true as const } }].slice(-CAP)
 }
 
@@ -36,8 +37,14 @@ export function enqueue(a: Auto, game: Game, side: Sign | 0, now: number, flags:
 export const nextJob = (a: Auto, now: number) => (now < a.wait ? undefined : a.queue.find(j => (a.fails.get(j.k) ?? 0) < MAX_FAILS))
 export const newAuto = (queue: Job[]): Auto => ({ queue, leads: new Map(), ranks: new Map(), read: new Map(), fails: new Map(), reviewed: new Set(), wait: 0 })
 
-/** A record reviewed (in the background or by the player): its job goes, and it is not queued again this session. */
-export function reviewed(a: Auto, k: string) { a.reviewed.add(k); a.queue = a.queue.filter(j => j.k !== k); a.read.delete(k); a.ranks.delete(k) }
+/** The job of record `k` kept under library id `id` (either unknown: the record alone decides). */
+const sameJob = (j: Job, k: string, id?: string) => j.k === k && (!id || !j.id || j.id === id)
+/** A record reviewed (in the background or by the player), kept under `id`: its job goes, and it is not queued again this
+ * session; a job of the same moves under another id stays (and reuses the cached reading). */
+export function reviewed(a: Auto, k: string, id?: string) {
+  a.reviewed.add(id ?? k); a.queue = a.queue.filter(j => !sameJob(j, k, id))
+  if (!a.queue.some(j => j.k === k)) { a.read.delete(k); a.ranks.delete(k) }
+}
 
 export function leadsOf(a: Auto, k: string) {
   let l = a.leads.get(k)
@@ -73,7 +80,7 @@ export async function runJob(a: Auto, j: Job, ask: (g: Game, q: object) => Promi
     return 'failed'
   }
   rank?.(r)
-  reviewed(a, j.k)
+  reviewed(a, j.k, j.id)
   return ms
 }
 
