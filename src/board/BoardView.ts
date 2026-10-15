@@ -7,6 +7,7 @@ import { clamp01, easeOut, hash, n1, rng, sstep, stoneRng, TAU, vn2 } from './no
 import { playClack, playTap } from './sound'
 import { gx, gz, jitter, settle, type Placed } from '../board3d/logic'
 import { postcardCanvas, signatureFonts, toPng } from '../postcard'
+import { tap } from './frame'
 
 export interface BoardState {
   signMap: SignMap
@@ -320,7 +321,8 @@ export class BoardView {
   private geomKey = ''
   private stones: HTMLCanvasElement | null = null
   private stonesKey = ''
-  private hover: Vertex | null = null
+  private hover: Vertex | null = null // the ghost stone: under the mouse, or where a finger tapped first
+  private pointer = 'mouse' // the last pointerdown's pointerType: the click that follows comes from it
   private anim: { x: number; y: number; c: Sign; start: number } | null = null
   private shook: { x: number; y: number; c: Sign; start: number } | null = null
   /** Where each stone was put down (mm in the square jitter space); stones never move once down. */
@@ -335,7 +337,9 @@ export class BoardView {
   /** onPlay returns true when the move was legal (the view then animates and sounds the drop). */
   constructor(private canvas: HTMLCanvasElement, private onPlay: (v: Vertex) => boolean) {
     this.ctx = canvas.getContext('2d')!
+    const down = (e: PointerEvent) => { this.pointer = e.pointerType || 'mouse' }
     const move = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse') return // a finger has no hover: its ghost comes from tap()
       const v = this.pick(e), s = this.state
       if (s?.counting) { // only stones are clickable while counting; no ghost stone
         canvas.style.cursor = v && s.interactive && s.signMap[v[1]][v[0]] ? 'pointer' : 'default'
@@ -346,14 +350,18 @@ export class BoardView {
       if (nh?.[0] === this.hover?.[0] && nh?.[1] === this.hover?.[1]) return
       this.hover = nh; this.req()
     }
-    const leave = () => { this.hover = null; this.req() }
+    const leave = (e: PointerEvent) => { if (e.pointerType === 'mouse') { this.hover = null; this.req() } }
     const click = (e: MouseEvent) => {
-      const v = this.pick(e), s = this.state
+      const touch = this.pointer !== 'mouse', v = this.pick(e, touch), s = this.state
       if (!v || !s?.interactive) return
       if (s.counting) { this.onPlay(v); return }
+      const r = tap(this.hover, v, this.pointer)
+      if (!r.play) { this.hover = s.signMap[v[1]][v[0]] ? null : [v[0], v[1]]; this.req(); return } // no ghost on a stone
       const c = s.toPlay
       if (this.onPlay(v)) this.drop(v, c)
+      else if (touch) { this.hover = null; this.req() }
     }
+    canvas.addEventListener('pointerdown', down)
     canvas.addEventListener('pointermove', move)
     canvas.addEventListener('pointerleave', leave)
     canvas.addEventListener('click', click)
@@ -366,6 +374,7 @@ export class BoardView {
     arm()
     this.cleanup = () => {
       mq.removeEventListener('change', onDpr)
+      canvas.removeEventListener('pointerdown', down)
       canvas.removeEventListener('pointermove', move)
       canvas.removeEventListener('pointerleave', leave)
       canvas.removeEventListener('click', click)
@@ -474,7 +483,8 @@ export class BoardView {
 
   private req() { if (!this.raf) this.raf = requestAnimationFrame(t => this.frame(t)) }
 
-  private pick(e: MouseEvent): Vertex | null {
+  /** The point under e; `cell`: anywhere in its square (a finger), else within half a cell of it (the mouse). */
+  private pick(e: MouseEvent, cell = false): Vertex | null {
     const g = this.g
     if (!g) return null
     const rect = this.canvas.getBoundingClientRect(), mx = e.clientX - rect.left, my = e.clientY - rect.top
@@ -489,7 +499,7 @@ export class BoardView {
     }
     if (hit) return hit
     if (x < 0 || y < 0 || x >= g.N || y >= g.N) return null
-    if (Math.hypot(mx - g.P[x], my - g.P[y]) > g.cell * 0.5) return null
+    if (!cell && Math.hypot(mx - g.P[x], my - g.P[y]) > g.cell * 0.5) return null
     return [x, y]
   }
 
