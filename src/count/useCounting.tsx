@@ -10,7 +10,7 @@ import { inTauri } from '../katago'
 import * as library from '../library'
 import { Seg } from '../Seg'
 import { loadSgf } from '../sgf'
-import { added, countable, countedToday, guessOf, load, median, pickGame, pickMove, recent, save, SESSION, truthOf, verdictOf, type Counting } from './counting'
+import { added, countable, countedToday, guessOf, load, pickGame, pickMove, recent, save, SESSION, truthOf, verdictOf, type Counting } from './counting'
 
 type Link = [string, string, () => void]
 /** A position: the game and its id, the moves played (at), KataGo's lead (Black's view); then the answer and the light. */
@@ -43,11 +43,11 @@ export function useCounting({ open, setOpen, blocked, canAnalyze, light, setThin
   const entries = useSyncExternalStore(library.subscribe, library.get)
   useEffect(() => { if (inTauri()) library.load().catch(() => {}) }, [])
   const [run, setRun] = useState<Run | null | 'none' | 'loading'>(null)
-  const [done, setDone] = useState<{ n: number; right: number; errs: number[]; seen: Set<string> }>(() => ({ n: 0, right: 0, errs: [], seen: new Set() }))
+  const [done, setDone] = useState<{ n: number; right: number; seen: Set<string> }>(() => ({ n: 0, right: 0, seen: new Set() }))
   const [who, setWho] = useState<1 | -1 | 0 | null>(null), [by, setBy] = useState(5)
 
   const next = (fresh = false) => {
-    const d = fresh ? { n: 0, right: 0, errs: [], seen: new Set<string>() } : done
+    const d = fresh ? { n: 0, right: 0, seen: new Set<string>() } : done
     if (fresh) setDone(d)
     setRun('loading'); setWho(null); setBy(5)
     draw(d.seen).then(r => setRun(r ?? 'none'), e => setRun({ id: '', game: null!, at: 0, lead: 0, guess: null, own: null, lighting: false, error: e }))
@@ -62,7 +62,7 @@ export function useCounting({ open, setOpen, blocked, canAnalyze, light, setThin
     const guess = guessOf(who, by), err = Math.abs(guess - truthOf(r.lead)), now = Date.now()
     setRun({ ...r, guess })
     setStore(s => { const n = added(s, err, now); save(n); return n })
-    setDone(d => ({ n: d.n + 1, right: d.right + +(verdictOf(err) === 'right'), errs: [...d.errs, err], seen: new Set(d.seen).add(`${r.id}:${r.at}`) }))
+    setDone(d => ({ n: d.n + 1, right: d.right + +(verdictOf(err) === 'right'), seen: new Set(d.seen).add(`${r.id}:${r.at}`) }))
     journal('count', verdictOf(err) === 'right', r.id)
     const e = library.get()?.find(x => x.id === r.id)
     library.patch(r.id, { counted: (e?.counted ?? 0) + 1 }).catch(console.error)
@@ -97,7 +97,7 @@ export function useCounting({ open, setOpen, blocked, canAnalyze, light, setThin
     : failed ? (r ? t.countLightFailed : t.countFailed)(failureText(run.error))
     : !r ? null
     : err === null ? t.countAsk(done.n + 1, SESSION, r.game.moveNumber(r.at))
-    : [t.countVerdict(verdictOf(err), truthOf(r.lead)), ended && t.countSession(done.n, done.right, median(done.errs)!)].filter(Boolean).join(' ')
+    : [t.countVerdict(verdictOf(err), truthOf(r.lead)), ended && t.countSession(done.n, done.right)].filter(Boolean).join(' ')
   const links: Link[] = failed ? [['retry', t.retry, () => r ? setRun({ ...r, error: null }) : next()]]
     : !r || err === null ? []
     : [...canAnalyze && !r.own && !r.lighting ? [['light', t.countLight, () => setRun({ ...r, lighting: true })] as Link] : [],
