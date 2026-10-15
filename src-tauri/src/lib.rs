@@ -151,8 +151,15 @@ static CRASHED_AT_START: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "ios")]
 fn ios_setup(app: &AppHandle, engine: Arc<Engine>) -> Arc<Engine> {
     let engine = engine.with_on_ready(|spec| { let _ = std::fs::remove_file(spec.cwd.join(inproc::SENTINEL)); });
-    let e = engine.clone();
-    ios::on_active_change(move |active| if active { e.resume() } else { e.pause() });
+    let (e, sentinel) = (engine.clone(), data_dir(app).ok().map(|d| d.join(inproc::SENTINEL)));
+    ios::on_active_change(move |active| {
+        // a kill once paused is iOS's, not a crash; a start still under way is watched again when the app comes back
+        if let Some(s) = &sentinel {
+            if !active { let _ = std::fs::remove_file(s); }
+            else if e.starting() { let _ = std::fs::write(s, b""); if !e.starting() { let _ = std::fs::remove_file(s); } } // Ready meanwhile
+        }
+        if active { e.resume() } else { e.pause() }
+    });
     if let Ok(m) = models_dir(app) {
         if let Err(e) = std::fs::create_dir_all(&m).map_err(|e| e.to_string()).and_then(|_| ios::exclude_from_backup(&m)) {
             eprintln!("[ios] models not excluded from backup: {e}")

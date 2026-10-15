@@ -1546,7 +1546,9 @@ export function App() {
               <span>{t.engine}</span>
               <button className="link" data-nets onClick={() => { netsFromSettings.current = true; setSheet('nets') }}>{t.networksBtn}</button>
             </div>
-            <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}</p>
+            <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}
+              {engine.state === 'error' && engine.error.code === 'engine_crashed_at_start'
+                && <> · <button className="link" onClick={() => call('engine_start').catch(() => {})}>{t.retry}</button></>}</p>
             {inTauri() && <p className="engine" aria-live="polite">
               <button className="link" onClick={copyDiagnostics}>{t.copyDiagnostics}</button>
               {diag && <> · {diag(t)}</>}
