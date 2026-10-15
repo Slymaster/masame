@@ -303,6 +303,30 @@ export const fr: Dict = {
   yoAnswer: (s: number, v: string) => `Le plus gros : ${color(s)} ${v}.`,
   workTitle: 'Séance de travail', workLeft: (n: number) => f.plural(n, 'carte restante', 'cartes restantes'), workDone: 'Séance finie. Bien joué.',
   workOpening: 'Continuer avec les joseki',
+  // Les Classiques : devine le coup des maîtres (flux F)
+  classics: 'Les Classiques', clDeck: 'Les Classiques', clDeckPhrase: 'devine le coup des maîtres',
+  clDeckCount: (played: number, n: number) => `${f.num(played)} sur ${f.plural(n, 'partie', 'parties')} jouées`,
+  clIntro: 'Des parties de l’époque d’Edo, avant 1868. Joue chaque coup avant de voir celui du maître.',
+  clLoading: 'Chargement des parties', clNew: 'pas encore jouée',
+  clBest: (found: number, total: number) => `record ${f.num(found)} / ${f.num(total)}`,
+  clBestLine: (found: number, total: number) => `Ton record : ${f.num(found)} coups retrouvés sur ${f.num(total)}.`,
+  clSide: 'Ton camp', clStart: 'Début', clBegin: 'Commencer', clProgress: 'Avancée dans la partie',
+  clYouPlay: (name: string, s: number) => `Tu joues ${name}, ${color(s)}. Choisis le début, puis Commencer.`,
+  clAsk: (n: number, name: string) => `Coup ${n} : où ${name} a-t-il joué ?`,
+  clTheirs: (name: string) => `${name} joue.`,
+  clFound: 'Retrouvé : c’est le coup du maître.',
+  clGrading: (name: string) => `KataGo compare ton coup à celui de ${name}.`,
+  clCost: (name: string, v: string, cost: number) => Math.round(cost * 10)
+    ? `${name} a joué ${v}. Ton coup (×) coûte ${pts(cost)}.` : `${name} a joué ${v}. Ton coup (×) vaut autant.`,
+  clHuman: (rank: string, v: string) => `Un joueur de ton rang (${rank}) aurait joué ${v} (△).`,
+  clHumanSame: (rank: string) => `Un joueur de ton rang (${rank}) aurait joué le coup du maître.`,
+  clHumanYou: (rank: string) => `Un joueur de ton rang (${rank}) aurait joué comme toi.`,
+  clScore: (found: number, total: number) => `${f.plural(found, 'retrouvé', 'retrouvés')} sur ${f.plural(total, 'coup', 'coups')}`,
+  clAverage: (x: number) => `Tes autres coups : ${pts(x)} en moyenne`,
+  clEnd: (found: number, total: number, avg: number | null) => `Tu as retrouvé ${f.plural(found, 'coup', 'coups')} sur ${f.num(total)}.`
+    + (avg === null ? '' : ` Tes autres coups coûtent ${pts(avg)} en moyenne.`),
+  clNext: 'Coup suivant', clAgain: 'Rejouer', clOther: 'Une autre partie', clOffer: 'Deviner les coups',
+  clOfferLine: 'Devine les coups de cette partie, un par un.',
   // revue automatique
   autoDone: (n: number, rank?: string) => rank ? `Tu as joué comme un\u00a0${rank}\u00a0· ${n ? `${f.plural(n, 'moment', 'moments').replace(' ', '\u00a0')} pour tes exercices` : 'aucun moment décisif'}.`
     : `Revue faite : ${n ? `${f.plural(n, 'moment rejoint', 'moments rejoignent')} tes exercices` : 'aucun moment décisif'}.`,

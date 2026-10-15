@@ -39,6 +39,7 @@ import { tone } from './joseki/practice'
 import { openingBook } from './today/ritual'
 import { useToday } from './today/useToday'
 import { MonthLetters } from './MonthLetters'
+import { canGuess, useClassics } from './classics/useClassics'
 import { LearnSheet, OgsRating, RankProgress, storeTab, WhereLost, type DeckRow, type ProgressSection } from './LearnSheet'
 import { GamesSheet } from './GamesSheet'
 import { ShareSheet } from './ShareSheet'
@@ -328,7 +329,7 @@ export function App() {
   // The trainers borrow the board and the card, one at a time; the game waits underneath, untouched. A new activity (a
   // takeover of the same shape as useJoseki/useExercises) plugs in at four places: its name in Panel, its hook in
   // `trainers` below, its row in the Learn sheet's `decks`, and its command in `commands` (menu ids: src/menu.ts).
-  type Panel = 'joseki' | 'fuseki' | 'exercises' | 'count' | 'memory' | 'editor'
+  type Panel = 'joseki' | 'fuseki' | 'exercises' | 'count' | 'memory' | 'editor' | 'classics'
   const [panel, setPanel] = useState<Panel | null>(null)
   /** A trainer's setOpen: opening it replaces any other; closing it closes only itself. */
   const panelOpen = (name: Panel) => (o: boolean) => setPanel(p => (o ? name : p === name ? null : p))
@@ -389,6 +390,10 @@ export function App() {
   })
   useMining({ free: bgFree, ask: (g, q) => analyze(g, { ...q, priority: -1 }), scanRun, known: ex.has, add: ex.addItems }) // tsumego from reviewed games
   const workOpening = () => { if (!ongoing && !review) practiseFuseki() } // Travailler › Ouverture, after its exercises: S'entraîner on the fuseki
+  const cl = useClassics({
+    view, open: panel === 'classics', setOpen: panelOpen('classics'), blocked: ongoing || !!review, canAnalyze, setThinking, rank: settings.myRank,
+    ask: (g, q) => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, q)); scanRun.current = run; return run },
+  })
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
   useEffect(() => setRitualSaid(null), [panel])
   const opening = ft.failed ? 'joseki' : openingBook(weakest(ex.games)) // the ritual's joseki or fuseki step
@@ -411,7 +416,7 @@ export function App() {
     onAi: g => { setSettings(s => ({ ...s, opponent: 'ai', handicap: 0 })); resize(g.info.size); door('game'); setFromPos(g) },
     onTwo: g => void fromPosition(g), onDone: g => void fromPosition(g, true),
   })
-  const trainers = [jt, ft, ex, ct, mem, ed] // every takeover of the card, in no particular order: at most one is open
+  const trainers = [jt, ft, ex, ct, mem, ed, cl] // every takeover of the card, in no particular order: at most one is open
   const tr = trainers.find(x => x.open) ?? ex
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
   const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && (online.placing ? online.me === 1 : game.toPlay === online.me) : !bot || game.toPlay !== bot.sign
@@ -966,7 +971,7 @@ export function App() {
     undo, new: newCommand, open, save, postcard, panel: togglePanel,
     pass: () => play(null), resign, territory: () => { if (!ongoing) set('territory', !settings.territory) }, review: () => { if (canReview && !review) startReview(mine) },
     today: openLearn, exercises: ex.toggle, tsumego: ex.tsumego, joseki: jt.toggle, fuseki: ft.toggle, games: () => door('games'), count: ct.toggle, memory: () => { if (canMemory) replay() },
-    position: ed.start, kifu: () => door('kifu'),
+    position: ed.start, kifu: () => door('kifu'), classics: cl.openList,
     camera: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
   }
   // a focused range keeps the shortcuts: its arrows/Home/End go through goTo (preventDefault: no second native step)
@@ -1131,8 +1136,9 @@ export function App() {
     : libraryShown ? [t.libraryShown, libraryLinks]
     : [line, lineLinks]
   // td.onward's step index: the ritual's exercises 0 (its exercises, then its counting), joseki or fuseki 1
+  const guessable = !ongoing && !joining && !playingLocal && !search && canAnalyze && canGuess(game) // Les Classiques' mode on any shown game
   const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open || ft.open ? 1 : ex.open || ct.open ? 0 : -1, ex.open ? !!ex.today?.done : undefined)] : review?.error ? [['retry', t.retry, retryLesson]]
-    : !review ? gameLinks
+    : !review ? [...gameLinks, ...guessable ? [['guess', t.clOffer, () => cl.guess(game, mine)] as Link] : []]
     : !m ? [['back', t.backToGame, leaveReview]]
     : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as Link] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
     : review.step === 'punish' ? [['better', t.seeBetter, () => openMoment(review.k, 'better')]]
@@ -1140,7 +1146,7 @@ export function App() {
   const anLine = !an ? null : !canAnalyze ? t.anNeedsNet : anError ? t.anFailed(failureText(anError)) : engineWait
     ?? (cands ? t.anFor(toPlay) : t.anReading)
   const message = anLine ?? (tr.open ? (thinking && engineWait) || [tr.note, ritualSaid && t.ritualDone(ritualSaid)].filter(Boolean).join(' ') : review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
-    : gameLine)
+    : gameLine ?? (guessable ? t.clOfferLine : null))
   // tuning progress: outside the key (no re-fade per update) and aria-hidden (announced once)
   const tuned = message === t.tuningCaption && engine.state === 'tuning' ? t.tuningProgress(engine.step, engine.done, engine.total)
     : review && message === t.reading ? t.percent(review.pct) : ''
@@ -1217,6 +1223,7 @@ export function App() {
     // the counter's place shows the counting error, the same figure as Progrès
     { key: 'count', name: t.countDeck, phrase: t.countPhrase, counts: null, off: ct.median === null ? undefined : t.countFigure(ct.median), open: () => { closeSheet(); setPanel('count') } },
     { key: 'fuseki', name: t.decks.fuseki, phrase: t.deckPhrases.fuseki, counts: ft.counts ?? null, open: () => { closeSheet(); setPanel('fuseki') } },
+    { key: 'classics', name: t.clDeck, phrase: t.clDeckPhrase, counts: null, off: canAnalyze ? cl.deckLine : t.tdOff.exercises, open: () => { closeSheet(); cl.openList() } },
   ]
   const progressSections: ProgressSection[] = [
     { key: 'rank', title: t.rankSection, body: <RankProgress ranks={ranks.p.games} follows={settings.autoAdjust} /> },
@@ -1294,7 +1301,7 @@ export function App() {
           <div className="card-in" id="card" hidden={settings.panelHidden}>
             <div className="meta">
               {/* wraps only between its parts, never inside one */}
-              <span>{(online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : t.board(size, komi)).split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
+              <span>{(online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : cl.info ? t.board(cl.info.size, cl.info.komi) : t.board(size, komi)).split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
               <button className="icon sm" onClick={openSheet('share')} aria-label={t.share} title={t.share}><Icon name="share" /></button>
               <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
                 <Icon name={sound ? 'volume' : 'volume-off'} />
@@ -1537,6 +1544,7 @@ export function App() {
       {sheet === 'kifu' && <Kifu game={game} onClose={closeSheet}
         ranks={([1, -1] as const).map(c => game.root.data[c === 1 ? 'BR' : 'WR']?.[0] || (bot?.sign === c ? bot.rank : '')) as [string, string]}
         source={game.root.data.EV?.[0] || (online ? `online-go.com/game/${online.id}` : bot ? t.kifuVsAi : 'Masame')} />}
+      {cl.sheet}
       {sheet === 'nets' && <Networks nets={nets} progress={progress} onClose={closeNets} onChanged={refreshNets} opener={opener.current} />}
     </>
   )

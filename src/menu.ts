@@ -23,6 +23,7 @@ const RULES: Partial<Record<MenuId, (s: MenuState) => boolean>> = {
   territory: s => s.engineHelp && s.canAnalyze,
   exercises: s => s.engineHelp && s.canAnalyze, tsumego: s => s.engineHelp && s.canAnalyze, joseki: s => s.engineHelp, fuseki: s => s.engineHelp,
   count: s => s.engineHelp, memory: s => s.canMemory, // counting needs no analysis net: KataGo's leads come from the review
+  classics: s => s.engineHelp && s.canAnalyze,
   camera: s => s.is3d,
 }
 
