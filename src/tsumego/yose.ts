@@ -9,10 +9,10 @@ import { phaseOf, reviewEnd } from '../review'
 import { loadSgf } from '../sgf'
 import { positionAt, stonesOf } from './mine'
 
-export const YOSE_N = 8, YOSE_EVERY = 6, YOSE_GAP = 2, YOSE_MS = 60_000, YOSE_GAMES = 12
+export const YOSE_N = 8, YOSE_EVERY = 7, YOSE_GAP = 2, YOSE_MS = 60_000, YOSE_GAMES = 12
 export const YOSE_QUERY = { maxVisits: 100, analysisPVLen: 5, overrideSettings: { maxTime: 1 } }
 
-/** Endgame positions of a game (indices into its moves): phase 2, one every YOSE_EVERY moves, each with a move played from it. */
+/** Endgame positions of a game (indices into its moves): phase 2, one every YOSE_EVERY moves (odd: Black and White take turns asking), each with a move played from it. */
 export function yoseSamples(game: Game): number[] {
   const end = Math.min(reviewEnd(game), game.moves.length), out: number[] = []
   let last = -Infinity
