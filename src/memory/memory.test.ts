@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Game, type Move, type Vertex } from '../game'
 import { loadSgf } from '../sgf'
-import { attempt, begin, better, expected, over, total, type Run, type Try } from './memory'
+import { attempt, begin, better, expected, over, replayed, total, type Run, type Try } from './memory'
 
 const rec = (vs: (Vertex | null)[]) => Game.fromRecord({ size: 9 }, vs.map((vertex, i): Move => ({ sign: i % 2 ? -1 : 1, vertex })))
 
@@ -37,6 +37,12 @@ describe('replaying from memory', () => {
     expect(g.boards[r.k].get([4, 4])).toBe(1)
     ;[, r] = attempt(g, r, [2, 6]); [, r] = attempt(g, r, [4, 6])
     expect(over(g, r)).toBe(true); expect(r.recalled).toBe(3)
+  })
+  it('counts nothing replayed before the first move placed, even when setup nodes come first', () => {
+    const g = loadSgf('(;SZ[9];AB[cc];AW[gg];B[ee];W[cg])'), r = begin(g)
+    expect(r.k).toBeGreaterThan(0)
+    expect(replayed(r)).toBe(false)
+    expect(replayed(attempt(g, attempt(g, r, [0, 0])[1], [0, 0])[1])).toBe(true) // helped: placed
   })
   it('the best run finds more moves, then needs fewer helps', () => {
     expect(better(undefined, { recalled: 1, helps: 9 })).toBe(true)

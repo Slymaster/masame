@@ -9,7 +9,7 @@ import { note as journal } from '../journal'
 import * as library from '../library'
 import type { Msg } from '../i18n'
 import { Timeline } from '../Timeline'
-import { attempt, begin, better, expected, over, total, type Run, type Try } from './memory'
+import { attempt, begin, better, expected, over, replayed, total, type Run, type Try } from './memory'
 
 const HINT_MS = 900 // the right move lit, before it is placed (a help)
 type Link = [string, string, () => void]
@@ -41,7 +41,7 @@ export function useMemory({ view, open, setOpen, blocked, onEnd }: {
     setOpen(true)
   }
   const close = () => {
-    if (s && !s.saved && s.run.k > 0) { // Esc: the partial score is kept and said
+    if (s && !s.saved && replayed(s.run)) { // Esc: the partial score is kept and said
       store(s)
       const r = s.run, n = total(s.rec)
       onEnd(d => `${d.memStopped(s.rec.moveNumber(r.k) + 1)} ${d.memDone(r.recalled, n, r.helps)}.`)

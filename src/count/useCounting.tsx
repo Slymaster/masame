@@ -122,7 +122,7 @@ export function useCounting({ open, setOpen, blocked, canAnalyze, light, setThin
         {asked ? <div className="opts"><button className="btn accent" onClick={answer} disabled={who === null}>{t.countAnswer}</button></div>
           : <p className="say">{t.countYours(r.guess!)}</p>}
       </>}
-      <p className="quiet">{fig.median === null ? t.countNoneYet : t.countMedian(fig.median, fig.n)}</p>
+      <p className="say">{fig.median === null ? t.countNoneYet : t.countMedian(fig.median, fig.n)}</p>
     </section>
   )
   const acts = <button className="act" onClick={close} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button>

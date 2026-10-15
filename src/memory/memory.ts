@@ -14,6 +14,8 @@ const skip = (g: Game, k: number) => { while (g.moves[k]?.setup) k++; return k }
 export const total = (g: Game) => g.moves.filter(m => !m.setup).length
 export const begin = (g: Game): Run => ({ k: skip(g, 0), fails: 0, recalled: 0, helps: 0 })
 export const over = (g: Game, r: Run) => r.k >= g.moves.length
+/** At least one move placed (found or helped): before that, leaving keeps nothing (setup nodes may start k past 0). */
+export const replayed = (r: Run) => r.recalled + r.helps > 0
 /** The move asked now (null: a pass), undefined once the record is done. */
 export const expected = (g: Game, r: Run) => (over(g, r) ? undefined : g.moves[r.k].vertex)
 
