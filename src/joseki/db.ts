@@ -2,11 +2,12 @@
 // { v:1, build, profiles, roots:[{name, m, node, f:%perProfile}],
 //   nodes:[{k, e:[[move, child, loss×10, %perProfile, tagBits, mirrored?]], s?:1, pv?}] }
 // Nodes are sorted by ply, so edges point forward. A node is stored in its own frame: an edge marked mirrored reaches
-// the MIRROR image of the stored child. A node with no edges was not expanded; its pv is KataGo's best line from it.
+// the MIRROR image of the stored child. The fuseki (fuseki.v1.json, from the empty board, 8 symmetries) writes there the
+// symmetry k (1..7, src/joseki/sym.ts) that takes the position reached to the stored child; its roots are the first moves. A node with no edges was not expanded; its pv is KataGo's best line from it.
 // s = settled (tenuki costs ≤ 0.5 point). Root and edge frequencies are floored percentages of each profile playing it.
 
 export const TAG = { classic: 1, pro: 2, ai: 4, verified: 8, contested: 16 }
-export type Edge = [string, number, number, number[], number, 1?]
+export type Edge = [string, number, number, number[], number, number?]
 export interface JNode { k: string; e: Edge[]; s?: 1; pv?: string }
 export interface Root { name: string; m: string; node: number; f: number[] }
 export interface JosekiDb { v: 1; build: Record<string, unknown>; profiles: string[]; roots: Root[]; nodes: JNode[] }
@@ -29,7 +30,7 @@ export function validate(raw: unknown): JosekiDb {
     if (typeof x?.k !== 'string' || !Array.isArray(x.e) || (x.s !== undefined && x.s !== 1)
       || (x.pv !== undefined && !(typeof x.pv === 'string' && /^([a-s]{2})*$/.test(x.pv)))) fail(`node ${i}`)
     for (const e of x.e) {
-      if (!Array.isArray(e) || !isMove(e[0]) || !isInt(e[2], 0) || !isPcts(e[3], n) || !isInt(e[4], 0, 31) || e.length > 6 || (e.length > 5 && e[5] !== 1)) fail(`edge at node ${i}`)
+      if (!Array.isArray(e) || !isMove(e[0]) || !isInt(e[2], 0) || !isPcts(e[3], n) || !isInt(e[4], 0, 31) || e.length > 6 || (e.length > 5 && !isInt(e[5], 1, 7))) fail(`edge at node ${i}`)
       if (!isInt(e[1], i + 1, len - 1)) fail(`edge at node ${i} does not point forward`)
     }
   })

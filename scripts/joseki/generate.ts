@@ -1,6 +1,7 @@
 // Offline joseki generator (Node 22+, runs the TypeScript directly):
-//   node scripts/joseki/generate.ts [--quick] [--judge net] [--human net] [--katago bin] [--visits 800] [--budget 3000] [--out file] [--date YYYY-MM-DD]
-// Every engine answer is appended to scripts/joseki/.cache/<judge>-<visits>.jsonl: a killed run resumes where it
+//   node scripts/joseki/generate.ts [--family joseki|fuseki] [--quick] [--judge net] [--human net] [--katago bin] [--visits 800] [--budget 3000] [--out file] [--date YYYY-MM-DD]
+// --family fuseki builds the opening tree from the empty board (fuseki.v1.json; --budget = its node cap, default 2500).
+// Every engine answer is appended to scripts/joseki/.cache/[fuseki-]<judge>-<visits>.jsonl: a killed run resumes where it
 // stopped, and a rerun on the same cache rewrites the same bytes.
 
 import { execFileSync, spawn } from 'node:child_process'
@@ -12,27 +13,29 @@ import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { ROOTS } from '../../src/joseki/sym.ts'
-import { cached, generate } from './tree.ts'
+import { cached, FUSEKI, fuseki, generate } from './tree.ts'
 import type { Resp } from './tree.ts'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const models = join(homedir(), 'Library/Application Support/com.sylvainrey.masame/models')
 const { values: a } = parseArgs({ options: {
-  quick: { type: 'boolean' }, judge: { type: 'string' }, human: { type: 'string' }, katago: { type: 'string' },
+  family: { type: 'string' }, quick: { type: 'boolean' }, judge: { type: 'string' }, human: { type: 'string' }, katago: { type: 'string' },
   visits: { type: 'string' }, budget: { type: 'string' }, out: { type: 'string' }, date: { type: 'string' },
 } })
+const family = a.family ?? 'joseki', isFuseki = family === 'fuseki'
+if (!['joseki', 'fuseki'].includes(family)) throw new Error(`unknown --family ${family}`)
 const kata = existsSync(models) ? readdirSync(models).filter(f => f.startsWith('kata1-')).map(f => join(models, f)).sort((x, y) => statSync(x).size - statSync(y).size) : []
 // --quick: the 4-4 root on the lightest network, about a minute; it writes the fixture the app's tests use
 const judge = a.judge ?? (a.quick ? kata[0] : kata.at(-1))
 const human = a.human ?? join(models, 'b18c384nbt-humanv0.bin.gz')
 const katago = a.katago ?? join(root, 'src-tauri/binaries/katago-aarch64-apple-darwin')
-const visits = +(a.visits ?? (a.quick ? 64 : 800)), budget = +(a.budget ?? (a.quick ? 160 : 3000))
-const out = a.out ?? join(root, a.quick ? 'src/joseki/fixture.json' : 'public/assets/joseki/joseki.v1.json')
+const visits = +(a.visits ?? (a.quick ? 64 : 800)), budget = +(a.budget ?? (a.quick ? 160 : isFuseki ? FUSEKI.cap : 3000))
+const out = a.out ?? join(root, a.quick ? `src/joseki/${isFuseki ? 'fuseki-' : ''}fixture.json` : `public/assets/joseki/${family}.v1.json`)
 for (const f of [judge, human, katago]) if (!f || !existsSync(f)) throw new Error(`missing ${f ?? 'judge network'} (see --judge, --human, --katago)`)
 
 const cacheDir = join(root, 'scripts/joseki/.cache')
 mkdirSync(cacheDir, { recursive: true })
-const cacheFile = join(cacheDir, `${basename(judge!).replace(/\.bin\.gz$/, '')}-${visits}.jsonl`)
+const cacheFile = join(cacheDir, `${isFuseki ? 'fuseki-' : ''}${basename(judge!).replace(/\.bin\.gz$/, '')}-${visits}.jsonl`)
 const store = new Map<string, Resp>()
 if (existsSync(cacheFile)) for (const line of readFileSync(cacheFile, 'utf8').split('\n')) {
   try { const { k, r } = JSON.parse(line); store.set(k, r) } catch { /* a line cut short by a kill */ }
@@ -82,14 +85,15 @@ const katagoVersion = execFileSync(katago, ['version'], { encoding: 'utf8' }).sp
 const day = (t: Date) => t.toISOString().slice(0, 10)
 const build: Record<string, unknown> = {}
 const ask = cached(engine, key, store, (k, r) => { appendFileSync(cacheFile, JSON.stringify({ k, r }) + '\n'); if (!a.date) build.date = day(new Date()) })
-const json = await generate({
-  roots: a.quick ? ROOTS.slice(0, 1) : ROOTS, visits, budget, komi: 6.5,
-  build: Object.assign(build, {
-    date: a.date ?? day(existsSync(cacheFile) ? statSync(cacheFile).mtime : new Date()), katago: katagoVersion, judge: basename(judge!), human: basename(human), visits, komi: 6.5,
-    context: 'B D16, W D4, B Q4, then White\'s root stone in the top-right; Black to play; Japanese rules. Positions are stored up to the mirror (x,y)->(18-y,18-x). '
+Object.assign(build, {
+  date: a.date ?? day(existsSync(cacheFile) ? statSync(cacheFile).mtime : new Date()), katago: katagoVersion, judge: basename(judge!), human: basename(human), visits, komi: 6.5,
+  context: isFuseki
+    ? `The empty 19x19 board, Black first; Japanese rules. Positions are stored up to the board's 8 symmetries. A move is kept when a shipped profile plays it at least 4 % of the time, or when it is KataGo's best; up to ${FUSEKI.maxPly} moves and ${budget} positions, the most likely lines first.`
+    : 'B D16, W D4, B Q4, then White\'s root stone in the top-right; Black to play; Japanese rules. Positions are stored up to the mirror (x,y)->(18-y,18-x). '
       + 'Bias: both neighbouring corners belong to the approaching side, and ladders toward the lower left meet White\'s D4.',
-  }),
-}, ask)
+})
+const json = isFuseki ? await fuseki({ visits, komi: 6.5, cap: budget, build }, ask)
+  : await generate({ roots: a.quick ? ROOTS.slice(0, 1) : ROOTS, visits, budget, komi: 6.5, build }, ask)
 kg.stdin!.end()
 mkdirSync(dirname(out), { recursive: true })
 writeFileSync(out, json)
