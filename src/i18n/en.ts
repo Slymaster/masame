@@ -227,6 +227,30 @@ export const en = {
   exWhereHelp: (n: number) => `Points lost per game by your moves, over your last ${n === 1 ? 'reviewed game' : `${f.num(n)} reviewed games`}. Opening: the first 50 moves; endgame: from move 151 (19×19, scaled on smaller boards).`,
   exReset: 'Delete the exercises', exResetAsk: 'Delete all your exercises and their statistics?',
   exReadOnly: 'These exercises were saved by a newer Masame: practice here won’t be recorded.',
+  // Les Classiques: guess the masters' moves (flux F)
+  classics: 'The Classics', clDeck: 'The Classics', clDeckPhrase: 'guess the masters’ moves',
+  clDeckCount: (played: number, n: number) => `${f.num(played)} of ${f.plural(n, 'game', 'games')} played`,
+  clIntro: 'Games of the Edo period, before 1868. Play each move before you see the master’s.',
+  clLoading: 'Loading the games', clNew: 'not played yet',
+  clBest: (found: number, total: number) => `best ${f.num(found)} / ${f.num(total)}`,
+  clBestLine: (found: number, total: number) => `Your best: ${f.num(found)} moves found out of ${f.num(total)}.`,
+  clSide: 'Your side', clStart: 'Start at', clBegin: 'Begin', clProgress: 'Progress through the game',
+  clYouPlay: (name: string, s: number) => `You play ${name}, ${color(s)}. Choose the start, then Begin.`,
+  clAsk: (n: number, name: string) => `Move ${n}: where did ${name} play?`,
+  clTheirs: (name: string) => `${name} plays.`,
+  clFound: 'Found: the master’s move.',
+  clGrading: (name: string) => `KataGo compares your move with ${name}’s.`,
+  clCost: (name: string, v: string, cost: number) => Math.round(cost * 10)
+    ? `${name} played ${v}. Your move (×) costs ${pts(cost)}.` : `${name} played ${v}. Your move (×) is worth as much.`,
+  clHuman: (rank: string, v: string) => `A player of your rank (${rank}) would have played ${v} (△).`,
+  clHumanSame: (rank: string) => `A player of your rank (${rank}) would have played the master’s move.`,
+  clHumanYou: (rank: string) => `A player of your rank (${rank}) would have played like you.`,
+  clScore: (found: number, total: number) => `${f.num(found)} found out of ${f.plural(total, 'move', 'moves')}`,
+  clAverage: (x: number) => `Your other moves: ${pts(x)} on average`,
+  clEnd: (found: number, total: number, avg: number | null) => `You found ${f.num(found)} moves out of ${f.num(total)}.`
+    + (avg === null ? '' : ` Your other moves cost ${pts(avg)} on average.`),
+  clNext: 'Next move', clAgain: 'Play it again', clOther: 'Another game', clOffer: 'Guess the moves',
+  clOfferLine: 'Guess this game’s moves, one at a time.',
   // automatic review
   autoDone: (n: number, rank?: string) => rank ? `You played like ${aRank(rank).replace(' ', '\u00a0')}\u00a0· ${n ? `${f.plural(n, 'key moment', 'key moments').replace(' ', '\u00a0')} for your exercises` : 'no decisive moment'}.`
     : `Review done: ${n ? `${f.plural(n, 'key moment joins', 'key moments join')} your exercises` : 'no decisive moment'}.`,

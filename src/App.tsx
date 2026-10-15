@@ -36,6 +36,7 @@ import { useAutoReview } from './exercises/useAutoReview'
 import { recordKey } from './exercises/deck'
 import { tone } from './joseki/practice'
 import { useToday } from './today/useToday'
+import { canGuess, useClassics } from './classics/useClassics'
 import { LearnSheet, OgsRating, RankProgress, storeTab, WhereLost, type DeckRow, type ProgressSection } from './LearnSheet'
 import { GamesSheet } from './GamesSheet'
 import { ShareSheet } from './ShareSheet'
@@ -307,7 +308,7 @@ export function App() {
   // The trainers borrow the board and the card, one at a time; the game waits underneath, untouched. A new activity (a
   // takeover of the same shape as useJoseki/useExercises) plugs in at four places: its name in Panel, its hook in
   // `trainers` below, its row in the Learn sheet's `decks`, and its command in `commands` (menu ids: src/menu.ts).
-  type Panel = 'joseki' | 'exercises'
+  type Panel = 'joseki' | 'exercises' | 'classics'
   const [panel, setPanel] = useState<Panel | null>(null)
   /** A trainer's setOpen: opening it replaces any other; closing it closes only itself. */
   const panelOpen = (name: Panel) => (o: boolean) => setPanel(p => (o ? name : p === name ? null : p))
@@ -353,6 +354,10 @@ export function App() {
     autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null,
     ask: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, REPLY)); scanRun.current = run; return run },
   })
+  const cl = useClassics({
+    view, open: panel === 'classics', setOpen: panelOpen('classics'), blocked: ongoing || !!review, canAnalyze, setThinking, rank: settings.myRank,
+    ask: (g, q) => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, q)); scanRun.current = run; return run },
+  })
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
   useEffect(() => setRitualSaid(null), [panel])
   const netsUnknown = inTauri() && !nets // at launch: the steps needing a net are neither done nor off yet
@@ -364,7 +369,7 @@ export function App() {
       () => { setSheet(null); setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
     onDone: n => { if (panel) setRitualSaid(n); else setNote(d => d.ritualDone(n)) }, // a panel's note hides the game's
   })
-  const trainers = [jt, ex] // every takeover of the card, in no particular order: at most one is open
+  const trainers = [jt, ex, cl] // every takeover of the card, in no particular order: at most one is open
   const tr = trainers.find(x => x.open) ?? ex
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
   const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && (online.placing ? online.me === 1 : game.toPlay === online.me) : !bot || game.toPlay !== bot.sign
@@ -878,7 +883,7 @@ export function App() {
   const commands: Record<string, () => void> = {
     undo, new: newCommand, open, save, postcard, panel: togglePanel,
     pass: () => play(null), resign, territory: () => { if (!ongoing) set('territory', !settings.territory) }, review: () => { if (canReview && !review) startReview(mine) },
-    today: openLearn, exercises: ex.toggle, joseki: jt.toggle, games: () => door('games'),
+    today: openLearn, exercises: ex.toggle, joseki: jt.toggle, games: () => door('games'), classics: cl.openList,
     camera: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
   }
   // a focused range keeps the shortcuts: its arrows/Home/End go through goTo (preventDefault: no second native step)
@@ -1037,8 +1042,9 @@ export function App() {
       [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
     : [line, lineLinks]
   // td.onward's step index: the ritual's exercises 0, joseki 1
+  const guessable = !ongoing && !joining && !playingLocal && !search && canAnalyze && canGuess(game) // Les Classiques' mode on any shown game
   const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open ? 1 : ex.open ? 0 : -1)] : review?.error ? [['retry', t.retry, retryLesson]]
-    : !review ? gameLinks
+    : !review ? [...gameLinks, ...guessable ? [['guess', t.clOffer, () => cl.guess(game, mine)] as Link] : []]
     : !m ? [['back', t.backToGame, leaveReview]]
     : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as Link] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
     : review.step === 'punish' ? [['better', t.seeBetter, () => openMoment(review.k, 'better')]]
@@ -1046,7 +1052,7 @@ export function App() {
   const anLine = !an ? null : !canAnalyze ? t.anNeedsNet : anError ? t.anFailed(failureText(anError)) : engineWait
     ?? (cands ? t.anFor(toPlay) : t.anReading)
   const message = anLine ?? (tr.open ? (thinking && engineWait) || [tr.note, ritualSaid && t.ritualDone(ritualSaid)].filter(Boolean).join(' ') : review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
-    : gameLine)
+    : gameLine ?? (guessable ? t.clOfferLine : null))
   // tuning progress: outside the key (no re-fade per update) and aria-hidden (announced once)
   const tuned = message === t.tuningCaption && engine.state === 'tuning' ? t.tuningProgress(engine.step, engine.done, engine.total)
     : review && message === t.reading ? t.percent(review.pct) : ''
@@ -1118,6 +1124,7 @@ export function App() {
     { key: 'exercises', name: t.decks.exercises, phrase: t.deckPhrases.exercises, counts: ex.counts, off: canAnalyze ? undefined : t.tdOff.exercises,
       open: () => { closeSheet(); setPanel('exercises') } },
     { key: 'joseki', name: t.decks.joseki, phrase: t.deckPhrases.joseki, counts: jt.counts ?? null, open: () => { closeSheet(); setPanel('joseki') } },
+    { key: 'classics', name: t.clDeck, phrase: t.clDeckPhrase, counts: null, off: canAnalyze ? cl.deckLine : t.tdOff.exercises, open: () => { closeSheet(); cl.openList() } },
   ]
   const progressSections: ProgressSection[] = [
     { key: 'rank', title: t.rankSection, body: <RankProgress ranks={ranks.p.games} follows={settings.autoAdjust} /> },
@@ -1192,7 +1199,7 @@ export function App() {
           <div className="card-in" id="card" hidden={settings.panelHidden}>
             <div className="meta">
               {/* wraps only between its parts, never inside one */}
-              <span>{(online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : t.board(size, komi)).split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
+              <span>{(online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : cl.info ? t.board(cl.info.size, cl.info.komi) : t.board(size, komi)).split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
               <button className="icon sm" onClick={openSheet('share')} aria-label={t.share} title={t.share}><Icon name="share" /></button>
               <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
                 <Icon name={sound ? 'volume' : 'volume-off'} />
@@ -1419,6 +1426,7 @@ export function App() {
           ogsId={online?.id} />
       )}
 
+      {cl.sheet}
       {sheet === 'nets' && <Networks nets={nets} progress={progress} onClose={closeNets} onChanged={refreshNets} opener={opener.current} />}
     </>
   )
