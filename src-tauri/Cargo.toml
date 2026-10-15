@@ -14,7 +14,6 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
-tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13", default-features = false, features = ["http2", "stream"] }
@@ -26,9 +25,10 @@ base64 = "0.23"
 keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service"] }
 tokio = { version = "1", features = ["process", "io-util", "sync", "fs", "macros", "rt-multi-thread", "time", "net"] }
 
-# Self-update: desktop only (the stores update the phone apps).
+# Self-update and OGS notifications: desktop only (the stores update the phone apps; OGS is off on phones).
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = { version = "~2.13", default-features = false, features = ["rustls-tls"] }
+tauri-plugin-notification = "2"
 
 # TLS: rustls everywhere but iOS, where Apple's TLS keeps the app on the OS's encryption only (export compliance).
 [target.'cfg(not(target_os = "ios"))'.dependencies]
