@@ -14,6 +14,13 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Release signing for local builds only, when gen/android/keystore.properties (gitignored) exists: storeFile (relative
+// to gen/android), storePassword, keyAlias and keyPassword (default: storePassword). Without it release builds are
+// unsigned; CI signs the App Bundle in a separate job (docs/mobile-release.md).
+val keystoreProperties = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { file ->
+    Properties().apply { file.inputStream().use { load(it) } }
+}
+
 // ${MASAME_VENDOR}/katago-android, by default the repo's vendor/ (gitignored, filled by the build scripts).
 val katagoLibs = file(providers.environmentVariable("MASAME_VENDOR").getOrElse(rootDir.resolve("../../../vendor").path)).resolve("katago-android").canonicalFile
 
@@ -27,6 +34,16 @@ android {
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        keystoreProperties?.let { props ->
+            create("release") {
+                storeFile = rootProject.file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword", storePassword)
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -42,6 +59,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfig = signingConfigs.findByName("release")
             optimization {
                enable = true
             }

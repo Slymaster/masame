@@ -1,0 +1,154 @@
+# iPhone build. On an ios-vX.Y.Z tag push only: a signed App Store build (Xcode's cloud signing through the App Store
+# Connect API key) uploaded to TestFlight, with the secrets of the `testflight` environment (restricted to ios-v* tags).
+# Otherwise (pushes and pull requests touching the iOS build): the same build without signing, upload or secrets.
+# Actions are pinned to commit SHAs (tag in the comment), as in build.yml. docs/mobile-release.md has the owner's setup.
+name: iOS
+
+on:
+  push:
+    branches: ['**']
+    tags: ['ios-v*'] # path filters are not evaluated for tag pushes
+    paths: &ios-paths
+      - .github/workflows/ios.yml
+      - src-tauri/gen/apple/**
+      - src-tauri/tauri.conf.json
+      - src-tauri/tauri.ios.conf.json
+      - src-tauri/build.rs
+      - src-tauri/Cargo.toml
+      - src-tauri/Cargo.lock
+      - src-tauri/src/**
+      - scripts/build-katago.sh
+      - scripts/build-katago-ios.sh
+      - scripts/ios/**
+  pull_request:
+    paths: *ios-paths
+  workflow_dispatch: # runs only once this file is on the default branch; on a tag ref it is a release
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    runs-on: macos-26
+    # The App Store Connect API key lives in this environment; no environment (empty name) for other refs.
+    environment: ${{ startsWith(github.ref, 'refs/tags/ios-v') && 'testflight' || '' }}
+    env:
+      RELEASE: ${{ startsWith(github.ref, 'refs/tags/ios-v') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # App Store uploads need the Xcode 26 SDK and refuse betas: take the newest Xcode 26.x release on the image.
+      - name: Select Xcode 26
+        id: xcode
+        run: |
+          xcode=$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' | grep -viE 'beta|_rc' | sort -V | tail -1)
+          [ -n "$xcode" ] || { echo "::error::no Xcode 26 release on this runner: $(ls -d /Applications/Xcode*)"; exit 1; }
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+          version=$(xcodebuild -version | awk 'NR==1{print $2}')
+          build=$(xcodebuild -version | awk 'NR==2{print $3}')
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          [[ $version == 26.* && $sdk == 26.* ]] || { echo "::error::$xcode is Xcode $version with iOS SDK $sdk, not 26.x"; exit 1; }
+          [[ ! $build =~ [a-z]$ ]] || { echo "::error::$xcode is a beta ($build)"; exit 1; }
+          echo "version=$version-$build" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch
+        with:
+          toolchain: stable
+          targets: aarch64-apple-ios
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          key: ios
+
+      # libkatago_ios.a, its iOS deps and the host protoc that compiles its .proto files (built by build-katago.sh,
+      # which also builds the Mac engine on the way: one more cached build).
+      - name: Cache the KataGo build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: vendor
+          key: katago-ios-${{ runner.arch }}-xcode-${{ steps.xcode.outputs.version }}-${{ hashFiles('scripts/build-katago.sh', 'scripts/build-katago-ios.sh', 'scripts/ios/**') }}
+      - name: Build KataGo for iOS (Metal)
+        run: |
+          brew install ninja pkg-config
+          scripts/build-katago.sh
+          scripts/build-katago-ios.sh iphoneos
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check the tag matches the app version
+        if: env.RELEASE == 'true'
+        run: |
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          if [ "${GITHUB_REF_NAME#ios-v}" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match tauri.conf.json version $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Build without signing
+        if: env.RELEASE != 'true'
+        run: pnpm tauri ios build --ci --no-sign
+
+      # Tauri archives, then has Xcode export and sign it for the App Store with a cloud-managed distribution certificate
+      # and an App Store profile it creates through the API key: nothing to keep in the repository or the keychain.
+      # CFBundleVersion is major.minor.<run number>: Tauri appends --build-number to bundleVersion, and the App Store
+      # takes at most three integers. The API key file exists only during this step.
+      - name: Build and sign for the App Store (tags only)
+        if: env.RELEASE == 'true'
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          for name in APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8; do
+            [ -n "${!name}" ] || { echo "::error::secret $name is missing from the testflight environment"; exit 1; }
+          done
+          export APPLE_API_KEY_PATH="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+          trap 'rm -f "$APPLE_API_KEY_PATH"' EXIT
+          (umask 077 && printf '%s\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY_PATH")
+          unset APPLE_API_KEY_P8
+          IFS=. read -r major minor _ <<< "$VERSION"
+          echo "BUILD_VERSION=$major.$minor.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          pnpm tauri ios build --ci --export-method app-store-connect --build-number "$GITHUB_RUN_NUMBER" \
+            --config "{\"bundle\":{\"iOS\":{\"bundleVersion\":\"$major.$minor\"}}}"
+
+      # No secrets here: the IPA is this app, at this version, signed for the App Store by this team.
+      - name: Check the IPA (tags only)
+        if: env.RELEASE == 'true'
+        run: |
+          ipas=(src-tauri/gen/apple/build/arm64/*.ipa)
+          [ ${#ipas[@]} -eq 1 ] && [ -f "${ipas[0]}" ] || { echo "::error::expected one IPA, found: ${ipas[*]}"; exit 1; }
+          mkdir "$RUNNER_TEMP/ipa" && unzip -q "${ipas[0]}" -d "$RUNNER_TEMP/ipa"
+          app=("$RUNNER_TEMP"/ipa/Payload/*.app)
+          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "${app[0]}/Info.plist"; }
+          [ "$(plist CFBundleIdentifier)" = com.sylvainrey.masame ] || { echo "::error::bundle id $(plist CFBundleIdentifier)"; exit 1; }
+          [ "$(plist CFBundleShortVersionString)" = "$VERSION" ] || { echo "::error::short version $(plist CFBundleShortVersionString)"; exit 1; }
+          [ "$(plist CFBundleVersion)" = "$BUILD_VERSION" ] || { echo "::error::bundle version $(plist CFBundleVersion)"; exit 1; }
+          codesign --verify --strict --verbose=2 "${app[0]}"
+          info=$(codesign -dvv "${app[0]}" 2>&1)
+          grep -qxF 'TeamIdentifier=CN9TKA949C' <<< "$info" || { echo "::error::not signed by team CN9TKA949C"; exit 1; }
+          grep -q '^Authority=Apple Distribution: ' <<< "$info" || { echo "::error::not signed for distribution"; exit 1; }
+          echo "IPA=${ipas[0]}" >> "$GITHUB_ENV"
+
+      # Through the App Store Connect API (not altool, which can attach a build to the wrong app).
+      - name: Upload to TestFlight (tags only)
+        if: env.RELEASE == 'true'
+        uses: Apple-Actions/upload-testflight-build@155ea93be9ee6d5186c71f660a612f5eddb14510 # v5.6.0
+        with:
+          app-path: ${{ env.IPA }}
+          app-type: ios
+          issuer-id: ${{ secrets.APPLE_API_ISSUER }}
+          api-key-id: ${{ secrets.APPLE_API_KEY }}
+          api-private-key: ${{ secrets.APPLE_API_KEY_P8 }}
