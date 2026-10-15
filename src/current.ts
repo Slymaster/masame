@@ -42,7 +42,7 @@ const lineOf = (g: Game) => g.nodes.slice(1).map((n, i) => g.nodes[i].children.i
 
 /** What to write for a local game: its SGF, its entry (over the stored one: other fields stay), current.json (null once decided). */
 export function snapshot(id: string, { game, bot, clock, myRank }: Shown, now: number, prev?: Entry) {
-  const side = (s: Sign) => ({ name: s === 1 ? game.info.playerBlack : game.info.playerWhite, rank: bot ? (s === bot.sign ? bot.rank : myRank) : '' })
+  const side = (s: Sign) => ({ name: s === 1 ? game.info.playerBlack : game.info.playerWhite, rank: bot ? (s === bot.sign ? bot.rank : prev?.[s === 1 ? 'black' : 'white']?.rank || myRank) : '' })
   const entry: Entry = { ...prev, ...library.entryOf(game, {
     id, source: bot ? 'ai' : 'two', me: bot ? -bot.sign as Sign : 0, date: dates.get(game) || now, black: side(1), white: side(-1),
     result: game.info.result, ...bot?.era !== undefined && { era: bot.era }, ...bot?.mentor && { mentor: prev?.mentor ?? { stops: 0 } },

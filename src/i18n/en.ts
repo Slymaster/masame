@@ -302,7 +302,7 @@ export const en = {
   yoFound: 'Found: the biggest move.', yoShort: (gap: number) => `Close: ${pts(gap)} less than the biggest.`, yoMissed: (gap: number) => `Not the biggest: ${lost(gap)}.`,
   yoAnswer: (s: number, v: string) => `The biggest: ${color(s)} ${v}.`,
   workTitle: 'Practice session', workLeft: (n: number) => f.plural(n, 'card left', 'cards left'), workDone: 'Session over. Well played.',
-  workOpening: 'Go on with the joseki',
+  workOpening: 'Go on with the fuseki',
   // Les Classiques: guess the masters' moves (flux F)
   classics: 'The Classics', clDeck: 'The Classics', clDeckPhrase: 'guess the masters’ moves',
   clDeckCount: (played: number, n: number) => `${f.num(played)} of ${f.plural(n, 'game', 'games')} played`,
@@ -449,7 +449,7 @@ export const en = {
   countSession: (n: number, right: number, med: number) => `${f.plural(n, 'position', 'positions')} counted, ${f.num(right)} right. Median error: ${pts(med)}.`,
   countNone: 'No reviewed game yet. Review a game, and its positions come here to be counted.',
   countLoading: 'Choosing a position', countFailed: (m: string) => `Couldn’t open this position. ${m}`, countLightFailed: (m: string) => `Couldn’t light the position. ${m}`,
-  countSection: 'Your counting error', countMedian: (med: number, n: number) => `${pts(med)} median over your last ${f.plural(n, 'count', 'counts')}`,
+  countSection: 'Your counting error', countMedian: (med: number, n: number) => `${pts(med)} median over ${n === 1 ? 'your last count' : `your last ${f.num(n)} counts`}`,
   countNoneYet: 'Count a few positions and your error shows here.', countFigure: (med: number) => `median error ${pts(med)}`,
   // replaying from memory (C2): the game's moves placed again in order, both sides
   memLink: 'Replay from memory', memTitle: 'Replay from memory',

@@ -27,4 +27,13 @@ describe('the menu bar greying', () => {
     expect(menuEnabled(c2, { ...all, canAnalyze: false }).count).toBe(true)
     expect(menuEnabled(c2, { ...all, canMemory: false }).memory).toBe(false)
   })
+  it('with every activity registered, each one is enabled when it makes sense and greyed during an OGS game', () => {
+    const every = Object.fromEntries(MENU_IDS.map(k => [k, () => {}]))
+    expect(Object.values(menuEnabled(every, all)).every(Boolean)).toBe(true)
+    const ogs = menuEnabled(every, { ...all, engineHelp: false, canMemory: false, canReview: false })
+    for (const id of ['position', 'memory', 'tsumego', 'count', 'fuseki', 'classics', 'exercises', 'joseki', 'territory', 'review'] as const) expect(ogs[id]).toBe(false)
+    expect([ogs.kifu, ogs.save, ogs.games, ogs.today]).toEqual([true, true, true, true])
+    const noNet = menuEnabled(every, { ...all, canAnalyze: false })
+    expect([noNet.tsumego, noNet.classics, noNet.count, noNet.fuseki, noNet.position]).toEqual([false, false, true, true, true])
+  })
 })

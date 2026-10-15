@@ -433,6 +433,7 @@ export function App() {
   const canReview = reviewShown && canAnalyze
   // a game to replay from memory: moves to place, not one being played (the AI's, an OGS game going on), no review
   const canMemory = game.moves.some(m => !m.setup) && (!bot || !!result) && !ongoing && !review
+  const shownEntry = library.idOf(game) ? library.get()?.find(e => e.id === library.idOf(game)) : undefined // the shown game's library entry, once loaded
   const live = ongoing || !!bot && !result || !!panel // a game being played (or a trainer shown): no autoplay
   const locked = !!result && atEnd // a decided line: playing from an earlier move opens a variation
   const play = (v: Vertex | null) => {
@@ -897,7 +898,8 @@ export function App() {
       if (!live) return
       setReview(x => x && { ...x, rank: r })
       if (rankSide !== mine) return
-      const f = bot ? lessonFlags(bot) : {}, ai = r && !f.noRank && keep.current(recordKey(game), r, !f.noAdjust) // no note: it would replace the lesson's caption
+      const lesson = bot ?? (shownEntry && { era: shownEntry.era, ...shownEntry.mentor && { mentor: true as const } }) // a lesson reopened from Mes parties stays one
+      const f = lesson ? lessonFlags(lesson) : {}, ai = r && !f.noRank && keep.current(recordKey(game), r, !f.noAdjust) // no note: it would replace the lesson's caption
       if (r && !f.noRank) noteRank(reviewId.current, r).catch(console.error)
       if (ai) setNextAi(ai)
       ar.reviewed(game)
@@ -1059,9 +1061,10 @@ export function App() {
             home: () => goTo(0), end: () => goTo(shown.moves.length),
             ...(fullscreen && !isMac && { escape: () => setFullscreen(false) }), // after a sheet's Esc and before a review's
             ...(review && { escape: leaveReview }),
-            j: jt.toggle, e: ex.toggle, d: openLearn, b: () => door('games'), ...tr.keys,
+            j: jt.toggle, e: ex.toggle, d: openLearn, b: () => door('games'),
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
             t: ongoing ? undefined : () => set('territory', !settings.territory), h: togglePanel,
+            ...tr.keys, // an open takeover's keys win over the game's (the editor mutes P, C and T)
             ...(renderer === '3d' && {
               v: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
               r: () => view.current?.resetCamera?.(),
@@ -1107,8 +1110,12 @@ export function App() {
   const mentorLine = mt.mentor ? t.mentorStops(mt.stops) : null
   const resultLine = result && [result(t), note?.(t), aiMoved && t.aiNext(aiMoved), mentorLine].filter(Boolean).join(' ')
   const incoming = !myGame && challengeRows.find(c => !c.mine)
-  const libraryShown = canMemory && !bot && !dirty && !!library.idOf(game) // a game opened from Mes parties, untouched
-  const libraryLinks: Link[] = [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []), ['memory', t.memLink, replay]]
+  // a finished game shown untouched (from Mes parties, or a file): Revoir, Rejouer de mémoire, Deviner les coups, when each makes sense
+  const guessable = !ongoing && !joining && !playingLocal && !search && canAnalyze && canGuess(game) // Les Classiques' mode on a shown game
+  const quietShown = canMemory && !bot && !dirty && !unfinished(game) && !result
+  const libraryShown = quietShown && !!library.idOf(game) // a game opened from Mes parties
+  const libraryLinks: Link[] = [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []), ['memory', t.memLink, replay],
+    ...(guessable ? [['guess', t.clOffer, () => cl.guess(game, shownEntry?.me || mine)] as Link] : [])]
   const undoAsk = myGame?.undo
   // outside trainers and reviews, top first: search, OGS game prompts, challenge wait, OGS game states, result, the local
   // game's lines; only when none has anything to say, a game started elsewhere or an incoming challenge
@@ -1128,17 +1135,17 @@ export function App() {
     : countingNow ? [t.countingHelp, []]
     : game.ended ? [t.countingWait, []]
     : [[(botError ?? note)?.(t), engineWait].filter(Boolean).join(' ') || (mt.late && !result ? t.mentorLate : null) || (last && !last.vertex ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null),
-      botError ? [['retry', t.retry, retryBot]] : libraryShown ? libraryLinks : []]
+      botError ? [['retry', t.retry, retryBot]] : quietShown ? libraryLinks : []]
   const [gameLine, gameLinks]: [string | null | undefined, Link[]] = line ? [line, lineLinks]
     : started ? [t.ogsStartedVs(started.who), [['open', t.ogsOpen, () => resume(started.id)]]]
     : incoming ? [t.ogsChallenged(incoming.from.username, incoming.from.rank, incoming.size, t.paces[incoming.speed], incoming.ranked),
       [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
     : libraryShown ? [t.libraryShown, libraryLinks]
+    : quietShown && guessable ? [t.clOfferLine, libraryLinks]
     : [line, lineLinks]
   // td.onward's step index: the ritual's exercises 0 (its exercises, then its counting), joseki or fuseki 1
-  const guessable = !ongoing && !joining && !playingLocal && !search && canAnalyze && canGuess(game) // Les Classiques' mode on any shown game
   const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open || ft.open ? 1 : ex.open || ct.open ? 0 : -1, ex.open ? !!ex.today?.done : undefined)] : review?.error ? [['retry', t.retry, retryLesson]]
-    : !review ? [...gameLinks, ...guessable ? [['guess', t.clOffer, () => cl.guess(game, mine)] as Link] : []]
+    : !review ? gameLinks
     : !m ? [['back', t.backToGame, leaveReview]]
     : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as Link] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
     : review.step === 'punish' ? [['better', t.seeBetter, () => openMoment(review.k, 'better')]]
@@ -1146,7 +1153,7 @@ export function App() {
   const anLine = !an ? null : !canAnalyze ? t.anNeedsNet : anError ? t.anFailed(failureText(anError)) : engineWait
     ?? (cands ? t.anFor(toPlay) : t.anReading)
   const message = anLine ?? (tr.open ? (thinking && engineWait) || [tr.note, ritualSaid && t.ritualDone(ritualSaid)].filter(Boolean).join(' ') : review ? (review.error ? (review.branch ? t.answerFailed : t.reviewFailed)(failureText(review.error)) : note?.(t)) ?? engineWait ?? lessonLine
-    : gameLine ?? (guessable ? t.clOfferLine : null))
+    : gameLine)
   // tuning progress: outside the key (no re-fade per update) and aria-hidden (announced once)
   const tuned = message === t.tuningCaption && engine.state === 'tuning' ? t.tuningProgress(engine.step, engine.done, engine.total)
     : review && message === t.reading ? t.percent(review.pct) : ''
@@ -1219,9 +1226,9 @@ export function App() {
     { key: 'exercises', name: t.decks.exercises, phrase: t.deckPhrases.exercises, counts: ex.counts, off: canAnalyze ? undefined : t.tdOff.exercises,
       open: () => { closeSheet(); ex.start({}) } },
     { key: 'tsumego', name: t.tsDeck, phrase: t.tsPhrase, counts: ex.tsCounts, off: canAnalyze ? undefined : t.tdOff.exercises, open: () => { closeSheet(); ex.tsumego() } },
-    { key: 'joseki', name: t.decks.joseki, phrase: t.deckPhrases.joseki, counts: jt.counts ?? null, open: () => { closeSheet(); setPanel('joseki') } },
     // the counter's place shows the counting error, the same figure as Progrès
     { key: 'count', name: t.countDeck, phrase: t.countPhrase, counts: null, off: ct.median === null ? undefined : t.countFigure(ct.median), open: () => { closeSheet(); setPanel('count') } },
+    { key: 'joseki', name: t.decks.joseki, phrase: t.deckPhrases.joseki, counts: jt.counts ?? null, open: () => { closeSheet(); setPanel('joseki') } },
     { key: 'fuseki', name: t.decks.fuseki, phrase: t.deckPhrases.fuseki, counts: ft.counts ?? null, open: () => { closeSheet(); setPanel('fuseki') } },
     { key: 'classics', name: t.clDeck, phrase: t.clDeckPhrase, counts: null, off: canAnalyze ? cl.deckLine : t.tdOff.exercises, open: () => { closeSheet(); cl.openList() } },
   ]

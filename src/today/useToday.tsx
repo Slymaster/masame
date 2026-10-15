@@ -2,6 +2,7 @@
 // It never takes the card: its button closes the sheet and opens the step (App's `start`).
 import { useEffect, useState } from 'react'
 import { t } from '../i18n'
+import { note as journal } from '../journal'
 import { today } from '../joseki/store'
 import { allDone, complete, gameStep, load, save, streakOf, type Step } from './ritual'
 
@@ -22,7 +23,7 @@ export function useToday({ blocked, decks, canPlay, rank, start, onDone }: {
   useEffect(() => {
     const n = complete(r, Date.now())
     if (!done || n === r) return
-    setR(n); save(n); setFlow(false); onDone(n.streak)
+    setR(n); save(n); setFlow(false); journal('ritual', true); onDone(n.streak) // the monthly letter counts the days
   }, [done]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** A ritual game reached a result. */

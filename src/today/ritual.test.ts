@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Card } from '../joseki/fsrs'
 import { today } from '../joseki/store'
-import { allDone, CAP, complete, COUNTS, countStep, HAND, handStep, deckStep, fresh, gameStep, KEY, load, save, streakOf, yesterday } from './ritual'
+import { allDone, CAP, complete, COUNTS, countStep, HAND, handStep, deckStep, fresh, gameStep, KEY, load, openingBook, save, streakOf, yesterday } from './ritual'
 
 const mem = (init: Record<string, string> = {}) => {
   const m = new Map(Object.entries(init))
@@ -39,6 +39,17 @@ describe('the daily ritual', () => {
     expect(handStep(ex, null)).toBe(ex) // no counting positions: the exercises alone
     expect(handStep(null, null)).toBeNull()
     expect(handStep({ done: false, left: null }, countStep(0))!.left).toBeNull()
+  })
+  it('the second step is the fuseki when the opening is your weakest phase, else the joseki', () => {
+    expect(openingBook(0)).toBe('fuseki')
+    expect([1, 2, null].map(w => openingBook(w as 1 | 2 | null))).toEqual(['joseki', 'joseki', 'joseki'])
+  })
+  it('the rail: a hand of exercises and tsumego, its counting, the opening book, the game; done only when all are', () => {
+    const hand = handStep(deckStep(deck(HAND - COUNTS, 3), 9, NOW, HAND - COUNTS), countStep(1))
+    expect(hand).toEqual({ done: false, left: 1 }) // the exercises part done, one position left to count
+    const steps = [hand, deckStep(deck(CAP, 0), 4, NOW), gameStep(fresh(), NOW)]
+    expect(allDone(steps)).toBe(false)
+    expect(allDone([handStep(deckStep(deck(HAND - COUNTS, 0), 9, NOW, HAND - COUNTS), countStep(COUNTS)), steps[1], { done: true, left: 0 }])).toBe(true)
   })
   it('the game step is done once a ritual game ended today', () => {
     expect(gameStep(fresh(), NOW)).toEqual({ done: false, left: 1 })
