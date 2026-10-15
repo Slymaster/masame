@@ -490,7 +490,6 @@ export const fr: Dict = {
     settings_write: 'Réglage non enregistré.',
     catalog_offline: 'Catalogue en ligne indisponible ; dernière version connue affichée.',
     engine_missing: 'Le moteur KataGo est introuvable.',
-    engine_unavailable: 'KataGo n’est pas encore disponible sur cet appareil.',
     config_missing: 'La configuration de KataGo est introuvable.',
     model_missing: 'Le réseau d’analyse est introuvable.',
     no_analysis_net: 'Aucun réseau d’analyse n’est installé. Ouvre « Réseaux » pour en télécharger un.',
