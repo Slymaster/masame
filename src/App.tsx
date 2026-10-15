@@ -485,7 +485,7 @@ export function App() {
       const h = o.handicap ?? settings.handicap // with a handicap the player takes Black, White plays first
       const me: Sign = h || settings.color === 'b' ? 1 : settings.color === 'w' ? -1 : random() < 0.5 ? 1 : -1
       const b = { sign: -me as Sign, rank: o.rank ?? settings.aiRank, ...o.ritual && { ritual: true as const },
-        ...!o.ritual && settings.style === 'era' && { era: settings.era }, ...settings.mentor && canAnalyze && { mentor: true as const } }
+        ...!o.ritual && settings.style === 'era' && { era: settings.era, rank: MASTER_RANK }, ...settings.mentor && canAnalyze && { mentor: true as const } }
       const name = botName(b)
       g = new Game({ size, playerBlack: me === 1 ? '' : name, playerWhite: me === 1 ? name : '',
         ...h > 0 && { komi: 0.5, setup: { black: handicapStones(size, h), white: [] }, firstSign: -1 as Sign } })
