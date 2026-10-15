@@ -187,7 +187,7 @@ impl Engine {
         }
     }
 
-    fn starting(&self) -> bool { matches!(self.status(), Status::Starting | Status::Tuning { .. } | Status::Warming) }
+    pub fn starting(&self) -> bool { matches!(self.status(), Status::Starting | Status::Tuning { .. } | Status::Warming) }
 
     pub fn status(&self) -> Status { self.status.borrow().clone() }
 

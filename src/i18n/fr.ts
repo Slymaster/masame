@@ -50,8 +50,8 @@ export const fr: Dict = {
   aiSettings: 'Réglages de l’IA',
   autoAdjust: 'Ajustement automatique', thinkTime: 'Temps de réflexion', botResign: 'Le bot peut abandonner',
   aiOnlyInApp: 'L’adversaire IA est disponible dans l’application.',
-  aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
-    `Pour jouer contre l’IA, installe le réseau Humain${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' et un réseau d’analyse' : ''}.`,
+  aiNeeds: (humanSize: string | null, needAnalysis: boolean, phoneNetSize?: string) =>
+    `Pour jouer contre l’IA, installe le réseau Humain${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? phoneNetSize ? ` et le réseau Rapide (${phoneNetSize})` : ' et un réseau d’analyse' : ''}.`,
   openNetworks: 'Ouvrir les réseaux',
   atelier: 'Atelier', coords: 'Coordonnées', sound: 'Son', territory: 'Ombre et lumière', language: 'Langue',
   candidates: 'Coups candidats', renderToggle: '3D / 2D', rendering: 'Rendu', render3d: 'Atelier vivant (3D)', render2d: 'Léger (2D)',
@@ -435,7 +435,7 @@ export const fr: Dict = {
   elo: (e: number) => `Elo ${f.num(e)}`,
   games: (n: number) => f.plural(n, 'partie', 'parties'),
   evaluating: 'en cours d’évaluation',
-  mb: (bytes: number) => `${f.num(Math.round(bytes / 1e6))} Mo`,
+  mb: (bytes: number) => `${f.num(Math.round(bytes / 1e6))}\u00a0Mo`, // never broken from its number
   month: f.month,
   verifying: 'Vérification…', downloadingNow: 'Téléchargement…', installed: 'Installé', error: 'Erreur',
   interruptedAt: (p: number) => `Interrompu à ${f.pct(p)}`,
@@ -499,7 +499,7 @@ export const fr: Dict = {
     no_analysis_net: 'Aucun réseau d’analyse n’est installé. Ouvre « Réseaux » pour en télécharger un.',
     spawn_failed: 'Impossible de lancer KataGo.',
     engine_crashed: 'KataGo s’est arrêté de façon inattendue.',
-    engine_crashed_at_start: 'KataGo s’est arrêté pendant son dernier démarrage, il n’a donc pas été relancé tout seul. Réessaie, ou choisis le réseau Léger dans Réseaux.',
+    engine_crashed_at_start: 'KataGo s’est arrêté pendant son dernier démarrage, il n’a donc pas été relancé tout seul. Si cela se reproduit, choisis le réseau Léger dans Réseaux.',
     engine_stopped: 'Le moteur est arrêté.',
     engine_timeout: 'KataGo ne répond pas.',
     bad_query: 'Requête d’analyse invalide.',

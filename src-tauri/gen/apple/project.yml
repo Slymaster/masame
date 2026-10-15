@@ -50,8 +50,8 @@ targets:
         UIRequiredDeviceCapabilities: [arm64, metal]
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        CFBundleShortVersionString: 0.4.0
-        CFBundleVersion: "0.4.0"
+        CFBundleShortVersionString: 0.5.0
+        CFBundleVersion: "0.5.0"
     entitlements:
       path: baduk_iOS/baduk_iOS.entitlements
     scheme:

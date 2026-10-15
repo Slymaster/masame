@@ -58,6 +58,8 @@ const QUICK = { maxVisits: 80, overrideSettings: { maxTime: 0.3 } }, DEEP = { ma
 
 const SIZES = [9, 13, 19]
 const HUMAN_BYTES = 99_066_230
+// the analysis net a phone recommends (networks.rs: fast on the iPhone, compact on Android), named in the first-run card
+const PHONE_NET_BYTES = /Android/.test(globalThis.navigator?.userAgent || '') ? 14_466_254 : 97_898_094
 const BOT_VISITS = 60, TERRITORY_VISITS = 150, FINAL_VISITS = 300
 const BOT_ATTEMPTS = 3 // a failed query (engine restarting on another net, crash) is retried after 1 s, then 2 s
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -1267,7 +1269,7 @@ export function App() {
   ]
   const cta = settings.opponent === 'ai' && !canPlayAI && (
     <div className="cta">
-      <p>{!inTauri() ? t.aiOnlyInApp : t.aiNeeds(humanNet?.complete ? null : t.mb(HUMAN_BYTES), !canAnalyze)}</p>
+      <p>{!inTauri() ? t.aiOnlyInApp : t.aiNeeds(humanNet?.complete ? null : t.mb(HUMAN_BYTES), !canAnalyze, isMobile ? t.mb(PHONE_NET_BYTES) : undefined)}</p>
       {inTauri() && <button className="btn" onClick={openSheet('nets')}>{t.openNetworks}</button>}
     </div>
   )
@@ -1546,7 +1548,9 @@ export function App() {
               <span>{t.engine}</span>
               <button className="link" data-nets onClick={() => { netsFromSettings.current = true; setSheet('nets') }}>{t.networksBtn}</button>
             </div>
-            <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}</p>
+            <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}
+              {engine.state === 'error' && engine.error.code === 'engine_crashed_at_start'
+                && <> · <button className="link" onClick={() => call('engine_start').catch(() => {})}>{t.retry}</button></>}</p>
             {inTauri() && <p className="engine" aria-live="polite">
               <button className="link" onClick={copyDiagnostics}>{t.copyDiagnostics}</button>
               {diag && <> · {diag(t)}</>}

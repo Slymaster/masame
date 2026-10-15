@@ -50,8 +50,8 @@ export const en = {
   aiSettings: 'AI settings',
   autoAdjust: 'Auto-adjust level', thinkTime: 'Thinking time', botResign: 'Bot may resign',
   aiOnlyInApp: 'The AI opponent is available in the app.',
-  aiNeeds: (humanSize: string | null, needAnalysis: boolean) =>
-    `To play against the AI, install the Human network${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? ' and an analysis network' : ''}.`,
+  aiNeeds: (humanSize: string | null, needAnalysis: boolean, phoneNetSize?: string) =>
+    `To play against the AI, install the Human network${humanSize ? ` (${humanSize})` : ''}${needAnalysis ? phoneNetSize ? ` and the Fast network (${phoneNetSize})` : ' and an analysis network' : ''}.`,
   openNetworks: 'Open networks',
   atelier: 'Workshop', coords: 'Coordinates', sound: 'Sound', territory: 'Light and shadow', language: 'Language',
   candidates: 'Candidate moves', renderToggle: '3D / 2D', rendering: 'Rendering', render3d: 'Atelier vivant (3D)', render2d: 'Light (2D)',
@@ -435,7 +435,7 @@ export const en = {
   elo: (e: number) => `Elo ${f.num(e)}`,
   games: (n: number) => f.plural(n, 'game', 'games'),
   evaluating: 'being rated',
-  mb: (bytes: number) => `${f.num(Math.round(bytes / 1e6))} MB`,
+  mb: (bytes: number) => `${f.num(Math.round(bytes / 1e6))}\u00a0MB`, // never broken from its number
   month: f.month,
   verifying: 'Verifying…', downloadingNow: 'Downloading…', installed: 'Installed', error: 'Error',
   interruptedAt: (p: number) => `Paused at ${f.pct(p)}`,
@@ -499,7 +499,7 @@ export const en = {
     no_analysis_net: 'No analysis network is installed. Open “Networks” to download one.',
     spawn_failed: 'Couldn’t start KataGo.',
     engine_crashed: 'KataGo stopped unexpectedly.',
-    engine_crashed_at_start: 'KataGo stopped while starting last time, so it wasn’t restarted on its own. Try again, or choose the Light network in Networks.',
+    engine_crashed_at_start: 'KataGo stopped while starting last time, so it wasn’t restarted on its own. If it happens again, choose the Light network in Networks.',
     engine_stopped: 'The engine is stopped.',
     engine_timeout: 'KataGo isn’t responding.',
     bad_query: 'Invalid analysis request.',

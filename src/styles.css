@@ -552,6 +552,10 @@ section > .seg + .ogs-input { display: block; width: 100% }
     flex: 0 100 auto; width: 100%; aspect-ratio: 1; margin-bottom: 62px;
     min-height: max(240px, min(100vw, 100dvh - var(--safe-t) - 62px - var(--dock) - 8px - 254px));
   }
+  /* the first-run card (no nets yet) shows whole, with its button: the board gives way down to the renderers' 200 px,
+     and a timeline with no move to step through makes room (iPhone SE) */
+  .stage:has(.card .cta) .board-wrap { min-height: 200px }
+  .stage:has(.card .cta) .tl:has(> .chev:first-child:disabled) { display: none }
   .board-wrap > .note { left: 0; padding: 0 10px }
   /* the caption: what the player reads, 18 px at least, two lines at most (narrow-window type is for the desktop) */
   .board-wrap > .note > span { font-size: 18px; padding: 5px 16px 0 }

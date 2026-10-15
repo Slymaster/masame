@@ -60,13 +60,13 @@ Le job de build Android ne voit aucun secret. Un job séparé, sans le code du p
 ## Publier
 
 ```sh
-git tag ios-v0.4.0 && git push origin ios-v0.4.0          # TestFlight
-git tag android-v0.4.0 && git push origin android-v0.4.0  # Play, test interne
+git tag ios-v0.5.0 && git push origin ios-v0.5.0          # TestFlight
+git tag android-v0.5.0 && git push origin android-v0.5.0  # Play, test interne
 ```
 
 - Le tag doit être exactement la `version` de `src-tauri/tauri.conf.json`, sinon le build s'arrête.
 - **iPhone** : la version affichée est `X.Y.Z`. Le numéro de build (CFBundleVersion) est `X.Y.<numéro du run>`, toujours croissant. Apple refuse plus de trois nombres, d'où `X.Y` et non `X.Y.Z`.
-- **Android** : `versionName` = `X.Y.Z`, `versionCode` = numéro du run de `android.yml`, toujours croissant. N'envoie jamais à Play un build fait sur ta machine : son `versionCode` calculé (0.4.0 donne 4000) dépasserait ceux de la CI et bloquerait les envois suivants. Renommer `android.yml` remet le compteur à zéro.
+- **Android** : `versionName` = `X.Y.Z`, `versionCode` = numéro du run de `android.yml`, toujours croissant. N'envoie jamais à Play un build fait sur ta machine : son `versionCode` calculé (0.5.0 donne 5000) dépasserait ceux de la CI et bloquerait les envois suivants. Renommer `android.yml` remet le compteur à zéro.
 - Retenter un tag : supprimer le tag, le repousser. Le nouveau run a un nouveau numéro, donc un nouveau build.
 
 ## Build local signé (Android, facultatif)
@@ -74,9 +74,11 @@ git tag android-v0.4.0 && git push origin android-v0.4.0  # Play, test interne
 `src-tauri/gen/android/keystore.properties` (ignoré par git), s'il existe, signe les builds release locaux :
 
 ```properties
-storeFile=/Users/sylvainrey/masame-upload.p12
+storeFile=/chemin/absolu/vers/masame-upload.p12
 storePassword=…
 keyAlias=upload
 ```
+
+`storeFile` est le chemin absolu de ton `.p12` (Gradle ne développe pas `~`), ou un chemin relatif à `src-tauri/gen/android`.
 
 Sans ce fichier, rien ne change pour les builds de debug, et les builds release restent non signés.
