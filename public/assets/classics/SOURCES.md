@@ -32,6 +32,11 @@ Smith's book gives the month only (`DT[1835-12]`).
 Primary source "tasuki" = Vít Brunner's list of famous games, https://wiki.tasuki.org/games/go/famous (files at
 https://github.com/tasuki/vitwiki/tree/master/games/go/famous).
 
+**Open point: tasuki's own origin is undocumented.** The page and the repository do not say where the SGF files come
+from; the only licence statement is the wiki's cc by-sa footer. A GoGoD ancestry can therefore not be ruled out from the
+documents alone. What argues against it: tasuki keeps the Japanese lunisolar dates (GoGoD converts to Gregorian), and
+`retsugen-senkaku-1792` exists in no GoGoD-derived archive we checked. Settling it means asking Vít Brunner.
+
 ## The games
 
 | File | Game | Source of the moves | Cross-check |

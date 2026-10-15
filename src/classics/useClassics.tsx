@@ -201,8 +201,10 @@ export function useClassics({ view, open, setOpen, blocked, canAnalyze, ask, set
   // ---------- the caption and its links ----------
   const name = (s: Sign) => (s === 1 ? run.black : run.white), masterName = name(run.side)
   const moveNo = g.moveNumber(run.at) + 1, total = g.moveNumber(g.moves.length)
+  // an average that rounds to 0 points says nothing: leave the sentence out
+  const avg = run.score.others && Math.round(average(run.score) * 10) ? average(run.score) : null
   const note = say ?? (run.phase === 'setup' ? canAnalyze ? t.clYouPlay(name(run.side), run.side) : t.exNeedsNet
-    : run.phase === 'end' ? t.clEnd(run.score.found, run.score.total, run.score.others ? average(run.score) : null)
+    : run.phase === 'end' ? t.clEnd(run.score.found, run.score.total, avg)
     : x?.error ? t.answerFailed(failureText(x.error))
     : x?.found ? t.clFound
     : x && x.cost === null ? t.clGrading(masterName)
@@ -232,8 +234,8 @@ export function useClassics({ view, open, setOpen, blocked, canAnalyze, ask, set
         {best && <p className="quiet">{t.clBestLine(best.found, best.total)}</p>}
         <div className="opts"><button className="btn accent" onClick={begin} disabled={!canAnalyze}>{t.clBegin}</button></div>
       </> : <>
-        <p className="say" aria-live="polite">{t.clScore(run.score.found, run.score.total)}</p>
-        {run.score.others > 0 && <p className="quiet">{t.clAverage(average(run.score))}</p>}
+        <p className="say" aria-live="polite">{run.score.total > 0 && t.clScore(run.score.found, run.score.total)}</p>
+        {avg !== null && <p className="quiet">{t.clAverage(avg)}</p>}
         <div className="bar" role="progressbar" aria-label={t.clProgress} aria-valuenow={shownAt} aria-valuemin={0} aria-valuemax={g.moves.length}>
           <i style={{ width: `${shownAt / g.moves.length * 100}%` }} />
         </div>

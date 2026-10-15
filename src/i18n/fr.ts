@@ -245,9 +245,9 @@ export const fr: Dict = {
   clHuman: (rank: string, v: string) => `Un joueur de ton rang (${rank}) aurait joué ${v} (△).`,
   clHumanSame: (rank: string) => `Un joueur de ton rang (${rank}) aurait joué le coup du maître.`,
   clHumanYou: (rank: string) => `Un joueur de ton rang (${rank}) aurait joué comme toi.`,
-  clScore: (found: number, total: number) => `${f.num(found)} retrouvés sur ${f.plural(total, 'coup', 'coups')}`,
+  clScore: (found: number, total: number) => `${f.plural(found, 'retrouvé', 'retrouvés')} sur ${f.plural(total, 'coup', 'coups')}`,
   clAverage: (x: number) => `Tes autres coups : ${pts(x)} en moyenne`,
-  clEnd: (found: number, total: number, avg: number | null) => `Tu as retrouvé ${f.num(found)} coups sur ${f.num(total)}.`
+  clEnd: (found: number, total: number, avg: number | null) => `Tu as retrouvé ${f.plural(found, 'coup', 'coups')} sur ${f.num(total)}.`
     + (avg === null ? '' : ` Tes autres coups coûtent ${pts(avg)} en moyenne.`),
   clNext: 'Coup suivant', clAgain: 'Rejouer', clOther: 'Une autre partie', clOffer: 'Deviner les coups',
   clOfferLine: 'Devine les coups de cette partie, un par un.',

@@ -233,7 +233,7 @@ export const en = {
   clIntro: 'Games of the Edo period, before 1868. Play each move before you see the master’s.',
   clLoading: 'Loading the games', clNew: 'not played yet',
   clBest: (found: number, total: number) => `best ${f.num(found)} / ${f.num(total)}`,
-  clBestLine: (found: number, total: number) => `Your best: ${f.num(found)} moves found out of ${f.num(total)}.`,
+  clBestLine: (found: number, total: number) => `Your best: ${f.plural(found, 'move', 'moves')} found out of ${f.num(total)}.`,
   clSide: 'Your side', clStart: 'Start at', clBegin: 'Begin', clProgress: 'Progress through the game',
   clYouPlay: (name: string, s: number) => `You play ${name}, ${color(s)}. Choose the start, then Begin.`,
   clAsk: (n: number, name: string) => `Move ${n}: where did ${name} play?`,
@@ -247,7 +247,7 @@ export const en = {
   clHumanYou: (rank: string) => `A player of your rank (${rank}) would have played like you.`,
   clScore: (found: number, total: number) => `${f.num(found)} found out of ${f.plural(total, 'move', 'moves')}`,
   clAverage: (x: number) => `Your other moves: ${pts(x)} on average`,
-  clEnd: (found: number, total: number, avg: number | null) => `You found ${f.num(found)} moves out of ${f.num(total)}.`
+  clEnd: (found: number, total: number, avg: number | null) => `You found ${f.plural(found, 'move', 'moves')} out of ${f.num(total)}.`
     + (avg === null ? '' : ` Your other moves cost ${pts(avg)} on average.`),
   clNext: 'Next move', clAgain: 'Play it again', clOther: 'Another game', clOffer: 'Guess the moves',
   clOfferLine: 'Guess this game’s moves, one at a time.',
