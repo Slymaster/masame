@@ -476,3 +476,30 @@ section > .seg + .ogs-input { display: block; width: 100% }
 .mem-figs li { display: flex; flex-direction: column }
 .mem-figs b { font-family: var(--f-title); font-size: 30px; font-weight: 500; line-height: 1.1 }
 .mem-figs span { font-size: 14px; color: var(--muted) }
+
+/* Kifu (Partager › Kifu): a page of paper over the app; printed alone (@media print), A4 */
+.kifu-page { position: fixed; inset: 0; z-index: 40; overflow: auto; background: #FCFAF5; color: #2A2118; outline: none }
+.kifu-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 24px; background: var(--sheet); color: var(--ink); border-bottom: 1px solid var(--rule) }
+.kifu-bar .title { font-family: var(--f-title); font-size: 32px; font-weight: 500; font-style: italic; line-height: 1; margin-right: 12px }
+.kifu-bar .say { flex: 1; margin: 0 }
+.kifu-bar .close { margin-left: auto; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; font-size: 26px; color: var(--ink); cursor: pointer }
+.kifu-bar .close:hover { background: var(--hover); color: var(--accent) }
+.kifu-sheet { max-width: 720px; margin: 28px auto 56px; padding: 0 24px }
+.kifu-head h1 { font: 600 26px/1.25 var(--f-ui); margin: 0 0 6px }
+.kifu-head p, .kifu-sheet h3, .kifu-legend { font: 500 18px/1.45 var(--f-ui); margin: 0 0 10px }
+.kifu-head { margin-bottom: 22px }
+.kifu-sheet h3 { font-weight: 600 }
+.kifu-sheet img { display: block; width: 100%; height: auto }
+.kifu-legend { margin-top: 10px }
+@page { size: A4; margin: 14mm }
+@media print {
+  html, body, #root { height: auto; overflow: visible; background: #fff }
+  body::before { display: none }
+  .kifu-open #root > :not(.kifu-page) { display: none !important }
+  .kifu-page { position: static; overflow: visible; background: #fff }
+  .kifu-bar { display: none }
+  .kifu-sheet { max-width: none; margin: 0; padding: 0; break-after: page }
+  .kifu-sheet:last-child { break-after: auto }
+  .kifu-sheet img { width: 170mm; max-width: 100%; margin: 0 auto; break-inside: avoid }
+  .kifu-head h1 { font-size: 16pt } .kifu-head p, .kifu-sheet h3, .kifu-legend { font-size: 11pt }
+}

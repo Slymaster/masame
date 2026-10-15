@@ -18,7 +18,7 @@ export interface MenuState {
 }
 
 const RULES: Partial<Record<MenuId, (s: MenuState) => boolean>> = {
-  save: s => s.hasGame, postcard: s => s.hasGame,
+  save: s => s.hasGame, postcard: s => s.hasGame, kifu: s => s.hasGame, position: s => s.engineHelp,
   undo: s => s.canUndo, pass: s => s.canPass, resign: s => s.canResign, review: s => s.canReview,
   territory: s => s.engineHelp && s.canAnalyze,
   exercises: s => s.engineHelp && s.canAnalyze, joseki: s => s.engineHelp,

@@ -460,6 +460,13 @@ fn queue_opened(app: &AppHandle, files: Vec<PathBuf>) {
 #[derive(serde::Serialize)]
 struct Opened { name: String, text: String }
 
+/// Partager › Kifu: the system print dialog for the page (WKWebView ignores window.print(); wry prints the webview on
+/// every desktop OS), where "Save as PDF" makes the PDF.
+#[tauri::command]
+fn print_page(webview: tauri::Webview) -> Res<()> {
+    webview.print().map_err(|e| Failure::with("print_failed", e))
+}
+
 /// The last file the OS asked us to open (earlier ones are dropped: one game at a time), read here so the webview never
 /// names a path.
 #[tauri::command]
@@ -505,7 +512,7 @@ pub fn run() {
         .on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); })
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
-            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, set_menu_enabled, update_check, update_install, take_opened,
+            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, set_menu_enabled, update_check, update_install, take_opened, print_page,
             ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history,
             library::library_list, library::library_read, library::library_write, library::library_delete,
             library::library_sidecar_read, library::library_sidecar_write, library::library_current_read, library::library_current_write
