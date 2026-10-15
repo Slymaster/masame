@@ -1,9 +1,9 @@
 // Joseki data generated offline by scripts/joseki/generate.ts (KataGo judge + Human SL network).
 // { v:1, build, profiles, roots:[{name, m, node, f:%perProfile}],
-//   nodes:[{k, e:[[move, child, loss×10, %perProfile, tagBits, mirrored?]], s?:1, pv?}] }
-// Nodes are sorted by ply, so edges point forward. A node is stored in its own frame: an edge marked mirrored reaches
-// the MIRROR image of the stored child. The fuseki (fuseki.v1.json, from the empty board, 8 symmetries) writes there the
-// symmetry k (1..7, src/joseki/sym.ts) that takes the position reached to the stored child; its roots are the first moves. A node with no edges was not expanded; its pv is KataGo's best line from it.
+//   nodes:[{k, e:[[move, child, loss×10, %perProfile, tagBits, symmetry?]], s?:1, pv?}] }
+// Nodes are sorted by ply, so edges point forward. A node is stored in its own frame: an edge's symmetry k (1..7,
+// src/joseki/sym.ts; absent = 0) takes the position reached to the stored child. The joseki only uses MIRROR (7); the
+// fuseki (fuseki.v1.json, from the empty board) uses all 8, and its roots are the first moves. A node with no edges was not expanded; its pv is KataGo's best line from it.
 // s = settled (tenuki costs ≤ 0.5 point). Root and edge frequencies are floored percentages of each profile playing it.
 
 export const TAG = { classic: 1, pro: 2, ai: 4, verified: 8, contested: 16 }
@@ -43,10 +43,10 @@ export const loadJoseki = () => loading ??= fetch(`${import.meta.env.BASE_URL}as
   .then(r => { if (!r.ok) throw new Error(`joseki data: HTTP ${r.status}`); return r.json() })
   .then(validate, e => { loading = undefined; throw e })
 
-export interface Child { move: string; child: number; loss: number; freq: number[]; tags: number; mirrored: boolean }
+export interface Child { move: string; child: number; loss: number; freq: number[]; tags: number; sym: number }
 /** Moves stored at a node: loss in points, freq per profile in 0..1. */
-export const children = (db: JosekiDb, node: number): Child[] => db.nodes[node].e.map(([move, child, loss, freq, tags, mirrored]) =>
-  ({ move, child, loss: loss / 10, freq: freq.map(f => f / 100), tags, mirrored: mirrored === 1 }))
+export const children = (db: JosekiDb, node: number): Child[] => db.nodes[node].e.map(([move, child, loss, freq, tags, k = 0]) =>
+  ({ move, child, loss: loss / 10, freq: freq.map(f => f / 100), tags, sym: k }))
 
 /** Chance, per profile, that two players of that profile reach each node (summed over move orders). */
 export function reach(db: JosekiDb): number[][] {

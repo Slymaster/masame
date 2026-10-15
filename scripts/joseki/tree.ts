@@ -159,7 +159,7 @@ export async function generate(opts: Opts, ask: Ask): Promise<string> {
       const tags = tagsOf(f, loss)
       const child = node(P.ply + 1, legal.get(c.moves[0])!, V[j], c.tenuki)
       if (loss <= (tags & (TAG.classic | TAG.pro) ? 2 : 1) && child.ply <= maxPly && !(c.tenuki && (P.ply === 1 || P.lastTenuki))) child.expandable = true
-      for (const m of c.moves) P.edges!.push({ m, child, loss, freq: c.tenuki ? f : mass(pol, [m]), tags, flag: legal.get(m)!.mirrored ? 1 : 0 })
+      for (const m of c.moves) P.edges!.push({ m, child, loss, freq: c.tenuki ? f : mass(pol, [m]), tags, flag: legal.get(m)!.k })
       if (c.tenuki) P.settled = loss <= 0.5
     })
   }

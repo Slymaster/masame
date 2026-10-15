@@ -2,8 +2,8 @@
 import GoBoard from '@sabaki/go-board'
 import type { Move, Sign, Vertex } from '../game'
 import type { Card, Rating } from './fsrs'
-import type { JosekiDb } from './db'
-import { code, compose, CONTEXT, invert, MIRROR, N, point, REGION, sym } from './sym'
+import type { Edge, JosekiDb } from './db'
+import { code, compose, CONTEXT, invert, N, point, REGION, sym } from './sym'
 import { NEW_PER_DAY } from './store'
 
 /** How a line is shown: a board symmetry and whether colours are swapped. */
@@ -15,13 +15,16 @@ export interface Path { root: number; picks: number[] }
 /** Nodes along a path, the frame each is stored in (relative to the root's), and the moves in the root's frame. */
 export interface Walk { nodes: number[]; frames: number[]; moves: string[] }
 
+/** The frame of an edge's child: it is stored as the image, under symmetry e[5], of the position played. */
+const through = (f: number, e: Edge) => compose(f, invert(e[5] ?? 0))
+
 export function walk(db: JosekiDb, { root, picks }: Path): Walk {
   const r = db.roots[root], w: Walk = { nodes: [r.node], frames: [0], moves: [r.m] }
   for (const i of picks) {
     const f = w.frames.at(-1)!, e = db.nodes[w.nodes.at(-1)!].e[i]
     w.moves.push(code(sym(f, point(e[0]))))
     w.nodes.push(e[1])
-    w.frames.push(e[5] ? compose(f, MIRROR) : f) // the child is stored as the mirror image of what was played
+    w.frames.push(through(f, e))
   }
   return w
 }
@@ -64,7 +67,7 @@ export function continuation(db: JosekiDb, n: number, f: number, max = 8): strin
     if (!x.e.length) for (let i = 0; i < (x.pv?.length ?? 0) && out.length < max; i += 2) out.push(code(sym(f, point(x.pv!.slice(i, i + 2)))))
     if (!e) break
     out.push(code(sym(f, point(e[0]))))
-    n = e[1]; f = e[5] ? compose(f, MIRROR) : f
+    n = e[1]; f = through(f, e)
   }
   return out
 }
@@ -140,7 +143,7 @@ export function answer(db: JosekiDb, l: Line, v: Vertex | 'tenuki'): Line {
   const i = x.e.findIndex(e => m === null ? isTenuki(e[0]) : e[0] === m), e = x.e[i]
   const rating = grade(e && e[2] / 10), last = { rating, card: isCard(db, n) ? x.k : null }
   if (rating === 1) {
-    const f = e?.[5] ? compose(frame(w), MIRROR) : frame(w)
+    const f = e ? through(frame(w), e) : frame(w)
     return { ...l, answers, phase: 'wrong', last, extra: e ? [rooted(w, e[0])] : mine, more: e ? continuation(db, e[1], f) : [] }
   }
   const next = settle(db, { ...l, path: { ...l.path, picks: [...l.path.picks, i] }, answers, last, dev: null, extra: [], more: [] })

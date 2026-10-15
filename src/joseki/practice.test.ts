@@ -7,7 +7,7 @@ import {
   accepted, answer, EXPLORE, grade, isCard, nextCard, node, pathTo, position, programme, reply, sample, shown, shownAt, startLine,
   storedAt, walk, type Line, type Orient,
 } from './practice'
-import { positionKey, sym } from './sym'
+import { MIRROR, positionKey, sym } from './sym'
 
 const db = validate(structuredClone(fixture) as unknown as JosekiDb), R = reach(db), P = 2 // 10k
 const ORIENTS: Orient[] = [0, 1, 2, 3, 4, 5, 6, 7].flatMap(k => [{ k, swap: false }, { k, swap: true }])
@@ -16,7 +16,7 @@ const now = Date.UTC(2026, 9, 13)
 
 describe('walking the tree', () => {
   it('reaches every node, mirrored edges included, as a direct replay of the shown moves', () => {
-    expect(db.nodes.some(x => x.e.some(e => e[5] === 1))).toBe(true)
+    expect(db.nodes.some(x => x.e.some(e => e[5] === MIRROR))).toBe(true)
     paths.forEach((p, i) => {
       const w = walk(db, p)
       expect(node(w)).toBe(i)
@@ -30,6 +30,12 @@ describe('walking the tree', () => {
       }
     })
   }, 20_000)
+  it('turns an edge\'s symmetry back into the frame the game was played in (fuseki: any of the 8)', () => {
+    // the child is stored rotated by k = 5, (x, y) -> (18 - y, x); its stored move ab (0, 1) was played at (1, 18) = bs
+    const e = (m: string, child: number, k?: number) => [m, child, 0, [], 0, ...k ? [k] : []]
+    const db = { roots: [{ m: 'pd', node: 0 }], nodes: [{ e: [e('dp', 1, 5)] }, { e: [e('ab', 2)] }, { e: [] }] } as unknown as JosekiDb
+    expect(walk(db, { root: 0, picks: [0, 0] }).moves).toEqual(['pd', 'dp', 'bs'])
+  })
   it('maps a click back to the stored move in all 8 symmetries, colours swapped or not', () => {
     for (const p of paths.slice(0, 40)) {
       const w = walk(db, p), x = db.nodes[node(w)]
