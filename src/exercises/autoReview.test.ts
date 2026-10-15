@@ -56,6 +56,14 @@ describe('the queue', () => {
     saveQueue([ok], out)
     expect(loadQueue(out)).toEqual([ok])
   })
+  it('carries the library id; queues saved before the library still load', () => {
+    const a = newAuto([])
+    a.queue = enqueue(a, game(12), 1, 0, 'ai-abc')
+    expect(a.queue[0].id).toBe('ai-abc')
+    expect(enqueue(newAuto([]), game(12), 1, 0)[0]).not.toHaveProperty('id')
+    const old: Job = { k: 'x', sgf: saveSgf(game(10)), side: 1, t: 5 }, kept = { ...old, k: 'y', id: 'ogs-7' }
+    expect(loadQueue(mem({ [QUEUE_KEY]: JSON.stringify([old, kept, { ...old, id: 7 }]) }))).toEqual([old, kept])
+  })
 })
 
 describe('a background run', () => {

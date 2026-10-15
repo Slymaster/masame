@@ -7,8 +7,9 @@ import { readGame, reviewEnd, type Moment } from '../review'
 import { loadSgf, saveSgf } from '../sgf'
 import { recordKey } from './deck'
 
-/** A game waiting for its review: the record as SGF (a snapshot: the shown game may grow variations), the player's side. */
-export interface Job { k: string; sgf: string; side: Sign; t: number }
+/** A game waiting for its review: the record as SGF (a snapshot: the shown game may grow variations), the player's side,
+ * its library id (absent in queues saved before the library, or for a game not kept). */
+export interface Job { k: string; sgf: string; side: Sign; t: number; id?: string }
 /** The session's memory: scan leads and rank probabilities per record key (shared with the foreground review), the moments
  * of jobs read but not yet ranked, failures per job, keys reviewed, and when the engine may be tried again after a failure (ms). */
 export interface Auto { queue: Job[]; leads: Map<string, (number | undefined)[]>; ranks: Map<string, Map<string, number>>; read: Map<string, Moment[]>
@@ -21,12 +22,12 @@ export const eligible = (g: Game, side: Sign | 0) =>
   side !== 0 && g.info.size <= 19 && g.moves.slice(0, reviewEnd(g)).filter(m => !m.setup).length >= MIN_MOVES
 
 /** The queue with this game added (oldest dropped past CAP), or unchanged when known, reviewed or not eligible. */
-export function enqueue(a: Auto, game: Game, side: Sign | 0, now: number): Job[] {
+export function enqueue(a: Auto, game: Game, side: Sign | 0, now: number, id?: string): Job[] {
   const sgf = saveSgf(game), g = loadSgf(sgf) // the record as the job will read it
   if (!eligible(g, side)) return a.queue
   const k = recordKey(g)
   if (a.reviewed.has(k) || a.queue.some(j => j.k === k)) return a.queue
-  return [...a.queue, { k, sgf, side: side as Sign, t: now }].slice(-CAP)
+  return [...a.queue, { k, sgf, side: side as Sign, t: now, ...id && { id } }].slice(-CAP)
 }
 
 /** The oldest job that has not failed too often this session; none for RETRY_MS after a failure. */
@@ -75,7 +76,7 @@ export async function runJob(a: Auto, j: Job, ask: (g: Game, q: object) => Promi
 }
 
 const isJob = (j: unknown): j is Job => !!j && typeof j === 'object' && typeof (j as Job).k === 'string' && typeof (j as Job).sgf === 'string'
-  && ((j as Job).side === 1 || (j as Job).side === -1) && Number.isFinite((j as Job).t)
+  && ((j as Job).side === 1 || (j as Job).side === -1) && Number.isFinite((j as Job).t) && ['undefined', 'string'].includes(typeof (j as Job).id)
 
 /** The stored queue; a bad entry (or a record that no longer loads) costs that entry only. */
 export function loadQueue(st: Storage = localStorage): Job[] {

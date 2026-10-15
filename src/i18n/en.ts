@@ -306,6 +306,9 @@ export const en = {
   fileName: (n: number) => `game-${n}x${n}.sgf`,
   discardAsk: 'The current game isn’t saved. Discard the moves played?',
   discard: 'Discard',
+  // library: the game in progress (A1)
+  gameResumed: 'Game resumed.',
+  abandonAsk: 'Abandon the current game?', abandon: 'Abandon',
   sgfEmpty: 'Empty SGF file',
   sgfNotGame: 'This file isn’t an SGF game',
   sgfBadSize: (sz: string | undefined) => `Unsupported board size: ${sz}`,

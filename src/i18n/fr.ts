@@ -306,6 +306,9 @@ export const fr: Dict = {
   fileName: (n: number) => `partie-${n}x${n}.sgf`,
   discardAsk: 'La partie en cours n’est pas enregistrée. Abandonner les coups joués ?',
   discard: 'Abandonner',
+  // library: the game in progress (A1)
+  gameResumed: 'Partie reprise.',
+  abandonAsk: 'Abandonner la partie en cours ?', abandon: 'Abandonner',
   sgfEmpty: 'Fichier SGF vide',
   sgfNotGame: 'Ce fichier n’est pas une partie SGF',
   sgfBadSize: (sz: string | undefined) => `Taille de goban non prise en charge : ${sz}`,

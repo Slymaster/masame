@@ -31,7 +31,8 @@ export interface ReviewSidecar { leads: (number | null)[]; moments: Moment[] }
 /** current.json: the unfinished local game to restore at launch (A1). */
 export interface Current {
   id: string; cursor: number
-  bot: { sign: 1 | -1; rank: string; era?: number; mentor?: boolean } | null
+  line?: number[] // the shown line, as child indices from the root (absent: the main line)
+  bot: { sign: 1 | -1; rank: string; ritual?: true; era?: number; mentor?: boolean } | null
   clock: unknown // the local clock's state (src/localClock.ts), or null
   handicap: number
 }
