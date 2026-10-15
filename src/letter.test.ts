@@ -18,7 +18,7 @@ const fixture: Sources = {
   entries: [
     entry('ai-1', at(2), 'ai', 1, 'B+R'), entry('ai-2', at(5), 'ai', -1, 'B+4.5'), entry('ai-3', at(9), 'ai', -1, 'W+R'),
     entry('ai-4', at(12), 'ai', 1), // unfinished: played, not counted in the wins
-    entry('ogs-7', at(3), 'ogs', 1, 'W+T'), entry('two-1', at(4), 'two', 0, 'B+R'), entry('file-x', at(6), 'file', 1, 'B+R'),
+    entry('ogs-7', at(3), 'ogs', 1, 'W+T'), entry('two-1', at(4), 'two', 0, 'B+R'), { ...entry('file-x', new Date(2019, 4, 3).getTime(), 'file', 1, 'B+R'), added: at(6) }, // a 2019 file, reviewed in October
     entry('ai-0', at(28, 8), 'ai', 1, 'B+R'), // September
   ],
   ranks: [read(at(20, 8), 14), read(at(3), 14), read(at(10), 16)], // 6k before October, then 5k-ish readings
@@ -45,6 +45,11 @@ describe('the facts of a month', () => {
       counting: { n: 3, err: 3 },
       ritual: { days: 5, run: 3 },
     })
+  })
+  it('counts a file when it entered the library; an older file with no such date is left out, months included', () => {
+    const old = entry('file-y', new Date(2019, 4, 3).getTime(), 'file', 1)
+    expect(months({ ...fixture, entries: [old] }, at(15))).toEqual(months({ ...fixture, entries: [] }, at(15)))
+    expect(monthFacts(2026, 9, { ...fixture, entries: [old] }).files).toBe(0)
   })
   it('a month without anything says only so, in both languages', () => {
     const f = monthFacts(2026, 7, fixture)

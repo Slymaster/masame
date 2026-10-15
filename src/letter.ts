@@ -49,10 +49,13 @@ function longestRun(days: Set<string>, ts: number[]): number {
   return best
 }
 
+/** When an entry counts in the letter: a game when it began, a file when it entered the library (an old file has no month). */
+const when = (e: Entry) => (e.source === 'file' ? e.added : e.date)
+
 /** The facts of month m (0–11) of year y, local time. */
 export function monthFacts(y: number, m: number, s: Sources): Facts {
   const [from, to] = range(y, m), inM = (t: number) => t >= from && t < to
-  const games = s.entries.filter(e => inM(e.date)), n = (src: Entry['source']) => games.filter(e => e.source === src).length
+  const games = s.entries.filter(e => inM(when(e) ?? NaN)), n = (src: Entry['source']) => games.filter(e => e.source === src).length
   const ai = games.filter(e => e.source === 'ai' && e.result && e.me !== 0)
   const won = ai.filter(e => e.result![0] === (e.me === 1 ? 'B' : 'W')).length
   const before = s.ranks.filter(r => r.t < from), upto = s.ranks.filter(r => r.t < to), month = upto.filter(r => r.t >= from)
@@ -75,7 +78,7 @@ export function monthFacts(y: number, m: number, s: Sources): Facts {
 
 /** The months to show, newest first: this month, then back to the oldest with anything in it (at most `cap`). */
 export function months(s: Sources, now: number, cap = 12): { y: number; m: number }[] {
-  const ts = [...s.entries.map(e => e.date), ...s.journal.map(e => e.t), ...s.played.map(g => g.d ?? g.t), ...s.ranks.map(r => r.t), ...s.counts.map(c => c.t)]
+  const ts = [...s.entries.flatMap(e => when(e) ?? []), ...s.journal.map(e => e.t), ...s.played.map(g => g.d ?? g.t), ...s.ranks.map(r => r.t), ...s.counts.map(c => c.t)]
   const d = new Date(now), oldest = ts.length ? Math.min(now, ...ts) : now, o = new Date(oldest)
   const span = (d.getFullYear() - o.getFullYear()) * 12 + d.getMonth() - o.getMonth()
   // shortcut: older months than `cap` are left out; a "see older letters" link if players ever ask for them
