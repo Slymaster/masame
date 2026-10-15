@@ -58,7 +58,7 @@ export function useClassics({ view, open, setOpen, blocked, canAnalyze, ask, set
   const runs = useRef(0)
   const masters = useRef(new Map<string, Promise<[number, Vertex | null]>>()) // per run and move: the master's lead, the human pick
 
-  useEffect(() => { if (blocked) { setOpen(false); setList(null) } }, [blocked]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (blocked) { close(); setList(null) } }, [blocked]) // eslint-disable-line react-hooks/exhaustive-deps
   // a few kilobytes, read once: the deck row counts the games, the sheet lists them
   useEffect(() => { if (!Array.isArray(classics)) loadIndex().then(setClassics, e => setClassics(failureText(e))) }, [list]) // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -489,7 +489,7 @@ export function App() {
     } else start(g = new Game({ size }), null)
     if (settings.clock !== 'off') { Object.assign(g.root.data, sgfTime(CLOCKS[settings.clock])); setClock(startClock(CLOCKS[settings.clock])) }
   }
-  const open = async (read: () => Promise<string | null> = openSgfFile, asked = false, imported = false) => {
+  const open = async (read: () => Promise<string | null> = openSgfFile, asked = false, imported = false, id?: string) => {
     abandon()
     try {
       const text = await read()
@@ -497,6 +497,7 @@ export function App() {
       if (text.length > MAX_SGF) throw new LocalizedError(l => l.sgfTooBig)
       const g = loadSgf(text)
       if (!asked && !(await canLeave())) return
+      if (id) library.bind(g, id) // a game from My games keeps its entry (a guess scores it there, not in a copy)
       start(g, null); if (SIZES.includes(g.info.size)) resize(g.info.size)
       if (imported) ar.enqueue(g, ogsSide(g)) // an ended OGS game of mine
     } catch (e) {
@@ -1418,7 +1419,7 @@ export function App() {
       )}
       {sheet === 'games' && (
         <GamesSheet onClose={closeSheet} opener={opener.current} onResume={id => { closeSheet(); resume(id) }}
-          onOpen={e => { closeSheet(); open(() => library.read(e.id)) }} onImport={() => { closeSheet(); open() }}
+          onOpen={e => { closeSheet(); open(() => library.read(e.id), false, false, e.id) }} onImport={() => { closeSheet(); open() }}
           onImportOgs={id => { closeSheet(); importGame(id) }} />
       )}
       {sheet === 'share' && (
