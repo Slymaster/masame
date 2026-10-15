@@ -13,8 +13,8 @@ import { gtp, type Analysis } from '../katago'
 import { curve, localRank, phaseRanks, rankName, WINDOW, type Read } from '../rank'
 import { RankChart } from '../RankChart'
 import type { Moment } from '../review'
-import { deckStep } from '../today/ritual'
-import { addReview, counts, emptyDeck, gapOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save, verdictOf, whereLost, type Exercise, type StoredDeck } from './deck'
+import { deckStep, HAND } from '../today/ritual'
+import { addReview, counts, emptyDeck, gapOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save, verdictOf, weakest, whereLost, type Exercise, type StoredDeck } from './deck'
 
 const REPLAY_MS = 650
 const PHASES = ['opening', 'middle', 'endgame'] as const
@@ -46,7 +46,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
   const pos = useMemo(() => x && run && after(x, run.shown), [x, run?.shown]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const next = () => {
-    const k = nextExercise(store.p, Date.now())
+    const k = nextExercise(store.p, Date.now(), weakest(store.p.games)) // leaning toward your weakest phase
     setRun(k === null ? null : { k, tried: null, gap: null, shown: [], more: [], line: null, error: null }); setSay(null)
   }
   useEffect(() => { if (open && !run && canAnalyze) next() }, [open, canAnalyze]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -90,7 +90,7 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
       <Icon name="target" />{waiting && <i className="dot" />}
     </button>
   )
-  const today = deckStep(store.p.cards, c.due + c.fresh, now) // the daily ritual's first step
+  const today = deckStep(store.p.cards, c.due + c.fresh, now, HAND) // the daily ritual's first step: a hand of HAND cards
   const none = { open, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, button, add, today }
   if (!open) return none
 

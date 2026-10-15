@@ -5,8 +5,8 @@ import { NEW_PER_DAY, today } from '../joseki/store'
 import type { Moment } from '../review'
 import { loadSgf } from '../sgf'
 import {
-  addReview, BAD, counts, emptyDeck, exerciseOf, GAMES, gapOf, KEY, keyOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save,
-  whereLost, type Deck, type Exercise,
+  addReview, BAD, counts, emptyDeck, exerciseOf, GAMES, gapOf, hand, KEY, keyOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save,
+  weakest, whereLost, type Deck, type Exercise,
 } from './deck'
 
 const mem = (init: Record<string, string> = {}) => {
@@ -81,6 +81,31 @@ describe('the next exercise', () => {
     expect(nextExercise({ ...d, fresh: NEW_PER_DAY }, NOW)).toBe(null)
     expect(counts({ ...d, fresh: NEW_PER_DAY }, NOW)).toEqual({ due: 0, fresh: 0, later: 1 })
     expect(nextExercise({ ...d, fresh: NEW_PER_DAY, day: '2001-1-1' }, NOW)).toBe('first') // yesterday's count
+  })
+})
+
+describe('the ritual\'s hand', () => {
+  const card = (due: number) => ({ ...review(undefined, 3, 0), due })
+  const end = 'aa'.repeat(40) // move 41 on 9×9: the endgame
+  const d: Deck = {
+    ...emptyDeck(), day: today(NOW),
+    items: { a: ex(), b: ex({ moves: end }), c: ex(), e: ex({ moves: end }), n1: ex({ t: YESTERDAY }), n2: ex({ t: YESTERDAY - H, moves: end }) },
+    cards: { a: card(NOW - 3 * H), b: card(NOW - H), c: card(NOW - 2 * H), e: card(NOW + H) },
+  }
+  it('takes the due cards first, then the new ones, up to the hand', () => {
+    expect(hand(d, NOW, 6)).toEqual(['a', 'c', 'b', 'n2', 'n1'])
+    expect(hand(d, NOW, 2)).toEqual(['a', 'c'])
+    expect(nextExercise(d, NOW)).toBe('a')
+  })
+  it('leans toward the weakest phase within each group', () => {
+    expect(hand(d, NOW, 6, 2)).toEqual(['b', 'a', 'c', 'n2', 'n1'])
+    expect(nextExercise(d, NOW, 2)).toBe('b')
+    expect(hand(d, NOW, 6, 0)).toEqual(['a', 'c', 'b', 'n1', 'n2'])
+  })
+  it('finds the weakest phase, none before a loss', () => {
+    expect(weakest([])).toBe(null)
+    expect(weakest([{ k: 'x', t: 0, loss: [0.2, -1, 0] }])).toBe(null)
+    expect(weakest([{ k: 'x', t: 0, loss: [3, 9, 4] }, { k: 'y', t: 0, loss: [3, 1, 2] }])).toBe(1)
   })
 })
 

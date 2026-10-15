@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Card } from '../joseki/fsrs'
 import { today } from '../joseki/store'
-import { allDone, CAP, complete, deckStep, fresh, gameStep, KEY, load, save, streakOf, yesterday } from './ritual'
+import { allDone, CAP, complete, HAND, deckStep, fresh, gameStep, KEY, load, save, streakOf, yesterday } from './ritual'
 
 const mem = (init: Record<string, string> = {}) => {
   const m = new Map(Object.entries(init))
@@ -21,6 +21,12 @@ describe('the daily ritual', () => {
     expect(deckStep(deck(CAP, 0), 8, NOW)).toEqual({ done: true, left: 0 })
     expect(deckStep(deck(0, 9), 0, NOW)).toEqual({ done: true, left: 0 })
     expect(deckStep(deck(0, 9), 3, NOW)!.done).toBe(false) // yesterday's reviews don't count
+  })
+  it('the exercises step is a hand of HAND cards, one more than a deck step', () => {
+    expect(HAND).toBe(6)
+    expect(deckStep(deck(CAP, 0), 8, NOW, HAND)).toEqual({ done: false, left: 1 })
+    expect(deckStep(deck(HAND, 0), 8, NOW, HAND)).toEqual({ done: true, left: 0 })
+    expect(deckStep(deck(2, 0), 9, NOW, HAND)).toEqual({ done: false, left: HAND - 2 })
   })
   it('the game step is done once a ritual game ended today', () => {
     expect(gameStep(fresh(), NOW)).toEqual({ done: false, left: 1 })

@@ -1,9 +1,10 @@
-// "Le rituel du jour": the due exercises, the due joseki and a 9×9 at your level, chained once a day. The steps come from
+// "Le rituel du jour": a hand of exercises (leaning toward your weakest phase), the due joseki and a 9×9 at your level, chained once a day. The steps come from
 // the decks (never stored); only the streak and the ritual game's day are kept, in localStorage like the decks.
 import type { Card } from '../joseki/fsrs'
 import { today } from '../joseki/store'
 
-export const KEY = 'masame.today', CAP = 5 // cards per deck that make a day's step
+// cards that make a day's step: the joseki (or fuseki) step's CAP, the exercises step's HAND
+export const KEY = 'masame.today', CAP = 5, HAND = 6
 /** streak: days in a row ending on `last` (the last day done, '' never); game: the day a ritual game last reached a result. */
 export interface Ritual { v: 1; streak: number; last: string; game: string }
 /** A step today: done, and how many are left (null while unknown); null when unavailable (counted as done). */
@@ -11,10 +12,10 @@ export type Step = { done: boolean; left: number | null } | null
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem'>
 
 const midnight = (now: number) => new Date(now).setHours(0, 0, 0, 0)
-/** A deck's step: CAP cards reviewed today, or nothing left today. */
-export function deckStep(cards: Record<string, Card>, left: number, now: number): Step {
+/** A deck's step: `cap` cards reviewed today, or nothing left today. */
+export function deckStep(cards: Record<string, Card>, left: number, now: number, cap = CAP): Step {
   const seen = Object.values(cards).filter(c => c.last >= midnight(now)).length
-  return { done: seen >= CAP || left === 0, left: seen >= CAP ? 0 : Math.min(left, CAP - seen) }
+  return { done: seen >= cap || left === 0, left: seen >= cap ? 0 : Math.min(left, cap - seen) }
 }
 export const gameStep = (r: Ritual, now: number): Step => ({ done: r.game === today(now), left: r.game === today(now) ? 0 : 1 })
 /** Every available step done, with at least one available. */
