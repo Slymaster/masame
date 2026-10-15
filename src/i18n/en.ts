@@ -149,7 +149,7 @@ export const en = {
   mentorStop: (points: number) => `This move costs ${Math.round(points)} points. There is better.`,
   mentorLate: 'The engine is too busy: the mentor lets your moves pass for now.',
   mentorKeep: 'Keep it',
-  mentorStops: (n: number) => (n ? `The mentor stopped you ${n === 1 ? 'once' : `${n} times`}.` : 'The mentor never stopped you.'),
+  mentorStops: (n: number) => (n ? `The mentor stopped you ${n === 1 ? 'once' : `${n}\u00a0times`}.` : 'The mentor never stopped you.'),
   // handicap and the local clock
   handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} stones` : 'None'),
   fewerStones: 'Handicap: fewer stones', moreStones: 'Handicap: more stones',
@@ -237,7 +237,7 @@ export const en = {
   tdStreak: (n: number) => f.plural(n, 'day', 'days'), tdStreakLab: 'Streak',
   tdStart: 'Start', tdContinue: 'Continue', tdAllDone: 'Today’s ritual is done. See you tomorrow.',
   tdNothing: 'Nothing to do yet: install an analysis network, or practise the joseki.',
-  ritualGo: 'Continue the ritual', ritualDone: (n: number) => `Today’s ritual done · ${f.plural(n, 'day', 'days')} in a row.`,
+  ritualGo: 'Continue the ritual', ritualDone: (n: number) => `Ritual done · ${f.plural(n, 'day', 'days')} in a row.`,
   // exercises from your own games (s: the colour that made the mistake)
   exercises: 'Exercises',
   exNeedsNet: 'Install an analysis network to practise: KataGo checks each answer.',
@@ -334,8 +334,8 @@ export const en = {
   clNext: 'Next move', clAgain: 'Play it again', clOther: 'Another game', clOffer: 'Guess the moves',
   clOfferLine: 'Guess this game’s moves, one at a time.',
   // automatic review
-  autoDone: (n: number, rank?: string) => rank ? `You played like ${aRank(rank).replace(' ', '\u00a0')}\u00a0· ${n ? `${f.plural(n, 'key moment', 'key moments').replace(' ', '\u00a0')} for your exercises` : 'no decisive moment'}.`
-    : `Review done: ${n ? `${f.plural(n, 'key moment joins', 'key moments join')} your exercises` : 'no decisive moment'}.`,
+  // said on the result card in two lines at most, beside the title: short
+  autoDone: (n: number, rank?: string) => `${rank ? `Your play: ${rank}` : 'Review done'}\u00a0· ${n ? `+${f.plural(n, 'exercise', 'exercises').replace(' ', '\u00a0')}` : 'no exercise'}.`,
   aiNext: (r: string) => `AI moves to\u00a0${r}.`,
   autoPending: (n: number) => `Automatic review: ${f.plural(n, 'game', 'games')} waiting`,
   autoRunning: (pct: number) => `Automatic review: in progress… ${f.pct(pct)}`,
@@ -462,7 +462,7 @@ export const en = {
   memWrong: (n: number) => `Not that one. Move ${n}: try again.`,
   memHelp: (n: number) => `Move ${n} was here. It counts as a help.`, memHelpPass: (n: number) => `Move ${n} was a pass. It counts as a help.`,
   memDone: (r: number, n: number, h: number) => `${f.plural(r, 'move', 'moves')} replayed from memory out of ${f.num(n)}, ${f.plural(h, 'help', 'helps')}`,
-  memStopped: (at: number) => `Stopped at move ${at}.`,
+  memSaid: (r: number, n: number, h: number) => `${r}/${n} from memory, ${f.plural(h, 'help', 'helps')}.`, // the result card's line
   memAgain: 'Start again', memFound: 'found', memHelps: 'helps', memLeft: 'to go',
   memHelpText: 'Place the moves in order, both sides. A second miss shows the move.',
   libraryShown: 'A game from your library.',

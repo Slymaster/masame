@@ -44,8 +44,8 @@ export function useMemory({ view, open, setOpen, blocked, onEnd }: {
     if (s && !s.saved && replayed(s.run)) { // Esc: the partial score is kept and said
       store(s)
       const r = s.run, n = total(s.rec)
-      onEnd(d => `${d.memStopped(s.rec.moveNumber(r.k) + 1)} ${d.memDone(r.recalled, n, r.helps)}.`)
-    } else if (s?.saved) { const r = s.run, n = total(s.rec); onEnd(d => `${d.memDone(r.recalled, n, r.helps)}.`) } // a finished run: its score stays said
+      onEnd(d => d.memSaid(r.recalled, n, r.helps))
+    } else if (s?.saved) { const r = s.run, n = total(s.rec); onEnd(d => d.memSaid(r.recalled, n, r.helps)) } // a finished run: its score stays said
     setS(null); setOpen(false)
   }
   // the second miss: the right move lights up, then is placed

@@ -150,7 +150,7 @@ export const fr: Dict = {
   mentorStop: (points: number) => `Ce coup coûte ${Math.round(points)} points. Il y a mieux.`,
   mentorLate: 'Le moteur est trop occupé : le mentor laisse passer tes coups pour l’instant.',
   mentorKeep: 'Garder',
-  mentorStops: (n: number) => (n ? `Le mentor t’a arrêté ${n} fois.` : 'Le mentor ne t’a pas arrêté.'),
+  mentorStops: (n: number) => (n ? `Le mentor t’a arrêté ${n}\u00a0fois.` : 'Le mentor ne t’a pas arrêté.'),
   // handicap and the local clock
   handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} pierres` : 'Aucun'),
   fewerStones: 'Handicap : moins de pierres', moreStones: 'Handicap : plus de pierres',
@@ -238,7 +238,7 @@ export const fr: Dict = {
   tdStreak: (n: number) => f.plural(n, 'jour', 'jours'), tdStreakLab: 'Série',
   tdStart: 'Commencer', tdContinue: 'Continuer', tdAllDone: 'Le rituel du jour est accompli. À demain.',
   tdNothing: 'Rien à faire pour l’instant : installe un réseau d’analyse, ou travaille les joseki.',
-  ritualGo: 'Continuer le rituel', ritualDone: (n: number) => `Rituel du jour terminé · série de ${f.plural(n, 'jour', 'jours')}.`,
+  ritualGo: 'Continuer le rituel', ritualDone: (n: number) => `Rituel fait · ${f.plural(n, 'jour', 'jours')} de suite.`,
   // exercices tirés de tes parties (s : la couleur qui a commis l’erreur)
   exercises: 'Exercices',
   exNeedsNet: 'Installe un réseau d’analyse pour t’entraîner : KataGo vérifie chaque réponse.',
@@ -335,8 +335,7 @@ export const fr: Dict = {
   clNext: 'Coup suivant', clAgain: 'Rejouer', clOther: 'Une autre partie', clOffer: 'Deviner les coups',
   clOfferLine: 'Devine les coups de cette partie, un par un.',
   // revue automatique
-  autoDone: (n: number, rank?: string) => rank ? `Tu as joué comme un\u00a0${rank}\u00a0· ${n ? `${f.plural(n, 'moment', 'moments').replace(' ', '\u00a0')} pour tes exercices` : 'aucun moment décisif'}.`
-    : `Revue faite : ${n ? `${f.plural(n, 'moment rejoint', 'moments rejoignent')} tes exercices` : 'aucun moment décisif'}.`,
+  autoDone: (n: number, rank?: string) => `${rank ? `Ton jeu\u00a0: ${rank}` : 'Revue faite'}\u00a0· ${n ? `+${f.plural(n, 'exercice', 'exercices').replace(' ', '\u00a0')}` : 'aucun exercice'}.`,
   aiNext: (r: string) => `L’IA passe à\u00a0${r}.`,
   autoPending: (n: number) => `Revue automatique : ${f.plural(n, 'partie', 'parties')} en attente`,
   autoRunning: (pct: number) => `Revue automatique : en cours… ${f.pct(pct)}`,
@@ -463,7 +462,7 @@ export const fr: Dict = {
   memWrong: (n: number) => `Pas ce coup-là. Coup ${n} : essaie encore.`,
   memHelp: (n: number) => `Le coup ${n} était ici. Il compte comme une aide.`, memHelpPass: (n: number) => `Le coup ${n} était un passe. Il compte comme une aide.`,
   memDone: (r: number, n: number, h: number) => `${f.plural(r, 'coup rejoué', 'coups rejoués')} de mémoire sur ${f.num(n)}, ${f.plural(h, 'aide', 'aides')}`,
-  memStopped: (at: number) => `Arrêté au coup ${at}.`,
+  memSaid: (r: number, n: number, h: number) => `${r}/${n} de mémoire, ${f.plural(h, 'aide', 'aides')}.`,
   memAgain: 'Recommencer', memFound: 'retrouvés', memHelps: 'aides', memLeft: 'à poser',
   memHelpText: 'Pose les coups dans l’ordre, pour les deux camps. Au second essai manqué, le coup s’allume.',
   libraryShown: 'Une partie de ta bibliothèque.',

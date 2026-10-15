@@ -160,6 +160,10 @@ const ogsSide = ({ info }: Game): Sign | 0 => !ogs.me ? 0 : info.playerBlack ===
 /** Keeps an OGS game of mine in the library (once), at its end or when imported. */
 const keepOgs = (g: Game, me: Sign | 0, ogsId: number, extra: Partial<library.Entry> = {}) => { library.keep(g, 'ogs', me, { ogsId, ...extra }).catch(e => console.error('library', e)) }
 
+/** The notes short enough for the result card's title line (i18n.test.ts keeps their wordings short); see `said`. */
+const shortNotes = new WeakSet<Msg>()
+const short = (m: Msg) => (shortNotes.add(m), m)
+
 /** State holding a Msg, rendered at display time (a bare function given to useState's setter would run as an updater). */
 function useMsg() {
   const [m, set] = useState<Msg | null>(null)
@@ -361,11 +365,11 @@ export function App() {
     ask: (g, q) => analyze(g, { ...q, priority: -1 }), // KataGo serves higher priorities first: the bot, the trainers jump the queue
     scanRun, add: (...x) => ex.add(...x),
     done: (k, ms, r, j) => { // a job is always the player's own game
-      const prev = note, ai = r && keepRank(k, r, !j.noAdjust)
+      const ai = r && keepRank(k, r, !j.noAdjust)
       noteReview(j.id, j.leads, ms).then(() => { if (r && !j.noRank) return noteRank(j.id, r) }).catch(console.error)
       if (ai) setNextAi(ai) // the next game's level, whichever game the line shows
       if (!result || recordKey(game) !== k) return
-      setNote(d => [prev?.(d), d.autoDone(ms.length, r ? rankName(r.all) : undefined)].filter(Boolean).join(' '))
+      setNote(short(d => d.autoDone(ms.length, r ? rankName(r.all) : undefined))) // replaces a stale note (saved…): the card says one at a time
     },
     human: canPlayAI,
   })
@@ -380,7 +384,7 @@ export function App() {
     open: panel === 'count', setOpen: panelOpen('count'), blocked: ongoing || !!review, canAnalyze, setThinking,
     light: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, { maxVisits: TERRITORY_VISITS, includeOwnership: true })); scanRun.current = run; return run.then(a => a.ownership) },
   })
-  const mem = useMemory({ view, open: panel === 'memory', setOpen: panelOpen('memory'), blocked: ongoing || !!review, onEnd: setNote })
+  const mem = useMemory({ view, open: panel === 'memory', setOpen: panelOpen('memory'), blocked: ongoing || !!review, onEnd: m => setNote(short(m)) })
   /** Replays the shown game from memory; its score goes to its library entry (a file or an unkept game is kept first). */
   const replay = () => mem.start(game, async () => library.idOf(game) ?? library.keep(game, online ? 'ogs' : bot ? 'ai' : 'file', mine, online ? { ogsId: online.id } : {}))
   const ex = useExercises({
@@ -407,7 +411,7 @@ export function App() {
     // each step closes the Learn sheet, then takes the card
     start: [() => { setSheet(null); if (canAnalyze && !ex.today?.done) ex.start({ only: null }); else setPanel('count') }, opening === 'fuseki' ? practiseFuseki : practiseJoseki,
       () => { setSheet(null); setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
-    onDone: n => { if (panel) setRitualSaid(n); else setNote(d => d.ritualDone(n)) }, // a panel's note hides the game's
+    onDone: n => { if (panel) setRitualSaid(n); else setNote(short(d => d.ritualDone(n))) }, // a panel's note hides the game's
   })
   // the position editor: its position starts a game against the AI (through the Play sheet), by two, or stays shown
   const [fromPos, setFromPos] = useState<Game | null>(null) // the Play sheet starts from this position
@@ -523,7 +527,7 @@ export function App() {
   useCurrentGame({ game, bot, clock, myRank: settings.myRank }, ver, r => {
     show(r.game, r.bot); setClock(r.clock); setPaused({ game: r.game, len: r.game.moves.length })
     if (SIZES.includes(r.game.info.size)) resize(r.game.info.size)
-    setNote(d => d.gameResumed)
+    setNote(short(d => d.gameResumed))
   })
   /** Leaving the shown game: an unfinished OGS game goes on without us; unsaved moves are lost. */
   // only a live game I play goes on with my clock running; spectated and correspondence games are left silently
@@ -594,7 +598,7 @@ export function App() {
     try {
       if (bot) game.info[bot.sign === 1 ? 'playerBlack' : 'playerWhite'] = botName(bot) // the SGF keeps the language it was saved in
       if (await saveSgfFile(saveSgf(game), t.fileName(game.info.size))) {
-        setDirty(false); setNote(d => d.saved)
+        setDirty(false); setNote(short(d => d.saved))
         if (positions.current.has(game)) library.rewrite(game, 'position', 0).catch(() => {}) // outside the app there is no library
       }
     } catch (e) {
@@ -609,7 +613,7 @@ export function App() {
       const png = await view.current?.snapshot?.()
       if (!png) throw new LocalizedError(d => d.postcardNotReady)
       const lent = tr.open && tr.board && 'signMap' in tr.board ? tr.board.signMap : undefined // a trainer's board is what the picture shows
-      if (await savePngFile(png, lent ? t.postcardName(lent.length) : t.postcardName(shown.info.size, shown.moveNumber()))) setNote(d => d.postcardSaved)
+      if (await savePngFile(png, lent ? t.postcardName(lent.length) : t.postcardName(shown.info.size, shown.moveNumber()))) setNote(short(d => d.postcardSaved))
     } catch (e) {
       setNote(d => d.postcardFailed(failureText(e, d)))
     } finally {
@@ -1113,8 +1117,14 @@ export function App() {
   const withNote = (text: string) => [text, note?.(t)].filter(Boolean).join(' ')
   const aiMoved = nextAi && nextAi !== bot?.rank ? nextAi : null
   const mentorLine = mt.mentor ? t.mentorStops(mt.stops) : null
-  const said = [mentorLine, note?.(t)].filter(Boolean).join(' ') // on the result card's title line, in ink: the mentor's stops, the review or memory notice
-  const resultLine = result && [result(t), note?.(t), aiMoved && t.aiNext(aiMoved), mentorLine].filter(Boolean).join(' ')
+  // on the result card's title line, in ink, two lines at most: one thing at a time, the latest note (the review, the memory
+  // score…) or else the mentor's stops; the AI's next level stays in its chip
+  const said = note?.(t) || mentorLine
+  // any other note (an error, a rendering notice) may not fit there: the line says it alone, in full, with the card's links
+  // (the player cards still say who won)
+  const onCard = !note || shortNotes.has(note)
+  const resultLine = result && (onCard ? [result(t), said, aiMoved && t.aiNext(aiMoved)].filter(Boolean).join(' ') : said)
+  const cardLine = onCard && resultLine
   const incoming = !myGame && challengeRows.find(c => !c.mine)
   // a finished game shown untouched (from Mes parties, or a file): Revoir, Rejouer de mémoire, Deviner les coups, when each makes sense
   const guessable = !ongoing && !joining && !playingLocal && !search && canAnalyze && canGuess(game) // Les Classiques' mode on a shown game
@@ -1280,8 +1290,8 @@ export function App() {
           onPlay={play}
         >
           <p className="note" aria-live="polite" tabIndex={-1}>
-            {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message} className={message === resultLine ? 'res' : undefined}>
-              {message === resultLine ? <>
+            {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message} className={message === cardLine ? 'res' : undefined}>
+              {message === cardLine ? <>
                 {/* the result as a score sheet: winner's stone, who and how, the AI's next level; read in that order */}
                 {res.winner !== 0 && <span className={`stone ${res.winner === 1 ? 'b' : 'w'}`} aria-hidden="true">{t.resultShort(re)}</span>}
                 <span className="txt"><b>{t.ended(res.winner, res.how, res.points)}{said && <span className="said"> · {said}</span>}</b>{' '}
@@ -1289,7 +1299,7 @@ export function App() {
                 {aiMoved && <span className="chip">{t.aiLevel}{' '}<b>{bot && <i>{bot.rank} →</i>} {aiMoved}</b></span>}
               </> : <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>}
               {!anLine && links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>
-                {id === 'review' && message === resultLine && <Icon name="review" />}{label}</button>)}
+                {id === 'review' && message === cardLine && <Icon name="review" />}{label}</button>)}
             </span>}
           </p>
         </Goban>
