@@ -171,6 +171,7 @@ OGS doesn't allow engine help during a game, so while an OGS game is going on, L
 - Network requests go to katagotraining.org (the network catalogue and the network downloads) and to GitHub for updates (github.com and its file servers). If you sign in to OGS, Masame connects to online-go.com as soon as it starts, so you appear online there while it's open. To propose dead stones when OGS's own proposal fails, it may send the final position to ai.online-go.com (OGS's scorer). Watching games without an account uses an anonymous OGS connection.
 - At most once a day, Masame asks GitHub whether a new version exists (you can turn this off in Settings). An update is downloaded only when you click Install, and is checked against Masame's signing key before it is installed.
 - Your games stay on your machine. The library is a folder in the app's data folder (`games/`, next to `models/`), and nothing in it is sent anywhere. SGF files you export are saved where you choose.
+- The full privacy policy, for the desktop and the phones: [PRIVACY.md](PRIVACY.md).
 
 ## Roadmap
 
