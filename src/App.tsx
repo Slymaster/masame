@@ -34,8 +34,9 @@ import { phaseLine, useExercises } from './exercises/useExercises'
 import { anchored, loadRanks, localRank, rankName, readRank, saveRanks, withReading, type Reading } from './rank'
 import { useAutoReview } from './exercises/useAutoReview'
 import { useMining } from './tsumego/useMining'
-import { recordKey } from './exercises/deck'
+import { recordKey, weakest } from './exercises/deck'
 import { tone } from './joseki/practice'
+import { openingBook } from './today/ritual'
 import { useToday } from './today/useToday'
 import { MonthLetters } from './MonthLetters'
 import { LearnSheet, OgsRating, RankProgress, storeTab, WhereLost, type DeckRow, type ProgressSection } from './LearnSheet'
@@ -327,7 +328,7 @@ export function App() {
   // The trainers borrow the board and the card, one at a time; the game waits underneath, untouched. A new activity (a
   // takeover of the same shape as useJoseki/useExercises) plugs in at four places: its name in Panel, its hook in
   // `trainers` below, its row in the Learn sheet's `decks`, and its command in `commands` (menu ids: src/menu.ts).
-  type Panel = 'joseki' | 'exercises' | 'count' | 'memory' | 'editor'
+  type Panel = 'joseki' | 'fuseki' | 'exercises' | 'count' | 'memory' | 'editor'
   const [panel, setPanel] = useState<Panel | null>(null)
   /** A trainer's setOpen: opening it replaces any other; closing it closes only itself. */
   const panelOpen = (name: Panel) => (o: boolean) => setPanel(p => (o ? name : p === name ? null : p))
@@ -366,10 +367,12 @@ export function App() {
     },
     human: canPlayAI,
   })
-  const jt = useJoseki({
-    view, open: panel === 'joseki', preload: sheet === 'learn', setOpen: panelOpen('joseki'),
-    rank: settings.myRank, setRank: v => set('myRank', v), blocked: ongoing || !!review, playFrom: m => playFrom(m),
-  })
+  const books = { view, preload: sheet === 'learn', rank: settings.myRank, setRank: (v: string) => set('myRank', v), blocked: ongoing || !!review, playFrom: (m: Move[]) => playFrom(m), setBook: setPanel }
+  const jt = useJoseki({ ...books, open: panel === 'joseki', setOpen: panelOpen('joseki') })
+  const ft = useJoseki({ ...books, book: 'fuseki', open: panel === 'fuseki', setOpen: panelOpen('fuseki') })
+  /** S'entraîner on the fuseki, a line started at once (the ritual, and Travailler › Opening). */
+  const practiseJoseki = () => { setSheet(null); setPanel('joseki'); jt.practise() }
+  const practiseFuseki = () => { if (ft.failed) return practiseJoseki(); setSheet(null); setPanel('fuseki'); ft.practise() } // the joseki stands in for a book that did not load
   // Compter (C1) and Rejouer de mémoire (C2)
   const ct = useCounting({
     open: panel === 'count', setOpen: panelOpen('count'), blocked: ongoing || !!review, canAnalyze, setThinking,
@@ -385,16 +388,17 @@ export function App() {
     hand: ct.available ? HAND - COUNTS : HAND,
   })
   useMining({ free: bgFree, ask: (g, q) => analyze(g, { ...q, priority: -1 }), scanRun, known: ex.has, add: ex.addItems }) // tsumego from reviewed games
-  const workOpening = () => { if (ongoing || review) return; setPanel('joseki'); jt.practise() } // Travailler › Ouverture: joseki practice (the fuseki's once it exists)
+  const workOpening = () => { if (!ongoing && !review) practiseFuseki() } // Travailler › Ouverture, after its exercises: S'entraîner on the fuseki
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
   useEffect(() => setRitualSaid(null), [panel])
+  const opening = ft.failed ? 'joseki' : openingBook(weakest(ex.games)) // the ritual's joseki or fuseki step
   const netsUnknown = inTauri() && !nets // at launch: the steps needing a net are neither done nor off yet
   const td = useToday({
     blocked: ongoing || !!review,
     // the exercises step: a hand of exercises, then two positions to count when your reviewed games give some
-    decks: [handStep(netsUnknown ? { done: false, left: null } : canAnalyze ? ex.today : null, ct.available ? countStep(ct.today) : null), jt.today ?? { done: false, left: null }], canPlay: netsUnknown ? null : canPlayAI, rank: settings.myRank,
+    decks: [handStep(netsUnknown ? { done: false, left: null } : canAnalyze ? ex.today : null, ct.available ? countStep(ct.today) : null), (opening === 'fuseki' ? ft : jt).today ?? { done: false, left: null }], canPlay: netsUnknown ? null : canPlayAI, rank: settings.myRank,
     // each step closes the Learn sheet, then takes the card
-    start: [() => { setSheet(null); if (canAnalyze && !ex.today?.done) ex.start({ only: null }); else setPanel('count') }, () => { setSheet(null); setPanel('joseki'); jt.practise() },
+    start: [() => { setSheet(null); if (canAnalyze && !ex.today?.done) ex.start({ only: null }); else setPanel('count') }, opening === 'fuseki' ? practiseFuseki : practiseJoseki,
       () => { setSheet(null); setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
     onDone: n => { if (panel) setRitualSaid(n); else setNote(d => d.ritualDone(n)) }, // a panel's note hides the game's
   })
@@ -407,7 +411,7 @@ export function App() {
     onAi: g => { setSettings(s => ({ ...s, opponent: 'ai', handicap: 0 })); resize(g.info.size); door('game'); setFromPos(g) },
     onTwo: g => void fromPosition(g), onDone: g => void fromPosition(g, true),
   })
-  const trainers = [jt, ex, ct, mem, ed] // every takeover of the card, in no particular order: at most one is open
+  const trainers = [jt, ft, ex, ct, mem, ed] // every takeover of the card, in no particular order: at most one is open
   const tr = trainers.find(x => x.open) ?? ex
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
   const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && (online.placing ? online.me === 1 : game.toPlay === online.me) : !bot || game.toPlay !== bot.sign
@@ -961,7 +965,7 @@ export function App() {
   const commands: Record<string, () => void> = {
     undo, new: newCommand, open, save, postcard, panel: togglePanel,
     pass: () => play(null), resign, territory: () => { if (!ongoing) set('territory', !settings.territory) }, review: () => { if (canReview && !review) startReview(mine) },
-    today: openLearn, exercises: ex.toggle, tsumego: ex.tsumego, joseki: jt.toggle, games: () => door('games'), count: ct.toggle, memory: () => { if (canMemory) replay() },
+    today: openLearn, exercises: ex.toggle, tsumego: ex.tsumego, joseki: jt.toggle, fuseki: ft.toggle, games: () => door('games'), count: ct.toggle, memory: () => { if (canMemory) replay() },
     position: ed.start, kifu: () => door('kifu'),
     camera: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
   }
@@ -1126,8 +1130,8 @@ export function App() {
       [['accept', t.ogsAccept, () => accept(incoming)], ['decline', t.ogsDecline, () => ogs.declineChallenge(incoming.id).catch(e => setNote(d => failureText(e, d)))]]]
     : libraryShown ? [t.libraryShown, libraryLinks]
     : [line, lineLinks]
-  // td.onward's step index: the ritual's exercises 0 (its exercises, then its counting), joseki 1
-  const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open ? 1 : ex.open || ct.open ? 0 : -1, ex.open ? !!ex.today?.done : undefined)] : review?.error ? [['retry', t.retry, retryLesson]]
+  // td.onward's step index: the ritual's exercises 0 (its exercises, then its counting), joseki or fuseki 1
+  const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open || ft.open ? 1 : ex.open || ct.open ? 0 : -1, ex.open ? !!ex.today?.done : undefined)] : review?.error ? [['retry', t.retry, retryLesson]]
     : !review ? gameLinks
     : !m ? [['back', t.backToGame, leaveReview]]
     : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as Link] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
@@ -1212,6 +1216,7 @@ export function App() {
     { key: 'joseki', name: t.decks.joseki, phrase: t.deckPhrases.joseki, counts: jt.counts ?? null, open: () => { closeSheet(); setPanel('joseki') } },
     // the counter's place shows the counting error, the same figure as Progrès
     { key: 'count', name: t.countDeck, phrase: t.countPhrase, counts: null, off: ct.median === null ? undefined : t.countFigure(ct.median), open: () => { closeSheet(); setPanel('count') } },
+    { key: 'fuseki', name: t.decks.fuseki, phrase: t.deckPhrases.fuseki, counts: ft.counts ?? null, open: () => { closeSheet(); setPanel('fuseki') } },
   ]
   const progressSections: ProgressSection[] = [
     { key: 'rank', title: t.rankSection, body: <RankProgress ranks={ranks.p.games} follows={settings.autoAdjust} /> },

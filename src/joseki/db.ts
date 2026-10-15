@@ -1,15 +1,19 @@
 // Joseki data generated offline by scripts/joseki/generate.ts (KataGo judge + Human SL network).
 // { v:1, build, profiles, roots:[{name, m, node, f:%perProfile}],
-//   nodes:[{k, e:[[move, child, loss×10, %perProfile, tagBits, mirrored?]], s?:1, pv?}] }
-// Nodes are sorted by ply, so edges point forward. A node is stored in its own frame: an edge marked mirrored reaches
-// the MIRROR image of the stored child. A node with no edges was not expanded; its pv is KataGo's best line from it.
+//   nodes:[{k, e:[[move, child, loss×10, %perProfile, tagBits, symmetry?]], s?:1, pv?}] }
+// Nodes are sorted by ply, so edges point forward. A node is stored in its own frame: an edge's symmetry k (1..7,
+// src/joseki/sym.ts; absent = 0) takes the position reached to the stored child. The joseki only uses MIRROR (7); the
+// fuseki (fuseki.v1.json, from the empty board) uses all 8, and its roots are the first moves. A node with no edges was not expanded; its pv is KataGo's best line from it.
 // s = settled (tenuki costs ≤ 0.5 point). Root and edge frequencies are floored percentages of each profile playing it.
 
+import { LocalizedError } from '../i18n'
+
 export const TAG = { classic: 1, pro: 2, ai: 4, verified: 8, contested: 16 }
-export type Edge = [string, number, number, number[], number, 1?]
+export type Edge = [string, number, number, number[], number, number?]
 export interface JNode { k: string; e: Edge[]; s?: 1; pv?: string }
 export interface Root { name: string; m: string; node: number; f: number[] }
-export interface JosekiDb { v: 1; build: Record<string, unknown>; profiles: string[]; roots: Root[]; nodes: JNode[] }
+/** family: set by the loader for fuseki.v1.json (not in the file). */
+export interface JosekiDb { v: 1; build: Record<string, unknown>; profiles: string[]; roots: Root[]; nodes: JNode[]; family?: 'fuseki' }
 
 const isInt = (v: unknown, min: number, max = Infinity): v is number => Number.isInteger(v) && (v as number) >= min && (v as number) <= max
 const isMove = (v: unknown) => typeof v === 'string' && /^[a-s]{2}$/.test(v)
@@ -29,23 +33,25 @@ export function validate(raw: unknown): JosekiDb {
     if (typeof x?.k !== 'string' || !Array.isArray(x.e) || (x.s !== undefined && x.s !== 1)
       || (x.pv !== undefined && !(typeof x.pv === 'string' && /^([a-s]{2})*$/.test(x.pv)))) fail(`node ${i}`)
     for (const e of x.e) {
-      if (!Array.isArray(e) || !isMove(e[0]) || !isInt(e[2], 0) || !isPcts(e[3], n) || !isInt(e[4], 0, 31) || e.length > 6 || (e.length > 5 && e[5] !== 1)) fail(`edge at node ${i}`)
+      if (!Array.isArray(e) || !isMove(e[0]) || !isInt(e[2], 0) || !isPcts(e[3], n) || !isInt(e[4], 0, 31) || e.length > 6 || (e.length > 5 && !isInt(e[5], 1, 7))) fail(`edge at node ${i}`)
       if (!isInt(e[1], i + 1, len - 1)) fail(`edge at node ${i} does not point forward`)
     }
   })
   return d
 }
 
-let loading: Promise<JosekiDb> | undefined
+export type Book = 'joseki' | 'fuseki'
+const loading: Partial<Record<Book, Promise<JosekiDb>>> = {}
 /** Fetched on first use (it is not small), then shared. */
-export const loadJoseki = () => loading ??= fetch(`${import.meta.env.BASE_URL}assets/joseki/joseki.v1.json`)
-  .then(r => { if (!r.ok) throw new Error(`joseki data: HTTP ${r.status}`); return r.json() })
-  .then(validate, e => { loading = undefined; throw e })
+export const loadJoseki = (book: Book = 'joseki') => loading[book] ??= fetch(`${import.meta.env.BASE_URL}assets/joseki/${book}.v1.json`)
+  // a missing file comes back as the page itself (HTML), not as a 404: both read as one plain sentence
+  .then(r => r.ok && !r.headers.get('content-type')?.includes('html') ? r.json() : Promise.reject(new LocalizedError(d => d.bookMissing)))
+  .then(j => book === 'fuseki' ? { ...validate(j), family: book } : validate(j), e => { loading[book] = undefined; throw e })
 
-export interface Child { move: string; child: number; loss: number; freq: number[]; tags: number; mirrored: boolean }
+export interface Child { move: string; child: number; loss: number; freq: number[]; tags: number; sym: number }
 /** Moves stored at a node: loss in points, freq per profile in 0..1. */
-export const children = (db: JosekiDb, node: number): Child[] => db.nodes[node].e.map(([move, child, loss, freq, tags, mirrored]) =>
-  ({ move, child, loss: loss / 10, freq: freq.map(f => f / 100), tags, mirrored: mirrored === 1 }))
+export const children = (db: JosekiDb, node: number): Child[] => db.nodes[node].e.map(([move, child, loss, freq, tags, k = 0]) =>
+  ({ move, child, loss: loss / 10, freq: freq.map(f => f / 100), tags, sym: k }))
 
 /** Chance, per profile, that two players of that profile reach each node (summed over move orders). */
 export function reach(db: JosekiDb): number[][] {
