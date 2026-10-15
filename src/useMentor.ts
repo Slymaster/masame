@@ -25,7 +25,9 @@ export function useMentor({ game, bot, thinkingTime, changed }: {
     const id = library.idOf(game)
     if (!id || (!bot?.era && !mentor)) return
     library.load().then(xs => {
-      const had = xs.find(e => e.id === id)?.mentor?.stops ?? 0
+      const e = xs.find(x => x.id === id)
+      if (!e) return // not written yet (the game's first write waits 500 ms): patched on a later render
+      const had = e.mentor?.stops ?? 0
       if (mentor && had > mentor.stops) { mentor.stops = had; seeded(n => n + 1) }
       const k = id + JSON.stringify({ era: bot?.era, stops: mentor?.stops })
       if (k === patched.current) return
@@ -36,6 +38,8 @@ export function useMentor({ game, bot, thinkingTime, changed }: {
 
   return {
     mentor, stopped, stops: mentor?.stops ?? 0,
+    /** The last checks were all given up at the budget: the player is told the mentor lets moves pass. */
+    late: (mentor?.late ?? 0) >= 2,
     /** The cost of the player's last move when the mentor stops it, else null (no mentor, under the threshold, kept, late). */
     check: (g: Game) => (mentor ? mentor.check(g) : Promise.resolve(null)),
     stop: (g: Game, loss: number) => setStop({ node: g.nodes[g.cursor], loss }),

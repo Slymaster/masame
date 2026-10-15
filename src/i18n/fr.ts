@@ -135,6 +135,7 @@ export const fr: Dict = {
   mentor: 'Mentor',
   mentorHelp: 'Une partie avec le mentor est une leçon : elle ne nourrit ni ton rang lu ni l’ajustement automatique.',
   mentorStop: (points: number) => `Ce coup coûte ${Math.round(points)} points. Il y a mieux.`,
+  mentorLate: 'Le moteur est trop occupé : le mentor laisse passer tes coups pour l’instant.',
   mentorKeep: 'Garder',
   mentorStops: (n: number) => (n ? `Le mentor t’a arrêté ${n} fois.` : 'Le mentor ne t’a pas arrêté.'),
   // handicap and the local clock

@@ -22,6 +22,7 @@ describe('the mentor', () => {
     expect([9, 13, 19].map(threshold)).toEqual([2, 3, 4])
     expect(MENTOR_QUERY.maxVisits).toBe(100)
     expect(BUDGET).toBe(1000)
+    expect(MENTOR_QUERY.priority).toBe(-1) // below the AI's own query
   })
 
   it('stops a move that costs the threshold or more, and lets a cheaper one pass', async () => {
@@ -94,6 +95,13 @@ describe('the mentor', () => {
     expect(Date.now() - t0).toBeLessThan(500)
     expect(late.m.stops).toBe(0)
     expect(await fake([0, -10], { fail: true }).m.check(at(9, [4, 4]))).toBeNull()
+  })
+
+  it('counts the checks given up in a row, and an answer in time resets them', async () => {
+    const slow = fake([0, 0, -10, 0, 0], { budget: 30, never: 0 }), g = at(9, [4, 4], [3, 3], [2, 2])
+    g.goTo(1); await slow.m.check(g); expect(slow.m.late).toBe(1)
+    const h = g.branch(3); await slow.m.check(h); expect(slow.m.late).toBe(0) // move 3 read in time (searches 2 and 3)
+    const k = at(9, [0, 0]); await slow.m.check(k); expect(slow.m.late).toBe(1)
   })
 
   it('does not examine a pass', async () => {

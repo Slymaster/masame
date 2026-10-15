@@ -8,8 +8,9 @@ import { scanQuery } from './review'
 export const threshold = (size: number) => (size <= 9 ? 2 : size <= 13 ? 3 : 4)
 /** The mentor adds at most this long (ms) to a move; past it the move passes unexamined. */
 export const BUDGET = 1000
-/** 100 visits, each search at most 0.5 s: the position before the move is usually read while the player thinks. */
-export const MENTOR_QUERY = scanQuery(240)
+/** 100 visits, each search at most 0.5 s: the position before the move is usually read while the player thinks. Below the
+ * AI's own query: a search given up at the budget yields to it. */
+export const MENTOR_QUERY = { ...scanQuery(240), priority: -1 }
 /** A move the search before it never looked at is judged by comparing two short searches, only when each read at least this much. */
 export const MIN_VISITS = 30
 
@@ -19,6 +20,8 @@ const visits = (a: Read) => a.moves.reduce((s, c) => s + c.visits, 0)
 export class Mentor {
   /** How many times the mentor stopped the player in this game. */
   stops = 0
+  /** Checks given up at the budget in a row (the engine is too busy); an answer in time resets it. */
+  late = 0
   private reads = new WeakMap<GameNode, Promise<Read>>() // the search of each position
   private checks = new WeakMap<GameNode, Promise<number | null>>() // per move: its cost when it stopped, else null
 
@@ -59,9 +62,10 @@ export class Mentor {
     if (c) return c
     c = !m?.vertex ? Promise.resolve(null) : Promise.race([
       this.cost(g, i),
-      new Promise<null>(r => setTimeout(r, this.budget, null)),
+      new Promise<'late'>(r => setTimeout(r, this.budget, 'late')),
     ]).then(loss => {
-      if (loss === null || loss < threshold(g.info.size)) return null
+      this.late = loss === 'late' ? this.late + 1 : 0
+      if (loss === 'late' || loss === null || loss < threshold(g.info.size)) return null
       this.stops++
       return loss
     }, () => null) // the engine failed: the move passes
