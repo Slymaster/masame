@@ -23,6 +23,10 @@ export interface BoardState {
   marks?: Mark[] | null
   /** Grid rectangle [x0, y0, x1, y1] left clear; a light veil covers the rest of the board. */
   focus?: [number, number, number, number] | null
+  /** A stone shown in half-tone on an empty point: the move the mentor stopped. */
+  pending?: { v: Vertex; sign: Sign } | null
+  /** Grid rectangle [x0, y0, x1, y1] outlined by a soft frame (a tsumego's area); the whole board stays clear. */
+  frame?: [number, number, number, number] | null
 }
 export interface Mark { v: Vertex; label: string; tone: 'best' | 'ok' | 'mistake' }
 
@@ -34,7 +38,7 @@ const HOSHI: Record<number, number[][]> = {
   19: [3, 9, 15].flatMap(x => [3, 9, 15].map(y => [x, y])),
 }
 const COLS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ' // no I, by convention
-const DROP_MS = 160
+const DROP_MS = 160, SHAKE_MS = 650 // a refused stone trembles, then fades away
 const LABEL_FONT = 'Manrope, system-ui, sans-serif'
 // one light for the board and the stones: the shadows fall towards the lower right
 const SUN: [number, number] = [0.496, 0.868]
@@ -79,7 +83,7 @@ function wood(): HTMLCanvasElement {
 }
 
 /* ---------- geometry ---------- */
-function geom(S: number, N: number, coords: boolean, dpr: number): Geom {
+export function geom(S: number, N: number, coords: boolean, dpr: number): Geom {
   const bx = S * 0.018, by = bx, bw = S * 0.945
   const font = Math.min(13, Math.max(9.5, S * 0.0155))
   // Margin from the outer line to the board edge: 0.75 cell as in the mood board; with coordinates, enough
@@ -133,7 +137,7 @@ function drawBoard(x: CanvasRenderingContext2D, g: Geom, S: number, dpr: number)
   x.fillStyle = 'rgba(80,46,14,0.35)'; x.fillRect(bx, by + bw - 1, bw, 1); x.fillRect(bx + bw - 1, by, 1, bw)
 }
 
-function drawGrid(x: CanvasRenderingContext2D, g: Geom, coords: boolean) {
+export function drawGrid(x: CanvasRenderingContext2D, g: Geom, coords: boolean) {
   const { N, P } = g
   const ink = 'rgba(43,29,14,0.86)', a = P[0], z = P[N - 1]
   x.strokeStyle = ink; x.lineWidth = 1; x.beginPath()
@@ -276,7 +280,12 @@ function lastRing(c: CanvasRenderingContext2D, g: Geom, [cx, cy]: [number, numbe
 
 /** Veil and markers, also drawn into the 3D board's overlay texture: px / py map grid indices to canvas units. */
 export function paintMarks(c: CanvasRenderingContext2D, px: (i: number) => number, py: (i: number) => number, cell: number,
-  marks: Mark[] | null | undefined, focus: BoardState['focus'], w: number, h: number, veil = 0.24) {
+  marks: Mark[] | null | undefined, focus: BoardState['focus'], w: number, h: number, veil = 0.24, frame: BoardState['frame'] = null, frameAlpha = 0.55) {
+  if (frame) {
+    const m = cell * 0.5, x0 = px(frame[0]) - m, y0 = py(frame[1]) - m
+    c.lineWidth = cell * 0.09; c.strokeStyle = `rgba(138,47,34,${frameAlpha})`
+    c.beginPath(); c.roundRect(x0, y0, px(frame[2]) + m - x0, py(frame[3]) + m - y0, cell * 0.3); c.stroke()
+  }
   if (focus) {
     const m = cell * 0.5, x0 = px(focus[0]) - m, y0 = py(focus[1]) - m
     c.fillStyle = `rgba(246,240,229,${veil})`
@@ -313,6 +322,7 @@ export class BoardView {
   private stonesKey = ''
   private hover: Vertex | null = null
   private anim: { x: number; y: number; c: Sign; start: number } | null = null
+  private shook: { x: number; y: number; c: Sign; start: number } | null = null
   /** Where each stone was put down (mm in the square jitter space); stones never move once down. */
   private placed = new Map<number, Placed & { c: Sign }>()
   private placedN = 0
@@ -378,6 +388,14 @@ export class BoardView {
     this.req()
   }
 
+  /** A refused stone (replaying from memory): it trembles and disappears; the position doesn't change. */
+  shake(v: Vertex, c: Sign) {
+    this.hover = null
+    this.shook = { x: v[0], y: v[1], c, start: performance.now() }
+    if (this.state?.sound) playTap()
+    this.req()
+  }
+
   private place(N: number, p: number, c: Sign) {
     const x = p % N, y = (p / N) | 0, j = jitter(N, x, y, ++this.moveNo, J_AMP, J_AMP)
     const s = { x, y, c, R: J_R, jx: x * J_MM + j.jx - gx(N, x), jz: y * J_MM + j.jz - gz(N, y), tx: 0, tz: 0 }
@@ -440,7 +458,7 @@ export class BoardView {
     await signatureFonts()
     if (!this.state || !this.S) return null
     const h = this.hover
-    this.hover = null; this.anim = null; this.frame(performance.now())
+    this.hover = null; this.anim = null; this.shook = null; this.frame(performance.now())
     // the canvas ends inside the board's cast shadow: cut the board out and cast its shadows again, whole, on a larger sheet
     const { S, dpr: d } = this, g = this.g!, t = S * 0.016, pad = Math.ceil(S * 0.07 * d)
     const ox = Math.floor(g.bx * d), oy = Math.floor(g.by * d), w = Math.ceil((g.bx + g.bw + t * 0.45) * d) - ox, hh = Math.ceil((g.by + g.bw + t) * d) - oy
@@ -530,14 +548,20 @@ export class BoardView {
     c.setTransform(dpr, 0, 0, dpr, 0, 0)
     if (own) deadHint(c, g, own, s.signMap, this.at)
     if (s.counting) countMarks(c, g, s.signMap, s.counting, this.at)
-    if (s.focus || s.marks?.length) paintMarks(c, i => g.P[i], i => g.P[i], g.cell, s.marks, s.focus, S, S)
+    if (s.focus || s.frame || s.marks?.length) paintMarks(c, i => g.P[i], i => g.P[i], g.cell, s.marks, s.focus, S, S, undefined, s.frame)
     if (a) { const ap = this.at(a.x, a.y); stoneShadow(c, g, ...ap, t); stone(c, g, a.x, a.y, a.c, t, ap) }
+    const w = this.shook, wk = w ? (now - w.start) / SHAKE_MS : 1
+    if (w && wk < 1 && !s.signMap[w.y]?.[w.x]) {
+      const dx = this.reducedMotion.matches ? 0 : Math.sin(wk * TAU * 4) * g.cell * 0.12 * (1 - wk), p: [number, number] = [g.P[w.x] + dx, g.P[w.y]]
+      c.globalAlpha = 1 - sstep(0.45, 1, wk); stoneShadow(c, g, ...p, 1); stone(c, g, w.x, w.y, w.c, 1, p); c.globalAlpha = 1
+    } else this.shook = null
     const l = s.last
     if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) lastRing(c, g, this.at(l[0], l[1]), s.signMap[l[1]][l[0]])
+    if (s.pending) { c.globalAlpha = 0.5; stone(c, g, s.pending.v[0], s.pending.v[1], s.pending.sign, 1); c.globalAlpha = 1 }
     const h = this.hover
     if (h && s.interactive && !s.signMap[h[1]]?.[h[0]]) {
       c.globalAlpha = 0.35; stone(c, g, h[0], h[1], s.toPlay, 1); c.globalAlpha = 1
     }
-    if (a) this.req()
+    if (a || this.shook) this.req()
   }
 }

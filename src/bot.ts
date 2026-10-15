@@ -7,6 +7,18 @@ export const clampRank = (r: string) => (RANKS.includes(r) ? r : DEFAULT_RANK)
 export const stepRank = (r: string, d: number) => RANKS[Math.max(0, Math.min(RANKS.length - 1, RANKS.indexOf(clampRank(r)) + d))]
 export const humanProfile = (r: string) => `rank_${clampRank(r)}`
 
+/** The Masters of an era: the human network's professional profile of that year (each accepted by KataGo 1.18.2). */
+export const ERAS = [1850, 1900, 1935, 1970, 2005, 2023]
+export const clampEra = (y: unknown) => (ERAS.includes(y as number) ? y as number : ERAS[0])
+export const stepEra = (y: number, d: number) => ERAS[Math.max(0, Math.min(ERAS.length - 1, ERAS.indexOf(clampEra(y)) + d))]
+/** A Master plays at professional strength: its handicap is proposed from the gap to this rank. */
+export const MASTER_RANK = '9d'
+/** The profile the bot plays with: a Master's year, else its rank. */
+export const botProfile = (b: { rank: string; era?: number }) => (b.era ? `proyear_${b.era}` : humanProfile(b.rank))
+/** What a finished game against the bot must not feed: a mentor's lesson, the rank reading; a Master's game or a lesson, auto-adjust. */
+export const lessonFlags = (b: { era?: number; mentor?: true }) =>
+  ({ ...b.mentor && { noRank: true as const }, ...(b.era || b.mentor) && { noAdjust: true as const } })
+
 /** After a finished game: one rank toward a 50 % win rate (the player won → the bot gets stronger). */
 export const adjustRank = (r: string, botWon: boolean) => stepRank(r, botWon ? -1 : 1)
 

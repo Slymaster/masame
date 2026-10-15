@@ -34,6 +34,16 @@ describe('the queue', () => {
     expect(a.queue.map(j => j.t)).toEqual(Array.from({ length: CAP }, (_, i) => i + 2))
     expect(nextJob(a, 0)?.t).toBe(2) // the oldest first
   })
+  it('keeps one job per library entry: the same moves under two ids are two jobs, each dropped on its own', () => {
+    const a = newAuto([])
+    a.queue = enqueue(a, game(12), 1, 1, { id: 'file-a' })
+    a.queue = enqueue(a, game(12), 1, 2, { id: 'ogs-1' })
+    expect(a.queue.map(j => j.id)).toEqual(['file-a', 'ogs-1'])
+    expect(enqueue(a, game(12), 1, 3, { id: 'ogs-1' })).toBe(a.queue)
+    reviewed(a, a.queue[0].k, 'file-a')
+    expect(a.queue.map(j => j.id)).toEqual(['ogs-1'])
+    expect(enqueue(a, game(12), 1, 4, { id: 'file-a' })).toBe(a.queue) // reviewed this session
+  })
   it('snapshots the record: moves added later are not in the job', () => {
     const a = newAuto([]), g = game(12)
     a.queue = enqueue(a, g, 1, 0)
@@ -55,6 +65,14 @@ describe('the queue', () => {
     const out = mem()
     saveQueue([ok], out)
     expect(loadQueue(out)).toEqual([ok])
+  })
+  it('carries the library id; queues saved before the library still load', () => {
+    const a = newAuto([])
+    a.queue = enqueue(a, game(12), 1, 0, { id: 'ai-abc' })
+    expect(a.queue[0].id).toBe('ai-abc')
+    expect(enqueue(newAuto([]), game(12), 1, 0)[0]).not.toHaveProperty('id')
+    const old: Job = { k: 'x', sgf: saveSgf(game(10)), side: 1, t: 5 }, kept = { ...old, k: 'y', id: 'ogs-7' }
+    expect(loadQueue(mem({ [QUEUE_KEY]: JSON.stringify([old, kept, { ...old, id: 7 }]) }))).toEqual([old, kept])
   })
 })
 
@@ -125,5 +143,16 @@ describe('a background run', () => {
     asked.length = 0
     expect(Array.isArray(await runJob(a, j, fake(asked), () => true, () => {}, add, r => got.push(r)))).toBe(true)
     expect([asked.length, added.length, got.length, a.queue.length]).toEqual([30 * PROFILES.length - known, 1, 1, 0])
+  })
+  it('reads no rank for a mentor game, still adding its moments; the flags survive a relaunch', async () => {
+    const a = newAuto([]); a.queue = enqueue(a, game(60), 1, 0, { noRank: true, noAdjust: true })
+    const j = a.queue[0], asked: number[] = [], got: unknown[] = [], added: unknown[] = []
+    expect([j.noRank, j.noAdjust]).toEqual([true, true])
+    const st = mem(); saveQueue(a.queue, st)
+    expect(loadQueue(st)[0]).toEqual(j)
+    const ms = await runJob(a, j, fake(asked), () => true, () => {}, (...x) => void added.push(x), r => got.push(r))
+    expect([Array.isArray(ms), added.length]).toEqual([true, 1])
+    expect(got).toEqual([null]) // reported without a reading: nothing to store
+    expect(asked.length).toBe(61 + 2) // the scan and the deep pair, no rank query
   })
 })

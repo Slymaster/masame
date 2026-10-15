@@ -4,12 +4,11 @@ import { failureText, t } from './i18n'
 import * as ogs from './ogs'
 import { Seg } from './Seg'
 import { Switch } from './Switch'
-import { OgsGames } from './OgsGames'
 import { OgsWatch } from './OgsWatch'
 
 const silent = (e: unknown) => (e as { code?: string })?.code === 'ogs_cancelled'
 
-/** The Game sheet's OGS part: sign-in, automatch and my games. Whether we're signed in is asked when it appears. */
+/** The Play sheet's OGS part: sign-in, automatch and challenges, watching (my games live in the Mes parties door). Whether we're signed in is asked when it appears. */
 /** What the App does for the OGS section; the section itself only talks to ogs.ts for lists and stores. */
 export interface OgsSectionProps {
   speed: ogs.Speed
@@ -21,8 +20,6 @@ export interface OgsSectionProps {
   onAccept: (c: ogs.ChallengeRow) => void
   /** A challenge I sent: a live one waited under the board stops waiting too; errors go to the note. */
   onCancelChallenge: (id: number) => void
-  onResume: (id: number) => void // one of my ongoing games
-  onImport: (id: number) => void // a finished game, as SGF
   onWatch: (id: number) => void // someone else's live game
   onOpenLink: (id: number) => void // a game id from a pasted OGS link
   onSignOut: () => Promise<boolean>
@@ -30,10 +27,11 @@ export interface OgsSectionProps {
   onSignedIn: () => void
 }
 
-type Tab = 'play' | 'games' | 'watch'
+type Tab = 'play' | 'watch'
 const TAB_KEY = 'masame.ogs.tab'
-const storedTab = (): Tab => {
-  try { const v = localStorage.getItem(TAB_KEY); return v === 'games' || v === 'watch' ? v : 'play' } catch { return 'play' }
+/** The remembered tab; anything else (the old 'games' tab, which moved to Mes parties) is Play. */
+export const storedTab = (st: Pick<Storage, 'getItem'> = localStorage): Tab => {
+  try { return st.getItem(TAB_KEY) === 'watch' ? 'watch' : 'play' } catch { return 'play' }
 }
 
 export function OgsSection(p: OgsSectionProps) {
@@ -41,7 +39,7 @@ export function OgsSection(p: OgsSectionProps) {
   const [me, setMe] = useState<ogs.Player | null | undefined>(ogs.me ?? undefined) // undefined: not known yet
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<Tab>(storedTab)
+  const [tab, setTab] = useState<Tab>(() => storedTab())
   const pick = (v: Tab) => { setTab(v); try { localStorage.setItem(TAB_KEY, v) } catch { /* private mode: not remembered */ } }
   // the sign-in button gives way to Cancel while the browser is out: focus follows, then lands on what replaces it
   const cancel = useRef<HTMLButtonElement>(null), main = useRef<HTMLButtonElement>(null), waited = useRef(false)
@@ -81,10 +79,9 @@ export function OgsSection(p: OgsSectionProps) {
       {t.ogsSignedIn(me.username)}{me.rank && <span className="rk">{me.rank}</span>} · <button className="link" onClick={signOut}>{t.ogsSignOut}</button>
     </p>
     {error && <p className="quiet err" role="alert">{error}</p>}
-    <Seg label={t.ogsTabsLabel} value={tab} options={(['play', 'games', 'watch'] as const).map(v => [v, t.ogsTabs[v]])} set={pick} />
+    <Seg label={t.ogsTabsLabel} value={tab} options={(['play', 'watch'] as const).map(v => [v, t.ogsTabs[v]])} set={pick} />
     <div className="ogs-pane">
       {tab === 'play' ? <Play {...p} main={main} />
-        : tab === 'games' ? <OgsGames onResume={p.onResume} onImport={p.onImport} />
         : <OgsWatch onWatch={p.onWatch} onOpenLink={p.onOpenLink} />}
     </div>
   </>

@@ -192,6 +192,61 @@ export function todAt(hours: number): Tod {
   return TOD.evening
 }
 
+/* ---------- seasons ---------- */
+const DAY = 86_400_000, YEAR = 365.2422, LAT = 45 * Math.PI / 180
+const EQUINOX = Date.UTC(2000, 2, 20, 7, 35) // a March equinox: the declination's phase, continuous across new years
+const JAN15 = Date.UTC(2000, 0, 15)
+
+/** Local standard time in ms (the date's UTC offset without daylight saving), so clocks changing never move the sun.
+ *  shortcut: no location is asked, so solar noon is taken at 13 h standard time (France, Spain, most of Europe's west sit
+ *  that far from their zone's meridian); elsewhere the sun is off by up to an hour. */
+function standardMs(date: Date): number {
+  const y = date.getFullYear(), std = Math.max(new Date(y, 0, 1).getTimezoneOffset(), new Date(y, 6, 1).getTimezoneOffset())
+  return date.getTime() - std * 60_000
+}
+
+/** The sun on a date at latitude 45°: its declination (deg), the solar hour (noon at 13 h standard time) and half the day's length (hours). */
+export function sunOn(date: Date): { decl: number; hour: number; halfDay: number } {
+  const ms = standardMs(date)
+  const decl = 23.44 * Math.sin(2 * Math.PI * ((ms - EQUINOX) / DAY) / YEAR)
+  const hour = (((ms / 3_600_000 - 1) % 24) + 24) % 24
+  const halfDay = Math.acos(-Math.tan(LAT) * Math.tan(decl * Math.PI / 180)) * 12 / Math.PI
+  return { decl, hour, halfDay }
+}
+
+/** Dec–Feb weight (0..1), highest mid-January: a snowy garden outside the Washitsu's shoji. */
+export function snowOn(date: Date): number {
+  const d = ((((standardMs(date) - JAN15) / DAY) % YEAR) + YEAR) % YEAR, off = Math.min(d, YEAR - d)
+  return Math.max(0, Math.cos(Math.PI / 2 * off / 80))
+}
+
+/**
+ * "Auto" through the year: the hour's light (todAt, an equinox day: unchanged then) stretched so that its golden hour
+ * ends at the date's sunset, so summer's lasts longer and winter's is brief; the sun higher in summer (its noon height at 45°,
+ * damped), its path wider; winter's light low, cold and a little dimmer. In the Washitsu, Dec–Feb, snow outside makes
+ * the room brighter and colder. Other décors' fixed lights (the Lanterne) are not touched here: Board3D uses LOOKS.tod.
+ */
+export function seasonTod(date: Date, decor: Decor): Tod {
+  const { decl, hour: h, halfDay: D } = sunOn(date)
+  // the day (sunrise..sunset) onto todAt's 7..19 h (an equinox with noon at 13 h), the night onto its 19..7 h: continuous, monotone
+  const N = 12 - D, w = h < 12 - D ? 7 - (12 - D - h) * 6 / N : h > 12 + D ? 19 + (h - 12 - D) * 6 / N : 13 + (h - 12) * 6 / D
+  const b = todAt(w), s = decl / 23.44, winter = Math.max(0, -s), summer = Math.max(0, s)
+  const tod: Tod = {
+    az: 225 + (b.az - 225) * (1 + 0.25 * s),
+    el: b.el * (1 + 0.8 * decl / 45),
+    K: b.K + 3200 * winter - 450 * summer,
+    I: b.I * (1 - 0.3 * winter),
+    env: b.env * (1 + 0.1 * winter),
+    exp: b.exp,
+    room: b.room * (1 - 0.45 * winter),
+  }
+  if (decor === 'washitsu') {
+    const snow = snowOn(date)
+    tod.env *= 1 + 0.5 * snow; tod.K += 900 * snow; tod.exp *= 1 + 0.06 * snow
+  }
+  return tod
+}
+
 /** The UI card's skin follows the scene's backdrop: Laque on the dark rooms (the Lanterne, the Atelier seen in
  *  Contemplation), Washi on light ones (Study's linen, Clair and Washitsu) and always in 2D. */
 export function cardSkin(renderer: '2d' | '3d', camera: 'study' | 'contemplation', decor: Decor): 'washi' | 'laque' {

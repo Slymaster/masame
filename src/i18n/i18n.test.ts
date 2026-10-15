@@ -12,6 +12,13 @@ function leaves(o: object, path = ''): [string, unknown][] {
 
 describe('dictionaries', () => {
   afterEach(() => setLang('fr'))
+  it('keep the result card\'s notes short enough for its two lines', () => {
+    const SAID_MAX = 34 // measured: each of these fits beside the title in two lines at the narrowest window, with the AI's chip
+    for (const d of Object.values(dicts)) for (const s of [d.mentorStops(0), d.mentorStops(3), d.saved, d.postcardSaved, d.gameResumed,
+      d.ritualDone(1), d.ritualDone(365), d.memSaid(288, 361, 12), d.memSaid(1, 61, 1),
+      ...['7k', '18k', '25k', '9d'].flatMap(r => [d.autoDone(0, r), d.autoDone(1, r), d.autoDone(12, r)]), d.autoDone(0), d.autoDone(12)])
+      expect(s.length, s).toBeLessThanOrEqual(SAID_MAX)
+  })
   it('have identical keys, kinds and arities', () => {
     const shape = (o: object) => leaves(o).map(([k, v]) => `${k}:${typeof v}${typeof v === 'function' ? v.length : ''}`).sort()
     expect(shape(dicts.fr)).toEqual(shape(dicts.en))
@@ -22,6 +29,19 @@ describe('dictionaries', () => {
   it('switch live', () => {
     setLang('en'); expect(t.pass).toBe('Pass')
     setLang('fr'); expect(t.pass).toBe('Passer')
+  })
+})
+
+describe('result letters', () => {
+  afterEach(() => setLang('fr'))
+  const all = ['B+R', 'W+T', 'B+F', 'W+3.5', 'B+0.5', 'b+r', '0', 'Void', '?', 'B+']
+  it('read N(oir), B(lanc) and a decimal comma in French', () => {
+    setLang('fr')
+    expect(all.map(t.resultShort)).toEqual(['N+R', 'B+T', 'N+F', 'B+3,5', 'N+0,5', 'N+r', '0', 'Annulée', '?', 'N+'])
+  })
+  it('stay standard SGF in English', () => {
+    setLang('en')
+    expect(all.map(t.resultShort)).toEqual(all)
   })
 })
 
@@ -48,6 +68,8 @@ describe('formatting', () => {
     expect(t.board(19, 6.5)).toBe('19×19 · komi 6,5 · règles japonaises')
     expect(t.points(81.5)).toBe('81,5 points')
     expect(t.tally(70, 5, 6.5)).toBe('70 de territoire · 5 prisonniers · komi 6,5')
+    expect(t.clScore(1, 3)).toBe('1 retrouvé sur 3 coups')
+    expect(t.clEnd(1, 12, null)).toBe('Tu as retrouvé 1 coup sur 12.')
     expect(t.tally(70, 1)).toBe('70 de territoire · 1 prisonnier')
     expect(t.mb(99_066_230)).toBe('99 Mo')
     expect(nb(t.games(12345))).toBe('12 345 parties')
@@ -78,6 +100,7 @@ describe('formatting', () => {
     expect([0, 1, 2].map(t.captures)).toEqual(['0 captures', '1 capture', '2 captures'])
     expect(t.board(19, 6.5)).toBe('19×19 · komi 6.5 · Japanese rules')
     expect(t.points(81.5)).toBe('81.5 points')
+    expect(t.clEnd(1, 12, null)).toBe('You found 1 move out of 12.')
     expect(t.tally(70, 5, 6.5)).toBe('70 territory · 5 prisoners · komi 6.5')
     expect(t.tally(70, 1)).toBe('70 territory · 1 prisoner')
     expect([t.yourMove, t.thinking, t.passed, t.resigned, t.wins, t.territory]).toEqual(['Your move', 'thinking…', 'passed', 'resigned', 'wins', 'Light and shadow'])

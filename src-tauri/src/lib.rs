@@ -1,6 +1,7 @@
 mod backend;
 mod engine;
 mod failure;
+mod library;
 mod menu;
 mod networks;
 mod ogs;
@@ -412,7 +413,19 @@ fn set_language(app: AppHandle, labels: menu::Labels) -> Res<()> {
     Ok(())
 }
 
-/// The SGF size cap, in bytes; the webview caps the text it opens at the same figure (MAX_SGF in src/sgf.ts).
+/// Greys the macOS menu items that make no sense now (`enabled`: id → on, from the frontend); kept for later rebuilds.
+#[tauri::command]
+fn set_menu_enabled(app: AppHandle, enabled: HashMap<String, bool>) -> Res<()> {
+    menu::set_enabled(enabled);
+    #[cfg(target_os = "macos")]
+    if let Some(m) = app.menu() { menu::apply(&m).map_err(|e| Failure::with("menu_failed", e))?; }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+    Ok(())
+}
+
+/// The SGF size cap, in bytes; the webview caps the text it opens at the same figure (MAX_SGF in src/sgf.ts), and so
+/// does the library (library.rs).
 const MAX_SGF: u64 = 5 * 1024 * 1024;
 
 /// The existing files among a launch's arguments (how Windows and Linux pass an associated file), relative ones
@@ -447,12 +460,29 @@ fn queue_opened(app: &AppHandle, files: Vec<PathBuf>) {
 #[derive(serde::Serialize)]
 struct Opened { name: String, text: String }
 
+/// Partager › Kifu: the system print dialog for the page (WKWebView ignores window.print(); wry prints the webview on
+/// every desktop OS), where "Save as PDF" makes the PDF.
+#[tauri::command]
+fn print_page(webview: tauri::Webview) -> Res<()> {
+    webview.print().map_err(|e| Failure::with("print_failed", e))
+}
+
 /// The last file the OS asked us to open (earlier ones are dropped: one game at a time), read here so the webview never
 /// names a path.
 #[tauri::command]
 fn take_opened(opened: State<'_, OpenedFiles>) -> Res<Option<Opened>> {
     let Some(path) = std::mem::take(&mut *opened.0.lock().unwrap()).pop() else { return Ok(None) };
     Ok(Some(Opened { name: path.file_name().unwrap_or_default().to_string_lossy().into_owned(), text: read_sgf(&path)? }))
+}
+
+static FLUSHED: AtomicBool = AtomicBool::new(false); // the close's library flush was asked (once)
+const FLUSH_WAIT: Duration = Duration::from_millis(300);
+/// Quitting (⌘Q, or the last window gone): the page writes its pending library change first, then the app exits.
+fn quit(app: &tauri::AppHandle) {
+    if FLUSHED.swap(true, Ordering::SeqCst) { return app.exit(0) }
+    let _ = app.emit("library-flush", ());
+    let app = app.clone();
+    std::thread::spawn(move || { std::thread::sleep(FLUSH_WAIT); app.exit(0) });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -466,6 +496,7 @@ pub fn run() {
         if let Some(w) = app.get_webview_window("main") { let _ = w.unminimize(); let _ = w.set_focus(); }
     }));
     builder
+        .manage(library::Library::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
@@ -488,15 +519,29 @@ pub fn run() {
             Ok(())
         })
         // Our menu items (macOS) go to the frontend, which runs them exactly like their keyboard shortcuts.
-        .on_menu_event(|app, e| if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); })
+        .on_menu_event(|app, e| {
+            if e.id().as_ref() == "quit" { return quit(app) }
+            if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); }
+        })
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
-            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, update_check, update_install, take_opened,
-            ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history
+            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, set_menu_enabled, update_check, update_install, take_opened, print_page,
+            ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history,
+            library::library_list, library::library_read, library::library_write, library::library_delete,
+            library::library_sidecar_read, library::library_sidecar_write, library::library_current_read, library::library_current_write
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, ev| match ev {
+            // Closing the window or quitting: the page writes its pending library change first (the shown game's last
+            // move, its clock), then we close. shortcut: a fixed wait, not an answer from the page; fine for two small files.
+            RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } if !FLUSHED.swap(true, Ordering::SeqCst) => {
+                api.prevent_close();
+                let _ = app.emit("library-flush", ());
+                let app = app.clone();
+                std::thread::spawn(move || { std::thread::sleep(FLUSH_WAIT); if let Some(w) = app.get_webview_window(&label) { let _ = w.destroy(); } });
+            }
+            RunEvent::ExitRequested { code: None, api, .. } if !FLUSHED.load(Ordering::SeqCst) => { api.prevent_exit(); quit(app) }
             RunEvent::Exit => app.state::<App>().engine.kill(),
             #[cfg(target_os = "macos")]
             RunEvent::Opened { urls } => queue_opened(app, urls.iter().filter_map(url_file).collect()),
