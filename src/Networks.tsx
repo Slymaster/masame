@@ -64,6 +64,7 @@ function Row({ e, top, nets, p, onChanged }: { e: NetEntry; top: number; nets: N
         <span className={`net-status${message ? ' err' : ''}`}>{message ? t.error : status}</span>
       </div>
       <div className="net-tech" title={e.name}>{e.name}</div>
+      {pick(t.notes, e.key) && <div className="net-meta">{pick(t.notes, e.key)}</div>}
       <div className="net-meta">
         {human ? <span>{t.imitates}</span> : (
           <>

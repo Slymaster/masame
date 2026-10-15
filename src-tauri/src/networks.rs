@@ -24,16 +24,29 @@ const JSON_TIMEOUT: Duration = Duration::from_secs(30); // whole request, body i
 pub const HUMAN: &str = "b18c384nbt-humanv0";
 const BALANCED: &str = "kata1-tf3-b10c512-s3203M-d5937M";
 const LIGHT: &str = "kata1-tf2-b10c384-s2941M-d5872M";
-/// Single place to change the default analysis net. iPhone: the light one, as the balanced one is about 3× slower there
-/// (docs/katago-benchmark.md §8).
-pub const DEFAULT_NETWORK: &str = if cfg!(target_os = "ios") { LIGHT } else { BALANCED };
+/// CNNs measured as the best on phones (docs/katago-benchmark.md §7, §8): the b18 on the iPhone's Neural Engine, the b10
+/// on Android's CPU.
+const FAST: &str = "kata1-b18c384nbt-s9996604416-d4316597426";
+const COMPACT: &str = "kata1-b10c128-s1141046784-d204142634";
+/// Single place to change the default analysis net.
+pub const DEFAULT_NETWORK: &str = if cfg!(target_os = "ios") { FAST } else if cfg!(target_os = "android") { COMPACT } else { BALANCED };
 const MAXIMUM: &str = "kata1-tf3-b11c768-s11003M-d5973M-7gres";
+/// Catalog entries each platform lists, in this order. iPhone: light stays as the fallback while the CNN is not there.
+const IPHONE: &[&str] = &["human", "fast", "light"];
+const ANDROID: &[&str] = &["human", "compact"];
+const SHOWN: &[&str] = if cfg!(target_os = "ios") { IPHONE } else if cfg!(target_os = "android") { ANDROID }
+    else { &["human", "balanced", "maximum", "light", "strongest", "newest"] };
+
+/// Whether this platform lists a net, so it may be the active one: phones only their pinned presets; desktop any name,
+/// as it also lists live nets.
+pub fn listed(name: &str) -> bool { listed_in(name, SHOWN) }
+fn listed_in(name: &str, shown: &[&str]) -> bool { shown.contains(&"newest") || preset(name).is_some_and(|p| shown.contains(&p.key)) }
 
 struct Preset { key: &'static str, name: &'static str, bytes: u64, sha256: &'static str, created: &'static str, extra: bool }
 
 // Pinned 2026-10-11 from the official rating list; the live API only adds ratings. humanv0 is not in the API:
 // its sha256 was computed from our own download (which also matched the bucket's MD5 ETag).
-const PRESETS: [Preset; 4] = [
+const PRESETS: [Preset; 6] = [
     Preset { key: "human", name: HUMAN, bytes: 99_066_230,
         sha256: "637746e44f0efe00ad1245a50aa9bbf0716efe364c43965ead97bd6835d84ab5", created: "2024-07-01T00:00:00Z" /* KataGo 1.15 release month */, extra: true },
     Preset { key: "balanced", name: BALANCED, bytes: 94_281_753,
@@ -42,7 +55,15 @@ const PRESETS: [Preset; 4] = [
         sha256: "93bdb63a3bfae4a70db0cb5265287495ecfc10b1ba1cc6814feeba1cdf055871", created: "2026-09-25T02:04:37Z", extra: false },
     Preset { key: "light", name: LIGHT, bytes: 38_245_507,
         sha256: "8015d49bdf45854c94e5f9e22b2b70e8738d3e56a6edca730e5b82509998a5b5", created: "2026-08-25T05:47:56Z", extra: false },
+    // Pinned 2026-10-15, from downloads that matched the official catalog.
+    Preset { key: "fast", name: FAST, bytes: 97_898_094,
+        sha256: "9d7a6afed8ff5b74894727e156f04f0cd36060a24824892008fbb6e0cba51f1d", created: "2024-05-26T12:47:48Z", extra: false },
+    Preset { key: "compact", name: COMPACT, bytes: 14_466_254,
+        sha256: "3d8a24697ba25fe4da39af4c2b6bd405907b0ad8295322f5a550fa2d8fe4a2f4", created: "2020-11-28T20:39:39Z", extra: false },
 ];
+
+/// File extension of a net: KataGo picks the parser from it, and the one pinned net published as text keeps `.txt.gz`.
+fn ext(name: &str) -> &'static str { if name == COMPACT { ".txt.gz" } else { ".bin.gz" } }
 
 /// One network record from the API, kept only if it passes `validate`.
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -59,7 +80,7 @@ pub struct ApiNet {
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
-    pub key: String, // "human" | "balanced" | "maximum" | "light" | "strongest" | "newest"; the UI names it
+    pub key: String, // "human" | "balanced" | "maximum" | "light" | "fast" | "compact" | "strongest" | "newest"; the UI names it
     pub section: &'static str, // "recommended" | "current"
     pub name: String,
     pub url: String,
@@ -85,11 +106,11 @@ pub fn valid_name(name: &str) -> bool {
         && preset(name).is_none_or(|p| p.name == name)
 }
 
-/// The only download URLs we accept: https://media.katagotraining.org/…/<name>.bin.gz
+/// The only download URLs we accept: https://media.katagotraining.org/…/<name>.bin.gz (.txt.gz for the one pinned text net)
 pub fn valid_url(url: &str, name: &str) -> bool {
     match reqwest::Url::parse(url) {
         Ok(u) => u.scheme() == "https" && u.host_str() == Some(MEDIA_HOST) && u.port().is_none() && u.username().is_empty() && u.password().is_none()
-            && u.query().is_none() && u.path().ends_with(&format!("/{name}.bin.gz"))
+            && u.query().is_none() && u.path().ends_with(&format!("/{name}{}", ext(name)))
             && !u.path().contains(".."),
         Err(_) => false,
     }
@@ -113,7 +134,7 @@ pub fn parse_nets(v: &Value) -> Vec<ApiNet> {
 }
 
 fn human_url() -> String { format!("https://{MEDIA_HOST}/uploaded/networks/models_extra/{HUMAN}.bin.gz") }
-fn kata1_url(name: &str) -> String { format!("https://{MEDIA_HOST}/uploaded/networks/models/kata1/{name}.bin.gz") }
+fn kata1_url(name: &str) -> String { format!("https://{MEDIA_HOST}/uploaded/networks/models/kata1/{name}{}", ext(name)) }
 fn preset_url(p: &Preset) -> String { if p.extra { human_url() } else { kata1_url(p.name) } }
 
 fn from_api(key: &str, n: &ApiNet) -> Entry {
@@ -125,8 +146,11 @@ fn from_api(key: &str, n: &ApiNet) -> Entry {
     }
 }
 
-/// Presets (pinned files, live ratings when known) + "strongest right now" and "newest" from the recent pages.
-pub fn catalog(nets: &[ApiNet]) -> Vec<Entry> {
+/// Presets (pinned files, live ratings when known) + "strongest right now" and "newest" from the recent pages, as this
+/// platform lists them.
+pub fn catalog(nets: &[ApiNet]) -> Vec<Entry> { catalog_for(nets, SHOWN) }
+
+fn catalog_for(nets: &[ApiNet], shown: &[&str]) -> Vec<Entry> {
     let mut out: Vec<Entry> = PRESETS.iter().map(|p| {
         let live = nets.iter().find(|n| n.name == p.name);
         Entry {
@@ -146,14 +170,9 @@ pub fn catalog(nets: &[ApiNet]) -> Vec<Entry> {
     if let Some(n) = newest.filter(|n| preset(&n.name).is_none() && strongest.is_none_or(|s| s.name != n.name)) {
         out.push(from_api("newest", n))
     }
-    if cfg!(target_os = "ios") { for_phone(&mut out) }
+    out.retain(|e| shown.contains(&e.key.as_str()));
+    out.sort_by_key(|e| shown.iter().position(|k| *k == e.key));
     out
-}
-
-/// iPhone: no maximum net (beyond what the phone runs well), and the light net recommended first after the human one.
-fn for_phone(entries: &mut Vec<Entry>) {
-    entries.retain(|e| e.key != "maximum");
-    if let Some(i) = entries.iter().position(|e| e.key == "light") { let light = entries.remove(i); entries.insert(1.min(entries.len()), light) }
 }
 
 /// Everything but `https_only`, so tests can talk to a local plain-HTTP server with the same policies.
@@ -193,15 +212,15 @@ pub async fn fetch_nets(c: &reqwest::Client) -> Res<Vec<ApiNet>> {
     for page in 1..=PAGES {
         nets.extend(parse_nets(&get_json(c, &format!("{API}?format=json&page={page}")).await?));
     }
-    let missing: Vec<_> = PRESETS.iter().filter(|p| !p.extra && !nets.iter().any(|n| n.name == p.name)).collect();
+    let missing: Vec<_> = PRESETS.iter().filter(|p| !p.extra && SHOWN.contains(&p.key) && !nets.iter().any(|n| n.name == p.name)).collect();
     for p in missing {
         if let Ok(v) = get_json(c, &format!("{API}{}/?format=json", p.name)).await { nets.extend(parse_nets(&v)) }
     }
     Ok(nets)
 }
 
-pub fn file(dir: &Path, name: &str) -> PathBuf { dir.join(format!("{name}.bin.gz")) }
-fn part(dir: &Path, name: &str) -> PathBuf { dir.join(format!("{name}.bin.gz.part")) }
+pub fn file(dir: &Path, name: &str) -> PathBuf { dir.join(format!("{name}{}", ext(name))) }
+fn part(dir: &Path, name: &str) -> PathBuf { dir.join(format!("{name}{}.part", ext(name))) }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -212,11 +231,9 @@ pub fn installed(dir: &Path) -> Vec<Installed> {
     let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
     let mut out: Vec<Installed> = rd.flatten().filter_map(|e| {
         let f = e.file_name().into_string().ok()?;
-        let (name, complete) = match f.strip_suffix(".bin.gz.part") {
-            Some(n) => (n, false),
-            None => (f.strip_suffix(".bin.gz")?, true),
-        };
-        valid_name(name).then(|| Installed { name: name.into(), bytes: e.metadata().map_or(0, |m| m.len()), complete })
+        let (f, complete) = match f.strip_suffix(".part") { Some(n) => (n, false), None => (f.as_str(), true) };
+        let name = f.strip_suffix(".bin.gz").or_else(|| f.strip_suffix(".txt.gz"))?;
+        (valid_name(name) && f.ends_with(ext(name))).then(|| Installed { name: name.into(), bytes: e.metadata().map_or(0, |m| m.len()), complete })
     }).collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
@@ -233,7 +250,7 @@ pub fn remove(dir: &Path, name: &str) -> Res<()> {
     Ok(())
 }
 
-/// Streams `e` into `<name>.bin.gz.part`, resuming with an HTTP Range request when a partial file exists.
+/// Streams `e` into `<name>.bin.gz.part` (or `.txt.gz.part`), resuming with an HTTP Range request when a partial file exists.
 /// Returns Ok(false) when cancelled (the partial file is kept for a later resume).
 pub async fn download(c: &reqwest::Client, e: &Entry, dir: &Path, cancel: &AtomicBool, mut progress: impl FnMut(u64, u64)) -> Res<bool> {
     let unpinned = preset(&e.name).is_some_and(|p| (p.bytes, p.sha256, preset_url(p)) != (e.bytes, e.sha256.as_str(), e.url.clone()));
@@ -356,11 +373,43 @@ mod tests {
     }
 
     #[test]
-    fn phones_get_no_maximum_and_light_first() {
-        let mut c = catalog(&parse_nets(&serde_json::from_str(FIXTURE).unwrap()));
-        for_phone(&mut c);
-        let keys: Vec<_> = c.iter().map(|e| e.key.as_str()).collect();
-        assert_eq!(keys, ["human", "light", "balanced", "strongest", "newest"]);
+    fn phones_list_only_their_nets() {
+        let nets = parse_nets(&serde_json::from_str(FIXTURE).unwrap());
+        let keys = |shown| catalog_for(&nets, shown).into_iter().map(|e| (e.key, e.name)).collect::<Vec<_>>();
+        let k = |key: &str, name: &str| (key.to_string(), name.to_string());
+        assert_eq!(keys(IPHONE), [k("human", HUMAN), k("fast", FAST), k("light", LIGHT)]);
+        assert_eq!(keys(ANDROID), [k("human", HUMAN), k("compact", COMPACT)]);
+        assert!(catalog(&[]).iter().all(|e| e.name != FAST && e.name != COMPACT), "desktop unchanged");
+    }
+
+    #[test]
+    fn phones_only_activate_listed_nets() {
+        // A Balanced net left on an iPhone is passed over, so the default (then Light) takes over.
+        assert!(!listed_in(BALANCED, IPHONE) && listed_in(FAST, IPHONE) && listed_in(LIGHT, IPHONE));
+        assert!(listed_in(COMPACT, ANDROID) && !listed_in(LIGHT, ANDROID) && !listed_in("kata1-x", ANDROID));
+        assert!(listed(BALANCED) && listed("kata1-x"), "desktop unchanged");
+    }
+
+    #[test]
+    fn only_the_pinned_text_net_is_txt_gz() {
+        let dir = std::env::temp_dir().join(format!("baduk-txt-{}", std::process::id()));
+        assert_eq!(file(&dir, COMPACT), dir.join(format!("{COMPACT}.txt.gz")));
+        assert_eq!(part(&dir, COMPACT), dir.join(format!("{COMPACT}.txt.gz.part")));
+        assert_eq!(file(&dir, FAST), dir.join(format!("{FAST}.bin.gz")));
+        let url = |n: &str, e: &str| format!("https://media.katagotraining.org/uploaded/networks/models/kata1/{n}{e}");
+        assert!(valid_url(&url(COMPACT, ".txt.gz"), COMPACT) && !valid_url(&url(COMPACT, ".bin.gz"), COMPACT));
+        assert!(!valid_url(&url("kata1-x", ".txt.gz"), "kata1-x"));
+        let compact = catalog_for(&[], ANDROID).pop().unwrap();
+        assert_eq!(compact.url, url(COMPACT, ".txt.gz"));
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in [format!("{COMPACT}.txt.gz"), format!("{FAST}.bin.gz.part"), "kata1-x.txt.gz".into(), format!("{COMPACT}.bin.gz")] {
+            std::fs::write(dir.join(f), "x").unwrap();
+        }
+        let inst: Vec<_> = installed(&dir).into_iter().map(|i| (i.name, i.complete)).collect();
+        assert_eq!(inst, [(COMPACT.to_string(), true), (FAST.to_string(), false)], "a .txt.gz under another name, or the text net as .bin.gz, is ignored");
+        remove(&dir, COMPACT).unwrap();
+        assert!(!file(&dir, COMPACT).exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -398,7 +447,7 @@ mod tests {
         };
         assert!(!validate(&evil));
         let c = catalog(std::slice::from_ref(&evil));
-        assert_eq!(c.len(), PRESETS.len(), "only the pinned presets");
+        assert!(c.iter().all(|e| e.section == "recommended"), "only the pinned presets");
         let pinned = c.iter().find(|e| e.name.eq_ignore_ascii_case(&upper)).unwrap();
         assert_eq!((pinned.name.as_str(), pinned.sha256.as_str()), (DEFAULT_NETWORK, PRESETS[1].sha256));
         // download() refuses any entry for a preset name whose hash, size or URL differs from the pin.

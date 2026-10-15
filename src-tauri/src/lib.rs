@@ -56,10 +56,10 @@ fn write_setting(app: &AppHandle, key: &str, value: Value) -> Res<()> {
     std::fs::write(&path, serde_json::to_vec_pretty(&settings).unwrap()).map_err(|e| Failure::with("settings_write", e))
 }
 
-/// Active analysis net: the saved choice if installed, else the default, else any installed kata1 net.
+/// Active analysis net: the saved choice if installed and listed here, else the default, else any installed listed net.
 fn active_network(app: &AppHandle) -> Option<String> {
     let dir = models_dir(app).ok()?;
-    let ok = |n: &str| networks::valid_name(n) && n != networks::HUMAN && networks::file(&dir, n).is_file();
+    let ok = |n: &str| networks::valid_name(n) && n != networks::HUMAN && networks::listed(n) && networks::file(&dir, n).is_file();
     let saved = read_settings(app)["activeNetwork"].as_str().map(String::from);
     saved.filter(|n| ok(n))
         .or_else(|| ok(networks::DEFAULT_NETWORK).then(|| networks::DEFAULT_NETWORK.into()))
@@ -81,12 +81,14 @@ fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
 }
 
 /// iPhone: KataGo runs inside the app (inproc.rs), so the binary is the app's own executable. Mobile settings measured
-/// on an iPhone 16 Pro (docs/katago-benchmark.md §8); the bundled config already puts both nets on the GPU, not the ANE.
-/// KataGo's own data (homeDataDir) goes under the data dir, its working directory: the app container's root is read-only.
+/// on an iPhone 16 Pro (docs/katago-benchmark.md §8). KataGo's own data (homeDataDir) goes under the data dir, its working
+/// directory: the app container's root is read-only.
 #[cfg(target_os = "ios")]
-fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
+fn engine_bin(app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
     let bin = std::env::current_exe().map_err(|e| Failure::with("engine_missing", e))?;
-    let overrides = ["numSearchThreadsPerAnalysisThread=2", "nnMaxBatchSize=4", "nnCacheSizePowerOfTwo=16", "nnMutexPoolSizePowerOfTwo=12", "homeDataDir=katago"];
+    // Both nets share one device: the Neural Engine (100) runs a CNN ~4× faster and cooler; transformers ("-tf") stay on the GPU (0).
+    let device = if active_network(app).is_some_and(|n| !n.contains("-tf")) { "metalDeviceToUseThread0=100" } else { "metalDeviceToUseThread0=0" };
+    let overrides = ["numSearchThreadsPerAnalysisThread=2", "nnMaxBatchSize=4", "nnCacheSizePowerOfTwo=16", "nnMutexPoolSizePowerOfTwo=12", "homeDataDir=katago", device];
     Ok((bin, overrides.map(OsString::from).into()))
 }
 
