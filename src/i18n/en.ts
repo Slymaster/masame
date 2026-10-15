@@ -496,6 +496,7 @@ export const en = {
     no_analysis_net: 'No analysis network is installed. Open “Networks” to download one.',
     spawn_failed: 'Couldn’t start KataGo.',
     engine_crashed: 'KataGo stopped unexpectedly.',
+    engine_crashed_at_start: 'KataGo stopped while starting last time, so it wasn’t restarted on its own. Try again, or choose the Light network in Networks.',
     engine_stopped: 'The engine is stopped.',
     engine_timeout: 'KataGo isn’t responding.',
     bad_query: 'Invalid analysis request.',

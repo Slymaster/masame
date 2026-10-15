@@ -1,6 +1,10 @@
 mod backend;
 mod engine;
 mod failure;
+#[cfg(any(target_os = "ios", test))]
+mod inproc;
+#[cfg(target_os = "ios")]
+mod ios;
 mod library;
 mod menu;
 mod networks;
@@ -76,8 +80,18 @@ fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
         .ok_or(Failure::new("engine_missing"))
 }
 
-/// Phones: KataGo is not wired in yet.
-#[cfg(mobile)]
+/// iPhone: KataGo runs inside the app (inproc.rs), so the binary is the app's own executable. Mobile settings measured
+/// on an iPhone 16 Pro (docs/katago-benchmark.md §8); the bundled config already puts both nets on the GPU, not the ANE.
+/// KataGo's own data (homeDataDir) goes under the data dir, its working directory: the app container's root is read-only.
+#[cfg(target_os = "ios")]
+fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
+    let bin = std::env::current_exe().map_err(|e| Failure::with("engine_missing", e))?;
+    let overrides = ["numSearchThreadsPerAnalysisThread=2", "nnMaxBatchSize=4", "nnCacheSizePowerOfTwo=16", "nnMutexPoolSizePowerOfTwo=12", "homeDataDir=katago"];
+    Ok((bin, overrides.map(OsString::from).into()))
+}
+
+/// Android: KataGo is not wired in yet.
+#[cfg(target_os = "android")]
 fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> { Err(Failure::new("engine_unavailable")) }
 
 /// Windows: resources/katago-win/<variant>/katago.exe (next to its DLLs); Linux:
@@ -103,6 +117,26 @@ fn engine_bin(app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
             .map_err(|e| Failure::with("engine_missing", e))?
     };
     Ok((bin, home))
+}
+
+#[cfg(target_os = "ios")]
+static CRASHED_AT_START: AtomicBool = AtomicBool::new(false);
+
+/// iPhone: KataGo pauses whenever the app is not active (GPU work in the background gets the app killed); the models
+/// stay out of iCloud backups (they can be downloaded again); a start that never reached Ready is noticed at the next
+/// launch through the sentinel inproc.rs leaves until then.
+#[cfg(target_os = "ios")]
+fn ios_setup(app: &AppHandle, engine: Arc<Engine>) -> Arc<Engine> {
+    let engine = engine.with_on_ready(|spec| { let _ = std::fs::remove_file(spec.cwd.join(inproc::SENTINEL)); });
+    let e = engine.clone();
+    ios::on_active_change(move |active| if active { e.resume() } else { e.pause() });
+    if let Ok(m) = models_dir(app) {
+        if let Err(e) = std::fs::create_dir_all(&m).map_err(|e| e.to_string()).and_then(|_| ios::exclude_from_backup(&m)) {
+            eprintln!("[ios] models not excluded from backup: {e}")
+        }
+    }
+    if let Ok(d) = data_dir(app) { CRASHED_AT_START.store(std::fs::remove_file(d.join(inproc::SENTINEL)).is_ok(), Ordering::SeqCst) }
+    engine
 }
 
 #[cfg(engine_variants)]
@@ -191,6 +225,9 @@ fn engine_spec(app: &AppHandle) -> Res<Spec> {
 }
 
 fn ensure_engine(app: &AppHandle, s: &App) -> Res<()> {
+    // iPhone: the app died while KataGo was starting last time; say so instead of starting it again on its own.
+    #[cfg(target_os = "ios")]
+    if CRASHED_AT_START.swap(false, Ordering::SeqCst) { return s.engine.fail(Failure::new("engine_crashed_at_start")) }
     match engine_spec(app) {
         Ok(spec) => s.engine.ensure(spec),
         Err(e) => { s.engine.stop(); Err(e) } // e.g. the last analysis net was deleted
@@ -543,6 +580,8 @@ pub fn run() {
                 let (h, h2) = (app.handle().clone(), app.handle().clone());
                 engine.with_fallback(move |spec, e| engine_fallback(&h, spec, e)).with_on_ready(move |spec| engine_ready(&h2, spec))
             };
+            #[cfg(target_os = "ios")]
+            let engine = ios_setup(app.handle(), engine);
             if let Err(e) = install_config(app.handle()) { eprintln!("[katago] config not installed: {e:?}") }
             app.manage(App {
                 engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), ogs: Default::default(),

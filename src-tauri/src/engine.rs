@@ -10,6 +10,9 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
+#[cfg(target_os = "ios")]
+use crate::inproc::{Child, Command}; // no child processes on iOS: KataGo runs on a thread
+#[cfg(not(target_os = "ios"))]
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, watch};
 
@@ -130,6 +133,7 @@ pub struct Engine {
     fallback: Option<Fallback>,
     on_ready: Option<OnReady>,
     progress: Mutex<Instant>, // launch time or last tuning line: the start timeout counts from here
+    paused: watch::Sender<bool>, // queries wait while set (see pause)
     query_timeout: Duration,
     start_timeout: Duration,
 }
@@ -142,7 +146,7 @@ impl Engine {
         Arc::new(Self {
             proc: Mutex::new(None), status: watch::channel(Status::Stopped).0, pending: Default::default(),
             stderr: Default::default(), gen: AtomicU64::new(0), ids: AtomicU64::new(0), emit: Arc::new(emit),
-            timeouts: AtomicU32::new(0), log: None, fallback: None, on_ready: None, progress: Mutex::new(Instant::now()), query_timeout: QUERY_TIMEOUT, start_timeout: START_TIMEOUT,
+            timeouts: AtomicU32::new(0), log: None, fallback: None, on_ready: None, progress: Mutex::new(Instant::now()), paused: watch::channel(false).0, query_timeout: QUERY_TIMEOUT, start_timeout: START_TIMEOUT,
         })
     }
 
@@ -335,7 +339,7 @@ impl Engine {
         self.fail_pending(error);
     }
 
-    fn fail(&self, error: Failure) -> Res<()> {
+    pub fn fail(&self, error: Failure) -> Res<()> {
         self.set_status(Status::Error { error: error.clone() });
         Err(error)
     }
@@ -446,7 +450,12 @@ impl Engine {
             if pending.contains_key(&id) { return Err(Failure::new("query_pending")) }
             pending.insert(id.clone(), tx);
         }
-        let sent = self.proc().as_ref().is_some_and(|p| p.tx.send(format!("{query}\n")).is_ok());
+        // Checked under the process lock that pause takes: no query slips in after its terminate_all.
+        let sent = loop {
+            let _ = self.paused.subscribe().wait_for(|p| !p).await;
+            let guard = self.proc();
+            if !*self.paused.borrow() { break guard.as_ref().is_some_and(|p| p.tx.send(format!("{query}\n")).is_ok()) }
+        };
         if !sent { self.pending.lock().unwrap().remove(&id); return Err(stopped()) }
         let v = match tokio::time::timeout(self.query_timeout, rx).await {
             Ok(r) => r.map_err(|_| stopped())??,
@@ -470,6 +479,23 @@ impl Engine {
     pub fn kill(&self) {
         self.gen.fetch_add(1, Ordering::SeqCst);
         if let Some(mut p) = self.proc().take() { let _ = p.child.start_kill(); }
+    }
+
+    /// The app goes to the background (iOS kills an app that uses the GPU there): KataGo drops its searches (the
+    /// queries running get their results so far) and new queries wait for `resume`. The process stays loaded.
+    #[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+    pub fn pause(&self) {
+        let guard = self.proc();
+        if self.paused.send_replace(true) { return }
+        self.log("pause");
+        if let Some(p) = guard.as_ref() { let _ = p.tx.send(format!("{}\n", json!({"id": "pause", "action": "terminate_all"}))); }
+    }
+
+    #[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+    pub fn resume(&self) {
+        if !self.paused.send_replace(false) { return }
+        self.log("resume");
+        *self.progress.lock().unwrap() = Instant::now(); // a start interrupted by the background gets its full time again
     }
 
     pub fn running_spec(&self) -> Option<Spec> { self.proc().as_ref().map(|p| p.spec.clone()) }
@@ -721,6 +747,32 @@ read l; echo "boom" >&2; exit 1"#)).unwrap();
         let err = e.analyze(json!({"moves": []})).await.unwrap_err();
         assert_eq!(err, Failure::with("engine_crashed", "boom"));
         assert_eq!(*statuses.lock().unwrap(), ["starting", "warming", "ready", "error"]);
+    }
+
+    /// Paused: KataGo is told to drop its searches, and queries wait, without timing out, until resumed.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn paused_queries_wait_for_resume() {
+        let dir = std::env::temp_dir().join(format!("baduk-pause-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut e = Engine::new(|_, _| {}).with_log(dir.join("engine.log"));
+        Arc::get_mut(&mut e).unwrap().query_timeout = Duration::from_millis(300);
+        e.ensure(fake("pause", r#"echo "Started, ready to begin handling requests" >&2
+while read l; do case "$l" in *terminate_all*) echo "searches dropped" >&2;; esac
+id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{\"id\":\"$id\"}"; done"#)).unwrap();
+        e.analyze(json!({"moves": []})).await.unwrap();
+        e.pause();
+        e.pause(); // once is enough
+        let q = tokio::spawn({ let e = e.clone(); async move { e.analyze(json!({"moves": []})).await } });
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert!(!q.is_finished(), "held while paused, past the query timeout");
+        e.resume();
+        q.await.unwrap().unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await; // the writer thread catches up
+        let log = log_tail(&dir.join("engine.log"), 50);
+        assert_eq!(log.matches(" pause\n").count(), 1, "{log}");
+        assert!(log.contains("searches dropped") && log.contains(" resume"), "{log}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Ready, then answers every query by id: the shared tail of the scripts below.

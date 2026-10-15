@@ -241,11 +241,13 @@ name = "baduk"
 version = "0.4.0"
 dependencies = [
  "base64 0.23.1",
+ "block2",
  "futures-util",
  "getrandom 0.4.3",
  "jni 0.22.4",
  "keyring",
  "ndk-context",
+ "objc2-foundation",
  "reqwest",
  "rustls-platform-verifier",
  "serde",

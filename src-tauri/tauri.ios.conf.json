@@ -3,7 +3,8 @@
   "bundle": {
     "iOS": {
       "minimumSystemVersion": "16.4",
-      "developmentTeam": "CN9TKA949C"
+      "developmentTeam": "CN9TKA949C",
+      "frameworks": ["MetalPerformanceShaders", "MetalPerformanceShadersGraph", "CoreML"]
     }
   }
 }
