@@ -187,3 +187,38 @@ Correctif proposé (petit, local à `apply`, à proposer en amont) :
 4. Optionnel : préchauffer chaque seau au chargement (un `apply` factice par taille), pour payer les compilations au démarrage pendant « Préparation du moteur… » plutôt que pendant l'analyse. On peut aussi compiler explicitement avec `MPSGraph.compile(with:feeds:targetTensors:targetOperations:compilationDescriptor:)` (macOS 12+) et garder les `MPSGraphExecutable`.
 
 Gain attendu : 4 compilations au plus au lieu de 8 (1 avec `maxBatchSize` fixe), et une chauffe prévisible. Non mesuré. Le patch n'a pas été appliqué aux sources vendorisées : il touche au chemin de sortie (taille des tampons) et demande une validation numérique (`katago runtests` / `testgpuerror`) qui sort du cadre de cette tâche.
+
+## 7. iPhone (KataGo dans l'app)
+
+*Mesuré le 15 octobre 2026 sur l'iPhone 16 Pro de développement (A18 Pro, iOS 27.0), avec une app de test jetable hors du repo. Le téléphone a atteint l'état thermique « serious » pendant l'endurance ; les mesures de vitesse ont été refaites ensuite, téléphone chaud, donc plutôt pessimistes.*
+
+iOS interdit de lancer un processus : KataGo tourne dans l'app. `scripts/build-katago-ios.sh iphoneos` (Metal) ou `iphonesimulator` (Eigen) produit `vendor/katago-ios/<sdk>/libkatago_ios.a` (24 Mo pour l'iPhone, 13 Mo pour le Simulateur, arm64, iOS 16.4), avec les mêmes versions épinglées que le build macOS, sans patch de KataGo. Le `main` de KataGo devient `katago_main`, appelé par `scripts/ios/katago_shim.cpp` :
+`katago_ios_run(argc, argv, in_fd, out_fd, err_fd)` branche `cin`/`cout`/`cerr` sur trois descripteurs, attrape les exceptions (« Uncaught exception: … » sur stderr, code 1) et permet de relancer KataGo dans le même processus. Fermer l'entrée arrête un `analysis` lancé avec `-quit-without-waiting`. L'app lie la bibliothèque avec `-lc++ -lz` et les frameworks Metal, MetalPerformanceShaders, MetalPerformanceShadersGraph et CoreML ; l'exécutable de test pèse 10 Mo.
+
+Réglages mobiles testés : `analysis.cfg` + `numSearchThreadsPerAnalysisThread=2,nnMaxBatchSize=4,nnCacheSizePowerOfTwo=16,nnMutexPoolSizePowerOfTwo=12`, réseau léger + `-human-model b18c384nbt-humanv0`, GPU (MPSGraph).
+
+| Critère (étape 0) | Seuil | Mesuré | |
+|---|---|---|---|
+| Léger + humain prêts | ≤ 45 s | **1,0 à 1,4 s** jusqu'au message « ready » ; 2,5 à 7,9 s jusqu'à la première réponse (compilation MPSGraph) | ✅ |
+| Coup `rank_5k` à 60 visites, à chaud | ≤ 3 s | **0,3 à 1,5 s** ; 1,2 à 1,3 s avec le cache vidé. Les deux premières requêtes paient la compilation MPSGraph de chaque taille de batch : 6,5 s puis 3,3 s au premier lancement après installation, 1,5 s ensuite (cache de shaders du système) | ✅ |
+| Requête de rang (`maxVisits 1`, policy humaine) | — | 0,03 à 0,05 s | |
+| Mémoire maximale (`phys_footprint`) | ≤ 1,5 Go | **590 à 680 Mo** | ✅ |
+| Endurance | aucun arrêt | **10 min, 3 472 requêtes, aucun arrêt**, requête la plus lente 3,5 s ; mémoire 340 → 480 Mo pendant que le cache se remplit | ✅ |
+| 10 relances, léger et équilibré en alternance | sans plantage | **10/10** : prêt en 0,9 à 1,3 s, arrêt en 0,03 s, mémoire rendue | ✅ |
+
+Vitesse par réseau, une requête à la fois, cache vidé entre les requêtes (visites/s sur 200 visites) :
+
+| Réseau | GPU (MPSGraph) | ANE (CoreML, `metalDeviceToUseThread0=100`) |
+|---|---|---|
+| b10c384 léger (transformer) | **55 à 85** ; prêt en 0,3 s | 45 ; prêt en 14 s, 1,1 Go |
+| b10c512 équilibré (transformer) | **24** ; prêt en 0,8 s | 18 ; prêt en 31 s, **1,9 Go** |
+| b18c384nbt humain (CNN) | 41 ; prêt en 0,7 s | **300** ; prêt en 6 s, 520 Mo |
+
+`katago benchmark` (100 visites, 4 positions, GPU) : léger 89 v/s à 2 threads et 62 v/s à 4 ; humain 46 v/s à 2 threads et 45 à 4. Plus de threads ne sert à rien sur ce GPU.
+
+Ce qu'on en retient :
+- **Go** pour le moteur dans l'app : tous les seuils sont tenus avec de la marge. Comme sur Mac, une requête de chauffe invisible juste après « ready » évite que le premier coup visible paie la compilation.
+- **Réseau par défaut sur iPhone : le léger (b10c384), sur GPU.** L'équilibré est 3 fois plus lent (2,4 s pour 60 visites à froid) : il reste possible pour la revue, mais pas par défaut. Le maximum reste caché.
+- Les transformers sont mauvais sur l'ANE (conversion CoreML à chaque lancement, jusqu'à 1,9 Go). Un CNN y est 7 fois plus rapide que sur le GPU. Un réseau kata1 convolutif récent (b18c384nbt, ≈ 100 Mo, non téléchargé) sur l'ANE pourrait donc dépasser 250 v/s ; à mesurer, téléchargement à valider. KataGo applique le même `metalDeviceToUse…` à ses deux réseaux d'un même `analysis`, donc « léger sur GPU + humain sur ANE » n'est pas réglable sans modifier KataGo.
+- Simulateur (Eigen, CPU) : 3 à 8 v/s, il ne sert qu'à valider l'adaptateur. Relances, exceptions puis relance, et arrêt par fermeture de l'entrée y fonctionnent aussi.
+- Non testé (il faut manipuler le téléphone) : le passage en arrière-plan. iOS tue l'app si elle soumet du travail GPU en arrière-plan : l'app devra suspendre KataGo (`terminate_all`, requêtes retenues) avant. Une erreur de KataGo qui passe par `Global::fatalError` (`quick_exit`) emporte toujours l'app : c'est le rôle du fichier sentinelle prévu à l'étape 2.
