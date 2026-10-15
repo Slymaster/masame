@@ -100,7 +100,7 @@ export const fr: Dict = {
   rankSection: 'Ton rang lu dans tes coups', ogsRatingSection: 'Classement OGS',
   gamesAll: 'Toutes tes parties', gamesFilterLabel: 'Parties montrées',
   gamesFilters: { all: 'Toutes', ai: 'IA', ogs: 'OGS', two: 'Deux joueurs', file: 'Fichiers' },
-  gamesSearch: 'Chercher un adversaire', gamesLoading: 'Chargement de tes parties…', gamesFailed: (m: string) => `Impossible de lire tes parties : ${m}`,
+  gamesSearch: 'Chercher un adversaire', gamesLoading: 'Chargement de tes parties…',
   gamesEmpty: 'Pas encore de partie. Chaque partie que tu joues ou ouvres est gardée ici.', gamesNoMatch: 'Aucune partie ne correspond.',
   gamesInAppOnly: 'Tes parties sont gardées dans l’application.', gamesImport: 'Importer un SGF…',
   gamesOgsFinished: 'Terminées sur OGS, pas encore gardées', gamesOgsAllKept: 'Toutes tes parties OGS terminées sont déjà ici.',

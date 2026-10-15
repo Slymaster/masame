@@ -100,7 +100,7 @@ export const en = {
   rankSection: 'Your rank read in your moves', ogsRatingSection: 'OGS rating',
   gamesAll: 'All your games', gamesFilterLabel: 'Games shown',
   gamesFilters: { all: 'All', ai: 'AI', ogs: 'OGS', two: 'Two players', file: 'Files' },
-  gamesSearch: 'Search an opponent', gamesLoading: 'Loading your games…', gamesFailed: (m: string) => `Couldn’t read your games: ${m}`,
+  gamesSearch: 'Search an opponent', gamesLoading: 'Loading your games…',
   gamesEmpty: 'No games yet. Every game you play or open is kept here.', gamesNoMatch: 'No game matches.',
   gamesInAppOnly: 'Your games are kept in the app.', gamesImport: 'Import an SGF…',
   gamesOgsFinished: 'Finished on OGS, not yet kept', gamesOgsAllKept: 'All your finished OGS games are already here.',

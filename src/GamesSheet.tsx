@@ -111,7 +111,7 @@ export function GamesSheet({ onClose, opener, onResume, onOpen, onImport, onImpo
           <Seg label={t.gamesFilterLabel} value={filter} options={FILTERS.map(f => [f, t.gamesFilters[f]])} set={f => { setFilter(f); setPages(1) }} />
           <input className="ogs-input" type="search" value={q} onChange={e => { setQ(e.target.value); setPages(1) }} placeholder={t.gamesSearch} aria-label={t.gamesSearch}
             autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} />
-          {error ? <p className="say err" role="alert">{t.gamesFailed(failureText(error))}</p>
+          {error ? <p className="say err" role="alert">{failureText(error)}</p>
             : !page ? <p className="say">{t.gamesLoading}</p>
             : !page.rows.length ? <p className="say">{entries!.length ? t.gamesNoMatch : t.gamesEmpty}</p>
             : <ul className="lib">
