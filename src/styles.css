@@ -519,14 +519,20 @@ section > .seg + .ogs-input { display: block; width: 100% }
 .letter-nav .next { margin-left: auto }
 
 /* ---------- phones (iPhone, Android): never on the desktop, whose window is at least 900 × 640 ----------
-   The board full width at the top under the status bar, the card below it (only its body scrolls), the four doors as a
-   tab bar over the home indicator; the sheets fill the screen above the tab bar, which stays live (App: inert). */
+   The board full width at the top under the status bar, the card below it (only its body scrolls), the four doors on a
+   floating rounded bar over the home indicator; the sheets fill the screen under the bar, which stays live (App: inert).
+   --lift: the bar's height above the screen's edge, over the home indicator's own room (34 px on an iPhone) but clear of
+   its line; --dock: from the edge to the bar's top, the room every scrolling page keeps free at its end. */
 @media (max-width: 700px) {
-  :root { --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px); --tab: 56px }
-  /* Android: the navigation bar's height (48 dp with buttons, less with the gesture bar) when the WebView reports none */
-  html[data-android] { --safe-b: max(env(safe-area-inset-bottom, 0px), 48px) }
-  .stage { flex-direction: column; gap: 0; padding: var(--safe-t) 0 calc(var(--tab) + var(--safe-b) + 8px) }
-  .board-wrap { flex: none; width: 100%; aspect-ratio: 1; margin-bottom: 62px }
+  :root { --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px); --bar: 60px; --lift: max(8px, var(--safe-b) - 14px); --dock: calc(var(--lift) + var(--bar)) }
+  .stage { flex-direction: column; gap: 0; padding: var(--safe-t) 0 calc(var(--dock) + 8px) }
+  /* full width when the screen has room; on a short one (iPhone SE) the board gives way first, down to what leaves the
+     card its usual 254 px (the players, the timeline, the actions) and never below 240 px; longer card content (the
+     candidates, a trainer) scrolls in the card's body instead of shrinking the board further */
+  .board-wrap {
+    flex: 0 100 auto; width: 100%; aspect-ratio: 1; margin-bottom: 62px;
+    min-height: max(240px, min(100vw, 100dvh - var(--safe-t) - 62px - var(--dock) - 8px - 254px));
+  }
   .board-wrap > .note { left: 0; padding: 0 10px }
   /* the caption: what the player reads, 18 px at least, two lines at most (narrow-window type is for the desktop) */
   .board-wrap > .note > span { font-size: 18px; padding: 5px 16px 0 }
@@ -535,6 +541,7 @@ section > .seg + .ogs-input { display: block; width: 100% }
   .brand { display: contents }
   .brand::after, .seal, .brand h1 { display: none }
   .meta { margin: 0 -6px 6px 0; font-size: 12.5px }
+  .body { padding-bottom: 6px }
   /* the two players side by side, the rest of the body full width */
   .body { flex-flow: row wrap }
   .body > * { flex: 1 1 100%; min-width: 0 }
@@ -543,16 +550,17 @@ section > .seg + .ogs-input { display: block; width: 100% }
   .pc .cap { top: 8px; right: 8px }
   .pc .wm { font-size: 44px }
   .doors {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; height: calc(var(--tab) + var(--safe-b)); padding: 0 8px var(--safe-b);
-    background: var(--sheet); box-shadow: 0 -1px 0 var(--rule);
+    position: fixed; left: 14px; right: 14px; bottom: var(--lift); z-index: 30; display: flex; height: var(--bar); padding: 0 6px;
+    border-radius: calc(var(--bar) / 2); background: var(--sheet); box-shadow: 0 10px 28px var(--shadow), 0 0 0 1px var(--rule);
   }
   .door { order: 0; flex: 1 1 0; justify-content: center; gap: 3px; padding: 0; border: 0; border-radius: 0; font-size: 12px; color: var(--muted) }
+  .door[aria-current]::before { content: ""; position: absolute; inset: 7px 4px; z-index: -1; border-radius: 24px; background: var(--hover) }
   .door svg { width: 24px; height: 24px }
   .door:hover { background: none; color: var(--muted) }
   .door[aria-current], .door[aria-current]:hover { color: var(--accent) }
   .door .dot { top: 6px; right: calc(50% - 19px) }
-  .sheet-back { bottom: calc(var(--tab) + var(--safe-b)); background: none }
-  .sheet { width: 100%; padding: calc(var(--safe-t) + 18px) 20px 28px; gap: 18px; box-shadow: none; animation: fade .2s ease-out }
+  .sheet-back { background: none }
+  .sheet { width: 100%; padding: calc(var(--safe-t) + 18px) 20px calc(var(--dock) + 20px); gap: 18px; box-shadow: none; animation: fade .2s ease-out }
   .sheet .title { font-size: 34px }
   .sheet .close { top: -10px; right: -10px }
   .kifu-bar { padding: calc(var(--safe-t) + 10px) 16px 10px }
