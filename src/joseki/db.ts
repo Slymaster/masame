@@ -46,7 +46,7 @@ const loading: Partial<Record<Book, Promise<JosekiDb>>> = {}
 export const loadJoseki = (book: Book = 'joseki') => loading[book] ??= fetch(`${import.meta.env.BASE_URL}assets/joseki/${book}.v1.json`)
   // a missing file comes back as the page itself (HTML), not as a 404: both read as one plain sentence
   .then(r => r.ok && !r.headers.get('content-type')?.includes('html') ? r.json() : Promise.reject(new LocalizedError(d => d.bookMissing)))
-  .then(j => book === 'fuseki' ? { ...validate(j), family: book } : validate(j), e => { loading[book] = undefined; throw e })
+  .then(j => book === 'fuseki' ? { ...validate(j), family: book } : validate(j), e => { loading[book] = undefined; throw e instanceof LocalizedError ? e : new LocalizedError(d => d.bookUnreadable) }) // a network or data error reads in your language too
 
 export interface Child { move: string; child: number; loss: number; freq: number[]; tags: number; sym: number }
 /** Moves stored at a node: loss in points, freq per profile in 0..1. */

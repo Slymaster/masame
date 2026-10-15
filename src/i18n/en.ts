@@ -186,7 +186,7 @@ export const en = {
   anFor: (s: number) => `Candidate moves for ${color(s)}`, anReading: 'Reading the position…', anPass: 'Pass',
   anNeedsNet: 'Candidate moves need an analysis network.', anFailed: (m: string) => `The position could not be read. ${m}`,
   // joseki trainer
-  joseki: 'Joseki', jLoading: 'Loading the joseki…', jFailed: (m: string) => `Couldn’t load the joseki: ${m}`,
+  joseki: 'Joseki', jLoading: 'Loading the joseki…', jFailed: (m: string) => `Couldn’t load the joseki: ${m}.`,
   jTabs: { explore: 'Explore', practise: 'Practise', programme: 'Programme' },
   jCorner: 'Corner', jBack: 'Back', jFrequent: 'Most played at your level', jMoves: 'Moves',
   jBest: 'best', jLoss: (x: number) => lost(x), jAt: (pct: string, rank: string) => `${pct} at ${rank}`,
@@ -218,8 +218,8 @@ export const en = {
   jProgrammeHelp: (rank: string) => `Ordered by how often you meet each corner at ${rank} × the points it costs there.`,
   jMet: (n: number) => `met about 1 corner in ${f.num(n)}`, jOpenFamily: (name: string) => `Explore ${name}`,
   // fuseki trainer: the joseki trainer's other book
-  bookMissing: 'the book is missing from this version of Masame',
-  fuseki: 'Fuseki', fFamily: 'Book', fLoading: 'Loading the fuseki.', fFailed: (m: string) => `Couldn’t load the fuseki: ${m}`, fFirst: 'First move',
+  bookMissing: 'the book is missing from this version of Masame', bookUnreadable: 'the book can’t be read',
+  fuseki: 'Fuseki', fFamily: 'Book', fLoading: 'Loading the fuseki.', fFailed: (m: string) => `Couldn’t load the fuseki: ${m}.`, fFirst: 'First move',
   fExploreNote: (n: number) => `Fuseki · move ${n}. A letter follows a move: A loses least.`,
   fContext: 'The empty board, Black first, komi 6.5, Japanese rules. An opening and its mirror images count as one.',
   fPractiseHelp: 'Each opening is turned at random, and you play Black or White. Your opponent plays like a player of your level, mistakes included: punish them.',

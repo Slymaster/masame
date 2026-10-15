@@ -186,7 +186,7 @@ export const fr: Dict = {
   anFor: (s: number) => `Coups candidats pour ${color(s)}`, anReading: 'Lecture de la position…', anPass: 'Passer',
   anNeedsNet: 'Les coups candidats demandent un réseau d’analyse.', anFailed: (m: string) => `La position n’a pas pu être lue. ${m}`,
   // entraîneur de joseki
-  joseki: 'Joseki', jLoading: 'Chargement des joseki…', jFailed: (m: string) => `Impossible de charger les joseki : ${m}`,
+  joseki: 'Joseki', jLoading: 'Chargement des joseki…', jFailed: (m: string) => `Impossible de charger les joseki : ${m}.`,
   jTabs: { explore: 'Explorer', practise: 'S’entraîner', programme: 'Programme' },
   jCorner: 'Coin', jBack: 'Retour', jFrequent: 'Le plus joué à ton niveau', jMoves: 'Coups',
   jBest: 'meilleur', jLoss: (x: number) => lost(x), jAt: (pct: string, rank: string) => `${pct} en ${rank}`,
@@ -218,8 +218,8 @@ export const fr: Dict = {
   jProgrammeHelp: (rank: string) => `Classés selon la fréquence de chaque coin en ${rank} × les points qu’il y coûte.`,
   jMet: (n: number) => `environ 1 coin sur ${f.num(n)}`, jOpenFamily: (name: string) => `Explorer ${name}`,
   // entraîneur de fuseki : l’autre livre de l’entraîneur de joseki
-  bookMissing: 'le livre manque dans cette version de Masame',
-  fuseki: 'Fuseki', fFamily: 'Livre', fLoading: 'Chargement des fuseki.', fFailed: (m: string) => `Impossible de charger les fuseki : ${m}`, fFirst: 'Premier coup',
+  bookMissing: 'le livre manque dans cette version de Masame', bookUnreadable: 'le livre est illisible',
+  fuseki: 'Fuseki', fFamily: 'Livre', fLoading: 'Chargement des fuseki.', fFailed: (m: string) => `Impossible de charger les fuseki : ${m}.`, fFirst: 'Premier coup',
   fExploreNote: (n: number) => `Fuseki · coup ${n}. Une lettre suit un coup : A perd le moins.`,
   fContext: 'Le goban vide, Noir commence, komi 6,5, règles japonaises. Une ouverture et ses images en miroir ne comptent qu’une fois.',
   fPractiseHelp: 'Chaque ouverture est tournée au hasard, et tu joues Noir ou Blanc. Ton adversaire joue comme un joueur de ton niveau, erreurs comprises : punis-les.',
