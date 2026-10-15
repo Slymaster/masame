@@ -574,9 +574,11 @@ export function App() {
   const playFrom = async (moves: Move[]) => {
     abandon()
     if (!(await canLeave())) return false
-    const me = -moves.at(-1)!.sign as Sign, ai = settings.opponent === 'ai' && canPlayAI, name = t.botName(settings.aiRank)
-    start(local(Game.fromRecord({ size: 19, playerBlack: ai && me === -1 ? name : '', playerWhite: ai && me === 1 ? name : '' }, moves)),
-      ai ? { sign: -me as Sign, rank: settings.aiRank, ...settings.mentor && { mentor: true as const } } : null)
+    const me = -moves.at(-1)!.sign as Sign, ai = settings.opponent === 'ai' && canPlayAI
+    // the same opponent as a new game: the era's master, the mentor only with an analysis network
+    const b = { sign: -me as Sign, rank: settings.aiRank, ...settings.style === 'era' && { era: settings.era, rank: MASTER_RANK }, ...settings.mentor && canAnalyze && { mentor: true as const } }
+    const name = botName(b)
+    start(local(Game.fromRecord({ size: 19, playerBlack: ai && me === -1 ? name : '', playerWhite: ai && me === 1 ? name : '' }, moves)), ai ? b : null)
     return true
   }
   /** The editor's "Two players from here" and "Done": the position becomes the shown game. */
