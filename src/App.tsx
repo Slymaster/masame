@@ -41,6 +41,8 @@ import { GamesSheet } from './GamesSheet'
 import { ShareSheet } from './ShareSheet'
 import { menuEnabled } from './menu'
 import * as library from './library'
+import { useEditor } from './editor/useEditor'
+import { Kifu } from './KifuPage'
 
 // free analysis: a near-instant read, then one that sharpens it
 const QUICK = { maxVisits: 80, overrideSettings: { maxTime: 0.3 } }, DEEP = { maxVisits: 800, overrideSettings: { maxTime: 2.5 } }
@@ -221,7 +223,7 @@ export function App() {
   const [nets, setNets] = useState<NetState | null>(null)
   const [progress, setProgress] = useState<Record<string, Progress>>({})
   // the four doors' sheets (play, learn, games, settings), Share, and 'atelier': Settings scrolled to its Atelier section
-  const [sheet, setSheet] = useState<'game' | 'learn' | 'games' | 'settings' | 'atelier' | 'share' | 'nets' | null>(null)
+  const [sheet, setSheet] = useState<'game' | 'learn' | 'games' | 'settings' | 'atelier' | 'share' | 'nets' | 'kifu' | null>(null)
   // the control a sheet returns focus to (WebKit doesn't focus clicked buttons), kept when one sheet opens another
   const opener = useRef<HTMLElement | null>(null), netsFromSettings = useRef(false)
   const openSheet = (s: NonNullable<typeof sheet>) => (e: React.MouseEvent<HTMLElement>) => {
@@ -307,7 +309,7 @@ export function App() {
   // The trainers borrow the board and the card, one at a time; the game waits underneath, untouched. A new activity (a
   // takeover of the same shape as useJoseki/useExercises) plugs in at four places: its name in Panel, its hook in
   // `trainers` below, its row in the Learn sheet's `decks`, and its command in `commands` (menu ids: src/menu.ts).
-  type Panel = 'joseki' | 'exercises'
+  type Panel = 'joseki' | 'exercises' | 'editor'
   const [panel, setPanel] = useState<Panel | null>(null)
   /** A trainer's setOpen: opening it replaces any other; closing it closes only itself. */
   const panelOpen = (name: Panel) => (o: boolean) => setPanel(p => (o ? name : p === name ? null : p))
@@ -364,7 +366,16 @@ export function App() {
       () => { setSheet(null); setPanel(null); void newGame(9, { rank: settings.myRank, handicap: 0, ritual: true }) }],
     onDone: n => { if (panel) setRitualSaid(n); else setNote(d => d.ritualDone(n)) }, // a panel's note hides the game's
   })
-  const trainers = [jt, ex] // every takeover of the card, in no particular order: at most one is open
+  // the position editor: its position starts a game against the AI (through the Play sheet), by two, or stays shown
+  const [fromPos, setFromPos] = useState<Game | null>(null) // the Play sheet starts from this position
+  useEffect(() => { if (sheet !== 'game') setFromPos(null) }, [sheet])
+  const positions = useRef(new WeakSet<Game>()) // shown positions: saved, they enter the library as 'position'
+  const ed = useEditor({
+    view, open: panel === 'editor', setOpen: panelOpen('editor'), blocked: ongoing || !!review, size: game.info.size,
+    onAi: g => { setSettings(s => ({ ...s, opponent: 'ai', handicap: 0 })); resize(g.info.size); door('game'); setFromPos(g) },
+    onTwo: g => void fromPosition(g), onDone: g => void fromPosition(g, true),
+  })
+  const trainers = [jt, ex, ed] // every takeover of the card, in no particular order: at most one is open
   const tr = trainers.find(x => x.open) ?? ex
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
   const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && (online.placing ? online.me === 1 : game.toPlay === online.me) : !bot || game.toPlay !== bot.sign
@@ -467,21 +478,24 @@ export function App() {
   // an action that may replace the game cancels a pending search or live challenge before any picker, download or
   // dialog: a match starting meanwhile would replace the game without the leave question; backing out leaves it cancelled
   // o: the daily ritual's game (always against the AI, at your level, even)
-  const newGame = async (size = nextSize, o: { rank?: string; handicap?: number; ritual?: true } = {}) => {
+  // from: a position from the editor, its stones the game's setup (no handicap)
+  const newGame = async (size = nextSize, o: { rank?: string; handicap?: number; ritual?: true; from?: Game } = {}) => {
     if (o.ritual && !canPlayAI) return // never a two-player 9×9 in its place (the network state not known yet)
     abandon()
     if (!(await canLeave())) return
+    const from = o.from && { setup: o.from.info.setup, firstSign: o.from.info.firstSign }
+    if (o.from) { size = o.from.info.size; o.handicap = 0; ed.close() }
     resize(size)
     let g: Game
     if ((settings.opponent === 'ai' || o.ritual) && canPlayAI) {
       const h = o.handicap ?? settings.handicap // with a handicap the player takes Black, White plays first
       const me: Sign = h || settings.color === 'b' ? 1 : settings.color === 'w' ? -1 : random() < 0.5 ? 1 : -1
       const rank = o.rank ?? settings.aiRank, name = t.botName(rank)
-      g = new Game({ size, playerBlack: me === 1 ? '' : name, playerWhite: me === 1 ? name : '',
+      g = new Game({ size, playerBlack: me === 1 ? '' : name, playerWhite: me === 1 ? name : '', ...from,
         ...h > 0 && { komi: 0.5, setup: { black: handicapStones(size, h), white: [] }, firstSign: -1 as Sign } })
       if (h > 0) g.root.data.HA = [String(h)]
       start(g, { sign: -me as Sign, rank, ...o.ritual && { ritual: true as const } })
-    } else start(g = new Game({ size }), null)
+    } else start(g = new Game({ size, ...from }), null)
     if (settings.clock !== 'off') { Object.assign(g.root.data, sgfTime(CLOCKS[settings.clock])); setClock(startClock(CLOCKS[settings.clock])) }
   }
   const open = async (read: () => Promise<string | null> = openSgfFile, asked = false, imported = false) => {
@@ -506,10 +520,20 @@ export function App() {
     start(Game.fromRecord({ size: 19, playerBlack: ai && me === -1 ? name : '', playerWhite: ai && me === 1 ? name : '' }, moves), ai ? { sign: -me as Sign, rank: settings.aiRank } : null)
     return true
   }
+  /** The editor's "Two players from here" and "Done": the position becomes the shown game. */
+  const fromPosition = async (g: Game, done = false) => {
+    abandon()
+    if (!(await canLeave())) return
+    ed.close(); resize(g.info.size); start(g, null)
+    if (done) positions.current.add(g)
+  }
   const save = async () => {
     try {
       if (bot) game.info[bot.sign === 1 ? 'playerBlack' : 'playerWhite'] = t.botName(bot.rank) // the SGF keeps the language it was saved in
-      if (await saveSgfFile(saveSgf(game), t.fileName(game.info.size))) { setDirty(false); setNote(d => d.saved) }
+      if (await saveSgfFile(saveSgf(game), t.fileName(game.info.size))) {
+        setDirty(false); setNote(d => d.saved)
+        if (positions.current.has(game)) library.keep(game, 'position', 0).catch(() => {}) // outside the app there is no library
+      }
     } catch (e) {
       setNote(d => d.saveFailed(failureText(e, d)))
     }
@@ -878,7 +902,7 @@ export function App() {
   const commands: Record<string, () => void> = {
     undo, new: newCommand, open, save, postcard, panel: togglePanel,
     pass: () => play(null), resign, territory: () => { if (!ongoing) set('territory', !settings.territory) }, review: () => { if (canReview && !review) startReview(mine) },
-    today: openLearn, exercises: ex.toggle, joseki: jt.toggle, games: () => door('games'),
+    today: openLearn, exercises: ex.toggle, joseki: jt.toggle, games: () => door('games'), position: ed.start, kifu: () => door('kifu'),
     camera: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
   }
   // a focused range keeps the shortcuts: its arrows/Home/End go through goTo (preventDefault: no second native step)
@@ -1321,11 +1345,13 @@ export function App() {
                 <Seg label={t.clock} value={settings.clock} set={v => set('clock', v)} options={[['off', t.clockOff, t.clockNone],
                   ...Object.entries(CLOCKS).map(([k, c]) => [k, t.clockShort(c.main / 60_000, c.periods, c.period / 1000), t.clockLong(c.main / 60_000, c.periods, c.period / 1000)] as [ClockSetting, string, string])]} />
               </div>
-              <button className="btn accent" onClick={() => { closeSheet(); newGame() }} title={shortcut('N')} disabled={settings.opponent === 'ai' && !canPlayAI}>{t.begin}</button>
+              <button className="btn accent" onClick={() => { closeSheet(); newGame(nextSize, fromPos ? { from: fromPos } : {}) }} title={shortcut('N')} disabled={settings.opponent === 'ai' && !canPlayAI}>{t.begin}</button>
               </>}
             </div>
           </section>
-          {/* later: Style and Mentor join the AI settings above; "From a position…" (the position editor) comes here */}
+          {/* later: Style and Mentor join the AI settings above */}
+          {fromPos ? <p className="say">{t.edFrom}</p>
+            : <section><button className="share-row" onClick={() => { closeSheet(); ed.start() }} disabled={ongoing || !!review}><span>{t.edOpen}</span></button></section>}
         </Sheet>
       )}
 
@@ -1416,9 +1442,12 @@ export function App() {
       )}
       {sheet === 'share' && (
         <ShareSheet onClose={closeSheet} opener={opener.current} onSave={() => { closeSheet(); save() }} onPostcard={() => { closeSheet(); postcard() }}
-          ogsId={online?.id} />
+          onKifu={() => setSheet('kifu')} ogsId={online?.id} />
       )}
 
+      {sheet === 'kifu' && <Kifu game={game} onClose={closeSheet}
+        ranks={([1, -1] as const).map(c => game.root.data[c === 1 ? 'BR' : 'WR']?.[0] || (bot?.sign === c ? bot.rank : '')) as [string, string]}
+        source={game.root.data.EV?.[0] || (online ? `online-go.com/game/${online.id}` : bot ? t.kifuVsAi : 'Masame')} />}
       {sheet === 'nets' && <Networks nets={nets} progress={progress} onClose={closeNets} onChanged={refreshNets} opener={opener.current} />}
     </>
   )

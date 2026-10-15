@@ -79,7 +79,7 @@ function wood(): HTMLCanvasElement {
 }
 
 /* ---------- geometry ---------- */
-function geom(S: number, N: number, coords: boolean, dpr: number): Geom {
+export function geom(S: number, N: number, coords: boolean, dpr: number): Geom {
   const bx = S * 0.018, by = bx, bw = S * 0.945
   const font = Math.min(13, Math.max(9.5, S * 0.0155))
   // Margin from the outer line to the board edge: 0.75 cell as in the mood board; with coordinates, enough
@@ -133,7 +133,7 @@ function drawBoard(x: CanvasRenderingContext2D, g: Geom, S: number, dpr: number)
   x.fillStyle = 'rgba(80,46,14,0.35)'; x.fillRect(bx, by + bw - 1, bw, 1); x.fillRect(bx + bw - 1, by, 1, bw)
 }
 
-function drawGrid(x: CanvasRenderingContext2D, g: Geom, coords: boolean) {
+export function drawGrid(x: CanvasRenderingContext2D, g: Geom, coords: boolean) {
   const { N, P } = g
   const ink = 'rgba(43,29,14,0.86)', a = P[0], z = P[N - 1]
   x.strokeStyle = ink; x.lineWidth = 1; x.beginPath()
