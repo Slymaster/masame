@@ -114,6 +114,8 @@ export const en = {
   gamesInAppOnly: 'Your games are kept in the app.', gamesImport: 'Import an SGF…',
   gamesOgsFinished: 'Finished on OGS, not yet kept', gamesOgsAllKept: 'All your finished OGS games are already here.',
   lbWon: 'Won', lbLost: 'Lost', lbDraw: 'Draw', lbUnfinished: 'Unfinished',
+  /** An SGF RE as the player reads it ("B+R", "W+3.5"): standard in English. */
+  resultShort: (re: string) => re.trim(),
   lbPlayedLike: (r: string) => `played like ${aRank(r)}`, lbMoments: (n: number) => f.plural(n, 'moment', 'moments'),
   lbMemory: (r: number, n: number) => `memory ${f.num(r)}/${f.num(n)}`, lbCounted: 'counted',
   ritualWaiting: 'today’s ritual is waiting', rankNone: 'Your rank shows once a game you played is reviewed.', work: 'Practise',

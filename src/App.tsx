@@ -1281,7 +1281,7 @@ export function App() {
             {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message} className={message === resultLine ? 'res' : undefined}>
               {message === resultLine ? <>
                 {/* the result as a score sheet: winner's stone, who and how, the AI's next level; read in that order */}
-                {res.winner !== 0 && <span className={`stone ${res.winner === 1 ? 'b' : 'w'}`} aria-hidden="true">{re}</span>}
+                {res.winner !== 0 && <span className={`stone ${res.winner === 1 ? 'b' : 'w'}`} aria-hidden="true">{t.resultShort(re)}</span>}
                 <span className="txt"><b>{t.ended(res.winner, res.how, res.points)}{mentorLine && <span className="said"> · {mentorLine}</span>}</b>{' '}
                   <small>{[res.winner !== 0 && t.endedHow(res.how, res.points), note?.(t)].filter(Boolean).join(' · ')}</small></span>
                 {aiMoved && <span className="chip">{t.aiLevel}{' '}<b>{bot && <i>{bot.rank} →</i>} {aiMoved}</b></span>}
