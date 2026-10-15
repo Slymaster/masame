@@ -23,6 +23,8 @@ export interface BoardState {
   marks?: Mark[] | null
   /** Grid rectangle [x0, y0, x1, y1] left clear; a light veil covers the rest of the board. */
   focus?: [number, number, number, number] | null
+  /** A stone shown in half-tone on an empty point: the move the mentor stopped. */
+  pending?: { v: Vertex; sign: Sign } | null
 }
 export interface Mark { v: Vertex; label: string; tone: 'best' | 'ok' | 'mistake' }
 
@@ -534,6 +536,7 @@ export class BoardView {
     if (a) { const ap = this.at(a.x, a.y); stoneShadow(c, g, ...ap, t); stone(c, g, a.x, a.y, a.c, t, ap) }
     const l = s.last
     if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) lastRing(c, g, this.at(l[0], l[1]), s.signMap[l[1]][l[0]])
+    if (s.pending) { c.globalAlpha = 0.5; stone(c, g, s.pending.v[0], s.pending.v[1], s.pending.sign, 1); c.globalAlpha = 1 }
     const h = this.hover
     if (h && s.interactive && !s.signMap[h[1]]?.[h[0]]) {
       c.globalAlpha = 0.35; stone(c, g, h[0], h[1], s.toPlay, 1); c.globalAlpha = 1

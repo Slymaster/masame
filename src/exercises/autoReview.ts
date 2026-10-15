@@ -8,8 +8,10 @@ import { loadSgf, saveSgf } from '../sgf'
 import { recordKey } from './deck'
 
 /** A game waiting for its review: the record as SGF (a snapshot: the shown game may grow variations), the player's side,
- * its library id (absent in queues saved before the library, or for a game not kept). */
-export interface Job { k: string; sgf: string; side: Sign; t: number; id?: string }
+ * its library id (absent in queues saved before the library, or for a game not kept);
+ * noRank: a lesson (the mentor), whose rank is not read; noAdjust: its rank never moves the levels (a Master of an era). */
+export interface Job { k: string; sgf: string; side: Sign; t: number; id?: string; noRank?: true; noAdjust?: true }
+export type JobFlags = Pick<Job, 'id' | 'noRank' | 'noAdjust'>
 /** The session's memory: scan leads and rank probabilities per record key (shared with the foreground review), the moments
  * of jobs read but not yet ranked, failures per job, keys reviewed, and when the engine may be tried again after a failure (ms). */
 export interface Auto { queue: Job[]; leads: Map<string, (number | undefined)[]>; ranks: Map<string, Map<string, number>>; read: Map<string, Moment[]>
@@ -22,12 +24,12 @@ export const eligible = (g: Game, side: Sign | 0) =>
   side !== 0 && g.info.size <= 19 && g.moves.slice(0, reviewEnd(g)).filter(m => !m.setup).length >= MIN_MOVES
 
 /** The queue with this game added (oldest dropped past CAP), or unchanged when known, reviewed or not eligible. */
-export function enqueue(a: Auto, game: Game, side: Sign | 0, now: number, id?: string): Job[] {
+export function enqueue(a: Auto, game: Game, side: Sign | 0, now: number, flags: JobFlags = {}): Job[] {
   const sgf = saveSgf(game), g = loadSgf(sgf) // the record as the job will read it
   if (!eligible(g, side)) return a.queue
   const k = recordKey(g)
   if (a.reviewed.has(k) || a.queue.some(j => j.k === k)) return a.queue
-  return [...a.queue, { k, sgf, side: side as Sign, t: now, ...id && { id } }].slice(-CAP)
+  return [...a.queue, { k, sgf, side: side as Sign, t: now, ...flags.id && { id: flags.id }, ...flags.noRank && { noRank: true as const }, ...flags.noAdjust && { noAdjust: true as const } }].slice(-CAP)
 }
 
 /** The oldest job that has not failed too often this session; none for RETRY_MS after a failure. */
@@ -64,7 +66,7 @@ export async function runJob(a: Auto, j: Job, ask: (g: Game, q: object) => Promi
       if (!live()) return 'paused'
       add(game, ms, leads, j.side); a.read.set(j.k, ms)
     }
-    if (rank) { r = await readRank(game, j.side, ranksOf(a, j.k), ask, live); if (!live()) return 'paused' }
+    if (rank && !j.noRank) { r = await readRank(game, j.side, ranksOf(a, j.k), ask, live); if (!live()) return 'paused' }
   } catch (e) {
     console.error('automatic review', e)
     a.fails.set(j.k, (a.fails.get(j.k) ?? 0) + 1); a.wait = Date.now() + RETRY_MS

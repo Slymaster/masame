@@ -58,7 +58,7 @@ describe('the queue', () => {
   })
   it('carries the library id; queues saved before the library still load', () => {
     const a = newAuto([])
-    a.queue = enqueue(a, game(12), 1, 0, 'ai-abc')
+    a.queue = enqueue(a, game(12), 1, 0, { id: 'ai-abc' })
     expect(a.queue[0].id).toBe('ai-abc')
     expect(enqueue(newAuto([]), game(12), 1, 0)[0]).not.toHaveProperty('id')
     const old: Job = { k: 'x', sgf: saveSgf(game(10)), side: 1, t: 5 }, kept = { ...old, k: 'y', id: 'ogs-7' }
@@ -133,5 +133,16 @@ describe('a background run', () => {
     asked.length = 0
     expect(Array.isArray(await runJob(a, j, fake(asked), () => true, () => {}, add, r => got.push(r)))).toBe(true)
     expect([asked.length, added.length, got.length, a.queue.length]).toEqual([30 * PROFILES.length - known, 1, 1, 0])
+  })
+  it('reads no rank for a mentor game, still adding its moments; the flags survive a relaunch', async () => {
+    const a = newAuto([]); a.queue = enqueue(a, game(60), 1, 0, { noRank: true, noAdjust: true })
+    const j = a.queue[0], asked: number[] = [], got: unknown[] = [], added: unknown[] = []
+    expect([j.noRank, j.noAdjust]).toEqual([true, true])
+    const st = mem(); saveQueue(a.queue, st)
+    expect(loadQueue(st)[0]).toEqual(j)
+    const ms = await runJob(a, j, fake(asked), () => true, () => {}, (...x) => void added.push(x), r => got.push(r))
+    expect([Array.isArray(ms), added.length]).toEqual([true, 1])
+    expect(got).toEqual([null]) // reported without a reading: nothing to store
+    expect(asked.length).toBe(61 + 2) // the scan and the deep pair, no rank query
   })
 })

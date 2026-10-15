@@ -183,6 +183,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .res .txt b { font: 600 18px/1.1 var(--f-ui); letter-spacing: -.01em; white-space: nowrap }
 .res .txt small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.15; color: var(--muted) }
 .res .txt small:empty { display: none }
+.res .txt b .said { font-weight: 400; white-space: normal } /* the mentor's stops, on the title's line: a result the player reads */
 .res .chip { flex: none; display: flex; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 1px solid var(--rule-2); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); white-space: nowrap }
 .res .chip b { font: 600 14px var(--f-ui); letter-spacing: 0; text-transform: none; color: var(--ink); font-variant-numeric: tabular-nums }
 .res .chip i { font-style: normal; font-weight: 500; color: var(--muted) }

@@ -126,6 +126,18 @@ export const en = {
   retry: 'Try again',
   humanSilent: 'The Human network isn’t responding. Check that it’s installed.',
   badAnswer: 'Unreadable answer from KataGo.',
+  // Masters of an era and the Mentor (v0.5, B)
+  style: 'Style', styleLevel: 'At your level', styleEra: 'Master of an era',
+  era: 'Era', earlier: 'Era: earlier', later: 'Era: later',
+  masterOf: (year: number) => `Master of ${year}`,
+  eraHelp: 'These masters play at professional strength: auto-adjust is paused during these games.',
+  eraHandicap: (n: number) => `You take ${n} stones against the master, as in the teaching games of old.`,
+  mentor: 'Mentor',
+  mentorHelp: 'A game with the mentor is a lesson: it feeds neither your rank reading nor auto-adjust.',
+  mentorStop: (points: number) => `This move costs ${Math.round(points)} points. There is better.`,
+  mentorLate: 'The engine is too busy: the mentor lets your moves pass for now.',
+  mentorKeep: 'Keep it',
+  mentorStops: (n: number) => (n ? `The mentor stopped you ${n === 1 ? 'once' : `${n} times`}.` : 'The mentor never stopped you.'),
   // handicap and the local clock
   handicap: 'Handicap', handicapStones: (n: number) => (n ? `${n} stones` : 'None'),
   fewerStones: 'Handicap: fewer stones', moreStones: 'Handicap: more stones',
