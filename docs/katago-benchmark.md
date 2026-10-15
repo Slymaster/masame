@@ -187,3 +187,23 @@ Correctif proposé (petit, local à `apply`, à proposer en amont) :
 4. Optionnel : préchauffer chaque seau au chargement (un `apply` factice par taille), pour payer les compilations au démarrage pendant « Préparation du moteur… » plutôt que pendant l'analyse. On peut aussi compiler explicitement avec `MPSGraph.compile(with:feeds:targetTensors:targetOperations:compilationDescriptor:)` (macOS 12+) et garder les `MPSGraphExecutable`.
 
 Gain attendu : 4 compilations au plus au lieu de 8 (1 avec `maxBatchSize` fixe), et une chauffe prévisible. Non mesuré. Le patch n'a pas été appliqué aux sources vendorisées : il touche au chemin de sortie (taille des tampons) et demande une validation numérique (`katago runtests` / `testgpuerror`) qui sort du cadre de cette tâche.
+
+## 7. Android (arm64-v8a, backend Eigen)
+
+Script : `scripts/build-katago-android.sh`. Sur Android, KataGo reste un processus séparé, comme sur ordinateur : un exécutable PIE nommé `libkatago.so`, livré dans `jniLibs/arm64-v8a` de l'APK pour qu'Android l'extraie dans `nativeLibraryDir` (packaging « legacy »), seul dossier de l'app d'où l'on peut lancer un exécutable.
+
+- Même KataGo que les autres scripts (`v1.18.2`, commit vérifié), Eigen `3.4.0` (même sha256 que `build-katago-macos-x86_64.sh`), NDK `27.2.12479018` via son fichier de toolchain CMake, `ANDROID_PLATFORM=android-24` (minSdk de Tauri 2), `ANDROID_STL=c++_static`, `-DLIBZIP_LIBRARY=OFF`, zlib du sysroot du NDK, `-DEIGEN_MPL2_ONLY`. Pas d'AVX (x86 seulement) : Eigen utilise NEON sur aarch64.
+- Seul ajustement : `-include endian.h`, car `core/sha2.cpp` a besoin de `BYTE_ORDER`, que `<sys/types.h>` de bionic n'inclut pas (contrairement à glibc). Les sources vendorisées ne sont pas modifiées.
+- `MASAME_VENDOR` (par défaut `vendor/`) désigne l'arbre vendor ; sortie : `$MASAME_VENDOR/katago-android/arm64-v8a/libkatago.so`, passé à `llvm-strip --strip-all`.
+- Contrôles qui font échouer le script : AArch64, `FLAGS_1 PIE`, interpréteur `/system/bin/linker64`, et `NEEDED` limité à `libc`, `libm`, `libdl`, `liblog`, `libz`.
+
+Résultat (15 octobre 2026) : **7,1 Mo** (7 484 424 octets), `ELF64 DYN`, `FLAGS_1: NOW PIE`, `NEEDED: libz.so libm.so libdl.so libc.so`.
+
+**Non mesuré** : aucune image système arm64 n'est installée (`system-images/android-32/*` et `android-36.1/*` sont des dossiers vides) et les `cmdline-tools` (`sdkmanager`, `avdmanager`) manquent. Le binaire n'a donc pas encore tourné, ni dans l'émulateur ni sur un téléphone. Une mesure en émulateur ne serait de toute façon pas représentative d'un téléphone (cœurs du Mac, pas de throttling thermique, pas de gestion big.LITTLE).
+
+Réglages Eigen suggérés pour un téléphone (à valider par mesure, sur un appareil réel de préférence) :
+- `numAnalysisThreads = 1` : l'app n'analyse qu'une position à la fois.
+- `numSearchThreadsPerAnalysisThread = 4` : environ le nombre de cœurs « performance » ; au-delà, les cœurs efficaces ralentissent les batchs et chauffent le téléphone.
+- `numEigenThreadsPerModel` : laisser la valeur par défaut, min(threads de recherche, cœurs).
+- `nnMaxBatchSize = 4` (= threads de recherche) ; `nnCacheSizePowerOfTwo = 16` (65 536 entrées au lieu de 2^20 sur ordinateur : le cache ne se remplit qu'au rythme des évaluations, quelques milliers par minute sur CPU, et chaque entrée garde policy et ownership, donc quelques Ko) ; `nnMutexPoolSizePowerOfTwo = 14`.
+- Réseau « léger » b10c384 par défaut ; `maxVisits` à régler d'après les visites/s mesurées sur téléphone.
