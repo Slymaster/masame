@@ -166,6 +166,16 @@ describe('a game and its entry', () => {
     expect(host.log.filter(x => x.startsWith('library_write'))).toEqual([`library_write ${id}`])
     expect(lib.get()?.[0]).toMatchObject({ id, source: 'file', me: 1, black: { name: 'a' } })
   })
+  it('writes a saved position again with the moves played since, under the same id and date', async () => {
+    host.answer = cmd => (cmd === 'library_list' ? [] : undefined)
+    const g = await game('(;SZ[9]AB[cc])'), id = await lib.rewrite(g, 'position', 0)
+    const date = lib.get()![0].date
+    g.play([4, 4])
+    expect(await lib.rewrite(g, 'position', 0)).toBe(id)
+    expect(host.log.filter(x => x.startsWith('library_write'))).toEqual([`library_write ${id}`, `library_write ${id}`])
+    expect(lib.get()).toHaveLength(1)
+    expect(lib.get()![0]).toMatchObject({ id, source: 'position', date })
+  })
   it('keeps an imported OGS game under its OGS id', async () => {
     host.answer = cmd => (cmd === 'library_list' ? [] : undefined)
     expect(await lib.keep(await game('(;SZ[19];B[pd])'), 'ogs', -1, { ogsId: 42 })).toBe('ogs-42')

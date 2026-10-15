@@ -34,7 +34,7 @@ export function useEditor({ view, open, setOpen, blocked, size, onAi, onTwo, onD
   const start = () => { if (!blocked) setOpen(true) }
   const toggle = () => { if (open) setOpen(false); else start() }
   const close = () => setOpen(false)
-  const none = { open, start, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null }
+  const none = { open, start, toggle, close, play: () => false, board: null, note: null, links: [] as Link[], body: null, acts: null, keys: null, info: null as Game['info'] | null }
   if (!open) return none
 
   const play = (v: Vertex | null) => {
@@ -71,5 +71,6 @@ export function useEditor({ view, open, setOpen, blocked, size, onAi, onTwo, onD
   const keys: Record<string, (() => void) | undefined> = {
     escape: close, ' ': undefined, arrowup: () => {}, arrowdown: () => {}, arrowleft: () => {}, arrowright: () => {}, home: () => {}, end: () => {}, p: () => {}, c: () => {}, t: () => {},
   }
-  return { ...none, play, board, note: t.edHelp, body, acts, keys }
+  // the card's top line describes the position being set up, not the game underneath
+  return { ...none, play, board, note: t.edHelp, body, acts, keys, info: toGame(map, side).info }
 }

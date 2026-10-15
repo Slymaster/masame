@@ -131,3 +131,12 @@ export async function keep(g: Game, source: Source, me: Sign | 0, extra: Partial
   if (!xs?.some(e => e.id === id)) await write(id, sgf, entryOf(g, { id, source, me, ...extra }))
   return id
 }
+
+/** A game saved again (a position played on after Terminer): its SGF now replaces its kept copy, kept first when new. */
+export async function rewrite(g: Game, source: Source, me: Sign | 0): Promise<string> {
+  const id = ids.get(g)
+  if (!id) return keep(g, source, me)
+  const prev = (await load().catch(() => null))?.find(e => e.id === id)
+  await write(id, saveSgf(g), { ...prev, ...entryOf(g, { id, source, me, ...prev && { date: prev.date } }) })
+  return id
+}

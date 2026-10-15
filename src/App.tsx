@@ -590,7 +590,7 @@ export function App() {
       if (bot) game.info[bot.sign === 1 ? 'playerBlack' : 'playerWhite'] = botName(bot) // the SGF keeps the language it was saved in
       if (await saveSgfFile(saveSgf(game), t.fileName(game.info.size))) {
         setDirty(false); setNote(d => d.saved)
-        if (positions.current.has(game)) library.keep(game, 'position', 0).catch(() => {}) // outside the app there is no library
+        if (positions.current.has(game)) library.rewrite(game, 'position', 0).catch(() => {}) // outside the app there is no library
       }
     } catch (e) {
       setNote(d => d.saveFailed(failureText(e, d)))
@@ -1309,7 +1309,7 @@ export function App() {
           <div className="card-in" id="card" hidden={settings.panelHidden}>
             <div className="meta">
               {/* wraps only between its parts, never inside one */}
-              <span>{(online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : cl.info ? t.board(cl.info.size, cl.info.komi) : t.board(size, komi)).split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
+              <span>{(online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : cl.info ? t.board(cl.info.size, cl.info.komi) : ed.info ? t.board(ed.info.size, ed.info.komi) : t.board(size, komi)).split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
               <button className="icon sm" onClick={openSheet('share')} aria-label={t.share} title={t.share}><Icon name="share" /></button>
               <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
                 <Icon name={sound ? 'volume' : 'volume-off'} />
