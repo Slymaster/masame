@@ -26,7 +26,7 @@ Les secrets vivent dans deux environnements GitHub, chacun réservé à ses tags
 
    Crée l'environnement **avant** le premier tag : GitHub crée sinon un environnement vide, sans restriction.
 4. **Testeurs.** Dans TestFlight, un groupe interne (toi). Les testeurs externes passent par une revue bêta d'Apple au premier build.
-5. **Chiffrement.** À chaque build, TestFlight demande si l'app utilise un chiffrement non exempté (HTTPS seul = exempté). Pour ne plus répondre, il faut la clé `ITSAppUsesNonExemptEncryption` dans l'Info.plist (`src-tauri/gen/apple`) : c'est ta déclaration, à toi de décider.
+5. **Chiffrement.** L'Info.plist (`src-tauri/gen/apple`) déclare `ITSAppUsesNonExemptEncryption = false` (HTTPS seul, exempté) : TestFlight ne pose donc pas la question à chaque build. Vérifie que cette déclaration est juste ; elle t'engage.
 
 ## Une fois : Android (Google Play)
 
