@@ -396,7 +396,8 @@ export function App() {
   })
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
   useEffect(() => setRitualSaid(null), [panel])
-  const opening = ft.failed ? 'joseki' : openingBook(weakest(ex.games)) // the ritual's joseki or fuseki step
+  // the ritual's joseki or fuseki step: the fuseki only once its book is loaded (a book still loading may turn out missing)
+  const opening = ft.counts && openingBook(weakest(ex.games)) === 'fuseki' ? 'fuseki' : 'joseki'
   const netsUnknown = inTauri() && !nets // at launch: the steps needing a net are neither done nor off yet
   const td = useToday({
     blocked: ongoing || !!review,
