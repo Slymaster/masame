@@ -227,7 +227,49 @@ Réglages Eigen suggérés pour un téléphone (ceux de la session `analysis` ci
 - `numSearchThreadsPerAnalysisThread = 4` : environ le nombre de cœurs « performance » ; au-delà, les cœurs efficaces ralentissent les batchs et chauffent le téléphone.
 - `numEigenThreadsPerModel` : laisser la valeur par défaut, min(threads de recherche, cœurs).
 - `nnMaxBatchSize = 4` (= threads de recherche) ; `nnCacheSizePowerOfTwo = 16` (65 536 entrées au lieu de 2^20 sur ordinateur : le cache ne se remplit qu'au rythme des évaluations, quelques milliers par minute sur CPU, et chaque entrée garde policy et ownership, donc quelques Ko) ; `nnMutexPoolSizePowerOfTwo = 14`.
-- Réseau « léger » b10c384 par défaut ; `maxVisits` à régler d'après les visites/s mesurées sur téléphone (voir la conclusion ci-dessus).
+- Réseau par défaut : **b10c128**, et non plus le léger b10c384 (voir ci-dessous).
+
+### Quel réseau d'analyse sur Android (15 octobre 2026)
+
+Candidats, CNN officiels kata1 (téléchargés avec accord, sha256 vérifiés) : `kata1-b10c128-s1141046784-d204142634.txt.gz` (14 Mo), `kata1-b15c192-s1672170752-d466197061.txt.gz` (48 Mo), `kata1-b18c384nbt-s9996604416-d4316597426.bin.gz` (98 Mo). On les compare au léger (transformer b10c384, 38 Mo) et au réseau humain (b18c384nbt-humanv0). Les `.txt.gz` se chargent sans problème : même chemin que les `.bin.gz`, mêmes réponses.
+
+Le Mac était partagé : load average entre 15 et 320 selon les moments, indiqué ci-dessous. Chaque mesure a été faite 3 fois ou plus, et l'on donne la médiane. Proxy principal : KataGo Eigen compilé nativement sur le M2 Max (même révision, mêmes réglages que l'app : 4 threads de recherche, `nnMaxBatchSize` 4, cache 2^16). Les réseaux sont passés à tour de rôle, pour que la charge les touche tous de la même façon. Le coût CPU par évaluation (`user+sys` / évaluations, chargement compris) varie peu avec la charge ; les v/s, eux, en dépendent beaucoup.
+
+**1. `katago benchmark`, 4 threads, 3 positions**
+
+| Réseau | ms CPU / éval (Mac) | v/s Mac (médiane, load 35–320) | v/s émulateur arm64 (médiane, load 14–120) |
+|---|---|---|---|
+| b10c128 (CNN) | **42** | **96** | **67** |
+| b15c192 (CNN) | 126 | 18 (32–35 au calme) | 21 |
+| b18c384nbt (CNN) | 658 | 4,5 | non mesuré |
+| léger b10c384 (transformer) | 500 | 6,0 | 2,9 |
+| humain b18c384nbt (CNN, `rank_5k`) | 669 | 4,2 | non mesuré |
+
+Le classement tient sur ARM, et le transformer y perd encore plus : en émulateur, b10c128 va 23 fois plus vite que le léger (16 fois sur Mac), et b15c192 7 fois plus vite (3 à 5 fois sur Mac). `avgBatchSize` reste à 1,0 : Eigen évalue chaque thread séparément.
+
+**2. Charge de l'app** : surcharges de l'app (`numSearchThreadsPerAnalysisThread=4`, `nnMaxBatchSize=4`, `nnCacheSizePowerOfTwo=16`, `nnMutexPoolSizePowerOfTwo=14`, `maxTime=3`), `-human-model b18c384nbt-humanv0` chargé. Coup du bot : `maxVisits` 60, `includePolicy`, `includeOwnership`, `humanSLProfile` `rank_5k`, plafonné par `maxTime=3`. Scan : `maxVisits` 100, `maxTime` 0,6 (revue d'une partie de 200 coups). Positions 19×19 jamais vues, médianes de 6 requêtes sur 2 sessions.
+
+| Réseau principal | Prêt | Coup du bot : durée, visites | Scan : durée, visites | Mémoire max |
+|---|---|---|---|---|
+| **Mac, load 25–70** | | | | RSS |
+| b10c128 | 2,2 s | 1,25 s, **63** | 0,62 s, **62** | 1,09 Go |
+| b15c192 | 3,7 s | 2,4 s, 63 | 0,70 s, 21 | 1,31 Go |
+| b18c384nbt | 3,8 s | 3,4 s, 17 | 0,98 s, 5 | 1,62 Go |
+| léger b10c384 | 2,3 s | 3,1 s, 19 | 0,82 s, 5 | 1,17 Go |
+| **Émulateur arm64, load 19–69** | | | | `VmHWM` |
+| b10c128 | 3,4 s | 3,0 s, **61** | 0,63 s, **56** | **643 Mo** |
+| b15c192 | 5,7 s | 3,2 s, 26 | 0,72 s, 13 | 791 Mo |
+| léger b10c384 | 3,5 s | 3,9 s, 5 | **2,6 s**, 5 | 697 Mo |
+
+Avec 4 threads, une recherche fait au moins 5 visites (la racine plus une par thread) avant de regarder l'horloge. Un réseau lent dépasse donc `maxTime`. Avec le léger en émulateur, un scan de 0,6 s en dure 2,6 : la revue d'une partie de 200 coups est 4 fois plus longue que prévu, pour 5 visites par position. Toutes les sessions se terminent proprement (code 0) à la fermeture de stdin.
+
+**Recommandation : b10c128 comme réseau d'analyse par défaut sur Android**, à la place du léger.
+- C'est le seul candidat qui tient les budgets de l'app sur ARM : environ 60 visites en 3 s pour le coup du bot (dont l'évaluation du réseau humain), et environ 55 visites par scan de 0,6 s, là où le léger n'en fait que 5 en 2,6 s. C'est aussi le plus petit en mémoire et en APK (14 Mo).
+- Pour des parties de 15k à 5k, les erreurs à repérer valent plusieurs points. 50 visites de b10c128, déjà nettement plus fort qu'un 5k, les trouvent de façon plus fiable que 5 visites d'un réseau plus fort par visite.
+- b15c192 est le candidat « plus fort » : environ 3 fois plus lent, 13 visites par scan en émulateur. Sur un vrai téléphone (cœurs plus lents, throttling sur une revue de plusieurs minutes), il risque de tomber au plancher de 5 visites et de dépasser lui aussi `maxTime`. On ne l'envisagera qu'après mesure sur un appareil réel.
+- b18c384nbt et le léger sont trop lents pour un CPU de téléphone.
+
+Réglages suggérés avec b10c128 : garder `maxTime=3` comme plafond par défaut, même si le coup du bot tombe déjà vers 60 visites en 2,5 à 3 s en émulateur. Garder le scan à `max(0,25, 120/positions)` et le mode approfondi à 400 visites / 2,5 s (environ 200 visites). Sur un téléphone lent, `numSearchThreadsPerAnalysisThread=2` abaisserait le plancher à 3 visites, ce qui aide surtout un réseau lent. À vérifier sur un appareil réel avant de changer le défaut.
 
 ## 8. iPhone (KataGo dans l'app)
 
