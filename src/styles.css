@@ -526,9 +526,13 @@ section > .seg + .ogs-input { display: block; width: 100% }
 @media (max-width: 700px) {
   :root { --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px); --bar: 60px; --lift: max(8px, var(--safe-b) - 14px); --dock: calc(var(--lift) + var(--bar)) }
   .stage { flex-direction: column; gap: 0; padding: var(--safe-t) 0 calc(var(--dock) + 8px) }
-  /* full width when the screen has room; on a short one (iPhone SE) the board gives way first, so the players, the
-     timeline and the actions stay in view (the card's body scrolls only below 240 px of board) */
-  .board-wrap { flex: 0 100 auto; width: 100%; aspect-ratio: 1; min-height: 240px; margin-bottom: 62px }
+  /* full width when the screen has room; on a short one (iPhone SE) the board gives way first, down to what leaves the
+     card its usual 254 px (the players, the timeline, the actions) and never below 240 px; longer card content (the
+     candidates, a trainer) scrolls in the card's body instead of shrinking the board further */
+  .board-wrap {
+    flex: 0 100 auto; width: 100%; aspect-ratio: 1; margin-bottom: 62px;
+    min-height: max(240px, min(100vw, 100dvh - var(--safe-t) - 62px - var(--dock) - 8px - 254px));
+  }
   .board-wrap > .note { left: 0; padding: 0 10px }
   /* the caption: what the player reads, 18 px at least, two lines at most (narrow-window type is for the desktop) */
   .board-wrap > .note > span { font-size: 18px; padding: 5px 16px 0 }
