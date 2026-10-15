@@ -475,6 +475,9 @@ fn take_opened(opened: State<'_, OpenedFiles>) -> Res<Option<Opened>> {
     Ok(Some(Opened { name: path.file_name().unwrap_or_default().to_string_lossy().into_owned(), text: read_sgf(&path)? }))
 }
 
+static FLUSHED: AtomicBool = AtomicBool::new(false); // the close's library flush was asked (once)
+const FLUSH_WAIT: Duration = Duration::from_millis(300);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -520,6 +523,20 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, ev| match ev {
+            // Closing the window or quitting: the page writes its pending library change first (the shown game's last
+            // move, its clock), then we close. shortcut: a fixed wait, not an answer from the page; fine for two small files.
+            RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } if !FLUSHED.swap(true, Ordering::SeqCst) => {
+                api.prevent_close();
+                let _ = app.emit("library-flush", ());
+                let app = app.clone();
+                std::thread::spawn(move || { std::thread::sleep(FLUSH_WAIT); if let Some(w) = app.get_webview_window(&label) { let _ = w.destroy(); } });
+            }
+            RunEvent::ExitRequested { code: None, api, .. } if !FLUSHED.swap(true, Ordering::SeqCst) => {
+                api.prevent_exit();
+                let _ = app.emit("library-flush", ());
+                let app = app.clone();
+                std::thread::spawn(move || { std::thread::sleep(FLUSH_WAIT); app.exit(0) });
+            }
             RunEvent::Exit => app.state::<App>().engine.kill(),
             #[cfg(target_os = "macos")]
             RunEvent::Opened { urls } => queue_opened(app, urls.iter().filter_map(url_file).collect()),

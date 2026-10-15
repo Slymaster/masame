@@ -5,7 +5,7 @@
 import { useEffect, useRef } from 'react'
 import { clampRank } from './bot'
 import type { Game, Sign } from './game'
-import { inTauri } from './katago'
+import { inTauri, on } from './katago'
 import * as library from './library'
 import type { Current, Entry } from './library'
 import { sync, type LocalClock } from './localClock'
@@ -123,6 +123,12 @@ export function useCurrentGame(s: Shown, ver: number, onRestore: (r: Awaited<Ret
   const k = useRef<ReturnType<typeof keeper> | null>(null), latest = useRef(s), first = useRef(s.game), restoreRef = useRef(onRestore)
   latest.current = s; restoreRef.current = onRestore
   useEffect(() => { if (inTauri()) (k.current ??= keeper()).changed(() => latest.current) }, [ver, s.game, s.bot])
+  useEffect(() => { // closing the window or quitting: the pending write now (Rust waits a moment before closing, see lib.rs)
+    if (!inTauri()) return
+    const flush = () => k.current?.flush(), off = on<null>('library-flush', flush)
+    addEventListener('pagehide', flush)
+    return () => { removeEventListener('pagehide', flush); off.then(f => f()) }
+  }, [])
   useEffect(() => {
     if (!inTauri()) return
     // only onto the launch's empty board: a game opened meanwhile (a file from Finder) wins
