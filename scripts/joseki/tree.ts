@@ -192,21 +192,31 @@ export async function fuseki(opts: FusekiOpts, ask: Ask): Promise<string> {
   const judge = (path: string[]) => ask({ ...query(komi, path), maxVisits: visits, includePolicy: true, analysisPVLen: 8 })
   const shipped = (f: number[]) => Math.max(...f.slice(0, SHIPPED.length))
 
-  // classes of moves that reach the same position (orbits under the symmetries the board keeps), kept by the rule
+  // classes of moves that reach the same position, kept by the rule on their summed frequency
   async function plan(P: { path: string[]; judge: Resp }) {
     const board = boardOf(P.path), here = stones(board.signMap)
-    const keeps = ALL.filter(k => stones(board.signMap, k) === here)
     const pol = (await humanQueries(ask, komi, P.path)).map(h => h.humanPolicy!)
     const best = fromGtp(bestOf(P.judge)?.move ?? '')
+    // every move that reaches the canonical position s: the one new stone of each of s's 8 images, checked by playing it
+    const reaching = (s: string) => {
+      const sm = Array.from({ length: N }, (_, y) => [...s.slice(y * N, y * N + N)].map(v => 'o.x'.indexOf(v) - 1)), out = new Set<string>()
+      for (const k of ALL) {
+        const t = stones(sm, k), add = [...t].flatMap((v, i) => v !== '.' && here[i] === '.' ? [code([i % N, Math.floor(i / N)])] : [])
+        if (add.length === 1 && play(P.path, board, add[0], ALL)?.s === s) out.add(add[0])
+      }
+      return [...out].sort()
+    }
     const seen = new Set<string>(), cands: { moves: string[]; freq: number[]; c: NonNullable<ReturnType<typeof play>> }[] = []
     for (let i = 0; i < N * N; i++) {
       const m = code([i % N, Math.floor(i / N)])
       // a move under 0.5 % cannot lift its class (at most 8 moves) to 4 %, unless it is the best one
       if (seen.has(m) || (m !== best && shipped(pol.map(p => p[i])) < FUSEKI.threshold / 8)) continue
-      const moves = [...new Set(keeps.map(k => code(sym(k, point(m)))))].sort()
+      const c = play(P.path, board, m, ALL)
+      if (!c) continue
+      const moves = reaching(c.s)
       moves.forEach(x => seen.add(x))
-      const freq = mass(pol, moves), c = play(P.path, board, m, ALL)
-      if (c && (shipped(freq) >= FUSEKI.threshold || moves.includes(best!))) cands.push({ moves, freq, c })
+      const freq = mass(pol, moves)
+      if (shipped(freq) >= FUSEKI.threshold || moves.includes(best!)) cands.push({ moves, freq, c })
     }
     return { pol, cands, legal: (m: string) => play(P.path, board, m, ALL)! }
   }

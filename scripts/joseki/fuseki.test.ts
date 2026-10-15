@@ -139,6 +139,23 @@ describe('fuseki', () => {
     expect(line.nodes.filter(n => n.e.length)).toHaveLength(FUSEKI.maxPly - 1)
     expect(line.nodes.at(-1)!.pv).toBeTruthy()
   })
+  it('adds up moves that reach the same position even when they are no image of each other under the board kept', async () => {
+    // B 3-4 (qd), W tengen: B pq and B dc give rotations of one position; 2.5 % each, 5 % together
+    const engine = async (q: Record<string, unknown>): Promise<Resp> => {
+      const b = replay((q.moves as string[][]).map(([, g]) => fromGtp(g))), n = (q.moves as unknown[]).length
+      const [x, y] = point(fromGtp((q.moves as string[][])[0]?.[1] ?? 'A1')) // the paths come in the stored frame
+      const like: Record<string, number> = n === 0 ? { qd: 1 } : n === 1 ? { jj: 1 } : { [code([N - 1 - y, x])]: 0.025, [code([y, N - 1 - x])]: 0.025 }
+      const free = all.filter(v => b.get(v) === 0 && !(code(v) in like)), rest = (1 - Object.values(like).reduce((a, x) => a + x, 0)) / free.length
+      if ((q.overrideSettings as { humanSLProfile?: string } | undefined)?.humanSLProfile)
+        return { rootInfo: { scoreLead: 0 }, moveInfos: [], humanPolicy: [...all.map(v => b.get(v) !== 0 ? -1 : like[code(v)] ?? rest), 0] }
+      const best = n === 0 ? 'qd' : n === 1 ? 'jj' : code([N - 1 - x, N - 1 - y])
+      return { rootInfo: { scoreLead: 0 }, moveInfos: [{ move: gtp(point(best)), visits: 100, scoreLead: 0, order: 0, pv: [] }] }
+    }
+    const db = validate(JSON.parse(await fuseki({ ...opts, maxPly: 3 }, engine)))
+    const last = db.nodes.find(n => n.e.length && db.nodes.indexOf(n) > 0)!
+    expect(last.e).toHaveLength(3) // the merged pair and KataGo's best
+    expect(new Set(last.e.map(e => e[1])).size).toBe(2)
+  })
   it('gives identical bytes on a rerun, and after a killed run resumed from the cache', async () => {
     expect(await fuseki(opts, fake())).toBe(text)
     const store = new Map<string, Resp>(), key = (q: object) => JSON.stringify(q), engine = fake()
