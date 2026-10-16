@@ -619,7 +619,8 @@ exec sleep 5"#)).unwrap();
     #[tokio::test]
     async fn query_timeouts_restart_then_fall_back() {
         let ms = Duration::from_millis;
-        let quiet = |mut e: Arc<Engine>| { Arc::get_mut(&mut e).unwrap().query_timeout = ms(300); e };
+        // 1 s, not less: under Rosetta on a busy CI runner the fake's shell can take over 300 ms to answer (a hang is 60 s).
+        let quiet = |mut e: Arc<Engine>| { Arc::get_mut(&mut e).unwrap().query_timeout = ms(1000); e };
         let timeout = Failure::with("engine_timeout", "query");
         // Hangs on its first real query, once (a marker file): the restarted process answers.
         let marker = std::env::temp_dir().join(format!("baduk-fake-once-{}", std::process::id()));
@@ -756,7 +757,7 @@ read l; echo "boom" >&2; exit 1"#)).unwrap();
         let dir = std::env::temp_dir().join(format!("baduk-pause-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut e = Engine::new(|_, _| {}).with_log(dir.join("engine.log"));
-        Arc::get_mut(&mut e).unwrap().query_timeout = Duration::from_millis(300);
+        Arc::get_mut(&mut e).unwrap().query_timeout = Duration::from_secs(1); // room for slow CI runners
         e.ensure(fake("pause", r#"echo "Started, ready to begin handling requests" >&2
 while read l; do case "$l" in *terminate_all*) echo "searches dropped" >&2;; esac
 id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{\"id\":\"$id\"}"; done"#)).unwrap();
@@ -764,7 +765,7 @@ id=$(echo "$l" | sed 's/.*"id":"\([^"]*\)".*/\1/'); echo "{\"id\":\"$id\"}"; don
         e.pause();
         e.pause(); // once is enough
         let q = tokio::spawn({ let e = e.clone(); async move { e.analyze(json!({"moves": []})).await } });
-        tokio::time::sleep(Duration::from_millis(600)).await;
+        tokio::time::sleep(Duration::from_millis(1500)).await;
         assert!(!q.is_finished(), "held while paused, past the query timeout");
         e.resume();
         q.await.unwrap().unwrap();
