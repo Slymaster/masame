@@ -694,7 +694,7 @@ head -c 4000 /dev/urandom >&2; echo >&2; echo "{\"id\":\"$id\"}"; done"#)).unwra
         assert!(old > LOG_MAX && cur < LOG_MAX && cur > 0, "{old} {cur}");
         let tail = log_tail(&log, 200);
         assert_eq!(tail.lines().count(), 200);
-        assert!(tail.contains(" stop\n"), "{tail}");
+        assert!(tail.lines().any(|l| l.ends_with(" stop")), "{tail}"); // the last line has no trailing newline
         let _ = std::fs::remove_dir_all(&dir);
     }
 
