@@ -24,9 +24,9 @@ import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
 import { loadSgf, MAX_SGF, readResult, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import { DECORS, type Decor } from './board3d/decors'
-import { isMac, shortcut } from './platform'
+import { isMac, isMobile, shortcut } from './platform'
 import { useFullscreen, useWindowTheme } from './window'
-import { getVersion } from '@tauri-apps/api/app'
+import { getVersion, onBackButtonPress } from '@tauri-apps/api/app'
 import { checkDue, updateSettings, type UpdateInfo } from './update'
 import { fromOf, gradeTry, lessonBoard, readGame, REPLY, verdict, type Moment, type Step } from './review'
 import { useJoseki } from './joseki/useJoseki'
@@ -58,6 +58,8 @@ const QUICK = { maxVisits: 80, overrideSettings: { maxTime: 0.3 } }, DEEP = { ma
 
 const SIZES = [9, 13, 19]
 const HUMAN_BYTES = 99_066_230
+// the analysis net a phone recommends (networks.rs: fast on the iPhone, compact on Android), named in the first-run card
+const PHONE_NET_BYTES = /Android/.test(globalThis.navigator?.userAgent || '') ? 14_466_254 : 97_898_094
 const BOT_VISITS = 60, TERRITORY_VISITS = 150, FINAL_VISITS = 300
 const BOT_ATTEMPTS = 3 // a failed query (engine restarting on another net, crash) is retried after 1 s, then 2 s
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -85,7 +87,7 @@ function loadSettings(): Settings {
   const s = { ...d, ...j }
   return {
     ...s, lang: storedLang(j), langChosen: j.langChosen === true,
-    opponent: (['human', 'ai', 'ogs'] as const).includes(s.opponent) ? s.opponent : 'ai',
+    opponent: (['human', 'ai', 'ogs'] as const).includes(s.opponent) && !(isMobile && s.opponent === 'ogs') ? s.opponent : 'ai', // OGS on phones: v1.1
     ogsSpeed: (['blitz', 'rapid', 'live', 'correspondence'] as const).includes(s.ogsSpeed) ? s.ogsSpeed : 'rapid', myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
@@ -109,9 +111,9 @@ function webgl2() {
 /** What App drives, whichever renderer is mounted: the Canvas2D BoardView ("light") or the lazily loaded Board3D. */
 type View = { update(s: Board3DState): void; drop(v: Vertex, c: Sign): void; pass?(c: Sign): void; shake?(v: Vertex, c: Sign): void; resetCamera?(): void; snapshot?(): Promise<Blob | null>; destroy(): void }
 
-function Goban({ state, onPlay, view, mode, options, thinking, onFallback, children }: {
+function Goban({ state, onPlay, view, mode, options, thinking, onFallback, inert, children }: {
   state: Board3DState; onPlay: (v: Vertex) => boolean; view: React.RefObject<View | null>
-  mode: Renderer; options: Board3DOptions; thinking: boolean; onFallback: (r: FallbackReason) => void; children?: React.ReactNode
+  mode: Renderer; options: Board3DOptions; thinking: boolean; onFallback: (r: FallbackReason) => void; inert?: boolean; children?: React.ReactNode
 }) {
   const wrap = useRef<HTMLDivElement>(null), canvas = useRef<HTMLCanvasElement>(null), three = useRef<Board3D | null>(null)
   const latest = useRef({ onPlay, onFallback, state, options, thinking })
@@ -151,7 +153,7 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, child
   useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => three.current?.setThinking(thinking), [thinking])
   // a fresh canvas per renderer: one canvas can't hold both a 2D and a WebGL context
-  return <div className="board-wrap" ref={wrap}><canvas key={mode} ref={canvas} data-r={mode} aria-label={t.boardLabel(state.signMap.length)} />{children}</div>
+  return <div className="board-wrap" ref={wrap} inert={inert}><canvas key={mode} ref={canvas} data-r={mode} aria-label={t.boardLabel(state.signMap.length)} />{children}</div>
 }
 
 /** The signed-in OGS player's colour in an imported game, by name (OGS writes usernames in PB/PW). */
@@ -229,9 +231,10 @@ export function App() {
   const [started, setStarted] = useState<{ id: number; who: string } | null>(null)
   const challengeRows = useSyncExternalStore(ogs.challenges.subscribe, ogs.challenges.get)
   const activeRows = useSyncExternalStore(ogs.active.subscribe, ogs.active.get)
-  useEffect(() => ogs.startBackground(), [])
+  useEffect(() => { if (!isMobile) ogs.startBackground() }, []) // OGS on phones: v1.1
   const [session2d, setSession2d] = useState(false) // 2D after a WebGL context loss, for this session only
-  const renderer: Renderer = session2d ? '2d' : settings.renderer
+  const renderer: Renderer = session2d || isMobile ? '2d' : settings.renderer // phones: 2D only until v1.1
+  const panelHidden = settings.panelHidden && !isMobile // phones: the card is the only place for the game's controls
   // the card's skin follows the scene's backdrop; set before paint, and crossfaded only once the first frame is shown
   const skin = cardSkin(renderer, settings.camera, settings.decor)
   useLayoutEffect(() => { document.documentElement.dataset.skin = skin }, [skin])
@@ -307,7 +310,8 @@ export function App() {
     launchCheck.current = true
     getVersion().then(setVersion, () => {})
     const now = Date.now()
-    if (settings.autoUpdate && checkDue(now, settings.updateChecked)) { set('updateChecked', now); checkUpdate(true) }
+    // phones update through their store
+    if (!isMobile && settings.autoUpdate && checkDue(now, settings.updateChecked)) { set('updateChecked', now); checkUpdate(true) }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const subs = [
@@ -1229,6 +1233,13 @@ export function App() {
   }
   const alert = upd.s === 'available' ? t.updateAvailable(upd.version) : engine.state === 'error' ? failureText(engine.error) : null
   const closeSheet = () => setSheet(null)
+  // Android's back gesture: what Esc does (closes the topmost sheet, leaves a trainer or a review); otherwise the default
+  const backTakes = isMobile && inTauri() && (sheet !== null || !!cl.sheet || !!panel || !!review)
+  useEffect(() => {
+    if (!backTakes) return
+    const l = onBackButtonPress(() => dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))).catch(() => null) // iOS: no back button
+    return () => { l.then(x => x?.unregister()) }
+  }, [backTakes])
   /** The player's own changes in the Game sheet re-propose the handicap (the bot's auto-adjusted level does not). */
   const propose = ({ size = nextSize, ...c }: Partial<Pick<Settings, 'myRank' | 'aiRank' | 'style'>> & { size?: number }) =>
     setSettings(s => { const n = { ...s, ...c }; return { ...n, handicap: proposeHandicap(n.myRank, n.style === 'era' ? MASTER_RANK : n.aiRank, size) } })
@@ -1258,7 +1269,7 @@ export function App() {
   ]
   const cta = settings.opponent === 'ai' && !canPlayAI && (
     <div className="cta">
-      <p>{!inTauri() ? t.aiOnlyInApp : t.aiNeeds(humanNet?.complete ? null : t.mb(HUMAN_BYTES), !canAnalyze)}</p>
+      <p>{!inTauri() ? t.aiOnlyInApp : t.aiNeeds(humanNet?.complete ? null : t.mb(HUMAN_BYTES), !canAnalyze, isMobile ? t.mb(PHONE_NET_BYTES) : undefined)}</p>
       {inTauri() && <button className="btn" onClick={openSheet('nets')}>{t.openNetworks}</button>}
     </div>
   )
@@ -1266,7 +1277,8 @@ export function App() {
   return (
     <>
       {isMac && <div className="titlebar" data-tauri-drag-region />}
-      <main className="stage" inert={sheet !== null}>
+      {/* phones: the tab bar (in the card) stays live over the sheets, so only the board and the card's body go inert */}
+      <main className="stage" inert={sheet !== null && !isMobile}>
         <Goban
           view={view}
           mode={renderer}
@@ -1288,6 +1300,7 @@ export function App() {
             ...(cands && { marks: cands.flatMap(c => c.v ? [{ v: c.v, label: c.label, tone: tone(c.loss) }] : []) }),
           }}
           onPlay={play}
+          inert={isMobile && sheet !== null}
         >
           <p className="note" aria-live="polite" tabIndex={-1}>
             {message && <span key={message} title={tuned ? `${message} · ${tuned}` : message} className={message === cardLine ? 'res' : undefined}>
@@ -1304,26 +1317,31 @@ export function App() {
             </span>}
           </p>
         </Goban>
-        <aside className={`card${settings.panelHidden ? ' off' : ''}`}>
+        <aside className={`card${panelHidden ? ' off' : ''}`}>
           <header className="brand">
-            {!settings.panelHidden && <>
+            {!panelHidden && <>
               <span className="seal" aria-hidden="true">柾</span>
               <h1>Masame</h1>
-              {([['game', 'play', 'plus', null], ['learn', 'learn', 'book', 'D'], ['games', 'games', 'library', 'B'], ['settings', 'settings', 'adjustments', null]] as const).map(([s, d, icon, key]) => {
-                const hint = d === 'settings' ? alert : doorHints[d], name = key ? `${t.doors[d]} (${key})` : t.doors[d], label = hint ? `${name} · ${hint}` : name
-                return <button key={d} className="door" onClick={openSheet(s)} aria-label={label} title={label}><Icon name={icon} /><span aria-hidden="true">{t.doors[d]}</span>{hint && <i className="dot" />}</button>
-              })}
+              {/* display: contents on the desktop; the tab bar on phones, where the open sheet's door is the current tab */}
+              <nav className="doors">
+                {([['game', 'play', 'plus', null], ['learn', 'learn', 'book', 'D'], ['games', 'games', 'library', 'B'], ['settings', 'settings', 'adjustments', null]] as const).map(([s, d, icon, key]) => {
+                  const hint = d === 'settings' ? alert : doorHints[d], name = key && !isMobile ? `${t.doors[d]} (${key})` : t.doors[d], label = hint ? `${name} · ${hint}` : name
+                  const on = sheet === s || s === 'settings' && sheet === 'atelier'
+                  return <button key={d} className="door" onClick={on ? closeSheet : openSheet(s)} aria-label={label} title={label} aria-current={on || undefined}>
+                    <Icon name={icon} /><span aria-hidden="true">{t.doors[d]}</span>{hint && <i className="dot" />}</button>
+                })}
+              </nav>
             </>}
             {/* hidden card: only whose turn it is (breathing while the bot thinks), next to the toggle */}
-            {settings.panelHidden && playing && (
+            {panelHidden && playing && (
               <i className={`turn ${toPlay === 1 ? 'b' : 'w'}${thinking ? ' thinking' : ''}`} role="img" aria-label={t.color(toPlay)} />
             )}
-            <button className="icon panel-toggle" onClick={togglePanel} aria-expanded={!settings.panelHidden} aria-controls="card"
-              aria-label={settings.panelHidden ? t.showPanel : t.hidePanel} title={`${settings.panelHidden ? t.showPanel : t.hidePanel} (H)`}>
-              <Icon name={settings.panelHidden ? 'eye' : 'eye-off'} />
-            </button>
+            {!isMobile && <button className="icon panel-toggle" onClick={togglePanel} aria-expanded={!panelHidden} aria-controls="card"
+              aria-label={panelHidden ? t.showPanel : t.hidePanel} title={`${panelHidden ? t.showPanel : t.hidePanel} (H)`}>
+              <Icon name={panelHidden ? 'eye' : 'eye-off'} />
+            </button>}
           </header>
-          <div className="card-in" id="card" hidden={settings.panelHidden}>
+          <div className="card-in" id="card" hidden={panelHidden} inert={isMobile && sheet !== null}>
             <div className="meta">
               {/* wraps only between its parts, never inside one */}
               <span>{(online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : trInfo ? t.board(trInfo.size, trInfo.komi) : t.board(size, komi)).split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
@@ -1331,9 +1349,12 @@ export function App() {
               <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
                 <Icon name={sound ? 'volume' : 'volume-off'} />
               </button>
-              <button className="icon sm" aria-pressed={renderer === '3d'} onClick={() => { setSession2d(false); set('renderer', renderer === '3d' ? '2d' : '3d') }}
-                aria-label={t.renderToggle} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
-              <button className="icon sm" onClick={openSheet('atelier')} aria-label={t.atelier} title={t.atelier}><Icon name="view" /></button>
+              {/* phones: no 3D nor its Atelier yet (v1.1); a toggle for the candidate moves stands in for holding A */}
+              {isMobile ? <button className="icon sm cands" aria-pressed={held} onClick={() => setHeld(v => !v)} aria-label={t.candidates} title={t.candidates}><Icon name="target" /></button> : <>
+                <button className="icon sm" aria-pressed={renderer === '3d'} onClick={() => { setSession2d(false); set('renderer', renderer === '3d' ? '2d' : '3d') }}
+                  aria-label={t.renderToggle} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
+                <button className="icon sm" onClick={openSheet('atelier')} aria-label={t.atelier} title={t.atelier}><Icon name="view" /></button>
+              </>}
             </div>
             <div className="body">
               {tr.body ?? <>{cands ? ( // while A is held, the candidates in place of the players (or the review)
@@ -1427,7 +1448,7 @@ export function App() {
             <div className="lab"><span>{t.newGame}</span><span /></div>
             <div className="opts">
               <Seg label={t.size} value={nextSize} options={SIZES.map(n => [n, `${n}×${n}`])} set={resize} />
-              <Seg label={t.opponent} value={settings.opponent} options={[['human', t.twoPlayers], ['ai', t.ai], ['ogs', 'OGS']]} set={v => set('opponent', v)} />
+              <Seg label={t.opponent} value={settings.opponent} options={[['human', t.twoPlayers], ['ai', t.ai], ...isMobile ? [] : [['ogs', 'OGS'] as ['ogs', string]]]} set={v => set('opponent', v)} />
               {settings.opponent === 'ogs' ? (
                 <OgsSection speed={settings.ogsSpeed} setSpeed={v => set('ogsSpeed', v)}
                   // correspondence: the search is listed in the sheet, and its start told by a notice
@@ -1493,7 +1514,7 @@ export function App() {
               disabled={ongoing} title={ongoing ? t.ogsUnavailable : undefined} />
           </section>
 
-          <section id="atelier">
+          {!isMobile && <section id="atelier">
             <div className="lab"><span>{t.atelier}</span><span /></div>
             <div className="opts">
               <Seg label={t.rendering} value={renderer} options={[['3d', t.render3d], ['2d', t.render2d]]} set={v => { setSession2d(false); set('renderer', v) }} />
@@ -1514,11 +1535,11 @@ export function App() {
                 <Switch label={t.highContrast} on={settings.highContrast} toggle={() => set('highContrast', !settings.highContrast)} />
               </>}
             </div>
-          </section>
+          </section>}
 
           <section>
             <div className="lab"><span>{t.appSection}</span><span /></div>
-            {!isMac && inTauri() && <Switch label={t.fullscreen} k="F11" on={fullscreen} toggle={() => setFullscreen(!fullscreen)} />}
+            {!isMac && !isMobile && inTauri() && <Switch label={t.fullscreen} k="F11" on={fullscreen} toggle={() => setFullscreen(!fullscreen)} />}
             <div className="row" style={{ cursor: 'default', gap: 16 }}>
               <span>{t.language}</span>
               <Seg label={t.language} value={settings.lang} options={[['fr', 'Français'], ['en', 'English']]} set={v => { setLang(v); setSettings(s => ({ ...s, lang: v, langChosen: true })) }} />
@@ -1527,12 +1548,14 @@ export function App() {
               <span>{t.engine}</span>
               <button className="link" data-nets onClick={() => { netsFromSettings.current = true; setSheet('nets') }}>{t.networksBtn}</button>
             </div>
-            <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}</p>
+            <p className={`engine${engine.state === 'error' ? ' err' : ''}`}>{engineLine}
+              {engine.state === 'error' && engine.error.code === 'engine_crashed_at_start'
+                && <> · <button className="link" onClick={() => call('engine_start').catch(() => {})}>{t.retry}</button></>}</p>
             {inTauri() && <p className="engine" aria-live="polite">
               <button className="link" onClick={copyDiagnostics}>{t.copyDiagnostics}</button>
               {diag && <> · {diag(t)}</>}
             </p>}
-            {inTauri() && <>
+            {inTauri() && !isMobile && <>
               <div className="row" style={{ cursor: 'default' }}><span>{t.updates}</span></div>
               <p className={`engine${upd.s === 'error' ? ' err' : ''}`} aria-live="polite">
                 {updLine}{updActions.map(([label, act]) => <span key={label}> · <button className="link" onClick={act}>{label}</button></span>)}
@@ -1549,10 +1572,10 @@ export function App() {
             </p>}
           </section>
 
-          <section>
+          {!isMobile && <section>
             <div className="lab"><span>{t.keyboard}</span><span /></div>
             <p className="keys"><kbd>←</kbd><kbd>→</kbd> {t.footer.browse} · <kbd>↑</kbd><kbd>↓</kbd> {t.footer.variations} · <kbd>{t.space}</kbd> {t.footer.autoplay} · <kbd>P</kbd> {t.footer.pass} · <kbd>T</kbd> {t.footer.territory} · <kbd>{shortcut('Z')}</kbd> {t.footer.undo} · <kbd>{shortcut('N')}</kbd> {t.footer.newGame} · <kbd>{shortcut('O')}</kbd> {t.footer.open} · <kbd>{shortcut('S')}</kbd> {t.footer.save} · <kbd>H</kbd> <kbd>{shortcut('\\')}</kbd> {t.footer.panel} · <kbd>J</kbd> {t.footer.joseki} · <kbd>E</kbd> {t.footer.exercises} · <kbd>D</kbd> {t.footer.today} · <kbd>B</kbd> {t.footer.games} · <kbd>A</kbd> {t.footer.candidates} · <kbd>C</kbd> {t.footer.coords} · <kbd>M</kbd> {t.footer.sound}{renderer === '3d' && <> · <kbd>V</kbd> {t.footer.view} · <kbd>L</kbd> {t.footer.light} · <kbd>R</kbd> {t.footer.recentre}</>}{!isMac && <> · <kbd>F11</kbd> {t.footer.fullscreen}</>}</p>
-          </section>
+          </section>}
         </Sheet>
       )}
 

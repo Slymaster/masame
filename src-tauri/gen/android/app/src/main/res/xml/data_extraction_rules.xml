@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: same exclusions as backup_rules.xml, for the cloud backup and a device-to-device transfer. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="models/" />
+        <exclude domain="root" path="ogs.json" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="models/" />
+        <exclude domain="root" path="ogs.json" />
+    </device-transfer>
+</data-extraction-rules>

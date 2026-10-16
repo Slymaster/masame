@@ -1,7 +1,7 @@
 node_modules/
 dist/
 src-tauri/target/
-src-tauri/gen/
+src-tauri/gen/schemas/
 .DS_Store
 *.log
 .playwright-mcp/
@@ -20,3 +20,10 @@ src-tauri/resources/licenses/LICENSE
 src-tauri/resources/licenses/THIRD_PARTY_NOTICES.md
 scripts/joseki/.cache/
 *.tsbuildinfo
+# Signing material never enters the repository (docs/mobile-release.md)
+*.jks
+*.keystore
+*.p12
+*.p8
+*.mobileprovision
+keystore.properties

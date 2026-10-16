@@ -1,0 +1,171 @@
+# Android build (arm64 App Bundle). Pushes and pull requests touching the Android build get an unsigned AAB and nothing
+# else. On an android-vX.Y.Z tag push the same unsigned AAB goes to a second job, the only one holding secrets (the
+# `play` environment, restricted to android-v* tags): it signs the bundle with the upload key and sends it to Google
+# Play's internal testing track. That job runs no project code, so neither the keystore nor the Play service account
+# is ever visible to the build's npm, cargo or Gradle code.
+# Actions are pinned to commit SHAs (tag in the comment), as in build.yml. docs/mobile-release.md has the owner's setup.
+name: Android
+
+on:
+  push:
+    branches: ['**']
+    tags: ['android-v*'] # path filters are not evaluated for tag pushes
+    paths: &android-paths
+      - .github/workflows/android.yml
+      - src-tauri/gen/android/**
+      - src-tauri/tauri.conf.json
+      - src-tauri/tauri.android.conf.json
+      - src-tauri/build.rs
+      - src-tauri/Cargo.toml
+      - src-tauri/Cargo.lock
+      - src-tauri/src/**
+      - scripts/build-katago-android.sh
+  pull_request:
+    paths: *android-paths
+  workflow_dispatch: # runs only once this file is on the default branch; on a tag ref it is a release
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  NDK_VERSION: 27.2.12479018 # = scripts/build-katago-android.sh
+  RELEASE: ${{ startsWith(github.ref, 'refs/tags/android-v') }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The image has the Android SDK (ANDROID_HOME) and JDK 17; its default NDK may be another version.
+      - name: Set up Java 17 and the NDK
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+          ndk="$ANDROID_HOME/ndk/$NDK_VERSION"
+          echo "ANDROID_NDK=$ndk" >> "$GITHUB_ENV" # build-katago-android.sh
+          echo "NDK_HOME=$ndk" >> "$GITHUB_ENV"    # Tauri
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch
+        with:
+          toolchain: stable
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          key: android
+
+      - name: Cache the KataGo build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: vendor
+          key: katago-android-${{ hashFiles('scripts/build-katago-android.sh') }}
+      - name: Build KataGo for Android (Eigen)
+        run: scripts/build-katago-android.sh
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check the tag matches the app version
+        if: env.RELEASE == 'true'
+        run: |
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          if [ "${GITHUB_REF_NAME#android-v}" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match tauri.conf.json version $version"
+            exit 1
+          fi
+
+      # Play refuses a versionCode it has already seen: the run number only grows (dry runs use some, harmlessly).
+      - name: Build the App Bundle (unsigned)
+        run: |
+          pnpm tauri android build --ci --target aarch64 --aab \
+            --config "{\"bundle\":{\"android\":{\"versionCode\":$GITHUB_RUN_NUMBER}}}"
+
+      - name: Check the App Bundle
+        run: |
+          aabs=(src-tauri/gen/android/app/build/outputs/bundle/*Release/*.aab)
+          [ ${#aabs[@]} -eq 1 ] && [ -f "${aabs[0]}" ] || { echo "::error::expected one release AAB, found: ${aabs[*]}"; exit 1; }
+          files=$(unzip -Z1 "${aabs[0]}")
+          for lib in base/lib/arm64-v8a/libkatago.so base/lib/arm64-v8a/libbaduk_lib.so; do
+            grep -qxF "$lib" <<< "$files" || { echo "::error::$lib is missing from the AAB"; exit 1; }
+          done
+          if grep -E '^base/lib/' <<< "$files" | grep -v '^base/lib/arm64-v8a/'; then
+            echo "::error::the AAB has native libraries for other ABIs"; exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/aab" && cp "${aabs[0]}" "$RUNNER_TEMP/aab/masame.aab"
+
+      - name: Keep the unsigned App Bundle for signing (tags only)
+        if: env.RELEASE == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: masame-android-unsigned
+          path: ${{ runner.temp }}/aab/masame.aab
+          if-no-files-found: error
+          retention-days: 1
+
+  # Separate job so the signing key and the Play credentials never meet the build's code.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/android-v')
+    runs-on: ubuntu-24.04
+    environment: play
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: masame-android-unsigned
+          path: aab
+
+      # Play accepts an App Bundle signed with jarsigner (what Gradle does too). The keystore exists only during this
+      # step; a PKCS12 keystore (keytool's default) has one password for the store and the key.
+      - name: Sign the App Bundle with the upload key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS; do
+            [ -n "${!name}" ] || { echo "::error::secret $name is missing from the play environment"; exit 1; }
+          done
+          export JAVA_HOME="$JAVA_HOME_17_X64" && export PATH="$JAVA_HOME/bin:$PATH"
+          keystore="$RUNNER_TEMP/upload.p12"
+          trap 'rm -f "$keystore"' EXIT
+          (umask 077 && base64 -d <<< "$ANDROID_KEYSTORE_BASE64" > "$keystore")
+          unset ANDROID_KEYSTORE_BASE64
+          jarsigner -keystore "$keystore" -storepass:env ANDROID_KEYSTORE_PASSWORD \
+            -sigalg SHA256withRSA -digestalg SHA-256 aab/masame.aab "$ANDROID_KEY_ALIAS"
+          # An upload key is self-signed, so no -strict; every entry must be signed.
+          verify=$(jarsigner -verify aab/masame.aab)
+          if ! grep -qx 'jar verified.' <<< "$verify" || grep -q 'unsigned entries' <<< "$verify"; then
+            echo "::error::the signed App Bundle does not verify: $verify"; exit 1
+          fi
+          # Public: compare with the upload certificate in Play Console > Test and release > App integrity.
+          keytool -list -keystore "$keystore" -storepass:env ANDROID_KEYSTORE_PASSWORD -alias "$ANDROID_KEY_ALIAS" \
+            | grep -i 'SHA-256'
+
+      # Also kept as an artifact: Play only creates an app from a bundle uploaded by hand (see docs/mobile-release.md).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: masame-android
+          path: aab/masame.aab
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload to Google Play (internal testing)
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.sylvainrey.masame
+          releaseFiles: aab/masame.aab
+          track: internal
+          status: completed

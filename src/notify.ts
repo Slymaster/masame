@@ -1,6 +1,7 @@
 // System notifications for OGS events, each told once (across launches) and only while the window is in the background.
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import { inTauri } from './katago'
+import { isMobile } from './platform'
 
 const SEEN = 'masame.ogs.seen'
 let allowed: Promise<boolean> | null = null // asked once per run
@@ -15,7 +16,7 @@ function firstTime(key: string) {
 }
 
 export async function notify(key: string, title: string, body?: string) {
-  if (!firstTime(key) || !inTauri() || document.hasFocus()) return
+  if (isMobile || !firstTime(key) || !inTauri() || document.hasFocus()) return // the plugin is desktop-only
   allowed ??= isPermissionGranted().then(ok => ok || requestPermission().then(p => p === 'granted')).catch(() => false)
   if (await allowed) sendNotification(body ? { title, body } : { title })
 }

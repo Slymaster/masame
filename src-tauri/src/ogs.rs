@@ -157,7 +157,11 @@ trait Store: Send + Sync {
 struct Keychain;
 
 impl Keychain {
-    fn entry() -> Result<keyring::Entry, String> { keyring::Entry::new(SERVICE, ACCOUNT).map_err(Self::code) }
+    fn entry() -> Result<keyring::Entry, String> {
+        // keyring has no Android store, only an in-memory mock that would accept a token and lose it.
+        if cfg!(target_os = "android") { return Err("keychain_unavailable".into()) }
+        keyring::Entry::new(SERVICE, ACCOUNT).map_err(Self::code)
+    }
     // The variant only: BadEncoding carries the stored bytes.
     fn code(e: keyring::Error) -> String {
         match e { keyring::Error::NoStorageAccess(_) => "keychain_denied", keyring::Error::PlatformFailure(_) => "keychain_unavailable", _ => "keychain_failed" }.into()
@@ -313,11 +317,13 @@ async fn rating_history(c: &reqwest::Client, base: &str, player_id: u64) -> Res<
 /// Signs in through the default browser; a new call or ogs_login_cancel rejects a pending one with ogs_cancelled.
 #[tauri::command]
 pub async fn ogs_login(app: AppHandle, s: State<'_, crate::App>) -> Res<()> {
+    // Mobile v1 has no OGS sign-in: refused before any loopback listener or browser opens. Guest watching needs none.
+    if cfg!(mobile) { return Err(Failure::new("ogs_unavailable")) }
     let (tx, rx) = oneshot::channel::<()>();
     drop(s.ogs.cancel.lock().unwrap().replace(tx));
     let v = Vault::new(&crate::data_dir(&app)?);
     tokio::select! {
-        r = async { let _port = s.ogs.running.lock().await; login(&s.http, BASE, &v, &s.ogs.tokens, crate::open_url).await } => r,
+        r = async { let _port = s.ogs.running.lock().await; login(&s.http, BASE, &v, &s.ogs.tokens, |url| crate::open_url(&app, url)).await } => r,
         _ = rx => Err(Failure::new("ogs_cancelled")),
     }
 }
@@ -701,7 +707,8 @@ mod tests {
         // A fake keychain: this never touches the real Masame entry.
         let vault = Vault { keychain: Box::new(Fake::default()), file: TokenFile(PathBuf::from(std::env::var("OGS_DIR").expect("OGS_DIR"))) };
         let (c, cache) = (crate::networks::client(), Mutex::new(None));
-        login(&c, BASE, &vault, &cache, crate::open_url).await.unwrap();
+        let app = tauri::test::mock_app();
+        login(&c, BASE, &vault, &cache, |url| crate::open_url(app.handle(), url)).await.unwrap();
         let a = token(&c, BASE, &vault, &cache).await.unwrap();
         let v: serde_json::Value = c.get(format!("{BASE}/api/v1/ui/config")).bearer_auth(a).send().await.unwrap().json().await.unwrap();
         println!("user: {} · jwt: {}", v["user"]["username"], v["user_jwt"].as_str().is_some_and(|j| !j.is_empty()));

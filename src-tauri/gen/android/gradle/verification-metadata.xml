@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<verification-metadata xmlns="https://schema.gradle.org/dependency-verification" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://schema.gradle.org/dependency-verification https://schema.gradle.org/dependency-verification/dependency-verification-1.3.xsd">
+   <configuration>
+      <verify-metadata>true</verify-metadata>
+      <verify-signatures>false</verify-signatures>
+      <trusted-artifacts>
+         <!-- Only org.rustls is pinned: it comes from a mutable git branch and decides certificate trust for every Rust HTTPS call.
+              Everything else comes from Google Maven and Maven Central, whose releases are immutable. -->
+         <trust group="^(?!org[.]rustls$).*$" regex="true" reason="immutable release repositories"/>
+      </trusted-artifacts>
+   </configuration>
+   <components>
+      <!-- A new version (from Cargo.lock) fails the build until its hashes are added here, checked against upstream's .sha1 files. -->
+      <component group="org.rustls" name="rustls-platform-verifier" version="0.2.0">
+         <artifact name="rustls-platform-verifier-0.2.0.aar">
+            <sha256 value="aa021794230fbc2f0be355999e2cf67398dd563de066a2e17001ffbd0b69101b" origin="upstream .sha1 28b6b316c2749a7c94b4d19061f12c64759a0e27, maven-archive commit 69c6eb5"/>
+         </artifact>
+         <artifact name="rustls-platform-verifier-0.2.0.pom">
+            <sha256 value="78dcb69a1a20e91e72017de9a67104bba1874a7ecc8e6dcdfb2fe1a85de6b362" origin="upstream .sha1 dddf73207ac799537f9a47153ef0b953141dd140, maven-archive commit 69c6eb5"/>
+         </artifact>
+      </component>
+   </components>
+</verification-metadata>

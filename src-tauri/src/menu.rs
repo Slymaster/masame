@@ -9,6 +9,7 @@ use std::sync::Mutex;
 
 /// Our items: each emits a "menu" event with its id, which the frontend runs like the matching keyboard shortcut.
 /// Fixed for the whole v0.5: a new activity only adds its frontend command (src/menu.ts lists the same ids).
+#[cfg_attr(mobile, allow(dead_code))] // no menu bar on phones
 pub const ACTIONS: [&str; 22] = [
     "new", "position", "open", "save", "postcard", "kifu", "undo", "pass", "resign", "territory", "review", "memory",
     "today", "exercises", "tsumego", "count", "joseki", "fuseki", "classics", "games", "camera", "panel",
@@ -18,6 +19,7 @@ pub const ACTIONS: [&str; 22] = [
 static ENABLED: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
 
 /// An item is enabled only once the frontend said so (an id it doesn't know stays greyed).
+#[cfg_attr(mobile, allow(dead_code))]
 pub fn enabled(id: &str) -> bool {
     ENABLED.lock().unwrap().as_ref().and_then(|m| m.get(id).copied()).unwrap_or(false)
 }
