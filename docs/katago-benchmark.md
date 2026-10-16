@@ -187,3 +187,146 @@ Correctif proposé (petit, local à `apply`, à proposer en amont) :
 4. Optionnel : préchauffer chaque seau au chargement (un `apply` factice par taille), pour payer les compilations au démarrage pendant « Préparation du moteur… » plutôt que pendant l'analyse. On peut aussi compiler explicitement avec `MPSGraph.compile(with:feeds:targetTensors:targetOperations:compilationDescriptor:)` (macOS 12+) et garder les `MPSGraphExecutable`.
 
 Gain attendu : 4 compilations au plus au lieu de 8 (1 avec `maxBatchSize` fixe), et une chauffe prévisible. Non mesuré. Le patch n'a pas été appliqué aux sources vendorisées : il touche au chemin de sortie (taille des tampons) et demande une validation numérique (`katago runtests` / `testgpuerror`) qui sort du cadre de cette tâche.
+
+## 7. Android (arm64-v8a, backend Eigen)
+
+Script : `scripts/build-katago-android.sh`. Sur Android, KataGo reste un processus séparé, comme sur ordinateur : un exécutable PIE nommé `libkatago.so`, livré dans `jniLibs/arm64-v8a` de l'APK pour qu'Android l'extraie dans `nativeLibraryDir` (packaging « legacy »), seul dossier de l'app d'où l'on peut lancer un exécutable.
+
+- Même KataGo que les autres scripts (`v1.18.2`, commit vérifié), Eigen `3.4.0` (même sha256 que `build-katago-macos-x86_64.sh`), NDK `27.2.12479018` via son fichier de toolchain CMake, `ANDROID_PLATFORM=android-24` (minSdk de Tauri 2), `ANDROID_STL=c++_static`, `-DLIBZIP_LIBRARY=OFF`, zlib du sysroot du NDK, `-DEIGEN_MPL2_ONLY`. Pas d'AVX (x86 seulement) : Eigen utilise NEON sur aarch64.
+- Seul ajustement : `-include endian.h`, car `core/sha2.cpp` a besoin de `BYTE_ORDER`, que `<sys/types.h>` de bionic n'inclut pas (contrairement à glibc). Les sources vendorisées ne sont pas modifiées.
+- `MASAME_VENDOR` (par défaut `vendor/`) désigne l'arbre vendor ; sortie : `$MASAME_VENDOR/katago-android/arm64-v8a/libkatago.so`, passé à `llvm-strip --strip-all`.
+- Contrôles qui font échouer le script : AArch64, `FLAGS_1 PIE`, interpréteur `/system/bin/linker64`, et `NEEDED` limité à `libc`, `libm`, `libdl`, `liblog`, `libz`.
+
+Résultat (15 octobre 2026) : **7,1 Mo** (7 484 424 octets), `ELF64 DYN`, `FLAGS_1: NOW PIE`, `NEEDED: libz.so libm.so libdl.so libc.so`.
+
+### Mesures en émulateur (15 octobre 2026)
+
+**L'émulateur n'est pas un téléphone** : ses 4 vCPU sont des cœurs de M2 Max virtualisés (Hypervisor.Framework), sans throttling thermique ni cœurs big.LITTLE. Surtout, le Mac était saturé pendant les mesures (load average 50 à 300 sur 12 cœurs, d'autres sessions compilaient) : qemu n'obtenait que 0,8 à 2,4 cœurs. Les chiffres absolus sont donc pessimistes, et seuls les ordres de grandeur comptent.
+
+AVD `masame_engine` : `system-images;android-35;google_apis;arm64-v8a` (Android 15), 4 vCPU, 4 Go de RAM, 8 Go de données, lancé avec `-no-window -no-audio -no-boot-anim`. Fichiers poussés dans `/data/local/tmp` : `libkatago.so`, `analysis.cfg`, le réseau léger b10c384 et le réseau humain b18c384nbt.
+
+- `libkatago.so version` → `Using Eigen(CPU) backend`, révision `fd0723fd…` : le binaire se charge et tourne sous bionic (API 35, alors qu'il est compilé pour l'API 24).
+- `katago benchmark` (réseau léger, `numSearchThreads` 1 puis 4) : **0,6 v/s** avec 1 thread (sous load ≈ 380), **1,8 v/s** avec 4 threads (2 positions × 40 visites, load ≈ 70–150, `avgBatchSize` 1,0). Pour comparer, le même code Eigen compilé nativement sur le M2 Max (même réseau, 4 threads, load ≈ 60) : **4,9 v/s**. Avec Eigen, le réseau transformer b10c384 coûte donc environ 1 s de CPU par évaluation. Le réseau humain n'a pas été passé au benchmark.
+- Moteur `analysis` (`-model` léger, `-human-model b18c384nbt-humanv0`, `-override-config numAnalysisThreads=1,numSearchThreadsPerAnalysisThread=4,nnMaxBatchSize=4,nnCacheSizePowerOfTwo=16,nnMutexPoolSizePowerOfTwo=14`), position 19×19 de milieu de partie (52 à 60 coups), `humanSLProfile` `rank_5k`, trois sessions :
+
+  | Mesure | Valeurs |
+  |---|---|
+  | Lancement → `Started, ready to begin handling requests` (2 réseaux) | 6,4 à 15,2 s |
+  | `maxVisits` 60 + `includeOwnership` (63 visites racine) | 28,6 à 46,0 s, soit **1,4 à 2,2 v/s** |
+  | `maxVisits` 1 + `includePolicy`, position jamais vue | **3,6 à 5,7 s** (une évaluation de chaque réseau). `humanPolicy` 362 valeurs (somme 1,000), `policy` 362 valeurs |
+  | Même requête, position déjà dans le cache NN | 0,02 s |
+  | Mémoire résidente maximale (`VmHWM`) | **≈ 665 Mo** (15 threads) |
+  | Fermeture de stdin | sortie propre, code 0, en 0,1 à 0,3 s |
+
+  Les réponses sont cohérentes : `ownership` à 361 valeurs, `humanPrior` présent dans `moveInfos`, même meilleur coup (R16) à chaque session.
+
+Conclusion provisoire : avec Eigen, même en divisant ces chiffres par trois pour la saturation, 60 visites prendront de l'ordre de 10 à 30 s sur un téléphone. C'est trop pour un coup de l'adversaire. Il faudrait plutôt jouer à 1 visite ou quelques visites avec la policy humaine, garder les 60 visites pour l'analyse et la revue, et mesurer sur un vrai téléphone avant de fixer `maxVisits`. Un réseau convolutif plus petit que b10c384 serait sans doute bien plus rapide sur CPU, mais ce serait un téléchargement à décider.
+
+Réglages Eigen suggérés pour un téléphone (ceux de la session `analysis` ci-dessus ; à confirmer sur un appareil réel) :
+- `numAnalysisThreads = 1` : l'app n'analyse qu'une position à la fois.
+- `numSearchThreadsPerAnalysisThread = 4` : environ le nombre de cœurs « performance » ; au-delà, les cœurs efficaces ralentissent les batchs et chauffent le téléphone.
+- `numEigenThreadsPerModel` : laisser la valeur par défaut, min(threads de recherche, cœurs).
+- `nnMaxBatchSize = 4` (= threads de recherche) ; `nnCacheSizePowerOfTwo = 16` (65 536 entrées au lieu de 2^20 sur ordinateur : le cache ne se remplit qu'au rythme des évaluations, quelques milliers par minute sur CPU, et chaque entrée garde policy et ownership, donc quelques Ko) ; `nnMutexPoolSizePowerOfTwo = 14`.
+- Réseau par défaut : **b10c128**, et non plus le léger b10c384 (voir ci-dessous).
+
+### Quel réseau d'analyse sur Android (15 octobre 2026)
+
+Candidats, CNN officiels kata1 (téléchargés avec accord, sha256 vérifiés) : `kata1-b10c128-s1141046784-d204142634.txt.gz` (14 Mo), `kata1-b15c192-s1672170752-d466197061.txt.gz` (48 Mo), `kata1-b18c384nbt-s9996604416-d4316597426.bin.gz` (98 Mo). On les compare au léger (transformer b10c384, 38 Mo) et au réseau humain (b18c384nbt-humanv0). Les `.txt.gz` se chargent sans problème : même chemin que les `.bin.gz`, mêmes réponses.
+
+Le Mac était partagé : load average entre 15 et 320 selon les moments, indiqué ci-dessous. Chaque mesure a été faite 3 fois ou plus, et l'on donne la médiane. Proxy principal : KataGo Eigen compilé nativement sur le M2 Max (même révision, mêmes réglages que l'app : 4 threads de recherche, `nnMaxBatchSize` 4, cache 2^16). Les réseaux sont passés à tour de rôle, pour que la charge les touche tous de la même façon. Le coût CPU par évaluation (`user+sys` / évaluations, chargement compris) varie peu avec la charge ; les v/s, eux, en dépendent beaucoup.
+
+**1. `katago benchmark`, 4 threads, 3 positions**
+
+| Réseau | ms CPU / éval (Mac) | v/s Mac (médiane, load 35–320) | v/s émulateur arm64 (médiane, load 14–120) |
+|---|---|---|---|
+| b10c128 (CNN) | **42** | **96** | **67** |
+| b15c192 (CNN) | 126 | 18 (32–35 au calme) | 21 |
+| b18c384nbt (CNN) | 658 | 4,5 | non mesuré |
+| léger b10c384 (transformer) | 500 | 6,0 | 2,9 |
+| humain b18c384nbt (CNN, `rank_5k`) | 669 | 4,2 | non mesuré |
+
+Le classement tient sur ARM, et le transformer y perd encore plus : en émulateur, b10c128 va 23 fois plus vite que le léger (16 fois sur Mac), et b15c192 7 fois plus vite (3 à 5 fois sur Mac). `avgBatchSize` reste à 1,0 : Eigen évalue chaque thread séparément.
+
+**2. Charge de l'app** : surcharges de l'app (`numSearchThreadsPerAnalysisThread=4`, `nnMaxBatchSize=4`, `nnCacheSizePowerOfTwo=16`, `nnMutexPoolSizePowerOfTwo=14`, `maxTime=3`), `-human-model b18c384nbt-humanv0` chargé. Coup du bot : `maxVisits` 60, `includePolicy`, `includeOwnership`, `humanSLProfile` `rank_5k`, plafonné par `maxTime=3`. Scan : `maxVisits` 100, `maxTime` 0,6 (revue d'une partie de 200 coups). Positions 19×19 jamais vues, médianes de 6 requêtes sur 2 sessions.
+
+| Réseau principal | Prêt | Coup du bot : durée, visites | Scan : durée, visites | Mémoire max |
+|---|---|---|---|---|
+| **Mac, load 25–70** | | | | RSS |
+| b10c128 | 2,2 s | 1,25 s, **63** | 0,62 s, **62** | 1,09 Go |
+| b15c192 | 3,7 s | 2,4 s, 63 | 0,70 s, 21 | 1,31 Go |
+| b18c384nbt | 3,8 s | 3,4 s, 17 | 0,98 s, 5 | 1,62 Go |
+| léger b10c384 | 2,3 s | 3,1 s, 19 | 0,82 s, 5 | 1,17 Go |
+| **Émulateur arm64, load 19–69** | | | | `VmHWM` |
+| b10c128 | 3,4 s | 3,0 s, **61** | 0,63 s, **56** | **643 Mo** |
+| b15c192 | 5,7 s | 3,2 s, 26 | 0,72 s, 13 | 791 Mo |
+| léger b10c384 | 3,5 s | 3,9 s, 5 | **2,6 s**, 5 | 697 Mo |
+
+Avec 4 threads, une recherche fait au moins 5 visites (la racine plus une par thread) avant de regarder l'horloge. Un réseau lent dépasse donc `maxTime`. Avec le léger en émulateur, un scan de 0,6 s en dure 2,6 : la revue d'une partie de 200 coups est 4 fois plus longue que prévu, pour 5 visites par position. Toutes les sessions se terminent proprement (code 0) à la fermeture de stdin.
+
+**Recommandation : b10c128 comme réseau d'analyse par défaut sur Android**, à la place du léger.
+- C'est le seul candidat qui tient les budgets de l'app sur ARM : environ 60 visites en 3 s pour le coup du bot (dont l'évaluation du réseau humain), et environ 55 visites par scan de 0,6 s, là où le léger n'en fait que 5 en 2,6 s. C'est aussi le plus petit en mémoire et en APK (14 Mo).
+- Pour des parties de 15k à 5k, les erreurs à repérer valent plusieurs points. 50 visites de b10c128, déjà nettement plus fort qu'un 5k, les trouvent de façon plus fiable que 5 visites d'un réseau plus fort par visite.
+- b15c192 est le candidat « plus fort » : environ 3 fois plus lent, 13 visites par scan en émulateur. Sur un vrai téléphone (cœurs plus lents, throttling sur une revue de plusieurs minutes), il risque de tomber au plancher de 5 visites et de dépasser lui aussi `maxTime`. On ne l'envisagera qu'après mesure sur un appareil réel.
+- b18c384nbt et le léger sont trop lents pour un CPU de téléphone.
+
+Réglages suggérés avec b10c128 : garder `maxTime=3` comme plafond par défaut, même si le coup du bot tombe déjà vers 60 visites en 2,5 à 3 s en émulateur. Garder le scan à `max(0,25, 120/positions)` et le mode approfondi à 400 visites / 2,5 s (environ 200 visites). Sur un téléphone lent, `numSearchThreadsPerAnalysisThread=2` abaisserait le plancher à 3 visites, ce qui aide surtout un réseau lent. À vérifier sur un appareil réel avant de changer le défaut.
+
+## 8. iPhone (KataGo dans l'app)
+
+*Mesuré le 15 octobre 2026 sur l'iPhone 16 Pro de développement (A18 Pro, iOS 27.0), avec une app de test jetable hors du repo. Le téléphone a atteint l'état thermique « serious » pendant l'endurance ; les mesures de vitesse ont été refaites ensuite, téléphone chaud, donc plutôt pessimistes.*
+
+iOS interdit de lancer un processus : KataGo tourne dans l'app. `scripts/build-katago-ios.sh iphoneos` (Metal) ou `iphonesimulator` (Eigen) produit `vendor/katago-ios/<sdk>/libkatago_ios.a` (24 Mo pour l'iPhone, 13 Mo pour le Simulateur, arm64, iOS 16.4), avec les mêmes versions épinglées que le build macOS, sans patch de KataGo. Le `main` de KataGo devient `katago_main`, appelé par `scripts/ios/katago_shim.cpp` :
+`katago_ios_run(argc, argv, in_fd, out_fd, err_fd)` branche `cin`/`cout`/`cerr` sur trois descripteurs, attrape les exceptions (« Uncaught exception: … » sur stderr, code 1) et permet de relancer KataGo dans le même processus. Fermer l'entrée arrête un `analysis` lancé avec `-quit-without-waiting`. L'app lie la bibliothèque avec `-lc++ -lz` et les frameworks Metal, MetalPerformanceShaders, MetalPerformanceShadersGraph et CoreML ; l'exécutable de test pèse 10 Mo.
+
+Réglages mobiles testés : `analysis.cfg` + `numSearchThreadsPerAnalysisThread=2,nnMaxBatchSize=4,nnCacheSizePowerOfTwo=16,nnMutexPoolSizePowerOfTwo=12`, réseau léger + `-human-model b18c384nbt-humanv0`, GPU (MPSGraph).
+
+| Critère (étape 0) | Seuil | Mesuré | |
+|---|---|---|---|
+| Léger + humain prêts | ≤ 45 s | **1,0 à 1,4 s** jusqu'au message « ready » ; 2,5 à 7,9 s jusqu'à la première réponse (compilation MPSGraph) | ✅ |
+| Coup `rank_5k` à 60 visites, à chaud | ≤ 3 s | **0,3 à 1,5 s** ; 1,2 à 1,3 s avec le cache vidé. Les deux premières requêtes paient la compilation MPSGraph de chaque taille de batch : 6,5 s puis 3,3 s au premier lancement après installation, 1,5 s ensuite (cache de shaders du système) | ✅ |
+| Requête de rang (`maxVisits 1`, policy humaine) | — | 0,03 à 0,05 s | |
+| Mémoire maximale (`phys_footprint`) | ≤ 1,5 Go | **590 à 680 Mo** | ✅ |
+| Endurance | aucun arrêt | **10 min, 3 472 requêtes, aucun arrêt**, requête la plus lente 3,5 s ; mémoire 340 → 480 Mo pendant que le cache se remplit | ✅ |
+| 10 relances, léger et équilibré en alternance | sans plantage | **10/10** : prêt en 0,9 à 1,3 s, arrêt en 0,03 s, mémoire rendue | ✅ |
+
+Vitesse par réseau, une requête à la fois, cache vidé entre les requêtes (visites/s sur 200 visites) :
+
+| Réseau | GPU (MPSGraph) | ANE (CoreML, `metalDeviceToUseThread0=100`) |
+|---|---|---|
+| b10c384 léger (transformer) | **55 à 85** ; prêt en 0,3 s | 45 ; prêt en 14 s, 1,1 Go |
+| b10c512 équilibré (transformer) | **24** ; prêt en 0,8 s | 18 ; prêt en 31 s, **1,9 Go** |
+| b18c384nbt humain (CNN) | 41 ; prêt en 0,7 s | **300** ; prêt en 6 s, 520 Mo |
+
+`katago benchmark` (100 visites, 4 positions, GPU) : léger 89 v/s à 2 threads et 62 v/s à 4 ; humain 46 v/s à 2 threads et 45 à 4. Plus de threads ne sert à rien sur ce GPU.
+
+Ce qu'on en retient :
+- **Go** pour le moteur dans l'app : tous les seuils sont tenus avec de la marge. Comme sur Mac, une requête de chauffe invisible juste après « ready » évite que le premier coup visible paie la compilation.
+- **Réseau par défaut sur iPhone : le léger (b10c384), sur GPU.** L'équilibré est 3 fois plus lent (2,4 s pour 60 visites à froid) : il reste possible pour la revue, mais pas par défaut. Le maximum reste caché.
+- Les transformers sont mauvais sur l'ANE (conversion CoreML à chaque lancement, jusqu'à 1,9 Go). Un CNN y est 7 fois plus rapide que sur le GPU. Un réseau kata1 convolutif récent (b18c384nbt, ≈ 100 Mo, non téléchargé) sur l'ANE pourrait donc dépasser 250 v/s ; à mesurer, téléchargement à valider. KataGo applique le même `metalDeviceToUse…` à ses deux réseaux d'un même `analysis`, donc « léger sur GPU + humain sur ANE » n'est pas réglable sans modifier KataGo.
+- Simulateur (Eigen, CPU) : 3 à 8 v/s, il ne sert qu'à valider l'adaptateur. Relances, exceptions puis relance, et arrêt par fermeture de l'entrée y fonctionnent aussi.
+- Non testé (il faut manipuler le téléphone) : le passage en arrière-plan. iOS tue l'app si elle soumet du travail GPU en arrière-plan : l'app devra suspendre KataGo (`terminate_all`, requêtes retenues) avant. Une erreur de KataGo qui passe par `Global::fatalError` (`quick_exit`) emporte toujours l'app : c'est le rôle du fichier sentinelle prévu à l'étape 2.
+
+### Réseau par défaut sur iPhone : CNN sur l'ANE ou léger sur GPU
+
+*Mesuré le 15 octobre 2026 sur le même iPhone 16 Pro, avec l'app de test. Le réseau humain est chargé comme dans l'app (`-human-model b18c384nbt-humanv0.bin.gz`), avec les réglages mobiles et `homeDataDir`. Chaque lancement attend d'abord l'état thermique « nominal ». Les requêtes chronométrées partent d'un cache vidé (`clear_cache`) et portent sur des positions différentes. On donne la médiane de 3 lancements, ou de 2 quand c'est indiqué.*
+
+Configurations : `kata1-b18c384nbt-s9996604416-d4316597426` (CNN, 98 Mo), sur l'ANE (`metalDeviceToUseThread0=100`, CoreML) ou sur le GPU (MPSGraph), et le léger `b10c384` (transformer, 38 Mo) sur le GPU, qui est le réglage actuel.
+
+| Médiane | CNN b18 sur l'ANE (3 lancements) | CNN b18 sur GPU (2) | Léger b10c384 sur GPU (2) |
+|---|---|---|---|
+| « ready », 1ᵉʳ lancement / 2ᵉ | 11,1 s / 11,0 s | 1,6 s / 1,2 s | 0,9 s / 0,8 s |
+| Chauffe de l'app (64 visites, humain `rank_10k`), 1ᵉʳ / 2ᵉ | 0,21 s / 0,20 s | 1,8 s / 1,4 s | 1,3 s / 1,5 s |
+| Coup du bot (60 visites, policy + ownership, `rank_5k`) | **0,18 s** | 1,22 s | 0,72 s |
+| Analyse de 200 visites avec ownership | **0,61 s, 330 v/s** | 3,3 s, 60 v/s | 2,3 s, 86 v/s |
+| Mémoire maximale | **490 Mo** | 750 Mo | 670 Mo |
+| Endurance de 5 min, coup du bot à la 1ʳᵉ puis à la 4ᵉ minute | 0,21 → 0,23 s (+10 %) | 1,3 → 3,6 s (×2,7) | 0,89 → 1,08 s (+21 %) |
+| Requêtes en 5 min (bot et 200 visites en alternance) | 625 | 63 | 143 |
+| État thermique pendant l'endurance | nominal à « serious » (atteint à la 2ᵉ minute pour 2 lancements sur 3) | « fair » ou « serious » dès la 1ʳᵉ minute | « serious » dès la 1ʳᵉ minute |
+
+Observations :
+- **Sur l'ANE, « ready » coûte environ 11 s à chaque lancement, et le 2ᵉ lancement n'est pas plus rapide.** KataGo convertit les deux réseaux en CoreML dans `tmp/`, les compile, puis supprime le modèle source ; rien n'est réutilisé d'un lancement à l'autre. En échange, la chauffe tombe à 0,2 s. Il faut donc environ 11,3 s avant le premier coup, contre environ 2,3 s pour le léger sur GPU.
+- **Le GPU chauffe et ralentit.** Le CNN sur GPU passe de 1,2 s à 3,6 s par coup en 3 minutes. Le léger tient (+21 %), mais il est déjà « serious » à la 1ʳᵉ minute. Sur l'ANE, le coup du bot reste vers 0,2 s, avec 4 fois plus de requêtes servies. L'état thermique, faute de mesure de batterie, sert ici d'indicateur de consommation.
+- **Un seul réglage d'appareil pour les deux réseaux.** Dans `analysis`, KataGo 1.18.2 crée le réseau principal et le réseau humain avec l'indice de modèle 0 (`Setup::initializeNNEvaluator`). `metalDeviceToUse[Model0]Thread0` vaut donc pour les deux : « CNN sur l'ANE et humain sur GPU » n'est pas réglable sans modifier KataGo. Avec les deux réseaux sur l'ANE, la chauffe, qui passe par le réseau humain, prend 0,20 s au lieu de 1,4 s, et le coup du bot 0,18 s au lieu de 1,2 s (même CNN sur GPU). Pour le léger, l'ANE reste écarté (mesure plus haut : 45 v/s, 14 s de chargement, 1,1 Go).
+- Deux lancements ont été suspendus quand le téléphone a été verrouillé ou qu'une autre app est passée au premier plan : un sur l'ANE (endurance), un sur GPU. Le processus s'est figé sans planter. Celui de l'ANE a repris à la fin de la suspension. Une seule observation : ça ne remplace pas la pause prévue à l'étape 2.
+
+**Recommandation : sur iPhone, le CNN `kata1-b18c384nbt-s9996604416-d4316597426` sur l'ANE par défaut** (`metalDeviceToUseThread0=100`, qui met aussi le réseau humain sur l'ANE). Il donne des coups 4 fois plus rapides (0,18 s contre 0,72 s), 3,8 fois plus de visites par seconde, chauffe moins et prend moins de mémoire, pour une force par visite comparable au léger. En contrepartie, le téléchargement passe de 38 à 98 Mo, et il faut environ 11 s de « Préparation du moteur… » à chaque lancement du moteur, contre environ 2 s. Le léger sur GPU reste un repli raisonnable, par exemple pour un premier lancement avant la fin du téléchargement.

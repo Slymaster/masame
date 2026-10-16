@@ -5,6 +5,7 @@ import { savePngFile } from './files'
 import type { Game } from './game'
 import { failureText, t } from './i18n'
 import { call, inTauri } from './katago'
+import { isMobile } from './platform'
 import { diagrams, drawDiagram, INK, kifuName, PAPER, type Diagram } from './kifu'
 import { toPng } from './postcard'
 import { readResult } from './sgf'
@@ -54,8 +55,9 @@ export function Kifu({ game, source, ranks, onClose }: { game: Game; source: str
     <div className="kifu-page" role="dialog" aria-modal="true" aria-label={t.kifuTitle} tabIndex={-1} ref={ref}>
       <div className="kifu-bar">
         <h2 className="title">{t.kifuTitle}</h2>
-        <button className="btn accent" onClick={print}>{t.kifuPrint}</button>
-        <button className="btn" onClick={png} disabled={!font}>{t.kifuPng}</button>
+        {/* phones: no print (WKWebView ignores window.print(), print_page is desktop only); the PNG goes to Files */}
+        {!isMobile && <button className="btn accent" onClick={print}>{t.kifuPrint}</button>}
+        <button className={`btn${isMobile ? ' accent' : ''}`} onClick={png} disabled={!font}>{t.kifuPng}</button>
         {said && <p className="say" aria-live="polite">{said}</p>}
         <button className="close" onClick={onClose} aria-label={t.close} title={t.closeHint}>×</button>
       </div>

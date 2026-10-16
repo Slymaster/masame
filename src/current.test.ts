@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { local, keeper, resumable, restore, snapshot, unfinished, type Shown } from './current'
+import { local, keeper, onLeave, resumable, restore, snapshot, unfinished, type Shown } from './current'
 import { Game, type Sign } from './game'
 import * as library from './library'
 import type { Current, Entry } from './library'
@@ -67,6 +67,21 @@ describe('the writer', () => {
     g.info.result = 'B+R'; k.changed(() => shown(g, { clock }))
     k.close() // decided: nothing more to write
     expect(o.write).toHaveBeenCalledTimes(3)
+  })
+
+  it('writes the pending move when the app goes to the background or the page away, not when it comes back', () => {
+    const o = out(), k = keeper(o), g = local(new Game({ size: 9 })), w = new EventTarget(), d = Object.assign(new EventTarget(), { visibilityState: 'visible' as DocumentVisibilityState })
+    const stop = onLeave(() => k.close(), w, d)
+    g.play([2, 2]); k.changed(() => shown(g))
+    d.visibilityState = 'hidden'; d.dispatchEvent(new Event('visibilitychange')) // a phone suspends the app: no 500 ms to wait
+    expect(o.write).toHaveBeenCalledTimes(1)
+    expect(o.setCurrent).toHaveBeenLastCalledWith(expect.objectContaining({ id: library.idOf(g), cursor: 1 }))
+    d.visibilityState = 'visible'; d.dispatchEvent(new Event('visibilitychange'))
+    expect(o.write).toHaveBeenCalledTimes(1)
+    w.dispatchEvent(new Event('pagehide'))
+    expect(o.write).toHaveBeenCalledTimes(2)
+    stop(); d.visibilityState = 'hidden'; d.dispatchEvent(new Event('visibilitychange'))
+    expect(o.write).toHaveBeenCalledTimes(2)
   })
 
   it('never writes a game that is not local: an OGS game, a file', () => {

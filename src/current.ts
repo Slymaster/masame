@@ -121,6 +121,14 @@ export async function resumeCurrent() {
   return r
 }
 
+/** Calls flush when the page goes away (pagehide) or the app to the background: iOS and Android kill a suspended app
+ * without any close event, so its game must already be written then. Returns the cleanup. */
+export function onLeave(flush: () => void, w: EventTarget = window, d: EventTarget & { visibilityState: DocumentVisibilityState } = document) {
+  const hidden = () => { if (d.visibilityState === 'hidden') flush() }
+  w.addEventListener('pagehide', flush); d.addEventListener('visibilitychange', hidden)
+  return () => { w.removeEventListener('pagehide', flush); d.removeEventListener('visibilitychange', hidden) }
+}
+
 /** Keeps the shown local game (in the app only) and, once at launch, hands back the unfinished one to restore. */
 export function useCurrentGame(s: Shown, ver: number, onRestore: (r: Awaited<ReturnType<typeof restore>>) => void) {
   const k = useRef<ReturnType<typeof keeper> | null>(null), latest = useRef(s), first = useRef(s.game), restoreRef = useRef(onRestore)
@@ -128,9 +136,8 @@ export function useCurrentGame(s: Shown, ver: number, onRestore: (r: Awaited<Ret
   useEffect(() => { if (inTauri()) (k.current ??= keeper()).changed(() => latest.current) }, [ver, s.game, s.bot])
   useEffect(() => { // closing the window or quitting: the pending write now (Rust waits a moment before closing, see lib.rs)
     if (!inTauri()) return
-    const flush = () => k.current?.close(), off = on<null>('library-flush', flush)
-    addEventListener('pagehide', flush)
-    return () => { removeEventListener('pagehide', flush); off.then(f => f()) }
+    const flush = () => k.current?.close(), off = on<null>('library-flush', flush), stop = onLeave(flush)
+    return () => { stop(); off.then(f => f()) }
   }, [])
   useEffect(() => {
     if (!inTauri()) return

@@ -13,6 +13,8 @@ name: Build
 
 on:
   push:
+    branches: ['**'] # needed with tags-ignore, or branch pushes would no longer run
+    tags-ignore: ['ios-v*', 'android-v*'] # phone releases: ios.yml and android.yml
   pull_request:
 
 permissions:

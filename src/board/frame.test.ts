@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { centreShift } from './frame'
+import { centreShift, tap } from './frame'
 
 describe('centreShift', () => {
   // 1920 px window, a 1400 px wide frame from 56 px (the card on the right): a 600 px board is centred at 756 today
@@ -19,5 +19,22 @@ describe('centreShift', () => {
   })
   it('rounds down, so it never passes the edge', () => {
     expect(centreShift(456, 1056, 1066.6, 960)).toBe(10)
+  })
+})
+
+describe('tap', () => {
+  it('plays a mouse click at once, whatever the ghost', () => {
+    expect(tap(null, [3, 3], 'mouse')).toEqual({ play: true, ghost: null })
+    expect(tap([4, 4], [3, 3], 'mouse')).toEqual({ play: true, ghost: [4, 4] })
+  })
+  it('shows the ghost on a first touch, then plays a second touch on it', () => {
+    const first = tap(null, [3, 3], 'touch')
+    expect(first).toEqual({ play: false, ghost: [3, 3] })
+    expect(tap(first.ghost, [3, 3], 'touch')).toEqual({ play: true, ghost: null })
+  })
+  it('moves the ghost on a touch elsewhere, for a pen too', () => {
+    expect(tap([3, 3], [3, 4], 'touch')).toEqual({ play: false, ghost: [3, 4] })
+    expect(tap([3, 3], [4, 3], 'pen')).toEqual({ play: false, ghost: [4, 3] })
+    expect(tap([4, 3], [4, 3], 'pen')).toEqual({ play: true, ghost: null })
   })
 })

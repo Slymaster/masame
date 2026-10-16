@@ -1,6 +1,10 @@
 mod backend;
 mod engine;
 mod failure;
+#[cfg(any(target_os = "ios", all(test, unix)))]
+mod inproc;
+#[cfg(target_os = "ios")]
+mod ios;
 mod library;
 mod menu;
 mod networks;
@@ -18,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+#[cfg(desktop)]
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 struct App {
@@ -25,6 +30,7 @@ struct App {
     http: reqwest::Client,
     catalog: Mutex<Vec<Entry>>,
     downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    #[cfg(desktop)]
     update: Mutex<Option<Update>>, // the newer release update_check found, for update_install
     ogs: ogs::Ogs,
     #[cfg(engine_variants)]
@@ -50,10 +56,10 @@ fn write_setting(app: &AppHandle, key: &str, value: Value) -> Res<()> {
     std::fs::write(&path, serde_json::to_vec_pretty(&settings).unwrap()).map_err(|e| Failure::with("settings_write", e))
 }
 
-/// Active analysis net: the saved choice if installed, else the default, else any installed kata1 net.
+/// Active analysis net: the saved choice if installed and listed here, else the default, else any installed listed net.
 fn active_network(app: &AppHandle) -> Option<String> {
     let dir = models_dir(app).ok()?;
-    let ok = |n: &str| networks::valid_name(n) && n != networks::HUMAN && networks::file(&dir, n).is_file();
+    let ok = |n: &str| networks::valid_name(n) && n != networks::HUMAN && networks::listed(n) && networks::file(&dir, n).is_file();
     let saved = read_settings(app)["activeNetwork"].as_str().map(String::from);
     saved.filter(|n| ok(n))
         .or_else(|| ok(networks::DEFAULT_NETWORK).then(|| networks::DEFAULT_NETWORK.into()))
@@ -66,12 +72,49 @@ fn env_path(k: &str) -> Option<PathBuf> { if cfg!(debug_assertions) { std::env::
 /// The one place that decides which KataGo binary runs, and its platform-specific overrides: BADUK_KATAGO (dev), else
 /// on Apple Silicon the bundled sidecar, which Tauri places next to the app executable; on Windows, Linux and Intel Macs
 /// (below) one of several bundled builds.
-#[cfg(not(engine_variants))]
+#[cfg(all(desktop, not(engine_variants)))]
 fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
     env_path("BADUK_KATAGO")
         .or_else(|| Some(std::env::current_exe().ok()?.parent()?.join(format!("katago{}", std::env::consts::EXE_SUFFIX))))
         .map(|b| (b, vec![]))
         .ok_or(Failure::new("engine_missing"))
+}
+
+/// iPhone: KataGo runs inside the app (inproc.rs), so the binary is the app's own executable. Mobile settings measured
+/// on an iPhone 16 Pro (docs/katago-benchmark.md §8). KataGo's own data (homeDataDir) goes under the data dir, its working
+/// directory: the app container's root is read-only.
+#[cfg(target_os = "ios")]
+fn engine_bin(app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
+    let bin = std::env::current_exe().map_err(|e| Failure::with("engine_missing", e))?;
+    // Both nets share one device: the Neural Engine (100) runs a CNN ~4× faster and cooler; transformers ("-tf") stay on the GPU (0).
+    let device = if active_network(app).is_some_and(|n| !n.contains("-tf")) { "metalDeviceToUseThread0=100" } else { "metalDeviceToUseThread0=0" };
+    let overrides = ["numSearchThreadsPerAnalysisThread=2", "nnMaxBatchSize=4", "nnCacheSizePowerOfTwo=16", "nnMutexPoolSizePowerOfTwo=12", "homeDataDir=katago", device];
+    Ok((bin, overrides.map(OsString::from).into()))
+}
+
+/// Android: one CPU (Eigen) build, shipped as a native lib so the package installer extracts it, executable, into
+/// nativeLibraryDir (the only app location Android lets a process exec from). Smaller search batches and caches for a phone.
+/// maxTime caps every query that sets no time of its own (bot move, territory, final count): on a phone CPU their
+/// 60–300 visits take minutes, while the bot's move itself comes from the human policy.
+#[cfg(target_os = "android")]
+fn engine_bin(_app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
+    let dir = native_library_dir().map_err(|e| Failure::with("engine_missing", e))?;
+    let overrides = ["homeDataDir=katago", "numSearchThreadsPerAnalysisThread=4", "nnMaxBatchSize=4", "nnCacheSizePowerOfTwo=16", "nnMutexPoolSizePowerOfTwo=14", "maxTime=3"];
+    Ok((dir.join("libkatago.so"), overrides.map(OsString::from).into()))
+}
+
+/// Context.getApplicationInfo().nativeLibraryDir, through the JVM context tao registered.
+#[cfg(target_os = "android")]
+fn native_library_dir() -> Result<PathBuf, jni::errors::Error> {
+    use jni::{jni_sig, jni_str, objects::{JObject, JString}};
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) };
+    vm.attach_current_thread(|env| {
+        let context = unsafe { JObject::from_raw(env, ctx.context().cast()) };
+        let info = env.call_method(&context, jni_str!("getApplicationInfo"), jni_sig!("()Landroid/content/pm/ApplicationInfo;"), &[])?.l()?;
+        let dir = env.get_field(&info, jni_str!("nativeLibraryDir"), jni_sig!("Ljava/lang/String;"))?.l()?;
+        Ok(PathBuf::from(env.cast_local::<JString>(dir)?.try_to_string(env)?))
+    })
 }
 
 /// Windows: resources/katago-win/<variant>/katago.exe (next to its DLLs); Linux:
@@ -97,6 +140,33 @@ fn engine_bin(app: &AppHandle) -> Res<(PathBuf, Vec<OsString>)> {
             .map_err(|e| Failure::with("engine_missing", e))?
     };
     Ok((bin, home))
+}
+
+#[cfg(target_os = "ios")]
+static CRASHED_AT_START: AtomicBool = AtomicBool::new(false);
+
+/// iPhone: KataGo pauses whenever the app is not active (GPU work in the background gets the app killed); the models
+/// stay out of iCloud backups (they can be downloaded again); a start that never reached Ready is noticed at the next
+/// launch through the sentinel inproc.rs leaves until then.
+#[cfg(target_os = "ios")]
+fn ios_setup(app: &AppHandle, engine: Arc<Engine>) -> Arc<Engine> {
+    let engine = engine.with_on_ready(|spec| { let _ = std::fs::remove_file(spec.cwd.join(inproc::SENTINEL)); });
+    let (e, sentinel) = (engine.clone(), data_dir(app).ok().map(|d| d.join(inproc::SENTINEL)));
+    ios::on_active_change(move |active| {
+        // a kill once paused is iOS's, not a crash; a start still under way is watched again when the app comes back
+        if let Some(s) = &sentinel {
+            if !active { let _ = std::fs::remove_file(s); }
+            else if e.starting() { let _ = std::fs::write(s, b""); if !e.starting() { let _ = std::fs::remove_file(s); } } // Ready meanwhile
+        }
+        if active { e.resume() } else { e.pause() }
+    });
+    if let Ok(m) = models_dir(app) {
+        if let Err(e) = std::fs::create_dir_all(&m).map_err(|e| e.to_string()).and_then(|_| ios::exclude_from_backup(&m)) {
+            eprintln!("[ios] models not excluded from backup: {e}")
+        }
+    }
+    if let Ok(d) = data_dir(app) { CRASHED_AT_START.store(std::fs::remove_file(d.join(inproc::SENTINEL)).is_ok(), Ordering::SeqCst) }
+    engine
 }
 
 #[cfg(engine_variants)]
@@ -163,7 +233,8 @@ const CONFIG: &str = "analysis.cfg";
 fn install_config(app: &AppHandle) -> Res<()> {
     let src = app.path().resolve(Path::new("resources").join("katago").join(CONFIG), BaseDirectory::Resource)
         .map_err(|e| Failure::with("config_missing", e))?;
-    let bytes = std::fs::read(&src).map_err(|e| Failure::with("config_missing", e))?;
+    // Through the fs plugin: on Android resources are APK assets, not files.
+    let bytes = tauri_plugin_fs::FsExt::fs(app).read(src).map_err(|e| Failure::with("config_missing", e))?;
     let dir = data_dir(app)?;
     if std::fs::read(dir.join(CONFIG)).ok().as_ref() != Some(&bytes) {
         std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(CONFIG), &bytes)).map_err(|e| Failure::with("config_missing", e))?;
@@ -185,6 +256,9 @@ fn engine_spec(app: &AppHandle) -> Res<Spec> {
 }
 
 fn ensure_engine(app: &AppHandle, s: &App) -> Res<()> {
+    // iPhone: the app died while KataGo was starting last time; say so instead of starting it again on its own.
+    #[cfg(target_os = "ios")]
+    if CRASHED_AT_START.swap(false, Ordering::SeqCst) { return s.engine.fail(Failure::new("engine_crashed_at_start")) }
     match engine_spec(app) {
         Ok(spec) => s.engine.ensure(spec),
         Err(e) => { s.engine.stop(); Err(e) } // e.g. the last analysis net was deleted
@@ -315,23 +389,25 @@ async fn engine_analyze(app: AppHandle, s: State<'_, App>, query: Value) -> Res<
 
 /// Opens one of a few fixed pages (credits) in the default browser; the webview never passes a URL.
 #[tauri::command]
-fn open_link(which: String) -> Res<()> {
+fn open_link(app: AppHandle, which: String) -> Res<()> {
     let url = match which.as_str() {
         "katago" => "https://github.com/lightvector/KataGo",
         "license" => "https://katagotraining.org/network_license/",
         "releases" => "https://github.com/Slymaster/masame/releases/latest",
         _ => return Err(Failure::new("unknown_link")),
     };
-    open_url(url)
+    open_url(&app, url)
 }
 
 /// Whether this build can replace itself: everywhere but Linux, where only the AppImage can (a .deb or .rpm belongs to
 /// the package manager). The bundle type is the marker Tauri's bundler patches into the binary, not the environment.
+#[cfg(desktop)]
 fn installable() -> bool {
     !cfg!(target_os = "linux") || matches!(tauri::utils::platform::bundle_type(), Some(tauri::utils::config::BundleType::AppImage))
 }
 
 /// The updater for the fixed endpoint in tauri.conf.json.
+#[cfg(desktop)]
 fn updater<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
     // Only the local end-to-end test build allows plain http (an override config, never committed).
     let https = app.config().plugins.0.get("updater").and_then(|u| u.get("dangerousInsecureTransportProtocol")).and_then(Value::as_bool) != Some(true);
@@ -344,6 +420,7 @@ fn updater<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri_plugin_updater::Resul
 }
 
 /// Asks the fixed endpoint whether a newer release exists, and keeps it for update_install.
+#[cfg(desktop)]
 #[tauri::command]
 async fn update_check(app: AppHandle, s: State<'_, App>) -> Res<Option<Value>> {
     let fail = |e: tauri_plugin_updater::Error| Failure::with("update_check", e);
@@ -355,6 +432,7 @@ async fn update_check(app: AppHandle, s: State<'_, App>) -> Res<Option<Value>> {
 
 /// Downloads the checked update (verified against the public key in tauri.conf.json), stops KataGo (on Windows the
 /// installer replaces katago.exe and its DLLs), installs and restarts. On Windows `install` exits the app itself.
+#[cfg(desktop)]
 #[tauri::command]
 async fn update_install(app: AppHandle, s: State<'_, App>) -> Res<()> {
     if !installable() { return Err(Failure::with("update_failed", "not installable")) }
@@ -381,13 +459,13 @@ async fn update_install(app: AppHandle, s: State<'_, App>) -> Res<()> {
 }
 
 #[cfg(target_os = "macos")]
-fn open_url(url: &str) -> Res<()> {
+fn open_url<R: tauri::Runtime>(_app: &AppHandle<R>, url: &str) -> Res<()> {
     // Absolute path: never resolved through PATH.
     std::process::Command::new("/usr/bin/open").arg(url).spawn().map(|_| ()).map_err(|e| Failure::with("open_failed", e))
 }
 
 #[cfg(windows)]
-fn open_url(url: &str) -> Res<()> {
+fn open_url<R: tauri::Runtime>(_app: &AppHandle<R>, url: &str) -> Res<()> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
     let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
@@ -397,10 +475,33 @@ fn open_url(url: &str) -> Res<()> {
     if r as usize > 32 { Ok(()) } else { Err(Failure::with("open_failed", r as usize)) }
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
-fn open_url(url: &str) -> Res<()> {
+#[cfg(all(desktop, not(any(target_os = "macos", windows))))]
+fn open_url<R: tauri::Runtime>(_app: &AppHandle<R>, url: &str) -> Res<()> {
     // Absolute path: never resolved through PATH.
     std::process::Command::new("/usr/bin/xdg-open").arg(url).spawn().map(|_| ()).map_err(|e| Failure::with("open_failed", e))
+}
+
+#[cfg(mobile)]
+fn open_url<R: tauri::Runtime>(app: &AppHandle<R>, url: &str) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(url, None::<&str>).map_err(|e| Failure::with("open_failed", e))
+}
+
+/// Android: rustls checks certificates with the OS trust store, through the JVM context tao registered. Without it every
+/// HTTPS call fails closed, so the cause goes to logcat (tag "masame"): stderr goes nowhere on Android.
+#[cfg(target_os = "android")]
+fn init_tls() {
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) };
+    let Err(e) = vm.attach_current_thread(|env| {
+        let context = unsafe { jni::objects::JObject::from_raw(env, ctx.context().cast()) };
+        rustls_platform_verifier::android::init_with_env(env, context)
+    }) else { return };
+    use std::ffi::{c_char, c_int, CString};
+    #[link(name = "log")]
+    extern "C" { fn __android_log_write(prio: c_int, tag: *const c_char, text: *const c_char) -> c_int; }
+    let text = CString::new(format!("TLS verifier not initialised, every HTTPS call will fail: {e}").replace('\0', "")).unwrap_or_default();
+    unsafe { __android_log_write(6 /* ANDROID_LOG_ERROR */, c"masame".as_ptr(), text.as_ptr()) };
 }
 
 /// Rebuilds the macOS menu bar in the UI language; `labels` come from the frontend dictionary. No-op elsewhere.
@@ -462,6 +563,7 @@ struct Opened { name: String, text: String }
 
 /// Partager › Kifu: the system print dialog for the page (WKWebView ignores window.print(); wry prints the webview on
 /// every desktop OS), where "Save as PDF" makes the PDF.
+#[cfg(desktop)]
 #[tauri::command]
 fn print_page(webview: tauri::Webview) -> Res<()> {
     webview.print().map_err(|e| Failure::with("print_failed", e))
@@ -495,13 +597,17 @@ pub fn run() {
         queue_opened(app, arg_files(argv, Path::new(&cwd)));
         if let Some(w) = app.get_webview_window("main") { let _ = w.unminimize(); let _ = w.set_focus(); }
     }));
-    builder
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build()).plugin(tauri_plugin_notification::init());
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_opener::init());
+    let builder = builder
         .manage(library::Library::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            #[cfg(target_os = "android")]
+            init_tls();
             let h = app.handle().clone();
             let mut engine = Engine::new(move |ev, payload| { let _ = h.emit(ev, payload); });
             if let Ok(d) = data_dir(app.handle()) { engine = engine.with_log(d.join(ENGINE_LOG)) }
@@ -510,22 +616,29 @@ pub fn run() {
                 let (h, h2) = (app.handle().clone(), app.handle().clone());
                 engine.with_fallback(move |spec, e| engine_fallback(&h, spec, e)).with_on_ready(move |spec| engine_ready(&h2, spec))
             };
+            #[cfg(target_os = "ios")]
+            let engine = ios_setup(app.handle(), engine);
             if let Err(e) = install_config(app.handle()) { eprintln!("[katago] config not installed: {e:?}") }
             app.manage(App {
-                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), update: Default::default(), ogs: Default::default(),
+                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), ogs: Default::default(),
+                #[cfg(desktop)]
+                update: Default::default(),
                 #[cfg(engine_variants)]
                 failed_variants: Default::default(),
             });
             Ok(())
-        })
-        // Our menu items (macOS) go to the frontend, which runs them exactly like their keyboard shortcuts.
-        .on_menu_event(|app, e| {
-            if e.id().as_ref() == "quit" { return quit(app) }
-            if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); }
-        })
+        });
+    // Our menu items (macOS) go to the frontend, which runs them exactly like their keyboard shortcuts.
+    #[cfg(desktop)]
+    let builder = builder.on_menu_event(|app, e| {
+        if e.id().as_ref() == "quit" { return quit(app) }
+        if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); }
+    });
+    builder
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
-            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, set_menu_enabled, update_check, update_install, take_opened, print_page,
+            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, set_menu_enabled, take_opened,
+            #[cfg(desktop)] update_check, #[cfg(desktop)] update_install, #[cfg(desktop)] print_page,
             ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history,
             library::library_list, library::library_read, library::library_write, library::library_delete,
             library::library_sidecar_read, library::library_sidecar_write, library::library_current_read, library::library_current_write

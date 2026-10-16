@@ -1,4 +1,5 @@
 import { t } from './i18n'
+import { isMobile } from './platform'
 
 // SGF (and postcard PNG) file I/O: native dialogs + fs plugin inside Tauri, file picker / download fallback in a plain browser.
 
@@ -9,7 +10,8 @@ const filters = () => [{ name: t.sgfFilter, extensions: ['sgf'] }]
 export async function openSgfFile(): Promise<string | null> {
   if (isTauri()) {
     const [{ open }, { readTextFile }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs')])
-    const path = await open({ title: t.openTitle, filters: filters(), multiple: false, directory: false })
+    // phones: no filter, the pickers filter by system type (UTType, MIME) and neither knows "sgf", so it would grey every game
+    const path = await open({ title: t.openTitle, filters: isMobile ? undefined : filters(), multiple: false, directory: false })
     return path ? readTextFile(path) : null
   }
   const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.sgf' })
