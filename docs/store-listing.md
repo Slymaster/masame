@@ -6,7 +6,7 @@ Ce que contient la version téléphone, pour vérifier chaque phrase : jouer con
 
 URL de la politique de confidentialité, pour les deux stores : **https://github.com/Slymaster/masame/blob/main/PRIVACY.md**. Elle ne répond qu'une fois develop fusionné dans main ; d'ici là, https://github.com/Slymaster/masame/blob/develop/PRIVACY.md fonctionne (à remplacer par l'adresse `main` à la release). Remplace aussi `<CONTACT_EMAIL>` dans PRIVACY.md et ici.
 
-Les captures d'écran ne sont pas dans le dépôt : voir `design/screenshots/store/` (ignoré par git).
+Les captures d'écran ne sont pas dans le dépôt. Style retenu le 16 octobre 2026 : **B, légendé** (un titre en Cormorant italique sur fond lin au-dessus de l'écran). Les fichiers à déposer, rangés par store et par langue avec un LISEZ-MOI, sont dans `design/screenshots/masame-stores-0.5.0/` (ignoré par git).
 
 ---
 
@@ -376,7 +376,7 @@ Pas de compte, pas de publicité, pas de pistage, pas d'achat intégré. Tes par
 Pas encore sur Android : le jeu en ligne sur OGS et le goban 3D. Les deux sont dans la version ordinateur de Masame, pour macOS, Windows et Linux.
 ```
 
-**Éléments graphiques** : icône 512×512 (`icon-512.png`), image de présentation 1024×500 sans texte (`feature-graphic.png`, une seule pour les deux langues), 6 captures téléphone par langue (1080×2400). Voir `design/screenshots/store/`.
+**Éléments graphiques** : icône 512×512 (`icon-512.png`), image de présentation 1024×500 sans texte (`feature-graphic.png`, une seule pour les deux langues), 6 captures téléphone par langue (1080×2400). Voir `design/screenshots/masame-stores-0.5.0/google-play/`.
 
 ### Paramètres du Store
 
