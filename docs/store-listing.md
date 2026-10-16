@@ -4,7 +4,7 @@ Tout ce que demandent App Store Connect et la Play Console pour Masame 0.5.0 sur
 
 Ce que contient la version téléphone, pour vérifier chaque phrase : jouer contre KataGo à ton niveau (réseau humain calibré par rang, Maîtres d'une époque, mentor), revue de chaque partie, Apprendre (rituel du jour, exercices tirés de tes parties avec répétition espacée, tsumego, compter, joseki, fuseki, rejouer de mémoire, les Classiques), Mes parties, import/export SGF, français et anglais, goban 2D. KataGo tourne sur le téléphone (iPhone : Neural Engine ; Android : processeur) après un téléchargement unique de deux réseaux depuis katagotraining.org (iPhone : Humain 99 Mo + Rapide 98 Mo ; Android : Humain 99 Mo + Rapide 14 Mo). Pas encore sur téléphone : OGS (jeu en ligne, connexion) et le goban 3D. Pas de compte, pas de publicité, pas de statistiques d'usage, pas d'achat intégré.
 
-URL de la politique de confidentialité, pour les deux stores : **https://github.com/Slymaster/masame/blob/main/PRIVACY.md**. Elle ne répond qu'une fois develop fusionné dans main ; d'ici là, https://github.com/Slymaster/masame/blob/develop/PRIVACY.md fonctionne (à remplacer par l'adresse `main` à la release). Remplace aussi `<CONTACT_EMAIL>` dans PRIVACY.md et ici.
+URL de la politique de confidentialité, pour les deux stores : **https://github.com/Slymaster/masame/blob/main/PRIVACY.md**. Elle ne répond qu'une fois develop fusionné dans main ; d'ici là, https://github.com/Slymaster/masame/blob/develop/PRIVACY.md fonctionne (à remplacer par l'adresse `main` à la release). Adresse de contact publique, dans PRIVACY.md et ici : `sylvain@guarani-llc.com`.
 
 Les captures d'écran ne sont pas dans le dépôt. Style retenu le 16 octobre 2026 : **B, légendé** (un titre en Cormorant italique sur fond lin au-dessus de l'écran). Les fichiers à déposer, rangés par store et par langue avec un LISEZ-MOI, sont dans `design/screenshots/masame-stores-0.5.0/` (ignoré par git).
 
@@ -246,7 +246,7 @@ Déjà déclarée dans l'Info.plist : `ITSAppUsesNonExemptEncryption = false`. A
 
 ### Notes pour l'App Review (en anglais)
 
-Informations de connexion : **aucune connexion requise** (décocher « Sign-in required »). Coordonnées : ton nom, ton téléphone, `<CONTACT_EMAIL>`.
+Informations de connexion : **aucune connexion requise** (décocher « Sign-in required »). Coordonnées : ton nom, ton téléphone, `sylvain@guarani-llc.com`.
 
 ```
 No sign-in is needed: Masame has no account.
@@ -382,7 +382,7 @@ Pas encore sur Android : le jeu en ligne sur OGS et le goban 3D. Les deux sont d
 
 - **Type** : Jeu. **Catégorie** : **Société** (Board).
 - **Tags** (jusqu'à 5, à choisir dans la liste de la console) : Board, Abstract strategy, Strategy, Single player, Offline. S'il en manque un dans la liste proposée, Classic ou Puzzle.
-- **Coordonnées** : adresse e-mail (obligatoire, publique) `<CONTACT_EMAIL>` ; site web `https://github.com/Slymaster/masame` ; téléphone : facultatif, à laisser vide.
+- **Coordonnées** : adresse e-mail (obligatoire, publique) `sylvain@guarani-llc.com` ; site web `https://github.com/Slymaster/masame` ; téléphone : facultatif, à laisser vide.
 - **Règles relatives aux contenus › Politique de confidentialité** : `https://github.com/Slymaster/masame/blob/main/PRIVACY.md`.
 
 ### Contenu de l'app (Règles et programmes › Contenu de l'app)
@@ -393,7 +393,7 @@ Pas encore sur Android : le jeu en ligne sur OGS et le goban 3D. Les deux sont d
 
 **Classification du contenu** (questionnaire IARC) :
 
-- Adresse e-mail : `<CONTACT_EMAIL>`. Catégorie : **Jeu** (« Game »), pas « Divertissement » ni « Autre ».
+- Adresse e-mail : `sylvain@guarani-llc.com`. Catégorie : **Jeu** (« Game »), pas « Divertissement » ni « Autre ».
 - Violence, peur, sexualité, langage grossier, substances contrôlées, humour grossier : **Non** partout.
 - Jeux d'argent simulés ou réels, contenu de type loterie : **Non**.
 - « Les utilisateurs peuvent-ils interagir ou échanger du contenu ? » : **Non**. Sur téléphone, dans cette version, il n'y a ni OGS, ni discussion, ni partage entre joueurs (l'export SGF passe par la feuille de partage du système, à l'initiative de l'utilisateur, ce qui ne compte pas).
@@ -443,7 +443,6 @@ Collées dans la console :
 
 ## À vérifier avant d'envoyer
 
-- `<CONTACT_EMAIL>` remplacé ici et dans PRIVACY.md (la Play Console affiche cette adresse publiquement).
 - Le nom « Masame » libre dans App Store Connect (il est réservé dès la création de la fiche).
 - PRIVACY.md joignable à l'adresse `main` le jour de la soumission.
 - Les captures correspondent à la version envoyée (0.5.0).

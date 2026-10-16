@@ -40,7 +40,7 @@ Apple's App Store and Google Play may collect information when you download the 
 
 ### Contact
 
-Questions or concerns: open an issue at [github.com/Slymaster/masame/issues](https://github.com/Slymaster/masame/issues), or write to <CONTACT_EMAIL>. Masame is open source (MIT), so all of the above can be checked in [its code](https://github.com/Slymaster/masame). If this policy changes, the new version will be published here with its date.
+Questions or concerns: open an issue at [github.com/Slymaster/masame/issues](https://github.com/Slymaster/masame/issues), or write to sylvain@guarani-llc.com. Masame is open source (MIT), so all of the above can be checked in [its code](https://github.com/Slymaster/masame). If this policy changes, the new version will be published here with its date.
 
 ## Français
 
@@ -79,4 +79,4 @@ L'App Store d'Apple et Google Play peuvent recueillir des informations quand tu 
 
 ### Contact
 
-Une question, une inquiétude : ouvre une issue sur [github.com/Slymaster/masame/issues](https://github.com/Slymaster/masame/issues), ou écris à <CONTACT_EMAIL>. Masame est open source (MIT) : tout ce qui précède se vérifie dans [son code](https://github.com/Slymaster/masame). Si cette politique change, la nouvelle version sera publiée ici, avec sa date.
+Une question, une inquiétude : ouvre une issue sur [github.com/Slymaster/masame/issues](https://github.com/Slymaster/masame/issues), ou écris à sylvain@guarani-llc.com. Masame est open source (MIT) : tout ce qui précède se vérifie dans [son code](https://github.com/Slymaster/masame). Si cette politique change, la nouvelle version sera publiée ici, avec sa date.
