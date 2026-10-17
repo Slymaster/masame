@@ -41,19 +41,19 @@ Les secrets vivent dans deux environnements GitHub, chacun réservé à ses tags
    Garde le fichier et son mot de passe dans ton gestionnaire de mots de passe. Un PKCS12 n'a qu'un mot de passe, pour le magasin et la clé.
 3. **Compte de service, sans clé.** Dans Google Cloud, le projet `masame-play`, l'API « Google Play Android Developer API » activée et le compte de service `masame-play-upload@masame-play.iam.gserviceaccount.com`, **sans clé JSON** : l'organisation les interdit (`iam.disableServiceAccountKeyCreation`). Dans Play Console > Utilisateurs et autorisations, inviter l'adresse du compte de service, limitée à l'app Masame, avec **Publier des apps dans les canaux de test** (et la lecture des infos de l'app). Rien d'autre.
 
-   Le job `release` prouve son identité à Google avec le jeton OIDC de GitHub (fédération d'identité de charge de travail) et reçoit des identifiants valables une heure. Google n'accepte que les jobs de l'environnement `play` de ce dépôt :
+   Le job `release` prouve son identité à Google avec le jeton OIDC de GitHub (fédération d'identité de charge de travail) et reçoit des identifiants valables une heure. Google n'accepte que les jobs de l'environnement `play` de ce dépôt, reconnu à ses identifiants numériques : depuis juillet 2026 les dépôts neufs émettent un `sub` « immuable » (`repo:Slymaster@13293300/masame@1414560156:…`), et les identifiants numériques survivent à un renommage ou à un transfert.
 
    ```sh
    gcloud services enable iamcredentials.googleapis.com sts.googleapis.com --project=masame-play
    gcloud iam workload-identity-pools create github --project=masame-play --location=global
    gcloud iam workload-identity-pools providers create-oidc masame --project=masame-play --location=global \
      --workload-identity-pool=github --issuer-uri=https://token.actions.githubusercontent.com \
-     --attribute-mapping=google.subject=assertion.sub \
-     --attribute-condition="assertion.sub == 'repo:Slymaster/masame:environment:play'"
+     --attribute-mapping="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id" \
+     --attribute-condition="assertion.repository_id == '1414560156' && assertion.repository_owner_id == '13293300' && assertion.environment == 'play'"
    gcloud projects describe masame-play --format='value(projectNumber)'   # le NUMERO_DU_PROJET ci-dessous
    gcloud iam service-accounts add-iam-policy-binding masame-play-upload@masame-play.iam.gserviceaccount.com \
      --project=masame-play --role=roles/iam.workloadIdentityUser \
-     --member=principal://iam.googleapis.com/projects/NUMERO_DU_PROJET/locations/global/workloadIdentityPools/github/subject/repo:Slymaster/masame:environment:play
+     --member=principalSet://iam.googleapis.com/projects/NUMERO_DU_PROJET/locations/global/workloadIdentityPools/github/attribute.repository_id/1414560156
    ```
 
    Si l'étape `google-github-actions/auth` échoue, c'est la fédération (fournisseur, condition, liaison) ; si c'est l'envoi qui répond 403, c'est l'invitation Play Console, qui met parfois plusieurs heures à prendre effet.
