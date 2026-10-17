@@ -55,24 +55,29 @@ git -C "$SRC" diff --quiet HEAD -- || die "$SRC has local changes to tracked fil
 # a system library on every Android. c++_static: no libc++_shared.so to ship next to the executable.
 # No USE_AVX2 (x86 only): aarch64 Eigen uses NEON. EIGEN_MPL2_ONLY: compiling any LGPL part of Eigen is an error.
 # -include endian.h: core/sha2.cpp needs BYTE_ORDER, which bionic's <sys/types.h> doesn't pull in (glibc's does).
+# max-page-size=16384: NDK 27 aligns LOAD segments to 4 KB, which 16 KB-page devices (and Google Play) refuse.
 cmake -S "$SRC/cpp" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="$ABI" -DANDROID_PLATFORM="android-$API" -DANDROID_STL=c++_static \
   -DUSE_BACKEND=EIGEN -DEIGEN3_INCLUDE_DIRS="$EIGEN" -DCMAKE_CXX_FLAGS="-DEIGEN_MPL2_ONLY -include endian.h" \
+  -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384" \
   -DLIBZIP_LIBRARY=OFF
 cmake --build "$BUILD" --target katago
 
 mkdir -p "$(dirname "$OUT")"
 "$LLVM/llvm-strip" --strip-all -o "$OUT" "$BUILD/katago"
 
-# Checks: aarch64 PIE executable, Android system libraries only. (Outputs go to variables first: grep -q on a
-# pipe would SIGPIPE readelf and trip pipefail.)
+# Checks: aarch64 PIE executable, 16 KB-aligned segments, Android system libraries only. (Outputs go to variables
+# first: grep -q on a pipe would SIGPIPE readelf and trip pipefail.)
 hdr="$("$LLVM/llvm-readelf" -h "$OUT")"; prog="$("$LLVM/llvm-readelf" -l "$OUT")"; dyn="$("$LLVM/llvm-readelf" -d "$OUT")"
 grep -q "Machine: *AArch64" <<<"$hdr" || die "not AArch64"
 grep -q "FLAGS_1.*PIE" <<<"$dyn" || die "not a PIE"
 grep -q "program interpreter: /system/bin/linker64" <<<"$prog" || die "no /system/bin/linker64 interpreter: not an executable"
+aligns="$(awk '$1=="LOAD"{print $NF}' <<<"$prog")"
+[ -n "$aligns" ] || die "no LOAD segments"
+for a in $aligns; do (( a >= 0x4000 )) || die "LOAD segment aligned to $a, not 16 KB"; done
 needed="$(awk '/NEEDED/{gsub(/[\[\]]/,"",$NF); print $NF}' <<<"$dyn")"
 echo "--- NEEDED: $(echo $needed)"
 bad="$(echo "$needed" | grep -v -x -E 'lib(c|m|dl|log|z)\.so' || true)"
 [ -z "$bad" ] || die "non-system libraries needed: $bad"
-echo "--- OK: $OUT $(du -h "$OUT" | cut -f1), aarch64 PIE, android-$API, system libraries only"
+echo "--- OK: $OUT $(du -h "$OUT" | cut -f1), aarch64 PIE, android-$API, 16 KB pages, system libraries only"

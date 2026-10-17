@@ -15,6 +15,10 @@ fn main() {
     let (os, arch) = (target("CARGO_CFG_TARGET_OS"), target("CARGO_CFG_TARGET_ARCH"));
     if os == "windows" || os == "linux" || os == "macos" && arch == "x86_64" { println!("cargo:rustc-cfg=engine_variants") }
     if os == "ios" { link_katago_ios() }
+    // NDK 27 aligns LOAD segments to 4 KB, which 16 KB-page devices (and Google Play) refuse.
+    if os == "android" {
+        for a in ["max-page-size=16384", "common-page-size=16384"] { println!("cargo:rustc-cdylib-link-arg=-Wl,-z,{a}") }
+    }
     tauri_build::try_build(attributes).expect("tauri-build")
 }
 

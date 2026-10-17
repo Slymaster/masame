@@ -103,6 +103,16 @@ jobs:
           if grep -E '^base/lib/' <<< "$files" | grep -v '^base/lib/arm64-v8a/'; then
             echo "::error::the AAB has native libraries for other ABIs"; exit 1
           fi
+          # Play rejects native libraries whose LOAD segments are not 16 KB-aligned.
+          libs="$RUNNER_TEMP/aab-libs" && unzip -q -o "${aabs[0]}" 'base/lib/arm64-v8a/*.so' -d "$libs"
+          for so in "$libs"/base/lib/arm64-v8a/*.so; do
+            aligns=$(readelf -lW "$so" | awk '$1=="LOAD"{print $NF}')
+            [ -n "$aligns" ] || { echo "::error::$(basename "$so") has no LOAD segments"; exit 1; }
+            for a in $aligns; do
+              (( a >= 0x4000 )) || { echo "::error::$(basename "$so") has a LOAD segment aligned to $a, not 16 KB"; exit 1; }
+            done
+            echo "$(basename "$so"): LOAD alignments $(echo $aligns)"
+          done
           mkdir -p "$RUNNER_TEMP/aab" && cp "${aabs[0]}" "$RUNNER_TEMP/aab/masame.aab"
 
       - name: Keep the unsigned App Bundle for signing (tags only)
