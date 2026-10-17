@@ -48,8 +48,8 @@ Les secrets vivent dans deux environnements GitHub, chacun réservé à ses tags
    gcloud iam workload-identity-pools create github --project=masame-play --location=global
    gcloud iam workload-identity-pools providers create-oidc masame --project=masame-play --location=global \
      --workload-identity-pool=github --issuer-uri=https://token.actions.githubusercontent.com \
-     --attribute-mapping="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id" \
-     --attribute-condition="assertion.repository_id == '1414560156' && assertion.repository_owner_id == '13293300' && assertion.environment == 'play'"
+     --attribute-mapping="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id,attribute.environment=assertion.environment" \
+     --attribute-condition="attribute.repository_id == '1414560156' && attribute.repository_owner_id == '13293300' && attribute.environment == 'play'"
    gcloud projects describe masame-play --format='value(projectNumber)'   # le NUMERO_DU_PROJET ci-dessous
    gcloud iam service-accounts add-iam-policy-binding masame-play-upload@masame-play.iam.gserviceaccount.com \
      --project=masame-play --role=roles/iam.workloadIdentityUser \
