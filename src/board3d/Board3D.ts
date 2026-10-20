@@ -932,6 +932,7 @@ export class Board3D {
     if (rec) this.sceneRoot.add(rec.g)
     this.shoji.map = rec?.cookie ?? this.shojiTex
     this.applyGround()
+    this.extrasOn() // the shoji spot follows the scene that now owns (or no longer owns) its cookie
   }
 
   /** A décor's ambient animation runs this frame (logic.ts ambientOn). */

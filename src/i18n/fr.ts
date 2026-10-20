@@ -118,7 +118,6 @@ export const fr: Dict = {
   },
   ambiancesLabel: 'Ambiances',
   ambiances: { jardin: 'Jardin', nuitBlanche: 'Nuit blanche', hanok: 'Hanok', pavillon: 'Pavillon', edo: 'Edo' },
-  ambianceHints: { jardin: 'Bambous et jade', nuitBlanche: 'Neige la nuit, pierre de lune', hanok: 'Hanok et verre de Corée', pavillon: 'Pavillon du lettré, yunzi', edo: 'Salle Honinbo, pierres japonaises' },
   ownLight: 'Ce décor a sa propre lumière',
   ambientSound: 'Ambiance sonore', ambientSoundHint: 'Feuilles, vent ou pluie, tout bas',
   depthOfField: 'Profondeur de champ', depthOfFieldHint: 'Adoucit ce qui est au-delà du goban',

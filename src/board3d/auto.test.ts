@@ -66,4 +66,13 @@ describe('ambiances', () => {
     ])
     vi.doUnmock('./logic'); vi.doUnmock('./stoneSets')
   })
+  it('uses the next stones while an earned set is not earned yet', async () => {
+    vi.resetModules()
+    vi.doMock('./logic', async orig => ({ ...(await orig<typeof import('./logic')>()), readyDecors: () => ['atelier', 'neige'] }))
+    vi.doMock('./stoneSets', async orig => ({ ...(await orig<typeof import('./stoneSets')>()), readySets: () => ['japonaise', 'lune'] }))
+    const { ambiances: list } = await import('./auto')
+    expect(list()).toEqual([{ id: 'nuitBlanche', decor: 'neige', stones: 'lune' }])
+    expect(list(new Set(['lune']))).toEqual([{ id: 'nuitBlanche', decor: 'neige', stones: 'japonaise' }])
+    vi.doUnmock('./logic'); vi.doUnmock('./stoneSets')
+  })
 })

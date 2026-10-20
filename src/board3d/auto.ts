@@ -38,9 +38,9 @@ export const AMBIANCES = [
 export type AmbianceId = typeof AMBIANCES[number]['id']
 
 /** The ambiances whose décor and stones both exist, resolved. */
-export function ambiances(): { id: AmbianceId; decor: Decor; stones: StoneSet }[] {
+export function ambiances(locked: ReadonlySet<string> = new Set()): { id: AmbianceId; decor: Decor; stones: StoneSet }[] {
   return AMBIANCES.flatMap(a => {
-    const stones = (a.stones as readonly string[]).find(isStones)
+    const stones = (a.stones as readonly string[]).find((s): s is StoneSet => isStones(s) && !locked.has(s)) // an earned set not earned yet gives way
     return isDecor(a.decor) && stones ? [{ id: a.id, decor: a.decor, stones }] : []
   })
 }

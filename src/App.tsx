@@ -71,7 +71,6 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const random = rng(Date.now())
 /** A gallery tile's picture (public/assets/gallery, see scripts/gallery-thumbs.md); a missing one shows the tile's placeholder. */
 const thumb = (kind: 'decor' | 'stones', id: string) => `${import.meta.env.BASE_URL}assets/gallery/${kind}-${id}.webp`
-const moods = ambiances() // the couples whose décor and stones both exist
 
 type Renderer = '3d' | '2d'
 const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
@@ -358,6 +357,7 @@ export function App() {
   const reached = useMemo(() => unlocked(stoneStats), [stoneStats])
   const allStones = useMemo(() => unlockAll(), [])
   const toEarn = lockedSets(reached, stonesKept.said, allStones)
+  const moods = ambiances(toEarn) // the couples whose décor and stones exist, with stones you have
   const heirloom = patina(stoneStats.finished, stonesKept.renewedAt)
   const keepStones = (k: typeof stonesKept) => { saveStones(k); setStonesKept(k) }
   useEffect(() => { // a set just earned: said once (the owner's unlock flag says nothing and keeps nothing)
@@ -1579,8 +1579,8 @@ export function App() {
                 {moods.length > 0 && <div className="field">
                   <span>{t.ambiancesLabel}</span>
                   <Gallery label={t.ambiancesLabel} value={moods.find(a => a.decor === settings.decor && a.stones === settings.stones)?.id ?? null}
-                    set={id => { const a = moods.find(m => m.id === id)!; set('decor', a.decor); if (!toEarn.has(a.stones)) set('stones', a.stones) }}
-                    options={moods.map(a => [a.id, t.ambiances[a.id], t.ambianceHints[a.id], thumb('decor', a.decor)])} />
+                    set={id => { const a = moods.find(m => m.id === id)!; set('decor', a.decor); set('stones', a.stones) }}
+                    options={moods.map(a => [a.id, t.ambiances[a.id], `${t.decors[a.decor]} · ${t.stoneSets[a.stones]}`, thumb('decor', a.decor)])} />
                 </div>}
                 <div className="field">
                   <span>{t.light} <kbd>L</kbd></span>
