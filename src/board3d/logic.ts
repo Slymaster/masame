@@ -7,11 +7,12 @@ import type { Decor } from './decors'
 /* ---------- real dimensions (mm) ---------- */
 export const SX = 22, SZ = 23.7          // grid spacing across / along (cells are longer than wide)
 export const BT = 60                      // board thickness (a table board, not a legged one)
-export const RB = 11.1, RW = 10.95        // stone radii: slate 22.2 mm, shell 21.9 mm
-export const SH = 4.5                     // stone half thickness
 
-/** Half thickness of a biconvex stone at distance r from its axis (dome with a rounded girdle). */
-export const lens = (r: number, R: number) => SH * Math.pow(Math.max(0, 1 - (r / R) ** 2), 0.78)
+/** A stone set's shape (mm): radii of the black and white stones, half thickness, and the lens profile's exponent. */
+export interface StoneShape { rB: number; rW: number; sh: number; lensExp: number }
+
+/** Half thickness of a biconvex stone of half thickness sh at distance r from its axis (dome with a rounded girdle). */
+export const lens = (r: number, R: number, sh: number, exp: number) => sh * Math.pow(Math.max(0, 1 - (r / R) ** 2), exp)
 
 /** Board top size: a 19×19 is 424 × 454 mm; smaller boards keep the cell size. Coordinates widen the margin for the labels. */
 export function dims(N: number, coords: boolean) {
@@ -142,13 +143,14 @@ export interface Rest { x: number; z: number; y: number; tilt: number; dir: numb
  * 2·lens(d/2) (the profile is concave, so the closest pair of surfaces is midway). A stone resting on another dips away
  * from it; it is raised by R·sin(tilt) so the tilt can't reach into anything either. Stones landing above maxY are dropped.
  */
-export function dropStones(xz: number[][], R: number, floor: (d: number) => number, rnd: () => number, maxTilt = 0.1, maxY = Infinity): Rest[] {
+export function dropStones(xz: number[][], R: number, shape: StoneShape, floor: (d: number) => number, rnd: () => number, maxTilt = 0.1, maxY = Infinity): Rest[] {
   const out: Rest[] = []
   for (const [x, z] of xz) {
     let y = floor(Math.hypot(x, z)), on: Rest | null = null
     for (const o of out) {
       const d = Math.hypot(x - o.x, z - o.z)
-      if (d < 2 * R && o.y + 2 * lens(d / 2, R) > y) { y = o.y + 2 * lens(d / 2, R); on = o }
+      const h = 2 * lens(d / 2, R, shape.sh, shape.lensExp)
+      if (d < 2 * R && o.y + h > y) { y = o.y + h; on = o }
     }
     const tilt = on ? maxTilt * (0.5 + 0.5 * rnd()) : maxTilt * 0.25 * rnd()
     const dir = on ? Math.atan2(z - on.z, x - on.x) : rnd() * Math.PI * 2
@@ -278,6 +280,8 @@ export interface Look {
   lamp: number
   /** Contemplation: the share of the window's light that comes through a shoji, its lattice falling on the board (0 = an open window). */
   shoji: number
+  /** Contemplation, fx ≥ 1: the décor's HDRI shown behind the room, blurred (backgroundBlurriness) and dimmed. Absent = the dark room. */
+  backdrop?: { blur: number; intensity: number }
 }
 const NIGHT: Tod = { az: 215, el: 64, K: 2650, I: 0, env: 0.5, exp: 1, room: 0 }
 export const LOOKS: Record<Decor, Look> = {
@@ -290,16 +294,17 @@ export const LOOKS: Record<Decor, Look> = {
 }
 
 /* ---------- adaptive quality governor ---------- */
-export interface Quality { dpr: number; shadow: number; msaa: number; bowlSegments: number; kaya4k: boolean }
+/** fx: Contemplation's décor effects. 2 = all, animated; 1 = still (backdrop, a still light cookie, no particles); 0 = none. */
+export interface Quality { dpr: number; shadow: number; msaa: number; bowlSegments: number; kaya4k: boolean; fx: 0 | 1 | 2 }
 /** Quality ladder, best first. The pixel ratio is capped by the display's own (and at 3); for d ≤ 2 the values are v0.2's. */
 export function qualityLadder(deviceDpr: number): Quality[] {
   const d = Math.min(Math.max(deviceDpr, 1), 3)
   return [
-    { dpr: d, shadow: 4096, msaa: 4, bowlSegments: 72, kaya4k: true },
-    { dpr: d, shadow: 2048, msaa: 4, bowlSegments: 72, kaya4k: true },
-    { dpr: Math.min(d, Math.max(1.5, 0.75 * d)), shadow: 2048, msaa: 4, bowlSegments: 48, kaya4k: false },
-    { dpr: Math.min(d, Math.max(1.25, 0.625 * d)), shadow: 2048, msaa: 0, bowlSegments: 48, kaya4k: false },
-    { dpr: 1, shadow: 1024, msaa: 0, bowlSegments: 32, kaya4k: false },
+    { dpr: d, shadow: 4096, msaa: 4, bowlSegments: 72, kaya4k: true, fx: 2 },
+    { dpr: d, shadow: 2048, msaa: 4, bowlSegments: 72, kaya4k: true, fx: 2 },
+    { dpr: Math.min(d, Math.max(1.5, 0.75 * d)), shadow: 2048, msaa: 4, bowlSegments: 48, kaya4k: false, fx: 1 },
+    { dpr: Math.min(d, Math.max(1.25, 0.625 * d)), shadow: 2048, msaa: 0, bowlSegments: 48, kaya4k: false, fx: 1 },
+    { dpr: 1, shadow: 1024, msaa: 0, bowlSegments: 32, kaya4k: false, fx: 0 },
   ]
 }
 
@@ -331,6 +336,17 @@ export class Governor {
     if (this.level === this.levels - 1 && avg > this.fallbackMs) return 'fallback'
     return null
   }
+}
+
+/** Most frames per second a décor's ambient animation (leaves, snow) is drawn at. */
+export const AMBIENT_FPS = 30
+/**
+ * Whether a décor's ambient animation may run this frame: an animated scene, in Contemplation, at fx 2 (the two best
+ * quality levels), the window visible and focused, motion not reduced, and nothing else animating (a stone falling,
+ * a crossfade: those frames are the governor's to measure, and ambient frames are never sampled).
+ */
+export function ambientOn(o: { animated: boolean; contemplation: boolean; fx: number; visible: boolean; focused: boolean; reducedMotion: boolean; busy: boolean }) {
+  return o.animated && o.contemplation && o.fx >= 2 && o.visible && o.focused && !o.reducedMotion && !o.busy
 }
 
 /* ---------- readability ---------- */
@@ -427,18 +443,18 @@ export function wheelIntent(e: { deltaX: number; deltaY: number; deltaMode: numb
 }
 
 /**
- * The point a ray points at in the seated view: the first stone it crosses (lens shape) between y = 2·SH and the board,
+ * The point a ray points at in the seated view: the first stone it crosses (lens shape) between y = 2·sh and the board,
  * otherwise the board surface at y = 0, rounded to the nearest intersection (null off the grid).
  */
-export function pickPoint(o: number[], d: number[], N: number, stones: Map<number, Placed>): [number, number] | null {
+export function pickPoint(o: number[], d: number[], N: number, stones: Map<number, Placed>, shape: StoneShape): [number, number] | null {
   if (d[1] >= 0) return null
-  const t0 = (2 * SH - o[1]) / d[1], t1 = -o[1] / d[1], n = Math.ceil(((t1 - t0) * Math.hypot(d[0], d[2])) / 0.5) + 1
+  const SH = shape.sh, t0 = (2 * SH - o[1]) / d[1], t1 = -o[1] / d[1], n = Math.ceil(((t1 - t0) * Math.hypot(d[0], d[2])) / 0.5) + 1
   for (let k = 0; k <= n; k++) {
     const t = t0 + ((t1 - t0) * k) / n, x = o[0] + d[0] * t, y = o[1] + d[1] * t, z = o[2] + d[2] * t
     const i = Math.round(x / SX + (N - 1) / 2), j = Math.round(z / SZ + (N - 1) / 2)
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
       const i2 = i + di, j2 = j + dj, s = i2 >= 0 && j2 >= 0 && i2 < N && j2 < N ? stones.get(j2 * N + i2) : undefined
-      if (s && Math.abs(y - SH) < lens(Math.hypot(x - s.tx, z - s.tz), s.R)) return [s.x, s.y]
+      if (s && Math.abs(y - SH) < lens(Math.hypot(x - s.tx, z - s.tz), s.R, SH, shape.lensExp)) return [s.x, s.y]
     }
   }
   const x = o[0] + d[0] * t1, z = o[2] + d[2] * t1, i = Math.round(x / SX + (N - 1) / 2), j = Math.round(z / SZ + (N - 1) / 2)

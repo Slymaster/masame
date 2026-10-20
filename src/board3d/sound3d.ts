@@ -22,6 +22,8 @@ function slots(buf: AudioBuffer, slot: number): Slots {
 
 export class StoneSound {
   enabled = true
+  /** The stone set's voice: multipliers on the stone hits' playback rate, low-pass cutoff and gain (StoneSpec.snd). */
+  tone = { rate: 1, lowpass: 1, gain: 1 }
   private ac: AudioContext | null = null
   private out: GainNode | null = null
   private room: GainNode | null = null
@@ -103,10 +105,10 @@ export class StoneSound {
     if (!this.live()) { void this.ready?.then(() => this.live() && this.stone(N, x, velocity)); return }
     const t = this.ac!.currentTime + 0.003
     this.voice(this.place!, this.pick(this.place!.starts.length), t, {
-      rate: 1 + (Math.random() * 2 - 1) * 0.03,
-      gain: 0.35 + 0.65 * velocity,
+      rate: (1 + (Math.random() * 2 - 1) * 0.03) * this.tone.rate,
+      gain: (0.35 + 0.65 * velocity) * this.tone.gain,
       pan: panFor(N, x),
-      lp: 5000 + 9000 * velocity, // softer hits are duller
+      lp: (5000 + 9000 * velocity) * this.tone.lowpass, // softer hits are duller
     })
   }
 
@@ -120,7 +122,7 @@ export class StoneSound {
     for (let i = 0; i < k; i++) {
       const t = t0 + 0.02 + Math.random() * (0.08 + 0.04 * k)
       this.voice(this.clicks!, Math.floor(Math.random() * this.clicks!.starts.length), t, {
-        rate: 0.88 + Math.random() * 0.24, gain: 0.25 + Math.random() * 0.35, pan: pan + (Math.random() - 0.5) * 0.2, lp: 7000, dur: 0.15,
+        rate: (0.88 + Math.random() * 0.24) * this.tone.rate, gain: (0.25 + Math.random() * 0.35) * this.tone.gain, pan: pan + (Math.random() - 0.5) * 0.2, lp: 7000 * this.tone.lowpass, dur: 0.15,
       })
     }
   }
