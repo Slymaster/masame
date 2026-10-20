@@ -30,13 +30,17 @@ export interface ShapeData {
   /**
    * Legs under the block, standing on the ground. `profile`: the leg's turned outline as [radius, height] pairs from the
    * floor (height 0) up to where it meets the block (height = `height`); `inset`: the leg's axis from the block's sides
-   * (across, along); `ridges`: lobes round a carved leg (a gardenia fruit has six to eight), `depth` their relief as a
-   * share of the radius (0 = a plain turned leg).
+   * (across, along); `ridges`: lobes round a carved leg (the gardenia fruit has five to seven sharp ridges), `depth` their
+   * relief as a share of the radius (0 = a plain turned leg), `sharp` a crest on each ridge instead of a soft lobe.
    */
-  legs?: { height: number; profile: [number, number][]; inset: [number, number]; ridges?: number; depth?: number }
+  legs?: { height: number; profile: [number, number][]; inset: [number, number]; ridges?: number; depth?: number; sharp?: boolean }
   /** A folding board: two halves meeting across the middle (z = 0), `gap` the seam's width. */
   fold?: { gap: number }
 }
+
+/** Each leg's axis from the block's sides on a BW × BD board: the shape's inset, closer in on small boards so the legs
+ *  never meet (a 9×9 block is half as wide). */
+export const legInset = (s: ShapeData, BW: number, BD: number): [number, number] => [Math.min(s.legs!.inset[0], BW / 4), Math.min(s.legs!.inset[1], BD / 4)]
 
 /** The ground's height under a shape (the board top is y = 0). */
 export const groundY = (s: ShapeData) => -(s.thickness + (s.legs?.height ?? 0))
