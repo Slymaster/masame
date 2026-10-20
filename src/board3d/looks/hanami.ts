@@ -6,5 +6,5 @@ import type { Look } from '../logic'
 export default {
   sky: 'hanami/bryanston_park_sunrise', skyAz: 0.8, tod: null, ground: 'walnut', tint: 0.9, rough: 0.8, fade: true, linen: true,
   key: 1.45, ibl: 0.85, exp: 1, soft: 1.4, shade: 0.85, lamp: 0, shoji: 0.6, ownCookie: true,
-  skin: 'washi', tiltMax: (80 * Math.PI) / 180, ambient: 'bambous/forest.mp3',
+  woodWarm: 0.85, skin: 'washi', tiltMax: (80 * Math.PI) / 180, ambient: 'bambous/forest.mp3',
 } satisfies Look
