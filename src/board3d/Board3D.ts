@@ -19,8 +19,9 @@ import { rng } from '../board/noise'
 import type { Decor } from './decors'
 import type { StoneSet } from './stoneSets'
 import { centreShift } from '../board/frame'
-import { bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, seatHeight, settle, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
+import { ambientOn, AMBIENT_FPS, bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, seatHeight, settle, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Look, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
+import { SCENES, type Scene, type SceneCtx } from './scenes'
 import { disposeKit, ghostOf, markerGeo, pendingOf, seeded, stoneKit, stoneLayer, type StoneKit } from './stones'
 import { cropRect, postcardCanvas, signatureFonts, toPng } from '../postcard'
 
@@ -73,6 +74,8 @@ const lerp = THREE.MathUtils.lerp
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
 const sstep = (a: number, b: number, v: number) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t) }
 const mkCanvas = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h })
+
+interface Mounted { s: Scene; g: THREE.Group; cookie: THREE.Texture | null }
 
 interface Stone extends Placed {
   p: number; c: Sign; seed: number; rotY: number
@@ -283,6 +286,10 @@ export class Board3D {
   })
   private fadeScene = new THREE.Scene().add(Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.fadeMat), { frustumCulled: false }))
   private holding = false // compiling the next look's shaders: the canvas keeps showing the last frame
+  /** The décor's scene (scenes/<décor>.ts) under sceneRoot, with the light cookie it asked for. */
+  private sceneRoot!: THREE.Group
+  private sceneOn: Mounted | null = null
+  private ambT = 0; private ambLast = 0; private ambWait = false // ambient animation clock (s), last ambient frame, waiting for the next one
 
   private state: Board3DState | null = null
   private N = 0
@@ -466,6 +473,7 @@ export class Board3D {
     clearInterval(this.autoTimer); clearTimeout(this.resizeTimer)
     this.cleanup()
     this.sound.destroy()
+    this.sceneOn?.s.dispose()
     if (!this.renderer) return
     this.scene.traverse(o => {
       const m = o as THREE.Mesh
@@ -625,6 +633,10 @@ export class Board3D {
     vm.customProgramCacheKey = () => 'vignette'
     this.vignette = Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), vm), { frustumCulled: false, renderOrder: 999, visible: false })
     scene.add(this.vignette)
+
+    // the décor's scene (Contemplation only)
+    this.sceneRoot = new THREE.Group(); this.sceneRoot.visible = false
+    scene.add(this.sceneRoot)
   }
 
   private bind() {
@@ -702,7 +714,7 @@ export class Board3D {
       if (this.onPlay(v)) this.drop(v, col)
     }
     const lost = (e: Event) => { e.preventDefault(); this.fallback('context-lost') }
-    const motion = () => this.invalidate()
+    const motion = () => this.invalidate() // also: the window shown or focused again resumes a décor's animation
     c.addEventListener('pointermove', move)
     c.addEventListener('pointerleave', leave)
     c.addEventListener('pointerdown', down)
@@ -716,6 +728,7 @@ export class Board3D {
     c.addEventListener('dblclick', dbl)
     c.addEventListener('webglcontextlost', lost)
     this.reducedMotion.addEventListener('change', motion)
+    document.addEventListener('visibilitychange', motion); window.addEventListener('focus', motion)
     // labels need the bundled font actually loaded
     void document.fonts?.load('500 12px Manrope').then(() => { if (this.coords && !this.dead) { this.buildLabels(); this.invalidate() } })
     // devicePixelRatio changes (window moved to another display): the query only fires once, so re-arm it
@@ -741,6 +754,7 @@ export class Board3D {
       c.removeEventListener('dblclick', dbl)
       c.removeEventListener('webglcontextlost', lost)
       this.reducedMotion.removeEventListener('change', motion)
+      document.removeEventListener('visibilitychange', motion); window.removeEventListener('focus', motion)
     }
   }
 
@@ -763,7 +777,10 @@ export class Board3D {
       if (this.dead) return
       setMaps(maps)
       if (!this.N) { this.N = 19; this.D = dims(19, false); this.buildBoard() }
+      const sc = await this.loadScene(decor)
+      if (this.dead) { sc?.s.dispose(); return }
       this.applyDecor(decor, env)
+      this.mountScene(sc)
       this.updateScene(performance.now())
       // hide the first-frame shader compile: compile both cameras for the off-screen target, then fade in
       this.renderer.setRenderTarget(this.composer.readBuffer)
@@ -862,12 +879,45 @@ export class Board3D {
     return true
   }
 
-  private async switchDecor() {
+  /** force: rebuild the scene of the same décor (the fx level changed). */
+  private async switchDecor(force = false) {
     if (!this.ready) return // boot picks up opts.decor
     const job = ++this.decorJob, d = this.opts.decor
-    const env = (await this.envFor(LOOKS[d].sky)).texture
-    if (job !== this.decorJob || this.dead || d === this.decorOn) return
-    await this.transition(() => this.applyDecor(d, env))
+    const [env, sc] = await Promise.all([this.envFor(LOOKS[d].sky).then(t => t.texture), this.loadScene(d)])
+    if (job !== this.decorJob || this.dead || (d === this.decorOn && !force)) { sc?.s.dispose(); return }
+    await this.transition(() => { this.applyDecor(d, env); this.mountScene(sc) })
+  }
+
+  /** Builds the décor's scene off-screen (null: none, or fx 0); a failing scene leaves the décor without it. */
+  private async loadScene(d: Decor, make?: () => Scene): Promise<Mounted | null> {
+    const f = SCENES[d], fx = this.q.fx
+    if ((!f && !make) || fx < 1) return null
+    try {
+      const s = make ? make() : (await f!()).default(), rec: Mounted = { s, g: new THREE.Group(), cookie: null }
+      const ctx: SceneCtx = {
+        root: rec.g, renderer: this.renderer, key: this.key, base: this.base, fx: fx as 1 | 2, board: { BW: this.D.BW, BD: this.D.BD },
+        setCookie: t => { rec.cookie = t; if (this.sceneOn === rec) this.shoji.map = t ?? this.shojiTex },
+      }
+      await s.build(ctx)
+      return rec
+    } catch (e) { console.error(`Board3D: the ${d} scene failed`, e); return null }
+  }
+
+  /** Swaps the mounted scene (inside transition()), freeing the previous one. */
+  private mountScene(rec: Mounted | null) {
+    const old = this.sceneOn
+    if (old) { this.sceneRoot.remove(old.g); old.s.dispose() }
+    this.sceneOn = rec; this.ambT = 0; this.ambLast = 0
+    if (rec) this.sceneRoot.add(rec.g)
+    this.shoji.map = rec?.cookie ?? this.shojiTex
+  }
+
+  /** A décor's ambient animation runs this frame (logic.ts ambientOn). */
+  private ambient(busy: boolean) {
+    return !!this.sceneOn?.s.animated && ambientOn({
+      animated: true, contemplation: this.camE > 0, fx: this.q.fx, visible: document.visibilityState === 'visible',
+      focused: document.hasFocus(), reducedMotion: this.instant(), busy,
+    })
   }
 
   /** PMREM environment for an HDRI (or three's RoomEnvironment), cached until a décor switch drops it. */
@@ -983,6 +1033,7 @@ export class Board3D {
     if (q.shadow !== prev.shadow) for (const l of [this.key, this.lamp, this.shoji]) { const n = l === this.shoji ? q.shadow / 2 : q.shadow; l.shadow.mapSize.set(n, n); l.shadow.map?.dispose(); l.shadow.map = null }
     if (q.msaa !== prev.msaa) for (const rt of [this.composer.renderTarget1, this.composer.renderTarget2]) { rt.samples = q.msaa; rt.dispose() }
     if (q.bowlSegments !== prev.bowlSegments && this.N) this.buildBowls()
+    if (q.fx !== prev.fx && (this.sceneOn || SCENES[this.opts.decor])) void this.switchDecor(true) // particles or not: the scene is built for its level
     this.extrasOn()
     this.invalidate()
   }
@@ -1373,7 +1424,7 @@ export class Board3D {
 
   /* ---------- frame loop (render on demand) ---------- */
 
-  private invalidate() { if (!this.raf && !this.dead) this.raf = requestAnimationFrame(t => this.frame(t)) }
+  private invalidate() { this.ambWait = false; if (!this.raf && !this.dead) this.raf = requestAnimationFrame(t => this.frame(t)) }
 
   private updateScene(now: number): boolean {
     let busy = false
@@ -1441,6 +1492,11 @@ export class Board3D {
     this.boardU.uRelief.value = this.fx.relief * c; this.boardU.uWobble.value = this.fx.wobble * c
     this.boardU.uInkRough.value = lerp(0.45, this.fx.inkRough, c); this.boardU.uPatina.value = this.fx.patina * c
     this.vigU.uVig.value = this.fx.vignette
+    // Contemplation's décor effects: the scene, and the HDRI behind the room (Look.backdrop)
+    const fxOn = ce > 0 && this.q.fx >= 1, bd = fxOn ? L.backdrop : undefined
+    this.sceneRoot.visible = fxOn
+    this.scene.background = bd ? this.scene.environment : null
+    if (bd) { this.scene.backgroundBlurriness = bd.blur; this.scene.backgroundIntensity = bd.intensity; this.scene.backgroundRotation.y = this.scene.environmentRotation.y }
     if (this.updateStones(now)) busy = true
     return busy
   }
@@ -1454,6 +1510,9 @@ export class Board3D {
   private frame(now: number) {
     cancelAnimationFrame(this.raf); this.raf = 0
     if (this.dead || !this.ready || this.holding) return
+    // only the décor's animation wants this frame, and its next one isn't due yet (≤ AMBIENT_FPS): wait for a later vsync
+    if (this.ambWait && now - this.ambLast < 1000 / AMBIENT_FPS - 4) { this.raf = requestAnimationFrame(t => this.frame(t)); return }
+    this.ambWait = false
     const moving = this.camE > 0 && stepOrbit(this.orbit, this.orbitGoal, this.lastFrame ? now - this.lastFrame : 16, this.instant())
     let busy = this.updateScene(now) || moving
     // camera frames are paced by the hand, not the GPU, and the governor never steps back up: they are not sampled
@@ -1462,10 +1521,14 @@ export class Board3D {
       if (r === 'down') this.pendingQ = true // applied under the next crossfade, resize or new board
       else if (r === 'fallback') this.fallback('slow')
     }
+    // the décor's animation: only on otherwise still frames, which the governor never samples
+    const amb = this.ambient(busy || !!this.fade)
+    if (amb) { const dt = this.ambLast ? Math.min(now - this.ambLast, 100) / 1000 : 0; this.ambT += dt; this.sceneOn!.s.update(dt, this.ambT); this.ambLast = now } else this.ambLast = 0
     this.render()
     if (this.drawFade(now)) busy = true
     this.lastFrame = busy ? now : 0
     if (busy) this.invalidate()
+    else if (amb) { this.ambWait = true; this.raf = requestAnimationFrame(t => this.frame(t)) }
   }
 
   /** The board's frame as the camera shows it, animations settled, at a pixel ratio of at least 2, signed; null until ready. */
@@ -1524,6 +1587,15 @@ export class Board3D {
       tune(o: Partial<typeof FX>) { const bar = self.fx.shojiBar; Object.assign(self.fx, o); if (self.fx.shojiBar !== bar) self.paintShoji(); self.extrasOn(); self.invalidate(); return { ...self.fx } },
       hideGrid(on: boolean) { self.noGrid = on; self.invalidate() },
       setQuality(level: number) { self.governor.level = level; self.applyQuality(self.ladder[level]) },
+      /** Mounts a scene factory on the current décor (null: back to the décor's own scene, if any), for trying scenes before they have a décor. */
+      async scene(make: (() => Scene) | null) {
+        const d = self.decorOn ?? self.opts.decor, rec = await self.loadScene(d, make ?? undefined)
+        await self.transition(() => self.mountScene(rec))
+      },
+      /** Changes the current décor's Look live (tuning a new décor in the demo page). */
+      look(o: Partial<Look>) { Object.assign(LOOKS[self.decorOn ?? self.opts.decor], o); self.extrasOn(); self.invalidate(); return { ...LOOKS[self.decorOn ?? self.opts.decor] } },
+      /** The ambient animation: running now, its clock (s). */
+      get ambient() { return { on: self.ambient(false), t: self.ambT, scene: !!self.sceneOn } },
       /** Macro framing for material inspection (null restores the camera). */
       closeUp(at: [number, number] | null, dist = 160, tilt = 50) {
         if (!at) { self.camOverride = null; self.invalidate(); return }

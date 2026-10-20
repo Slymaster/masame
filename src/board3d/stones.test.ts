@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { lens } from './logic'
+import { ambientOn, lens, qualityLadder } from './logic'
 import { STONE_SETS } from './stoneSets'
 import { dimOf, ghostOf, pendingOf, STONES, stoneGeo } from './stones'
 
@@ -80,5 +80,18 @@ describe('derived materials', () => {
     expect([ghostOf(slate, 1).opacity, ghostOf(shell, -1).opacity]).toEqual([0.5, 0.6])
     const p = pendingOf(shell, -1)
     expect([hex(p.color), p.roughness, p.clearcoat, p.opacity]).toEqual([0xfdfbf6, 0.3, 0.5, 0.78])
+  })
+})
+
+describe('ambient animation gate', () => {
+  const ok = { animated: true, contemplation: true, fx: 2, visible: true, focused: true, reducedMotion: false, busy: false }
+  it('runs only for an animated scene in Contemplation at fx 2, visible, focused, still, motion allowed', () => {
+    expect(ambientOn(ok)).toBe(true)
+    for (const k of ['animated', 'contemplation', 'visible', 'focused'] as const) expect(ambientOn({ ...ok, [k]: false }), k).toBe(false)
+    for (const k of ['reducedMotion', 'busy'] as const) expect(ambientOn({ ...ok, [k]: true }), k).toBe(false)
+    expect(ambientOn({ ...ok, fx: 1 })).toBe(false)
+  })
+  it('is allowed on the two best quality levels only', () => {
+    expect(qualityLadder(2).map(q => q.fx)).toEqual([2, 2, 1, 1, 0])
   })
 })
