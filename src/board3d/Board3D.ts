@@ -21,6 +21,7 @@ import type { Decor } from './decors'
 import type { StoneSet } from './stoneSets'
 import type { GobanShape, Wood } from './gobans'
 import { centreShift } from '../board/frame'
+import { drawBlurred } from '../board/canvasBlur'
 import { ambientOn, dofShare, AMBIENT_FPS, bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, seatHeight, settle, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Look, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
 import { SCENES, type Scene, type SceneCtx, type SceneGround } from './scenes'
@@ -1038,7 +1039,7 @@ export class Board3D {
     for (let u = S / 2 + 70 * k; u < S + bar; u += 260 * k) t.fillRect(u - bar / 2, 0, bar, S)
     for (let w = S / 2 + 45 * k; w > -bar; w -= 150 * k) t.fillRect(0, w - bar / 2, S, bar)
     for (let w = S / 2 + 45 * k; w < S + bar; w += 150 * k) t.fillRect(0, w - bar / 2, S, bar)
-    x.filter = `blur(${(3 * k).toFixed(1)}px)`; x.drawImage(tmp, 0, 0); x.filter = 'none'
+    drawBlurred(x, tmp, +(3 * k).toFixed(1))
     this.shojiTex.needsUpdate = true
   }
 
@@ -1439,8 +1440,7 @@ export class Board3D {
       t.fill()
     }
     x.clearRect(0, 0, OW, OW)
-    x.filter = `blur(${((OW * SX) / (this.D.BW * 1.7) * 0.42).toFixed(1)}px)`
-    x.drawImage(tmp, 0, 0); x.filter = 'none'
+    drawBlurred(x, tmp, +((OW * SX) / (this.D.BW * 1.7) * 0.42).toFixed(1))
     this.owTex.needsUpdate = true
   }
 
