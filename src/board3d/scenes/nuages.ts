@@ -105,8 +105,7 @@ void main() {
   #include <colorspace_fragment>
 }`
 
-/* the terrace: the bambous engawa's weathered planks, made once per session (a 2.5 Mpx canvas loop) */
-let planks: ReturnType<typeof engawa> | null = null
+/* the terrace: the bambous engawa's weathered planks (engawa() draws them once per session) */
 const PLANK = 120, TILE: [number, number] = [1600, 960] // as engawa() draws them (mm)
 
 export function make(s: Sea = SEA) {
@@ -130,7 +129,7 @@ export function make(s: Sea = SEA) {
         const occ = new THREE.Mesh(occGeo, occMat); occ.position.y = -BT - 1; occ.renderOrder = 999
         ctx.root.add(dome.mesh, occ); own.push(dome, tex, occGeo, occMat)
         // dark temple planks: the engawa darkened, a joint under the board's centre
-        const [cm, bm] = (planks ??= engawa()), aniso = Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy())
+        const [cm, bm] = engawa(), aniso = Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy())
         const tile = (cv: HTMLCanvasElement, srgb: boolean) => {
           const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3200 / TILE[0], 3200 / TILE[1])
           t.offset.set(0.37, 0.5 - ((0.5 * 3200 / TILE[1]) % 1) + PLANK / TILE[1] / 2); t.anisotropy = aniso

@@ -4,7 +4,9 @@ import { CANOPY, gust } from './bambous'
 
 describe('bamboo garden', () => {
   it('keeps the leaf shade readable and the sway calm', () => {
-    // measured on renders: a 0.24 floor with 80 % of the key through the leaves darkens the board by ≤ 23 % (cap 25 %)
+    // measured on renders (cookie vs open window, 99th percentile over free intersections): with 80 % of the key through
+    // the leaves, a 0.64 floor over the board darkens it by ≤ 23 % (cap 25 %); 0.24 there gave 38–45 %
+    expect(CANOPY.boardFloor).toBeGreaterThanOrEqual(0.62)
     expect(CANOPY.floor).toBeGreaterThanOrEqual(0.22)
     expect(look.shoji).toBeLessThanOrEqual(0.8)
     expect(CANOPY.tMin).toBeGreaterThanOrEqual(6); expect(CANOPY.tMax).toBeLessThanOrEqual(10)

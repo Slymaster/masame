@@ -2,6 +2,7 @@
 // floor (laminated hanji, finished with soybean and perilla oil: a warm satin sheen). Both are canvas-made and still.
 import * as THREE from 'three'
 import type { Scene } from '.'
+import { blurCanvas } from '../fx'
 
 const COOKIE_MM = 3200 // the shoji spot's cookie spans 2 × SHOJI_R (Board3D) at its distance
 const FLOOR_MM = 1200, TABLE_MM = 3200
@@ -15,7 +16,7 @@ const FLOOR = { rgb: [204, 174, 126], rough: 0.4 } // honey: the floor's colour 
  * The door's light (linear, white = full light): wooden bars leave light behind them (the hanji around them glows),
  * the paper softens every edge and adds its own faint cloudiness. Ttisal: fine vertical slats, a group of three
  * horizontal ones every ~780 mm (top, middle, bottom of a door); the stiles between door leaves darker. On the board a
- * bar darkens it by ≤ 25 % (measured: 1st percentile 24.6 % at the afternoon, shoji 0.45).
+ * bar darkens it by ≤ 25 % (measured, cookie vs open window, 99th percentile over the free intersections: 17–20 %).
  */
 function latticeCookie(S = 1024) {
   const k = S / COOKIE_MM, cv = canvas(S), x = cv.getContext('2d')!, tmp = canvas(S), t = tmp.getContext('2d')!, r = rng(7)
@@ -35,8 +36,7 @@ function latticeCookie(S = 1024) {
     g.addColorStop(0, `rgba(222,222,222,${0.25 + 0.3 * r()})`); g.addColorStop(1, 'rgba(255,255,255,0)')
     t.fillStyle = g; t.fillRect(cx - rad, cy - rad, 2 * rad, 2 * rad)
   }
-  x.fillStyle = '#fff'; x.fillRect(0, 0, S, S) // opaque under the blur's edges
-  x.filter = `blur(${(3 * k).toFixed(1)}px)`; x.drawImage(tmp, 0, 0); x.filter = 'none'
+  x.drawImage(tmp, 0, 0); blurCanvas(cv, 3 * k, 0) // the paper's 3 mm softening, by hand: WebKit ignores ctx.filter
   const tex = new THREE.CanvasTexture(cv)
   tex.colorSpace = THREE.NoColorSpace
   return tex

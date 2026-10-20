@@ -3,7 +3,7 @@
 // leaves lie on the planks by the frame's edges, and green culms stand between the veranda and the blurred garden.
 import * as THREE from 'three'
 import type { Scene } from '.'
-import { cookie, particles } from '../fx'
+import { blurCanvas, cookie, particles } from '../fx'
 import { BT } from '../logic'
 
 /** The leaf canopy's character (variants A/B/C were rendered from these). */
@@ -12,15 +12,18 @@ export interface Canopy {
   near: number; far: number
   /** Leaf length scale (1 = 110–200 mm on the board). */
   scale: number
-  /** Light left in a leaf's shadow (cookie value, linear): the readability floor. */
-  floor: number
+  /** Light left in a leaf's shadow (cookie value, linear) on the planks around the board, and over the board itself
+   *  (the readability floor there, raised smoothly over ~250 mm round it so no edge shows). */
+  floor: number; boardFloor: number
   /** Sway (cookie px at 512) and the slowest/fastest sway periods (s). */
   sway: number; tMin: number; tMax: number
   /** Stems' shadows across the light. */
   stems: number
 }
-// variant B of the grid (denser shade, brighter sun patches); floor 0.24 darkens the board by 22–23 % at most (measured)
-export const CANOPY: Canopy = { near: 110, far: 60, scale: 0.7, floor: 0.24, sway: 5, tMin: 6, tMax: 10, stems: 2 }
+// variant B of the grid (denser shade, brighter sun patches). Measured (cookie vs open window, 99th percentile over the
+// free intersections, worst of five moments): a 0.24 floor everywhere darkened the board by 38–45 %; lifted to 0.64
+// over the board it stays ≤ 25 % at every hour while the planks keep the deep dapple
+export const CANOPY: Canopy = { near: 110, far: 60, scale: 0.7, floor: 0.24, boardFloor: 0.64, sway: 5, tMin: 6, tMax: 10, stems: 2 }
 
 const S = 512 // cookie size: it spans the shoji spot's 3200 mm at the board, 6.25 mm a pixel
 
@@ -42,11 +45,13 @@ export function canopy(c: Canopy = CANOPY) {
   const r = rng(7), g = Math.round(255 * c.floor), ink = `rgb(${g},${g},${g})`
   const sprite = (w: number, h: number, blur: number, draw: (x: CanvasRenderingContext2D) => void) => {
     const cv = Object.assign(document.createElement('canvas'), { width: w, height: h }), x = cv.getContext('2d')!
-    x.filter = `blur(${blur}px)`; x.fillStyle = ink; draw(x); return cv
+    x.fillStyle = ink; draw(x); return blurCanvas(cv, blur) // blurred by hand: WebKit ignores ctx.filter
   }
   // a near leaf (6 mm penumbra: the cookie's own texels) and a far fan, blurred by the sun's disc from higher up
   const leaf = sprite(32, 8, 0.5, x => { x.translate(2, 4); leafPath(x, 27 * c.scale, 4 * c.scale) })
-  const fan = sprite(64, 64, 3, x => { x.translate(32, 32); for (let k = 0; k < 6; k++) { x.save(); x.rotate(-1.1 + k * 0.45 + r() * 0.2); leafPath(x, (20 + 8 * r()) * c.scale, 5 * c.scale); x.restore() } })
+  const fan = sprite(64, 64, 0, x => { // each leaf blurred on its own, then laid over the others (as ctx.filter drew them)
+    for (let k = 0; k < 6; k++) { const a = -1.1 + k * 0.45 + r() * 0.2, L = (20 + 8 * r()) * c.scale; x.drawImage(sprite(64, 64, 3, y => { y.translate(32, 32); y.rotate(a); leafPath(y, L, 5 * c.scale) }), 0, 0) }
+  })
   // fans of 3–6 leaves at a twig's tip, spread over the visible ground (the board in the middle), each twig its own sway
   type Twig = { x: number; y: number; a: number; T: number; ph: number; amp: number; leaves: [number, number][] }
   const twigs = (n: number, far: boolean): Twig[] => Array.from({ length: n }, () => {
@@ -59,6 +64,11 @@ export function canopy(c: Canopy = CANOPY) {
   })
   const nearT = twigs(c.near, false), farT = twigs(c.far, true)
   const stems = Array.from({ length: c.stems }, () => ({ u: S * (0.3 + 0.4 * r()), a: (r() - 0.5) * 0.5, w: 7 + 4 * r(), T: 9 + 3 * r(), ph: r() * 6.283 }))
+  // culms far above: long soft bars (2 px penumbra), each pre-blurred once across its width
+  const bars = stems.map(s => sprite(Math.ceil(s.w) + 16, 2 * S, 0, x => x.fillRect((Math.ceil(s.w) + 16 - s.w) / 2, 0, s.w, 2 * S)))
+  bars.forEach(b => blurCanvas(b, 2, 3, 'x'))
+  // the board's half diagonal is ~310 mm (50 px; the oblique sun only shrinks it in the cookie, the blur widens it), the lift is whole to 390 mm and fades out by 650 mm
+  let lift: CanvasGradient | null = null
   return (x: CanvasRenderingContext2D, t: number) => {
     x.globalCompositeOperation = 'source-over'; x.fillStyle = '#fff'; x.fillRect(0, 0, S, S)
     x.globalCompositeOperation = 'darken'
@@ -68,23 +78,29 @@ export function canopy(c: Canopy = CANOPY) {
       return [w.x + Math.cos(w.a + 1.57) * w.amp * s, w.y + Math.sin(w.a + 1.57) * w.amp * s, w.a + 0.06 * s] as const
     }
     for (const w of farT) { const [px, py, a] = at(w); x.setTransform(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), px, py); x.drawImage(fan, -32, -32) }
-    x.filter = 'blur(2px)'; x.fillStyle = `rgb(${g},${g},${g})`
-    for (const s of stems) { // culms far above: long soft bars, barely moving
+    stems.forEach((s, i) => { // barely moving
       const a = s.a + 0.01 * Math.sin(t * 6.283 / s.T + s.ph)
-      x.setTransform(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), s.u, S / 2); x.fillRect(-s.w / 2, -S, s.w, 2 * S)
-    }
-    x.filter = 'none'
+      x.setTransform(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), s.u, S / 2); x.drawImage(bars[i], -bars[i].width / 2, -S)
+    })
     for (const w of nearT) {
       const [px, py, a] = at(w)
       for (const [da, k] of w.leaves) { const b = a + da; x.setTransform(Math.cos(b) * k, Math.sin(b) * k, -Math.sin(b) * k, Math.cos(b) * k, px, py); x.drawImage(leaf, -2, -4) }
     }
-    x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over'
+    // over the board the shade never goes below boardFloor (lighten = max): the lines stay readable under the leaves
+    x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'lighten'
+    if (!lift) { const b = Math.round(255 * c.boardFloor); lift = x.createRadialGradient(S / 2, S / 2, 62, S / 2, S / 2, 104); lift.addColorStop(0, `rgb(${b},${b},${b})`); lift.addColorStop(1, '#000') }
+    x.fillStyle = lift; x.fillRect(0, 0, S, S)
+    x.globalCompositeOperation = 'source-over'
   }
 }
 
 /* ---------- the engawa: weathered cedar planks running across the view ---------- */
 const PLANK = 120, TILE: [number, number] = [1600, 960] // mm; the tile holds 8 planks, one butt joint each
-export function engawa(): [HTMLCanvasElement, HTMLCanvasElement] {
+let planks: [HTMLCanvasElement, HTMLCanvasElement] | null = null
+/** The planks' colour and bump canvases, drawn once per session (a ~350 ms pixel loop) and shared by every scene that lays
+ *  them (bambous, hanami, pluie, nuages): wrap them in your own textures, tint through the material, never draw on them. */
+export const engawa = () => (planks ??= drawEngawa())
+function drawEngawa(): [HTMLCanvasElement, HTMLCanvasElement] {
   const PX = 1.28, w = Math.round(TILE[0] * PX), h = Math.round(TILE[1] * PX), ph = PLANK * PX, n = Math.round(TILE[1] / PLANK)
   const col = Object.assign(document.createElement('canvas'), { width: w, height: h }), bump = Object.assign(document.createElement('canvas'), { width: w, height: h })
   const ci = new ImageData(w, h), bi = new ImageData(w, h), r = rng(31)

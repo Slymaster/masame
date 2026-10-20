@@ -7,5 +7,5 @@ export default {
   sky: 'neige/birchwood_night', skyAz: 5.06, tod: { az: 200, el: 40, K: 2400, I: 0, env: 0.5, exp: 1, room: 0 },
   ground: 'walnut', tint: 0.5, rough: 0.8, fade: false, linen: false,
   key: 0, ibl: 0.45, exp: 1.6, soft: 1.6, shade: 0.9, lamp: 5, shoji: 0,
-  skin: 'laque', tiltMax: (80 * Math.PI) / 180, ambient: 'neige/wind.mp3',
+  woodWarm: 1, skin: 'laque', tiltMax: (80 * Math.PI) / 180, ambient: 'neige/wind.mp3',
 } satisfies Look

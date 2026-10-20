@@ -13,13 +13,15 @@ const rng = (seed: number) => () => { seed = (seed + 0x6d2b79f5) | 0; let t = Ma
 const canvas = (w: number, h = w) => Object.assign(document.createElement('canvas'), { width: w, height: h })
 
 /**
- * Huanghuali: golden honey to light reddish brown, fine growth lines running along the board, a few "ghost faces"
+ * Huanghuali: amber honey to reddish brown, fine growth lines running along the board, a few "ghost faces"
  * (the swirling figure around knots the wood is prized for) and fine pores. Canvas strokes, wrapped so it tiles; the
  * waxed sheen is the material's (low roughness), not drawn. ~40 ms on this Mac.
  */
 /** The table's wood (variants A/B/C of the grid were rendered from these). */
 export interface Wood { tones: string[]; rough: number }
-export const WOOD: Wood = { tones: ['#a8834f', '#b38c57', '#9c7747', '#ae8752', '#a37d4b', '#b48d58', '#a8834f'], rough: 0.55 }
+// an older, deeper huanghuali (amber to reddish brown): the golden one matched the kaya, the board's lit far edge read 0.99–1.09×
+// the table's luminance; now 1.41–1.74× (seated view, every hour)
+export const WOOD: Wood = { tones: ['#93633a', '#9e6d40', '#885a33', '#99693d', '#8e5f37', '#a06f42', '#93633a'], rough: 0.55 }
 
 export function huanghuali(w: Wood = WOOD, seed = 9, S = 2048) {
   const W = S, H = S / 2, k = W / TILE[0], r = rng(seed), cv = canvas(W, H), x = cv.getContext('2d')!

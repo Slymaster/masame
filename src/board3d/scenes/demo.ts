@@ -2,20 +2,28 @@
 //   const m = await import('/src/board3d/scenes/demo.ts'); await view.debug.scene(m.default)          // snow + leaves + sky
 //   await view.debug.scene(() => m.only('petals'))                                                    // one kind at a time
 // The leaf cookie needs a décor whose Look has a shoji share (the Washitsu), or view.debug.look({ shoji: 0.4 }).
-import { cookie, particles, skyDome, type ParticleKind } from '../fx'
+import { blurCanvas, cookie, particles, skyDome, type ParticleKind } from '../fx'
 import type { Scene } from '.'
 
 /** Moving leaf shadows: two layers of soft blobs drifting at different speeds over the full light (white). */
+const LAYERS = [[26, 0.09, 0.35, 0.6], [16, 0.14, 0.25, 0.35]]
+let blobs: { S: number; cv: HTMLCanvasElement[] } | null = null
 export const leaves = (x: CanvasRenderingContext2D, t: number, S: number) => {
+  if (blobs?.S !== S) blobs = { S, cv: LAYERS.map(([, k, a]) => { // one blurred blob a layer, made once (WebKit ignores ctx.filter)
+    const sg = S * k * 0.25, n = Math.ceil(2 * (S * k + 3 * sg)), cv = Object.assign(document.createElement('canvas'), { width: n, height: n }), c = cv.getContext('2d')!
+    c.fillStyle = `rgba(0,0,0,${a})`; c.beginPath(); c.ellipse(n / 2, n / 2, S * k, S * k * 0.45, 0, 0, Math.PI * 2); c.fill()
+    return blurCanvas(cv, sg)
+  }) }
   x.fillStyle = '#fff'; x.fillRect(0, 0, S, S)
-  for (const [n, k, a, sp] of [[26, 0.09, 0.35, 0.6], [16, 0.14, 0.25, 0.35]]) {
-    x.filter = `blur(${(S * k * 0.25).toFixed(1)}px)`; x.fillStyle = `rgba(0,0,0,${a})`
+  LAYERS.forEach(([n, , , sp], l) => {
+    const b = blobs!.cv[l]
     for (let i = 0; i < n; i++) {
       const ph = i * 2.399, cx = (0.5 + 0.45 * Math.sin(ph * 3.1)) * S + Math.sin(t * sp + ph) * S * 0.03, cy = (0.5 + 0.45 * Math.cos(ph * 1.7)) * S + Math.cos(t * sp * 0.8 + ph) * S * 0.02
-      x.beginPath(); x.ellipse(cx, cy, S * k, S * k * 0.45, ph + 0.2 * Math.sin(t * sp + i), 0, Math.PI * 2); x.fill()
+      const a = ph + 0.2 * Math.sin(t * sp + i)
+      x.setTransform(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), cx, cy); x.drawImage(b, -b.width / 2, -b.height / 2)
     }
-  }
-  x.filter = 'none'
+  })
+  x.setTransform(1, 0, 0, 1, 0, 0)
 }
 
 export function only(kind: ParticleKind | 'all'): Scene {
