@@ -208,13 +208,13 @@ describe('décors', () => {
       const L = LOOKS[d]
       for (const v of [L.tint, L.rough, L.ibl, L.exp, L.soft, L.shade]) { expect(v).toBeGreaterThan(0); expect(v).toBeLessThanOrEqual(2) }
       expect(['walnut', 'tatami', 'paper']).toContain(L.ground)
-      if (L.sky) expect(Object.keys(import.meta.glob('../../public/assets/board3d/*.hdr'))).toContain(`../../public/assets/board3d/${L.sky}_1k.hdr`)
+      if (L.sky) expect(Object.keys(import.meta.glob('../../public/assets/board3d/**/*.hdr'))).toContain(`../../public/assets/board3d/${L.sky}_1k.hdr`)
       expect(L.key > 0 || L.lamp > 0).toBe(true) // something casts the shadows
     }
     expect(LOOKS.atelier.linen).toBe(true) // the app's own look in Study
     expect(LOOKS.lanterne.tod).not.toBeNull() // night: the time of day doesn't apply
     expect(LOOKS.lanterne.key).toBe(0)
-    for (const d of DECORS) expect(LOOKS[d].shoji > 0).toBe(d === 'washitsu') // the lattice is the Japanese room's
+    for (const d of ['atelier', 'lanterne', 'clair'] as const) expect(LOOKS[d].shoji).toBe(0) // of the first four, the lattice is the Japanese room's (new décors may light their own cookie)
     expect(LOOKS.washitsu.shoji).toBeLessThan(0.5) // the panes carry most of the window's light
   })
 })
