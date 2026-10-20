@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import look from '../looks/honinbo'
-import { BT, dims } from '../logic'
+import { dims } from '../logic'
+import { TABLE } from '../gobans'
 import { ANDON } from './honinbo'
 
 describe('Honinbo hall', () => {
   it("the fixed light comes from the andon's bearing and height, so the contact shadows lean away from it", () => {
-    const az = (Math.atan2(ANDON.z, ANDON.x) * 180) / Math.PI + 360, el = (Math.atan2(ANDON.light - BT, Math.hypot(ANDON.x, ANDON.z)) * 180) / Math.PI
+    const az = (Math.atan2(ANDON.z, ANDON.x) * 180) / Math.PI + 360, el = (Math.atan2(ANDON.light - TABLE.thickness, Math.hypot(ANDON.x, ANDON.z)) * 180) / Math.PI
     expect(Math.abs(look.tod!.az - az)).toBeLessThan(2)
     expect(Math.abs(look.tod!.el - el)).toBeLessThan(2)
   })

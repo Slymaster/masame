@@ -4,7 +4,6 @@
 import * as THREE from 'three'
 import type { Scene } from '.'
 import { cookie, particles, PARTICLES, skyDome, type ParticleLook } from '../fx'
-import { BT } from '../logic'
 import { engawa } from './bambous'
 
 /** The blossom canopy's character (variants A/B/C were rendered from these). */
@@ -150,7 +149,7 @@ export function make(c: Bloom = BLOOM) {
         // petals: the garden beyond the veranda, and a few beside the board (never over it), gone above the planks
         if (ctx.fx === 2) {
           const side = BW / 2 + 160
-          falling = [particles(PETALS, [-2400, -60, -2600, 2400, 1300, -600], 260, -60, 4),
+          falling = [particles(PETALS, [-2400, ctx.board.groundY, -2600, 2400, 1300, -600], 260, ctx.board.groundY, 4),
             particles(PETALS, [-side - 380, 60, -520, -side, 620, 420], 14, 110, 5), particles(PETALS, [side, 60, -520, side + 380, 620, 420], 14, 110, 6)]
           for (const p of falling) { ctx.root.add(p.mesh); own.push(p) }
         }
@@ -162,18 +161,18 @@ export function make(c: Bloom = BLOOM) {
         for (const [cx, cz, n] of [[-BW / 2 - 90, BD / 2 + 70, 5], [BW / 2 + 110, -BD / 2 - 60, 4], [BW / 2 - 60, BD / 2 + 120, 3], [-BW / 2 - 40, -BD / 2 - 90, 3]] as const)
           for (let i = 0; i < n; i++) rest.push([cx + (r() - 0.5) * 120, cz + (r() - 0.5) * 80])
         const petals = new THREE.InstancedMesh(pgeo, pm, rest.length), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0)
-        rest.forEach(([x, z], i) => { const s = 10 + 4 * r(); petals.setMatrixAt(i, m4.compose(new THREE.Vector3(x, -BT + 0.5 + i * 0.01, z), q.setFromAxisAngle(up, r() * 6.283), new THREE.Vector3(s * 0.8, 1, s))) })
+        rest.forEach(([x, z], i) => { const s = 10 + 4 * r(); petals.setMatrixAt(i, m4.compose(new THREE.Vector3(x, ctx.board.groundY + 0.5 + i * 0.01, z), q.setFromAxisAngle(up, r() * 6.283), new THREE.Vector3(s * 0.8, 1, s))) })
         petals.receiveShadow = true; ctx.root.add(petals); own.push(petals, pt, pm, pgeo)
         // cherry trees past the veranda, in the camera's reach when the eyes rise: dark trunks, limbs, soft pink crowns
         const bark = new THREE.MeshStandardMaterial({ color: 0x2b2420, roughness: 0.9 })
         const cyl = new THREE.CylinderGeometry(0.62, 1, 1, 10, 1, true).translate(0, 0.5, 0) // its foot at the origin
         const trees = [[-1750, -1950, 1.0], [-500, -2300, 0.9], [800, -2050, 1.05], [2000, -2300, 0.95], [-2900, -2250, 0.9], [3000, -1900, 1]] as const // within the far plane (~2.5 m past the board)
-        const wood: THREE.Matrix4[] = [], crowns: [THREE.Vector3, number][] = []
+        const Y = ctx.board.groundY, wood: THREE.Matrix4[] = [], crowns: [THREE.Vector3, number][] = []
         const v = new THREE.Vector3(), e = new THREE.Euler()
         for (const [tx, tz, k] of trees) {
           // a short trunk from the garden's ground, limbs spreading
           // low from it, the crowns hanging at eye height (the lifted view sees about 0 to 500 mm up at this depth)
-          const H = 900 * k, R = 45 * k, foot = new THREE.Vector3(tx, -400, tz), fork = new THREE.Vector3(tx, -400 + 520 * k, tz)
+          const H = 900 * k, R = 45 * k, foot = new THREE.Vector3(tx, Y - 340, tz), fork = new THREE.Vector3(tx, Y - 340 + 520 * k, tz)
           wood.push(new THREE.Matrix4().compose(foot, q.setFromEuler(e.set(0, 0, (r() - 0.5) * 0.12)), new THREE.Vector3(R, H, R)))
           for (let b = 0; b < 3; b++) {
             const a = (b / 3) * 6.283 + r(), lean = 0.95 + 0.3 * r(), L = (450 + 200 * r()) * k
@@ -181,7 +180,7 @@ export function make(c: Bloom = BLOOM) {
             wood.push(new THREE.Matrix4().compose(fork.clone(), q.clone(), new THREE.Vector3(R * 0.45, L, R * 0.45)))
             crowns.push([fork.clone().add(v), (650 + 300 * r()) * k])
           }
-          crowns.push([new THREE.Vector3(tx, -400 + H + 100, tz), 1000 * k])
+          crowns.push([new THREE.Vector3(tx, Y - 340 + H + 100, tz), 1000 * k])
         }
         const trunks = new THREE.InstancedMesh(cyl, bark, wood.length); wood.forEach((m, i) => trunks.setMatrixAt(i, m))
         trunks.renderOrder = -2; ctx.root.add(trunks); own.push(trunks, bark, cyl)

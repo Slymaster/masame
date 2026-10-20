@@ -9,6 +9,7 @@ import { gx, gz, jitter, settle, type Placed } from '../board3d/logic'
 import { postcardCanvas, signatureFonts, toPng } from '../postcard'
 import { tap } from './frame'
 import { drawBlurred } from './canvasBlur'
+import { woodOf, type Wood, type WoodData } from '../board3d/gobans'
 import { STONE_DATA, type Mark2D, type Mark2DParams, type Skin2D, type StoneSet } from '../board3d/stoneSets'
 
 export interface BoardState {
@@ -56,12 +57,13 @@ const mk = (w: number, h: number) => Object.assign(document.createElement('canva
 // Grain is computed once in a fixed "reference" space (an 800px-wide top at 2× density) and scaled to the board,
 // so resizing the window never recomputes it and the grain scales like a real board would.
 const WOOD_REF = 800, WOOD_PX = 1600
-let woodCache: HTMLCanvasElement | null = null
-function wood(): HTMLCanvasElement {
-  if (woodCache) return woodCache
+const woodCache = new Map<string, HTMLCanvasElement>()
+/** The top's grain in a wood's two colours (WoodData.skin2d; kaya's by default), made once per wood. */
+function wood(L = [224, 180, 110], D = [176, 120, 58]): HTMLCanvasElement {
+  const key = `${L}|${D}`, hit = woodCache.get(key)
+  if (hit) return hit
   const w = WOOD_PX, k = WOOD_REF / WOOD_PX, cv = mk(w, w), x = cv.getContext('2d')!
   const img = x.createImageData(w, w), d = img.data
-  const L = [224, 180, 110], D = [176, 120, 58]
   for (let j = 0; j < w; j++) {
     const Y = j * k
     const warp = 3.2 * Math.sin(Y * 0.0045 + 1.3) + 1.1 * Math.sin(Y * 0.019 + 0.4) + 5 * (n1(Y * 0.005 + 50) - 0.5)
@@ -82,7 +84,8 @@ function wood(): HTMLCanvasElement {
     }
   }
   x.putImageData(img, 0, 0)
-  return (woodCache = cv)
+  woodCache.set(key, cv)
+  return cv
 }
 
 /* ---------- geometry ---------- */
@@ -110,7 +113,7 @@ const shade = (x: CanvasRenderingContext2D, [c, blur, d]: readonly [string, numb
 function boardPath(x: CanvasRenderingContext2D, { bx, by, bw }: Geom, t: number) {
   x.beginPath(); x.moveTo(bx, by); x.lineTo(bx + bw, by); x.lineTo(bx + bw + t * 0.45, by + t * 0.5); x.lineTo(bx + bw + t * 0.45, by + bw + t); x.lineTo(bx, by + bw + t); x.closePath()
 }
-function drawBoard(x: CanvasRenderingContext2D, g: Geom, S: number, dpr: number) {
+function drawBoard(x: CanvasRenderingContext2D, g: Geom, S: number, dpr: number, skin?: WoodData['skin2d']) {
   const { bx, by, bw } = g, t = S * 0.016
   for (const sh of boardShadows(S, dpr)) { x.save(); shade(x, sh); x.fillStyle = '#8a5a28'; x.fillRect(bx, by, bw + t * 0.45, bw + t); x.restore() }
   // thickness: front (bottom) and right side faces
@@ -130,7 +133,7 @@ function drawBoard(x: CanvasRenderingContext2D, g: Geom, S: number, dpr: number)
   x.restore()
   // top face
   x.imageSmoothingQuality = 'high'
-  x.drawImage(wood(), bx, by, bw, bw)
+  x.drawImage(wood(skin?.light, skin?.dark), bx, by, bw, bw)
   // warm afternoon light from the upper left
   gr = x.createRadialGradient(bx + bw * 0.15, by + bw * 0.1, 0, bx + bw * 0.15, by + bw * 0.1, bw * 1.25)
   gr.addColorStop(0, 'rgba(255,236,196,0.16)'); gr.addColorStop(1, 'rgba(90,50,10,0.10)')
@@ -472,8 +475,17 @@ export class BoardView {
   /** The stone set drawn and heard (its three-free data: skin2d, snd); the stones are redrawn on the next frame. */
   setStones(set: StoneSet) { if (set !== this.set) { this.set = set in STONE_DATA ? set : 'japonaise'; this.req() } }
 
+  /** The board's wood (gobans.ts WoodData): its two grain colours and its knock; redrawn on the next frame. */
+  setWood(w: Wood) { if (w !== this.woodId) { this.woodId = w; this.req() } }
+  private woodId: Wood = 'kaya'
+  /** The set's voice, scaled by the wood's knock. */
+  private snd() {
+    const s = STONE_DATA[this.set].snd, w = woodOf(this.woodId).snd
+    return w ? { ...s, rate: s.rate * (w.rate ?? 1), lowpass: s.lowpass * (w.lowpass ?? 1), gain: s.gain * (w.gain ?? 1) } : s
+  }
+
   /** The bot passed: a soft tap, nothing drawn. */
-  pass() { if (this.state?.sound) playTap(STONE_DATA[this.set].snd) }
+  pass() { if (this.state?.sound) playTap(this.snd()) }
 
   /** Animates and sounds a stone landing (the player's click, or the bot's move). */
   drop(v: Vertex, c: Sign) {
@@ -481,7 +493,7 @@ export class BoardView {
     const N = this.placedN, p = v[1] * N + v[0] // the bot's drop arrives before its state update: put the stone down now
     if (N && this.placed.get(p)?.c !== c) { this.placed.delete(p); this.place(N, p, c) }
     if (!this.reducedMotion.matches) this.anim = { x: v[0], y: v[1], c, start: performance.now() }
-    if (this.state?.sound) playClack(STONE_DATA[this.set].snd)
+    if (this.state?.sound) playClack(this.snd())
     this.req()
   }
 
@@ -489,7 +501,7 @@ export class BoardView {
   shake(v: Vertex, c: Sign) {
     this.hover = null
     this.shook = { x: v[0], y: v[1], c, start: performance.now() }
-    if (this.state?.sound) playTap(STONE_DATA[this.set].snd)
+    if (this.state?.sound) playTap(this.snd())
     this.req()
   }
 
@@ -600,13 +612,13 @@ export class BoardView {
     if (!s || !this.S) return
     const { S, dpr } = this, N = s.signMap.length, W = this.canvas.width
 
-    const woodKey = `${S}|${dpr}|${N}|${s.coords}`
+    const woodKey = `${S}|${dpr}|${N}|${s.coords}|${this.woodId}`
     if (woodKey !== this.woodKey) {
       this.syncGeom()
       this.wood = mk(W, W)
       const x = this.wood.getContext('2d')!
       x.setTransform(dpr, 0, 0, dpr, 0, 0)
-      drawBoard(x, this.g!, S, dpr)
+      drawBoard(x, this.g!, S, dpr, woodOf(this.woodId).skin2d)
       this.woodKey = woodKey; this.baseKey = ''
     }
     const g = this.g!

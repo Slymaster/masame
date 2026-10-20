@@ -6,7 +6,7 @@ import { DECORS, type Decor } from './decors'
 
 /* ---------- real dimensions (mm) ---------- */
 export const SX = 22, SZ = 23.7          // grid spacing across / along (cells are longer than wide)
-export const BT = 60                      // board thickness (a table board, not a legged one)
+// the board's thickness and what stands under it: gobans.ts (ShapeData, groundY)
 
 /**
  * A stone set's shape (mm): radii of the black and white stones; the height of the dome above the girdle (shTop) and below

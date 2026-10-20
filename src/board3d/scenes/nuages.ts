@@ -4,7 +4,6 @@
 import * as THREE from 'three'
 import type { Scene } from '.'
 import { skyDome } from '../fx'
-import { BT } from '../logic'
 import look from '../looks/nuages'
 import { engawa } from './bambous'
 
@@ -126,7 +125,7 @@ export function make(s: Sea = SEA) {
         // the terrace hides the sky below it: a depth-only plane just under the table (which writes no depth), so the
         // sea's march never runs under the planks; it also hides the wisps where they pass under the terrace
         const occGeo = new THREE.PlaneGeometry(3200, 3200).rotateX(-Math.PI / 2), occMat = new THREE.MeshBasicMaterial({ colorWrite: false })
-        const occ = new THREE.Mesh(occGeo, occMat); occ.position.y = -BT - 1; occ.renderOrder = 999
+        const occ = new THREE.Mesh(occGeo, occMat); occ.position.y = ctx.board.groundY - 1; occ.renderOrder = 999
         ctx.root.add(dome.mesh, occ); own.push(dome, tex, occGeo, occMat)
         // dark temple planks: the engawa darkened, a joint under the board's centre
         const [cm, bm] = engawa(), aniso = Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy())
@@ -140,7 +139,7 @@ export function make(s: Sea = SEA) {
         const sillMat = new THREE.MeshStandardMaterial({ color: 0x6a4a36, roughness: 0.75 })
         const along = new THREE.BoxGeometry(3300, 36, 120), side = new THREE.BoxGeometry(120, 36, 3200)
         for (const [g, x, z] of [[along, 0, -1600], [side, -1600, 0], [side, 1600, 0]] as const) {
-          const m = new THREE.Mesh(g, sillMat); m.position.set(x, -BT + 6, z); m.castShadow = m.receiveShadow = true; ctx.root.add(m)
+          const m = new THREE.Mesh(g, sillMat); m.position.set(x, ctx.board.groundY + 6, z); m.castShadow = m.receiveShadow = true; ctx.root.add(m)
         }
         own.push(sillMat, along, side)
         // wisps rising past the edge, below the terrace, drifting sideways (fx 2 only)
@@ -156,7 +155,7 @@ export function make(s: Sea = SEA) {
           const wisps = new THREE.InstancedMesh(geo, mat, n), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3()
           for (let i = 0; i < n; i++) {
             const r = rnd.subarray(i * 4, i * 4 + 4), w = 900 + 700 * r[2]
-            wisps.setMatrixAt(i, m4.compose(v.set(-2500 + 5000 * (i + r[0] * 0.6) / n, -BT - 60 + 100 * r[1], -1700 - 300 * r[3]), q, sc.set(w * 1.4, w * 0.22, 1)))
+            wisps.setMatrixAt(i, m4.compose(v.set(-2500 + 5000 * (i + r[0] * 0.6) / n, ctx.board.groundY - 60 + 100 * r[1], -1700 - 300 * r[3]), q, sc.set(w * 1.4, w * 0.22, 1)))
           }
           wisps.frustumCulled = false // they move in the vertex shader
           wisps.onBeforeRender = (_r, _s, cam) => { mat.uniforms.uFar.value = (cam as THREE.PerspectiveCamera).far }

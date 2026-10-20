@@ -4,7 +4,6 @@
 import * as THREE from 'three'
 import type { Scene } from '.'
 import { particles, PARTICLES, skyDome, type ParticleLook } from '../fx'
-import { BT } from '../logic'
 import { engawa } from './bambous'
 
 /** The veranda's outer edge (mm; the board's far edge is at about -230): it shows along the seated frame's top (~-440),
@@ -65,7 +64,7 @@ export function make(c: Rain = RAIN) {
     return {
       animated: true,
       async build(ctx) {
-        const aniso = Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy()), Y = -BT
+        const aniso = Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy()), Y = ctx.board.groundY
         const tex = await new THREE.TextureLoader().loadAsync(`${ctx.base}pluie/backdrop_2k.jpg`)
         tex.colorSpace = THREE.SRGBColorSpace; tex.generateMipmaps = false; tex.minFilter = THREE.LinearFilter
         const garden = skyDome(GARDEN, { uMap: { value: tex }, uRot: { value: 1.57 }, uGain: { value: 1 } })

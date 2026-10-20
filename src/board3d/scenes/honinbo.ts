@@ -3,7 +3,6 @@
 // the tokonoma across the room, a hanging scroll of abstract ink strokes (never real writing) in it, faintly lit.
 import * as THREE from 'three'
 import type { Scene } from '.'
-import { BT } from '../logic'
 
 const rng = (seed: number) => () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
 const canvas = (w: number, h = w) => Object.assign(document.createElement('canvas'), { width: w, height: h })
@@ -14,7 +13,6 @@ export const ANDON = { x: -820, z: -480, w: 250, h: 720, paper: [190, 610] as [n
 export const ANDON_COLOR = 0xffa65a
 /** The tokonoma: the room's far wall (z), the alcove's opening (x), its depth and the raised floor's height. */
 const TOKO = { wall: -1400, x0: -700, x1: 800, depth: 520, floor: 100 }
-const FLOOR = -BT // the tatami
 
 /**
  * The scroll (kakejiku), 450 × 1800 mm: silk mounting (dark heaven and earth panels, a paler surround, two thin bands),
@@ -77,7 +75,7 @@ export default (): Scene => {
       const M = (o: THREE.MeshStandardMaterialParameters) => { const m = new THREE.MeshStandardMaterial(o); own.push(m); return m }
       // the andon: a dark wooden frame (four legs, rails, a top rim), paper sides glowing with the light inside.
       // Nothing of it casts a shadow: the lamp sits inside it.
-      const A = ANDON, wood = M({ color: 0x2a1a10, roughness: 0.55 })
+      const A = ANDON, FLOOR = ctx.board.groundY, wood = M({ color: 0x2a1a10, roughness: 0.55 })
       const ptex = new THREE.CanvasTexture(paperMap()); ptex.colorSpace = THREE.SRGBColorSpace; own.push(ptex)
       const paper = M({ color: 0x5a4a38, roughness: 0.9, emissive: ANDON_COLOR, emissiveMap: ptex, emissiveIntensity: 1.6, side: THREE.DoubleSide })
       const at = (geo: THREE.BufferGeometry, dx: number, y: number, dz: number) => geo.translate(A.x + dx, FLOOR + y, A.z + dz)
