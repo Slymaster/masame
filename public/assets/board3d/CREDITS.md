@@ -41,5 +41,54 @@ Derived files (mono 44.1 kHz MP3, LAME VBR q3), cut, faded and loudness-matched 
 The capture ("stones onto the lid") is synthesised at runtime from these: a placement pitched down and low-passed
 (the wooden lid) plus a few clicks.
 
+## Décors and stone sounds added in 0.6
+Each folder keeps its own `CREDITS.md` with the full trail (URLs, sizes, checksums, every derivation step); the summary
+below follows it. All sources are CC0, licence lines checked on each asset's own page on 2026-10-20, the day of download.
+
+- **[bambous](bambous/CREDITS.md)** (Jardin de bambous): Poly Haven **Ninomaru Teien** by Greg Zaal —
+  https://polyhaven.com/a/ninomaru_teien — "CC0". `ninomaru_teien_1k.hdr` shipped unchanged (light, and the blurred
+  backdrop through three.js). Freesound 570492 **Ambiance_Natural_Forest_Birds_Wind_Loop_Stereo.wav** by Nox_Sound —
+  https://freesound.org/people/Nox_Sound/sounds/570492/ — "Creative Commons 0". `forest.mp3`: the HQ preview downmixed
+  to mono, cut to 29.9 s and crossfaded into a 27.9 s seamless loop, LAME VBR q3.
+- **[galets](galets/CREDITS.md)** (Galets stones): Freesound 704379 **small round pebbles on hardwood floor** by
+  ellie.vanderlip — https://freesound.org/people/ellie.vanderlip/sounds/704379/ — "Creative Commons 0". `place.mp3`:
+  12 single strikes cut before their first bounce, faded, peak-normalised and filtered, one per 0.5 s slot.
+- **[hanami](hanami/CREDITS.md)** (Hanami): Poly Haven **Bryanston Park Sunrise** by Dario Barresi —
+  https://polyhaven.com/a/bryanston_park_sunrise — "CC0 1.0 Universal - public domain dedication".
+  `bryanston_park_sunrise_1k.hdr` unchanged; `backdrop_2k.jpg` from the 2K HDRI, luminance capped, blurred, JPEG q82.
+  Sound: `bambous/forest.mp3`.
+- **[hanok](hanok/CREDITS.md)** (Hanok): Poly Haven **Pine Attic** by Sergej Majboroda —
+  https://polyhaven.com/a/pine_attic — CC0. `pine_attic_1k.hdr` unchanged (light and reflections only). Freesound 744447
+  **Soft Room Tone** by callmethefoo — https://freesound.org/people/callmethefoo/sounds/744447/ — "Creative Commons 0".
+  `room.mp3`: 30 s from 0:34 of the HQ preview, crossfaded into a seamless loop, mono, raised 14 dB, MP3 VBR q3.
+- **[honinbo](honinbo/CREDITS.md)** (Salle Honinbo): nothing new downloaded. `empty_play_room_night_1k.hdr` is the
+  shipped Empty Play Room HDRI (Greg Zaal and Jarod Guest, above) graded to a lamp-lit night room (soft luminance
+  roll-off, warm tint). Sound: `hanok/room.mp3`.
+- **[neige](neige/CREDITS.md)** (Nuit de neige): Poly Haven **Birchwood** by Sergej Majboroda —
+  https://polyhaven.com/a/birchwood — CC0. `birchwood_night_1k.hdr` and `backdrop_2k.jpg` graded to night (moon-blue
+  tint, darker zenith, capped sun; the backdrop blurred, JPEG q82). Freesound 637566 **forest light wind through bare
+  trees winter GREAT FOR FALLING SNOW** by kyles — https://freesound.org/people/kyles/sounds/637566/ — "Creative
+  Commons 0". `wind.mp3`: 38 s of the HQ preview, crossfaded into a seamless loop, mono, filtered, raised, MP3 VBR q3.
+- **[nuages](nuages/CREDITS.md)** (Au-dessus des nuages): Poly Haven **Kloppenheim 06 (Pure Sky)** by Greg Zaal and
+  Jarod Guest — https://polyhaven.com/a/kloppenheim_06_puresky — CC0. `kloppenheim_06_puresky_1k.hdr` unchanged;
+  `backdrop_2k.jpg` the 2K HDRI's sky band, capped, blurred with wrap, JPEG q82. Sound: `neige/wind.mp3`.
+- **[pavillon](pavillon/CREDITS.md)** (Pavillon du lettré): Poly Haven **Chinese Garden** by Andreas Mischok —
+  https://polyhaven.com/a/chinese_garden — "CC0 1.0 Universal - public domain dedication". `chinese_garden_1k.hdr` with
+  the sun disc capped at luminance 3 (the key light carries the sun); `backdrop_2k.jpg` from the 2K HDRI, capped,
+  tone-mapped, blurred, JPEG q82. Sound: `bambous/forest.mp3`.
+- **[pluie](pluie/CREDITS.md)** (Pluie sur la véranda): light from `bambous/ninomaru_teien_1k.hdr`. `backdrop_2k.jpg`
+  from the 2K Ninomaru Teien HDRI (Greg Zaal, CC0) graded to a wet overcast day, blurred, JPEG q82. Freesound 232731
+  **Rain Indoor Cabin (loop)** by PhilllChabbb — https://freesound.org/people/PhilllChabbb/sounds/232731/ — "Creative
+  Commons 0". `rain.mp3`: 14.4 s of the HQ preview, crossfaded into a seamless loop, mono, filtered, MP3 VBR q3.
+- **[verre](verre/CREDITS.md)** (Verre soufflé, Pierre de lune et obsidienne stones): Freesound 238886
+  **FX_MARBLES_BAG_DROP_ON_WOOD.wav** by Olichite — https://freesound.org/people/Olichite/sounds/238886/ — "Creative
+  Commons 0". `place.mp3`: 11 single glass clicks, each cut before the next marble touches, faded, filtered and
+  loudness-matched, one per 0.5 s slot.
+
+## Procedural (no files)
+The stone sets (shapes and materials), the Cosmos décor, and the gobans' shapes (table, legged, folding), woods and
+bamboo are made at runtime in code; no files. The five woods besides kaya are the kaya scan above, tinted and regraded
+in their own files (`src/board3d/woods/`); bamboo's laminated strips are drawn by a shader. The scenes' own procedural parts are listed in each folder's `CREDITS.md`.
+
 ## Code
 three.js 0.186.1 (MIT), loaded from npm.

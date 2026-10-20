@@ -28,6 +28,13 @@
     <td width="50%"><img src="docs/images/contemplation-fr.jpg" alt="Vue Contemplation" width="100%"><br><sub><b>Contemplation.</b> Le goban posé sur la table, vu de ta place, le soir.</sub></td>
   </tr>
   <tr>
+    <td width="50%"><img src="docs/images/workshop-fr.jpg" alt="Réglages, l'Atelier" width="100%"><br><sub><b>Atelier.</b> Décors, pierres, gobans et bois, chacun en galerie d'images.</sub></td>
+    <td width="50%"><img src="docs/images/worlds.jpg" alt="Quatre décors vus les yeux levés" width="100%"><br><sub><b>Des mondes.</b> Lève les yeux : le Jardin de bambous, la Nuit de neige, la Salle Honinbo à la lueur de son andon, le Cosmos.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/stones.jpg" alt="Cinq jeux de pierres en gros plan" width="100%"><br><sub><b>Pierres.</b> Yunzi à contre-jour, jade, agate, verre soufflé, braise et glace.</sub></td>
+  </tr>
+  <tr>
     <td width="50%"><img src="docs/images/learn-fr.jpg" alt="Apprendre, l'onglet Aujourd'hui" width="100%"><br><sub><b>Apprendre.</b> Le rituel du jour, puis chaque paquet avec ce qui est à revoir.</sub></td>
     <td width="50%"><img src="docs/images/games-fr.jpg" alt="Mes parties" width="100%"><br><sub><b>Mes parties.</b> Chaque partie gardée sur ta machine, les parties OGS en cours d'abord.</sub></td>
   </tr>
@@ -68,6 +75,7 @@ Le goban occupe la fenêtre ; à côté, une seule carte flottante porte la par
 ### Jouer
 
 - **L'Atelier vivant.** Un goban three.js en temps réel, bois et pierres aux matières physiques, lumière qui suit l'heure du jour, deux vues (Étude, et une vue assise, Contemplation, qu'on tourne et qu'on zoome à la souris), et des bols avec couvercles pour les pierres en réserve et capturées. 9×9, 13×13 et 19×19.
+- **Des pierres et des mondes.** Treize jeux de pierres, de l'ardoise et du coquillage japonais aux yunzi du Yunnan, au verre de Corée, au jade, à l'agate, aux galets de rivière et au verre soufflé, dont quatre à gagner ; treize décors, de l'Atelier au Jardin de bambous, à la Nuit de neige, au Hanok, à la Salle Honinbo, à une terrasse Au-dessus des nuages et au Cosmos, où tu peux lever les yeux vers le monde au-delà du goban ; trois formes de goban (de table, à pieds, pliant) en six bois. Le tout dans Réglages › Atelier, en galeries d'images, avec des ambiances toutes prêtes.
 - **Un adversaire humain.** KataGo, avec son réseau humain (SL), imite un joueur de 20k à 9d, avec ajustement automatique du niveau et temps de réflexion naturels (optionnels). Des parties à handicap de 2 à 9 pierres, proposé d'après l'écart entre ton niveau et celui de l'IA.
 - **Maîtres d'une époque.** Joue contre les professionnels de 1850, 1900, 1935, 1970, 2005 ou 2023, tels que les joue le réseau humain de KataGo, avec le handicap des parties d'enseignement d'autrefois, jusqu'à neuf pierres.
 - **Le Mentor.** Allume-le, et Masame t'arrête quand un coup coûte trop (4 points en 19×19, 3 en 13×13, 2 en 9×9) : réessaie, ou garde-le. Une partie avec le mentor est une leçon : elle ne compte jamais pour ton rang.
@@ -107,6 +115,7 @@ Le goban occupe la fenêtre ; à côté, une seule carte flottante porte la par
 ### Réglages
 
 - **Les saisons dans la lumière.** En Auto, la lumière suit l'heure et la date : une heure dorée plus longue en été, une lumière basse et froide en hiver, et le reflet de la neige dans le Washitsu de décembre à février.
+- **Décor auto, ambiance sonore, profondeur de champ.** Le décor peut suivre la saison et l'heure ; une ambiance sonore discrète (feuilles, vent, pluie) et une profondeur de champ d'objectif quand tu lèves les yeux sont là si tu les veux.
 - **Deux langues.** Entièrement en français et en anglais ; suit la langue du système et se change dans l'app.
 - **Un mode léger 2D.** Un goban Canvas, utilisé automatiquement quand le rendu 3D n'est pas disponible.
 
@@ -171,11 +180,11 @@ OGS n'autorise aucune aide d'un moteur pendant une partie : tant qu'une partie 
 - Les requêtes réseau vont à katagotraining.org (le catalogue des réseaux et leur téléchargement) et à GitHub pour les mises à jour (github.com et ses serveurs de fichiers). Si tu te connectes à OGS, Masame se connecte à online-go.com dès son démarrage, donc tu apparais en ligne là-bas tant qu'il est ouvert. Pour proposer les pierres mortes quand la proposition d'OGS échoue, il peut envoyer la position finale à ai.online-go.com (le compteur d'OGS). Regarder des parties sans compte passe par une connexion OGS anonyme.
 - Au plus une fois par jour, Masame demande à GitHub si une nouvelle version existe (tu peux le désactiver dans les Réglages). Une mise à jour n'est téléchargée que si tu cliques sur Installer, et elle est vérifiée avec la clé de signature de Masame avant d'être installée.
 - Tes parties restent sur ta machine. La bibliothèque est un dossier dans le dossier de données de l'app (`games/`, à côté de `models/`), et rien de ce qu'il contient n'est envoyé nulle part. Les fichiers SGF que tu exportes sont enregistrés là où tu le choisis.
-- La politique de confidentialité complète, pour l'ordinateur et les téléphones : [PRIVACY.md](PRIVACY.md).
+- La politique de confidentialité complète, pour l'ordinateur et les téléphones : [PRIVACY.md](PRIVACY.md).
 
 ## Feuille de route
 
-Les fondations, l'Atelier vivant en 3D et le professeur sont en place, avec le client OGS. La version 0.3 a ajouté l'entraîneur de joseki, les variantes et la lecture automatique ; la version 0.4 a lu tes parties : la revue automatique, les exercices tirés de tes parties, ton rang lu dans tes coups, le rituel du jour, le handicap, l'analyse libre, une pendule locale et la carte postale. La version 0.5 fabrique tes leçons à partir de tes parties : la bibliothèque, les tsumego, le comptage, rejouer de mémoire et les Classiques, avec les Maîtres d'une époque, le mentor, l'éditeur de position et le kifu. Vient ensuite Masame sur Android, en bêta, et un installeur Windows signé. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
+Les fondations, l'Atelier vivant en 3D et le professeur sont en place, avec le client OGS. La version 0.3 a ajouté l'entraîneur de joseki, les variantes et la lecture automatique ; la version 0.4 a lu tes parties : la revue automatique, les exercices tirés de tes parties, ton rang lu dans tes coups, le rituel du jour, le handicap, l'analyse libre, une pendule locale et la carte postale. La version 0.5 fabrique tes leçons à partir de tes parties : la bibliothèque, les tsumego, le comptage, rejouer de mémoire et les Classiques, avec les Maîtres d'une époque, le mentor, l'éditeur de position et le kifu. La version 0.6 apporte des pierres et des mondes : treize jeux de pierres, treize décors et trois formes de goban en six bois. Vient ensuite Masame sur Android, en bêta, et un installeur Windows signé. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
 
 ## Remerciements
 
@@ -184,7 +193,7 @@ Les fondations, l'Atelier vivant en 3D et le professeur sont en place, avec le c
 - [goban](https://github.com/online-go/goban), d'Online-Go.com : la connexion et le protocole du client OGS (`goban-engine`, Apache-2.0).
 - [FSRS](https://github.com/open-spaced-repetition), d'Open Spaced Repetition : la répétition espacée de l'entraînement aux joseki (MIT).
 - [three.js](https://threejs.org/), [Tauri](https://tauri.app/) et [React](https://react.dev/).
-- Textures de bois d'[ambientCG](https://ambientcg.com/), éclairage (HDRI) de [Poly Haven](https://polyhaven.com/), sons de pierres de [Freesound](https://freesound.org/) par billhails2, Hongsungbock et MPooman — tous en CC0.
+- Textures de bois d'[ambientCG](https://ambientcg.com/), éclairage (HDRI) de [Poly Haven](https://polyhaven.com/) par Greg Zaal, Jarod Guest, Sergej Majboroda, Dario Barresi et Andreas Mischok, sons de pierres et d'ambiance de [Freesound](https://freesound.org/) par billhails2, Hongsungbock, MPooman, ellie.vanderlip, Olichite, Nox_Sound, kyles, PhilllChabbb et callmethefoo — tous en CC0.
 - Polices : Cormorant Garamond et Manrope, sous SIL Open Font License.
 
 ## Licence
