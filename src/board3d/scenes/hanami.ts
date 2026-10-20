@@ -20,6 +20,7 @@ export interface Bloom {
   /** The park backdrop's turn (rad): where its low pink sun glows behind the trees. */
   parkRot: number
 }
+// measured (cookie vs open window, 99th percentile over the free intersections, worst of five moments): 18–21 % (cap 25 %)
 export const BLOOM: Bloom = { clusters: 170, floor: 0.46, branchFloor: 0.4, sway: 2.5, tMin: 14, tMax: 22, crisp: 1, parkRot: 1.9 }
 
 const S = 512 // the cookie spans the shoji spot's 3200 mm across the light (6.25 mm a pixel; ~10 mm on the board, seen obliquely)

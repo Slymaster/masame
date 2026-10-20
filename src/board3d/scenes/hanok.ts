@@ -16,7 +16,7 @@ const FLOOR = { rgb: [204, 174, 126], rough: 0.4 } // honey: the floor's colour 
  * The door's light (linear, white = full light): wooden bars leave light behind them (the hanji around them glows),
  * the paper softens every edge and adds its own faint cloudiness. Ttisal: fine vertical slats, a group of three
  * horizontal ones every ~780 mm (top, middle, bottom of a door); the stiles between door leaves darker. On the board a
- * bar darkens it by ≤ 25 % (measured: 1st percentile 24.6 % at the afternoon, shoji 0.45).
+ * bar darkens it by ≤ 25 % (measured, cookie vs open window, 99th percentile over the free intersections: 17–20 %).
  */
 function latticeCookie(S = 1024) {
   const k = S / COOKIE_MM, cv = canvas(S), x = cv.getContext('2d')!, tmp = canvas(S), t = tmp.getContext('2d')!, r = rng(7)

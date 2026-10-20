@@ -12,15 +12,18 @@ export interface Canopy {
   near: number; far: number
   /** Leaf length scale (1 = 110–200 mm on the board). */
   scale: number
-  /** Light left in a leaf's shadow (cookie value, linear): the readability floor. */
-  floor: number
+  /** Light left in a leaf's shadow (cookie value, linear) on the planks around the board, and over the board itself
+   *  (the readability floor there, raised smoothly over ~250 mm round it so no edge shows). */
+  floor: number; boardFloor: number
   /** Sway (cookie px at 512) and the slowest/fastest sway periods (s). */
   sway: number; tMin: number; tMax: number
   /** Stems' shadows across the light. */
   stems: number
 }
-// variant B of the grid (denser shade, brighter sun patches); floor 0.24 darkens the board by 22–23 % at most (measured)
-export const CANOPY: Canopy = { near: 110, far: 60, scale: 0.7, floor: 0.24, sway: 5, tMin: 6, tMax: 10, stems: 2 }
+// variant B of the grid (denser shade, brighter sun patches). Measured (cookie vs open window, 99th percentile over the
+// free intersections, worst of five moments): a 0.24 floor everywhere darkened the board by 38–45 %; lifted to 0.64
+// over the board it stays ≤ 25 % at every hour while the planks keep the deep dapple
+export const CANOPY: Canopy = { near: 110, far: 60, scale: 0.7, floor: 0.24, boardFloor: 0.64, sway: 5, tMin: 6, tMax: 10, stems: 2 }
 
 const S = 512 // cookie size: it spans the shoji spot's 3200 mm at the board, 6.25 mm a pixel
 
@@ -64,6 +67,8 @@ export function canopy(c: Canopy = CANOPY) {
   // culms far above: long soft bars (2 px penumbra), each pre-blurred once across its width
   const bars = stems.map(s => sprite(Math.ceil(s.w) + 16, 2 * S, 0, x => x.fillRect((Math.ceil(s.w) + 16 - s.w) / 2, 0, s.w, 2 * S)))
   bars.forEach(b => blurCanvas(b, 2, 3, 'x'))
+  // the board's half diagonal is ~310 mm (50 px; the oblique sun only shrinks it in the cookie, the blur widens it), the lift is whole to 390 mm and fades out by 650 mm
+  let lift: CanvasGradient | null = null
   return (x: CanvasRenderingContext2D, t: number) => {
     x.globalCompositeOperation = 'source-over'; x.fillStyle = '#fff'; x.fillRect(0, 0, S, S)
     x.globalCompositeOperation = 'darken'
@@ -81,7 +86,11 @@ export function canopy(c: Canopy = CANOPY) {
       const [px, py, a] = at(w)
       for (const [da, k] of w.leaves) { const b = a + da; x.setTransform(Math.cos(b) * k, Math.sin(b) * k, -Math.sin(b) * k, Math.cos(b) * k, px, py); x.drawImage(leaf, -2, -4) }
     }
-    x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over'
+    // over the board the shade never goes below boardFloor (lighten = max): the lines stay readable under the leaves
+    x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'lighten'
+    if (!lift) { const b = Math.round(255 * c.boardFloor); lift = x.createRadialGradient(S / 2, S / 2, 62, S / 2, S / 2, 104); lift.addColorStop(0, `rgb(${b},${b},${b})`); lift.addColorStop(1, '#000') }
+    x.fillStyle = lift; x.fillRect(0, 0, S, S)
+    x.globalCompositeOperation = 'source-over'
   }
 }
 
