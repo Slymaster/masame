@@ -19,14 +19,52 @@ export const STONE_SETS = [
 ] as const
 export type StoneSet = typeof STONE_SETS[number]
 
+/**
+ * What BoardView draws over a 2D stone's gradient, clipped to the stone: 'growth' the Hyuga shell's striations, 'veins'
+ * a few fine wandering lines (jade, marble), 'bands' agate's concentric layers, 'bubbles' small trapped air (glass, amber),
+ * 'speckles' fine grain (pebbles, granite), 'stars' tiny glowing points (nebula), 'cracks' jagged glowing lines (ember),
+ * 'sheen' a soft brushed band across the stone (metal).
+ */
+export type Mark2D = 'none' | 'growth' | 'veins' | 'bands' | 'bubbles' | 'speckles' | 'stars' | 'cracks' | 'sheen'
+/** A mark's tuning; every field is optional and 1 / the mark's own colour by default. */
+export interface Mark2DParams {
+  /** sRGB colour of the lines, dots or band. */
+  color?: number[]
+  /** Multiplier on the mark's opacity. */
+  amount?: number
+  /** Multiplier on the mark's size (line width, dot radius, band spacing). */
+  scale?: number
+  /** Multiplier on how many lines, dots or bands are drawn. */
+  count?: number
+}
+/** Optional finishing of one colour's 2D stone (absent = the Japanese set's look). */
+export interface Skin2DFinish {
+  /** Positions (0..1) of the gradient stops, one per colour; absent = the Japanese spacing for 4 stops, else even. */
+  stops?: number[]
+  /** A glow just inside the rim, for translucent stones (yunzi's green, jade, amber): sRGB colour, opacity 0..1, width as a share of the radius (default 0.35). */
+  rim?: { color: number[]; strength: number; width?: number }
+  /** The specular spot: opacity (Japanese 0.17 black, 0.55 white), size as a share of the radius (0.5 black, 0.42 white), sRGB colour. */
+  highlight?: { strength?: number; size?: number; color?: number[] }
+  /** Tuning of this colour's mark. */
+  mark?: Mark2DParams
+}
 /** The 2D board's version of a set (drawn by BoardView.stone()): radial gradient stops (sRGB, centre → rim) and its marks. */
-export interface Skin2D { black: number[][]; white: number[][]; marks: { black: 'none' | 'veins' | 'bands' | 'bubbles'; white: 'none' | 'growth' | 'veins' | 'bands' | 'bubbles' } }
+export interface Skin2D {
+  black: number[][]; white: number[][]
+  marks: { black: Mark2D; white: Mark2D }
+  finish?: { black?: Skin2DFinish; white?: Skin2DFinish }
+}
 /** A milestone that unlocks a rare set (wave 3 defines the ids and unlocked()). */
 export type Unlock = string
 /** A set's three-free data: sets/<id>.ts default-exports it (its materials live in sets/<id>.gl.ts). */
 export interface StoneData extends StoneShape {
-  /** Multipliers on the stone sounds' playback rate, low-pass cutoff and gain (1, 1, 1 = the recorded slate and shell). */
-  snd: { rate: number; lowpass: number; gain: number }
+  /**
+   * Multipliers on the stone sounds' playback rate, low-pass cutoff and gain (1, 1, 1 = the recorded slate and shell).
+   * `place`: the set's own placement sample, a path under assets/board3d/ (e.g. '<id>/place.mp3'): a mono MP3 of single
+   * placements, one per fixed 0.5 s slot like place.mp3, still scaled by rate, lowpass and gain. Missing or failing: the
+   * shared sound plays. Captures keep their own sound.
+   */
+  snd: { rate: number; lowpass: number; gain: number; place?: string }
   skin2d: Skin2D
   rare?: Unlock
 }

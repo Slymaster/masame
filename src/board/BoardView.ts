@@ -8,6 +8,7 @@ import { playClack, playTap } from './sound'
 import { gx, gz, jitter, settle, type Placed } from '../board3d/logic'
 import { postcardCanvas, signatureFonts, toPng } from '../postcard'
 import { tap } from './frame'
+import { STONE_DATA, type Mark2D, type Mark2DParams, type Skin2D, type StoneSet } from '../board3d/stoneSets'
 
 export interface BoardState {
   signMap: SignMap
@@ -228,49 +229,125 @@ function stoneShadow(c: CanvasRenderingContext2D, g: Geom, cx: number, cy: numbe
   c.fillStyle = gr; c.beginPath(); c.arc(sx, sy, r + blur, 0, TAU); c.fill()
 }
 
-function stone(c: CanvasRenderingContext2D, g: Geom, X: number, Y: number, col: Sign, t: number, [cx, cy] = [g.P[X], g.P[Y]]) {
+// Each colour's defaults are the Japanese stones' (slate, Hyuga shell): any set without a `finish` draws exactly like them.
+const SIDE = {
+  [1]: { seed: 11, jit: 9, jitRim: false, focus: [-0.38, -0.42, 0.04], stops: [0, 0.32, 0.78, 1], hl: [-0.36, -0.42, 0.5, 0.17, [255, 250, 240]], ink: [215, 215, 225] },
+  [-1]: { seed: 23, jit: 6, jitRim: true, focus: [-0.3, -0.36, 0.05], stops: [0, 0.55, 0.88, 1], hl: [-0.34, -0.4, 0.42, 0.55, [255, 255, 255]], ink: [120, 104, 82] },
+} as const
+const JAPANESE = STONE_DATA.japonaise.skin2d
+
+function stone(c: CanvasRenderingContext2D, g: Geom, X: number, Y: number, col: Sign, t: number, [cx, cy] = [g.P[X], g.P[Y]], sk: Skin2D = JAPANESE) {
   const r = g.r * (1.06 - 0.06 * easeOut(t)) // lands from slightly above: a touch larger, then settles
+  const d = SIDE[col as 1 | -1], f = (col === 1 ? sk.finish?.black : sk.finish?.white) ?? {}, cols = col === 1 ? sk.black : sk.white
+  // per-stone tone shift and mark angle (this draw order keeps the Japanese stones' random sequence)
+  const R = stoneRng(X, Y, d.seed)
+  let ang: number, tn: number
+  if (col === 1) { tn = (R() - 0.5) * d.jit; ang = R() * TAU } else { ang = R() * TAU; tn = (R() - 0.5) * d.jit }
   c.save(); c.translate(cx, cy)
-  if (col === 1) {
-    // slate (nachiguro): matte, faint per-stone tone shift, soft specular, warm rim bounce from the kaya
-    const R = stoneRng(X, Y, 11), tn = (R() - 0.5) * 9, k = (v: number) => Math.round(v + tn)
-    const gr = c.createRadialGradient(-r * 0.38, -r * 0.42, r * 0.04, 0, 0, r)
-    gr.addColorStop(0, `rgb(${k(92)},${k(92)},${k(98)})`); gr.addColorStop(0.32, `rgb(${k(54)},${k(54)},${k(59)})`)
-    gr.addColorStop(0.78, `rgb(${k(24)},${k(24)},${k(27)})`); gr.addColorStop(1, 'rgb(13,13,15)')
-    c.fillStyle = gr; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill()
-    const sp = c.createRadialGradient(-r * 0.36, -r * 0.42, 0, -r * 0.36, -r * 0.42, r * 0.5)
-    sp.addColorStop(0, 'rgba(255,250,240,0.17)'); sp.addColorStop(1, 'rgba(255,250,240,0)')
-    c.fillStyle = sp; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill()
+  const gr = c.createRadialGradient(d.focus[0] * r, d.focus[1] * r, r * d.focus[2], 0, 0, r)
+  const at = f.stops ?? (cols.length === 4 ? d.stops : cols.map((_, i) => i / (cols.length - 1)))
+  cols.forEach(([a, b, cc], i) => {
+    const j = i < cols.length - 1 || d.jitRim ? tn : 0
+    gr.addColorStop(at[i], `rgb(${Math.round(a + j)},${Math.round(b + j)},${Math.round(cc + j)})`)
+  })
+  c.fillStyle = gr; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill()
+  const m = col === 1 ? sk.marks.black : sk.marks.white
+  if (m !== 'none') { c.save(); c.clip(); mark(c, m, r, R, ang, f.mark ?? {}, d.ink); c.restore() }
+  if (f.rim) {
+    const rg = c.createRadialGradient(0, 0, r * (1 - (f.rim.width ?? 0.35)), 0, 0, r)
+    rg.addColorStop(0, `rgba(${f.rim.color.join(',')},0)`); rg.addColorStop(1, `rgba(${f.rim.color.join(',')},${f.rim.strength})`)
+    c.fillStyle = rg; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill()
+  }
+  const [hx, hy, hs, ha, hc] = d.hl, h = f.highlight, hcol = (h?.color ?? hc).join(',')
+  const sp = c.createRadialGradient(hx * r, hy * r, 0, hx * r, hy * r, r * (h?.size ?? hs))
+  sp.addColorStop(0, `rgba(${hcol},${h?.strength ?? ha})`); sp.addColorStop(1, `rgba(${hcol},0)`)
+  c.fillStyle = sp; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill()
+  if (col === 1) { // warm rim bounce from the kaya
     const rim = c.createRadialGradient(r * 0.3, r * 0.35, r * 0.5, 0, 0, r)
     rim.addColorStop(0, 'rgba(255,220,170,0)'); rim.addColorStop(1, 'rgba(255,215,160,0.07)')
     c.fillStyle = rim; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill()
-  } else {
-    // Hyuga clamshell: growth striations from a distant centre, at a random angle per stone
-    const R = stoneRng(X, Y, 23), ang = R() * TAU, tn = (R() - 0.5) * 6
-    const k = (a: number, b: number, cc: number) => `rgb(${Math.round(a + tn)},${Math.round(b + tn)},${Math.round(cc + tn)})`
-    const gr = c.createRadialGradient(-r * 0.3, -r * 0.36, r * 0.05, 0, 0, r)
-    gr.addColorStop(0, k(255, 254, 249)); gr.addColorStop(0.55, k(246, 241, 230)); gr.addColorStop(0.88, k(229, 221, 205)); gr.addColorStop(1, k(212, 202, 184))
-    c.fillStyle = gr; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill()
-    c.save(); c.clip()
-    const Dd = r * 3.4, ccx = Math.cos(ang) * Dd, ccy = Math.sin(ang) * Dd
-    for (let rad = Dd - r * 1.1; rad < Dd + r * 1.1;) {
-      if (R() < 0.3) { // a translucent growth band, cooler and wider than the fine lines
-        c.strokeStyle = `rgba(140,128,110,${0.07 + R() * 0.05})`; c.lineWidth = r * (0.05 + R() * 0.04)
-        c.beginPath(); c.arc(ccx, ccy, rad, 0, TAU); c.stroke()
-        rad += r * (0.1 + R() * 0.08)
-        continue
-      }
-      c.strokeStyle = `rgba(150,126,92,${0.025 + R() * 0.055})`; c.lineWidth = r * (0.012 + R() * 0.03)
-      c.beginPath(); c.arc(ccx, ccy, rad, 0, TAU); c.stroke()
-      rad += r * (0.045 + R() * 0.09)
-    }
-    c.restore()
-    const sp = c.createRadialGradient(-r * 0.34, -r * 0.4, 0, -r * 0.34, -r * 0.4, r * 0.42)
-    sp.addColorStop(0, 'rgba(255,255,255,0.55)'); sp.addColorStop(1, 'rgba(255,255,255,0)')
-    c.fillStyle = sp; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.fill()
-    c.strokeStyle = 'rgba(120,96,62,0.32)'; c.lineWidth = 0.6; c.beginPath(); c.arc(0, 0, r - 0.3, 0, TAU); c.stroke()
-  }
+  } else { c.strokeStyle = 'rgba(120,96,62,0.32)'; c.lineWidth = 0.6; c.beginPath(); c.arc(0, 0, r - 0.3, 0, TAU); c.stroke() }
   c.restore()
+}
+
+/** A stone's mark, drawn clipped to the stone (centred at 0, 0); R continues the stone's own random sequence. */
+function mark(c: CanvasRenderingContext2D, kind: Mark2D, r: number, R: () => number, ang: number, p: Mark2DParams, ink: readonly number[]) {
+  const am = p.amount ?? 1, sc = p.scale ?? 1, n = (k: number) => Math.max(1, Math.round(k * (p.count ?? 1)))
+  const rgba = (a: number, rgb = p.color ?? ink) => `rgba(${rgb.join(',')},${a})`
+  const inside = (k = 0.85): [number, number] => { const q = r * k * Math.sqrt(R()), th = R() * TAU; return [Math.cos(th) * q, Math.sin(th) * q] }
+  const dot = (x: number, y: number, rad: number) => { c.beginPath(); c.arc(x, y, rad, 0, TAU); c.fill() }
+  switch (kind) {
+    case 'growth': { // Hyuga clamshell: growth striations from a distant centre, at a random angle per stone
+      const Dd = r * 3.4, ccx = Math.cos(ang) * Dd, ccy = Math.sin(ang) * Dd
+      for (let rad = Dd - r * 1.1; rad < Dd + r * 1.1;) {
+        if (R() < 0.3) { // a translucent growth band, cooler and wider than the fine lines
+          c.strokeStyle = rgba((0.07 + R() * 0.05) * am, p.color ?? [140, 128, 110]); c.lineWidth = r * (0.05 + R() * 0.04) * sc
+          c.beginPath(); c.arc(ccx, ccy, rad, 0, TAU); c.stroke()
+          rad += r * (0.1 + R() * 0.08) * sc
+          continue
+        }
+        c.strokeStyle = rgba((0.025 + R() * 0.055) * am, p.color ?? [150, 126, 92]); c.lineWidth = r * (0.012 + R() * 0.03) * sc
+        c.beginPath(); c.arc(ccx, ccy, rad, 0, TAU); c.stroke()
+        rad += r * (0.045 + R() * 0.09) * sc
+      }
+      break
+    }
+    case 'veins': // fine lines wandering across the stone
+      c.lineCap = 'round'
+      for (let i = n(3); i--;) {
+        const a = ang + (R() - 0.5) * 1.2, [x0, y0] = [-Math.cos(a) * r * 1.1, -Math.sin(a) * r * 1.1], [x1, y1] = inside(0.9), [x2, y2] = inside(0.9)
+        c.strokeStyle = rgba((0.14 + R() * 0.14) * am); c.lineWidth = r * (0.012 + R() * 0.022) * sc
+        c.beginPath(); c.moveTo(x0, y0); c.bezierCurveTo(x1, y1, x2, y2, Math.cos(a) * r * 1.1 + (R() - 0.5) * r, Math.sin(a) * r * 1.1 + (R() - 0.5) * r); c.stroke()
+      }
+      break
+    case 'bands': { // agate: concentric layers around an off-centre core
+      const ox = Math.cos(ang) * r * 0.35, oy = Math.sin(ang) * r * 0.35, e = 0.62 + R() * 0.25
+      for (let rad = r * 0.12, i = 0; rad < r * 1.6 && i < n(14); i++) {
+        c.strokeStyle = rgba((0.06 + R() * 0.12) * am); c.lineWidth = r * (0.025 + R() * 0.06) * sc
+        c.beginPath(); c.ellipse(ox, oy, rad, rad * e, ang, 0, TAU); c.stroke()
+        rad += r * (0.07 + R() * 0.1) * sc
+      }
+      break
+    }
+    case 'bubbles': // small air trapped in glass or resin: a faint disc, its rim and a glint
+      for (let i = n(7); i--;) {
+        const [x, y] = inside(), rad = r * (0.025 + R() * 0.05) * sc
+        c.fillStyle = rgba(0.12 * am); dot(x, y, rad)
+        c.strokeStyle = rgba(0.3 * am); c.lineWidth = Math.max(0.4, rad * 0.25); c.stroke()
+        c.fillStyle = `rgba(255,255,255,${0.5 * am})`; dot(x - rad * 0.35, y - rad * 0.35, rad * 0.3)
+      }
+      break
+    case 'speckles': // fine grain
+      for (let i = n(60); i--;) { const [x, y] = inside(1); c.fillStyle = rgba((0.12 + R() * 0.3) * am); dot(x, y, r * (0.008 + R() * 0.022) * sc) }
+      break
+    case 'stars': // tiny glowing points, a soft halo around each
+      for (let i = n(14); i--;) {
+        const [x, y] = inside(), rad = r * (0.006 + R() * 0.016) * sc, b = 0.5 + R() * 0.5
+        c.fillStyle = rgba(0.12 * b * am, p.color ?? [255, 250, 235]); dot(x, y, rad * 3.5)
+        c.fillStyle = rgba(0.9 * b * am, p.color ?? [255, 250, 235]); dot(x, y, rad)
+      }
+      break
+    case 'cracks': // jagged lines, a wide faint pass for their glow under a fine bright one
+      c.lineCap = c.lineJoin = 'round'
+      for (let i = n(3); i--;) {
+        const pts: [number, number][] = [inside(0.7)]
+        let a = ang + R() * TAU
+        for (let k = 4 + Math.floor(R() * 4); k--;) { a += (R() - 0.5) * 1.4; const [x, y] = pts[pts.length - 1]; pts.push([x + Math.cos(a) * r * 0.16, y + Math.sin(a) * r * 0.16]) }
+        const w = r * 0.022 * sc, rgb = p.color ?? [255, 140, 50]
+        for (const [lw, a2] of [[w * 4, 0.18], [w, 0.75]]) {
+          c.strokeStyle = rgba(a2 * am, rgb); c.lineWidth = lw
+          c.beginPath(); pts.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke()
+        }
+      }
+      break
+    case 'sheen': { // a soft brushed band across the stone
+      const nx = Math.cos(ang), ny = Math.sin(ang), w = r * 0.5 * sc, o = (R() - 0.5) * r * 0.6
+      const lg = c.createLinearGradient(nx * (o - w), ny * (o - w), nx * (o + w), ny * (o + w)), rgb = p.color ?? [255, 248, 230]
+      lg.addColorStop(0, rgba(0, rgb)); lg.addColorStop(0.5, rgba(0.22 * am, rgb)); lg.addColorStop(1, rgba(0, rgb))
+      c.fillStyle = lg; c.fillRect(-r, -r, 2 * r, 2 * r)
+      break
+    }
+  }
 }
 
 function lastRing(c: CanvasRenderingContext2D, g: Geom, [cx, cy]: [number, number], col: Sign) {
@@ -321,6 +398,7 @@ export class BoardView {
   private geomKey = ''
   private stones: HTMLCanvasElement | null = null
   private stonesKey = ''
+  private set: StoneSet = 'japonaise'
   private hover: Vertex | null = null // the ghost stone: under the mouse, or where a finger tapped first
   private pointer = 'mouse' // the last pointerdown's pointerType: the click that follows comes from it
   private pos = '' // the position last shown
@@ -390,8 +468,11 @@ export class BoardView {
 
   destroy() { this.cleanup() }
 
+  /** The stone set drawn and heard (its three-free data: skin2d, snd); the stones are redrawn on the next frame. */
+  setStones(set: StoneSet) { if (set !== this.set) { this.set = set in STONE_DATA ? set : 'japonaise'; this.req() } }
+
   /** The bot passed: a soft tap, nothing drawn. */
-  pass() { if (this.state?.sound) playTap() }
+  pass() { if (this.state?.sound) playTap(STONE_DATA[this.set].snd) }
 
   /** Animates and sounds a stone landing (the player's click, or the bot's move). */
   drop(v: Vertex, c: Sign) {
@@ -399,7 +480,7 @@ export class BoardView {
     const N = this.placedN, p = v[1] * N + v[0] // the bot's drop arrives before its state update: put the stone down now
     if (N && this.placed.get(p)?.c !== c) { this.placed.delete(p); this.place(N, p, c) }
     if (!this.reducedMotion.matches) this.anim = { x: v[0], y: v[1], c, start: performance.now() }
-    if (this.state?.sound) playClack()
+    if (this.state?.sound) playClack(STONE_DATA[this.set].snd)
     this.req()
   }
 
@@ -407,7 +488,7 @@ export class BoardView {
   shake(v: Vertex, c: Sign) {
     this.hover = null
     this.shook = { x: v[0], y: v[1], c, start: performance.now() }
-    if (this.state?.sound) playTap()
+    if (this.state?.sound) playTap(STONE_DATA[this.set].snd)
     this.req()
   }
 
@@ -547,7 +628,7 @@ export class BoardView {
       if (t >= 1) { this.anim = null; t = 1 }
     }
     const a = this.anim, ex = a ? a.y * N + a.x : -1
-    const stonesKey = `${woodKey}|${ex}|${posKey}|${this.placedId}`
+    const stonesKey = `${woodKey}|${ex}|${posKey}|${this.placedId}|${this.set}`, sk = STONE_DATA[this.set].skin2d
     if (stonesKey !== this.stonesKey) {
       this.stones = mk(W, W)
       const x = this.stones.getContext('2d')!
@@ -555,7 +636,7 @@ export class BoardView {
       const list: [number, number, Sign][] = []
       s.signMap.forEach((row, Y) => row.forEach((c, X) => { if (c && Y * N + X !== ex) list.push([X, Y, c]) }))
       for (const [X, Y] of list) stoneShadow(x, g, ...this.at(X, Y), 1) // all shadows first so none overlaps a stone
-      for (const [X, Y, c] of list) stone(x, g, X, Y, c, 1, this.at(X, Y))
+      for (const [X, Y, c] of list) stone(x, g, X, Y, c, 1, this.at(X, Y), sk)
       this.stonesKey = stonesKey
     }
 
@@ -568,18 +649,18 @@ export class BoardView {
     if (own) deadHint(c, g, own, s.signMap, this.at)
     if (s.counting) countMarks(c, g, s.signMap, s.counting, this.at)
     if (s.focus || s.frame || s.marks?.length) paintMarks(c, i => g.P[i], i => g.P[i], g.cell, s.marks, s.focus, S, S, undefined, s.frame)
-    if (a) { const ap = this.at(a.x, a.y); stoneShadow(c, g, ...ap, t); stone(c, g, a.x, a.y, a.c, t, ap) }
+    if (a) { const ap = this.at(a.x, a.y); stoneShadow(c, g, ...ap, t); stone(c, g, a.x, a.y, a.c, t, ap, sk) }
     const w = this.shook, wk = w ? (now - w.start) / SHAKE_MS : 1
     if (w && wk < 1 && !s.signMap[w.y]?.[w.x]) {
       const dx = this.reducedMotion.matches ? 0 : Math.sin(wk * TAU * 4) * g.cell * 0.12 * (1 - wk), p: [number, number] = [g.P[w.x] + dx, g.P[w.y]]
-      c.globalAlpha = 1 - sstep(0.45, 1, wk); stoneShadow(c, g, ...p, 1); stone(c, g, w.x, w.y, w.c, 1, p); c.globalAlpha = 1
+      c.globalAlpha = 1 - sstep(0.45, 1, wk); stoneShadow(c, g, ...p, 1); stone(c, g, w.x, w.y, w.c, 1, p, sk); c.globalAlpha = 1
     } else this.shook = null
     const l = s.last
     if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) lastRing(c, g, this.at(l[0], l[1]), s.signMap[l[1]][l[0]])
-    if (s.pending) { c.globalAlpha = 0.5; stone(c, g, s.pending.v[0], s.pending.v[1], s.pending.sign, 1); c.globalAlpha = 1 }
+    if (s.pending) { c.globalAlpha = 0.5; stone(c, g, s.pending.v[0], s.pending.v[1], s.pending.sign, 1, undefined, sk); c.globalAlpha = 1 }
     const h = this.hover
     if (h && s.interactive && !s.signMap[h[1]]?.[h[0]]) {
-      c.globalAlpha = 0.35; stone(c, g, h[0], h[1], s.toPlay, 1); c.globalAlpha = 1
+      c.globalAlpha = 0.35; stone(c, g, h[0], h[1], s.toPlay, 1, undefined, sk); c.globalAlpha = 1
     }
     if (a || this.shook) this.req()
   }
