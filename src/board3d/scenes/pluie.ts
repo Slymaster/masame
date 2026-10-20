@@ -2,11 +2,11 @@
 // the eaves at the frame's far edge, rings spreading on the wet ground beyond, the veranda's outer planks darker and
 // glossier where the rain reaches, and the blurred wet garden when the eyes rise.
 import * as THREE from 'three'
-import type { Scene } from '.'
+import { edgeZ, type Scene } from '.'
 import { particles, PARTICLES, skyDome, type ParticleLook } from '../fx'
 import { engawa } from './bambous'
 
-/** The veranda's outer edge (mm; the board's far edge is at about -230): it shows along the seated frame's top (~-440),
+/** The veranda's outer edge with the table board (mm; edgeZ moves it out over a lower floor; the board's far edge is at about -230): it shows along the seated frame's top (~-440),
  *  the eaves dripping just past it. */
 export const EDGE_Z = -370
 /** The rain's character (variants A/B/C were rendered from these). */
@@ -64,7 +64,7 @@ export function make(c: Rain = RAIN) {
     return {
       animated: true,
       async build(ctx) {
-        const aniso = Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy()), Y = ctx.board.groundY
+        const aniso = Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy()), Y = ctx.board.groundY, E = edgeZ(EDGE_Z, Y)
         const tex = await new THREE.TextureLoader().loadAsync(`${ctx.base}pluie/backdrop_2k.jpg`)
         tex.colorSpace = THREE.SRGBColorSpace; tex.generateMipmaps = false; tex.minFilter = THREE.LinearFilter
         const garden = skyDome(GARDEN, { uMap: { value: tex }, uRot: { value: 1.57 }, uGain: { value: 1 } })
@@ -81,21 +81,21 @@ export function make(c: Rain = RAIN) {
         wg.addColorStop(0, '#fff'); wg.addColorStop(0.35, '#bbb'); wg.addColorStop(1, '#000'); wx.fillStyle = wg; wx.fillRect(0, 0, 4, 64)
         const wetA = new THREE.CanvasTexture(wc)
         const wetM = new THREE.MeshStandardMaterial({ color: 0x1c1915, roughness: 0.12, alphaMap: wetA, transparent: true, opacity: c.wet, depthWrite: false })
-        const wetG = new THREE.PlaneGeometry(8000, 110).rotateX(-Math.PI / 2).translate(0, Y + 0.3, EDGE_Z + 55)
+        const wetG = new THREE.PlaneGeometry(8000, 110).rotateX(-Math.PI / 2).translate(0, Y + 0.3, E + 55)
         // past the edge: the wet garden ground with its rings, fading out far away (over the table's planks, which run on)
         const gt = new THREE.CanvasTexture(gravelMap()); gt.colorSpace = THREE.SRGBColorSpace; gt.wrapS = gt.wrapT = THREE.RepeatWrapping; gt.repeat.set(8000 / 300, 4000 / 300); gt.anisotropy = aniso
         const fc = Object.assign(document.createElement('canvas'), { width: 4, height: 64 }), fx = fc.getContext('2d')!, fg = fx.createLinearGradient(0, 0, 0, 64)
         fg.addColorStop(0, '#000'); fg.addColorStop(0.7, '#fff'); fx.fillStyle = fg; fx.fillRect(0, 0, 4, 64)
         const fadeT = new THREE.CanvasTexture(fc)
         const groundM = new THREE.MeshStandardMaterial({ map: gt, roughness: 0.2, alphaMap: fadeT, transparent: true, depthWrite: false })
-        const GY = Y + 0.4, groundG = new THREE.PlaneGeometry(8000, 4000).rotateX(-Math.PI / 2).translate(0, GY, EDGE_Z - 2000)
+        const GY = Y + 0.4, groundG = new THREE.PlaneGeometry(8000, 4000).rotateX(-Math.PI / 2).translate(0, GY, E - 2000)
         ringU = { uT: { value: 0 } }
         const ringM = new THREE.ShaderMaterial({
           uniforms: { ...ringU, uColor: { value: new THREE.Color(0xb8c2cc) } }, transparent: true, depthWrite: false,
           vertexShader: 'varying vec2 vXZ; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vXZ = w.xz; gl_Position = projectionMatrix * viewMatrix * w; }',
           fragmentShader: RINGS_FS,
         })
-        const ringG = new THREE.PlaneGeometry(8000, 1600).rotateX(-Math.PI / 2).translate(0, GY + 0.5, EDGE_Z - 820)
+        const ringG = new THREE.PlaneGeometry(8000, 1600).rotateX(-Math.PI / 2).translate(0, GY + 0.5, E - 820)
         const meshes = [new THREE.Mesh(wetG, wetM), new THREE.Mesh(groundG, groundM), new THREE.Mesh(ringG, ringM)]
         meshes[0].renderOrder = 0.5; meshes[1].renderOrder = 0.4; meshes[2].renderOrder = 0.45
         for (const m of meshes.slice(0, 2)) m.receiveShadow = true
@@ -103,8 +103,8 @@ export function make(c: Rain = RAIN) {
         own.push(wetG, wetM, wetA, gt, fadeT, groundG, groundM, ringG, ringM)
         // the rain beyond the edge, and the eaves' drips along it (each drip falls at its own place: no sway, no wind)
         if (ctx.fx === 2) {
-          rain = [particles(RAIN_LOOK(c.opacity), [-3000, GY, -2800, 3000, 1800, EDGE_Z - 160], c.count, GY, 7),
-            particles(DRIP, [-1600, GY, EDGE_Z - 60, 1600, 520, EDGE_Z - 35], c.drips, GY, 8)]
+          rain = [particles(RAIN_LOOK(c.opacity), [-3000, GY, -2800, 3000, 1800, E - 160], c.count, GY, 7),
+            particles(DRIP, [-1600, GY, E - 60, 1600, 520, E - 35], c.drips, GY, 8)]
           for (const p of rain) { ctx.root.add(p.mesh); own.push(p) }
         }
       },
