@@ -1722,8 +1722,9 @@ export class Board3D {
       if (r === 'down') this.pendingQ = true // applied under the next crossfade, resize or new board
       else if (r === 'fallback') this.fallback('slow')
     }
-    // the décor's animation: only on otherwise still frames, which the governor never samples
-    const amb = this.ambient(busy || !!this.fade)
+    // the décor's animation keeps running while stones fall or the camera glides (playing must not freeze the rain or the
+    // leaves); only a crossfade pauses it. Busy frames the governor samples then include its small cost (≤ 1 ms measured).
+    const amb = this.ambient(!!this.fade)
     if (amb) { const dt = this.ambLast ? Math.min(now - this.ambLast, 100) / 1000 : 0; this.ambT += dt; this.sceneOn?.s.update(dt, this.ambT); this.stoneTime.value = this.ambT; this.ambLast = now } else this.ambLast = 0
     this.render()
     if (this.drawFade(now)) busy = true
