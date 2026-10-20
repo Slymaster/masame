@@ -87,7 +87,8 @@ below follows it. All sources are CC0, licence lines checked on each asset's own
 
 ## Procedural (no files)
 The stone sets (shapes and materials), the Cosmos décor, and the gobans' shapes (table, legged, folding), woods and
-bamboo are made at runtime in code; no files. The scenes' own procedural parts are listed in each folder's `CREDITS.md`.
+bamboo are made at runtime in code; no files. The five woods besides kaya are the kaya scan above, tinted and regraded
+in their own files (`src/board3d/woods/`); bamboo's laminated strips are drawn by a shader. The scenes' own procedural parts are listed in each folder's `CREDITS.md`.
 
 ## Code
 three.js 0.186.1 (MIT), loaded from npm.
