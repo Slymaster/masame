@@ -17,6 +17,7 @@ import type { Sign, Vertex } from '@sabaki/go-board'
 import { paintMarks, type BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
+import type { StoneSet } from './stoneSets'
 import { centreShift } from '../board/frame'
 import { bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, lens, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
@@ -28,7 +29,7 @@ export interface Board3DState extends BoardState {
 }
 export type CameraMode = 'study' | 'contemplation'
 export type TimeMode = TimeName | 'auto'
-export interface Board3DOptions { camera: CameraMode; time: TimeMode; highContrast: boolean; decor: Decor }
+export interface Board3DOptions { camera: CameraMode; time: TimeMode; highContrast: boolean; decor: Decor; stones: StoneSet }
 export type FallbackReason = 'webgl2' | 'context-lost' | 'slow'
 export interface Board3DInit {
   /** The app should switch to the 2D BoardView (WebGL2 missing, context lost, or still too slow at the lowest quality). */
@@ -407,7 +408,7 @@ export class Board3D {
   private own: number[] | null = null
   private hover: Vertex | null = null
 
-  private opts: Board3DOptions = { camera: 'study', time: 'afternoon', highContrast: false, decor: 'atelier' }
+  private opts: Board3DOptions = { camera: 'study', time: 'afternoon', highContrast: false, decor: 'atelier', stones: 'japonaise' }
   private camE = 0 // 0 Study, 1 Contemplation
   /** Contemplation's camera: shown (cur) and wanted (goal, what the mouse moves); seatH = its visible height at home. */
   private orbit: Orbit = { ...HOME }

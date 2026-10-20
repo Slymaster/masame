@@ -1282,7 +1282,7 @@ export function App() {
         <Goban
           view={view}
           mode={renderer}
-          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor: settings.decor }}
+          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor: settings.decor, stones: 'japonaise' }}
           thinking={thinking}
           // while the engine starts (OpenCL tuning loads the GPU) a slow verdict is not the hardware's: this session only
           onFallback={r => { if (r === 'context-lost' || (r === 'slow' && (engineBusy || reading))) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
