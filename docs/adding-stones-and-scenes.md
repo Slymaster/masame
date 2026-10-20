@@ -103,13 +103,13 @@ A listed id without `looks/<id>.ts` is **pending**: `isReadyDecor(id)` is false,
    ```ts
    import type { ShapeData } from '../gobans'
    export default {
-     thickness: 151,                   // the block
+     thickness: 145,                   // the block
      round: 1.6,                       // edge rounding (the table board's 2.2)
      legs: {                           // optional: four turned legs standing on the ground
-       height: 100,
+       height: 120,
        profile: [[0, 0], [24, 0], …],  // [radius, height] from the floor up to the block
-       inset: [64, 68],                // each leg's axis from the block's sides (across, along)
-       ridges: 6, depth: 0.06,         // optional lobes round the leg (a gardenia fruit), relief as a share of the radius
+       inset: [64, 68],                // each leg's axis from the block's sides (across, along); closer in on small boards (legInset)
+       ridges: 6, depth: 0.12, sharp: true, // optional lobes round the leg (a gardenia fruit), relief as a share of the radius, crested
      },
      fold: { gap: 0.35 },              // optional: a folding board's seam across the middle (z = 0)
    } satisfies ShapeData
