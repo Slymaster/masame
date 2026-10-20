@@ -1,12 +1,13 @@
 // "Auto" décor: the room that suits the season and the hour, and the ready-made décor + stones couples (ambiances).
 // Pure, no three.js, no network. Covered by auto.test.ts.
 
-import { DECORS, type Decor } from './decors'
-import { STONE_SETS, type StoneSet } from './stoneSets'
-import { sunOn } from './logic'
+import type { Decor } from './decors'
+import { readySets, type StoneSet } from './stoneSets'
+import { readyDecors, sunOn } from './logic'
 
-const isDecor = (d: string): d is Decor => (DECORS as readonly string[]).includes(d)
-const isStones = (s: string): s is StoneSet => (STONE_SETS as readonly string[]).includes(s)
+// only what is ready: a listed id whose files have not landed yet is never chosen
+const isDecor = (d: string): d is Decor => (readyDecors() as readonly string[]).includes(d)
+const isStones = (s: string): s is StoneSet => (readySets() as readonly string[]).includes(s)
 
 /**
  * The décor "Auto" picks, by the sun's hour (sunOn: noon at 12, sunrise 12 − halfDay, sunset 12 + halfDay):

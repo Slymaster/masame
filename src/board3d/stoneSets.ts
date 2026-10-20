@@ -4,6 +4,18 @@ import type { StoneShape } from './logic'
 
 export const STONE_SETS = [
   'japonaise',
+  'yunzi',
+  'coreennes',
+  'jade',
+  'galets',
+  'agate',
+  'ambre',
+  'lune',
+  'verre',
+  'bronze',
+  'braise',
+  'nebuleuse',
+  'famille',
 ] as const
 export type StoneSet = typeof STONE_SETS[number]
 

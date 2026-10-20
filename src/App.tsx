@@ -20,12 +20,12 @@ import * as ogs from './ogs'
 import { Sheet } from './Sheet'
 import { Icon } from './Icon'
 import { Timeline } from './Timeline'
-import { cardSkin, LOOKS } from './board3d/logic'
+import { cardSkin, LOOKS, readyDecors } from './board3d/logic'
 import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
 import { loadSgf, MAX_SGF, readResult, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
-import { DECORS, type Decor } from './board3d/decors'
-import { STONE_SETS, type StoneSet } from './board3d/stoneSets'
+import type { Decor } from './board3d/decors'
+import { readySets, type StoneSet } from './board3d/stoneSets'
 import { ambiances, autoDecor } from './board3d/auto'
 import { isMac, isMobile, shortcut } from './platform'
 import { useFullscreen, useWindowTheme } from './window'
@@ -97,8 +97,8 @@ function loadSettings(): Settings {
     ogsSpeed: (['blitz', 'rapid', 'live', 'correspondence'] as const).includes(s.ogsSpeed) ? s.ogsSpeed : 'rapid', myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
-    decor: s.decor === 'auto' || (DECORS as readonly unknown[]).includes(s.decor) ? s.decor : 'atelier',
-    stones: (STONE_SETS as readonly unknown[]).includes(s.stones) ? s.stones : 'japonaise',
+    decor: s.decor === 'auto' || (readyDecors() as readonly unknown[]).includes(s.decor) ? s.decor : 'atelier', // a décor not shipped yet: the default
+    stones: (readySets() as readonly unknown[]).includes(s.stones) ? s.stones : 'japonaise',
     ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false, panelHidden: s.panelHidden === true, ...updateSettings(j),
     autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
     handicap: Number.isInteger(s.handicap) && s.handicap >= 2 && s.handicap <= 9 ? s.handicap : 0,
@@ -1296,7 +1296,7 @@ export function App() {
         <Goban
           view={view}
           mode={renderer}
-          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor, stones: settings.stones }}
+          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor, stones: settings.stones, dof: settings.depthOfField }}
           thinking={thinking}
           // while the engine starts (OpenCL tuning loads the GPU) a slow verdict is not the hardware's: this session only
           onFallback={r => { if (r === 'context-lost' || (r === 'slow' && (engineBusy || reading))) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
@@ -1540,13 +1540,13 @@ export function App() {
                 <div className="field">
                   <span>{t.decor}</span>
                   <Gallery label={t.decor} value={settings.decor} set={v => set('decor', v)}
-                    options={[['auto', t.decorAuto, t.decorAutoHint, thumb('decor', autoGame)], ...DECORS.map(d => [d, t.decors[d], t.decorHints[d], thumb('decor', d)] as const)]} />
+                    options={[['auto', t.decorAuto, t.decorAutoHint, thumb('decor', autoGame)], ...readyDecors().map(d => [d, t.decors[d], t.decorHints[d], thumb('decor', d)] as const)]} />
                 </div>
               </>}
               <div className="field">
                 <span>{t.stonesLabel}</span>
                 <Gallery label={t.stonesLabel} value={settings.stones} set={v => set('stones', v)}
-                  options={STONE_SETS.map(s => [s, t.stoneSets[s], t.stoneHints[s], thumb('stones', s)])} />
+                  options={readySets().map(s => [s, t.stoneSets[s], t.stoneHints[s], thumb('stones', s)])} />
               </div>
               {renderer === '3d' && <>
                 {moods.length > 0 && <div className="field">

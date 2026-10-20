@@ -5,5 +5,14 @@ export const DECORS = [
   'washitsu',
   'lanterne',
   'clair',
+  'bambous',
+  'neige',
+  'hanok',
+  'hanami',
+  'pluie',
+  'pavillon',
+  'honinbo',
+  'nuages',
+  'cosmos',
 ] as const
 export type Decor = typeof DECORS[number]
