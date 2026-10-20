@@ -119,7 +119,6 @@ export const en = {
   ambiancesLabel: 'Moods',
   ambiances: { jardin: 'Garden', nuitBlanche: 'White night', hanok: 'Hanok', pavillon: 'Pavilion', edo: 'Edo' },
   ambianceHints: { jardin: 'Bamboo and jade', nuitBlanche: 'Snow at night, moonstone', hanok: 'Hanok and Korean glass', pavillon: 'Scholar’s pavilion, yunzi', edo: 'Honinbo hall, Japanese stones' },
-  noEffectAtNight: 'No effect at night',
   ownLight: 'This decor has its own light',
   ambientSound: 'Ambient sound', ambientSoundHint: 'Leaves, wind or rain, very quietly',
   depthOfField: 'Depth of field', depthOfFieldHint: 'Softens what lies beyond the board',

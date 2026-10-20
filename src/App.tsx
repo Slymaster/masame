@@ -20,7 +20,7 @@ import * as ogs from './ogs'
 import { Sheet } from './Sheet'
 import { Icon } from './Icon'
 import { Timeline } from './Timeline'
-import { cardSkin } from './board3d/logic'
+import { cardSkin, LOOKS } from './board3d/logic'
 import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
 import { loadSgf, MAX_SGF, readResult, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
@@ -76,7 +76,7 @@ const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
 const AUTOPLAY = [0.5, 1, 2, 4] as const // seconds per move
 interface Settings {
   lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; botResign: boolean; delay: boolean; territory: boolean
-  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor | 'auto'; stones: StoneSet
+  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor | 'auto'; stones: StoneSet; ambientSound: boolean; depthOfField: boolean
   langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number; autoplay: typeof AUTOPLAY[number]
   handicap: number; clock: ClockSetting
   style: 'level' | 'era'; era: number; mentor: boolean // a Master of an era instead of the AI level; the mentor (v0.5 B)
@@ -85,7 +85,7 @@ const SETTINGS_KEY = 'baduk.settings'
 function loadSettings(): Settings {
   const d: Settings = {
     lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, botResign: true, delay: true, territory: false,
-    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', langChosen: false, panelHidden: false,
+    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', ambientSound: false, depthOfField: true, langChosen: false, panelHidden: false,
     autoUpdate: true, updateChecked: 0, autoplay: 1, handicap: 0, clock: 'off', style: 'level', era: 1850, mentor: false,
   }
   let j: Partial<Settings> = {}
@@ -98,7 +98,8 @@ function loadSettings(): Settings {
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: s.decor === 'auto' || (DECORS as readonly unknown[]).includes(s.decor) ? s.decor : 'atelier',
-    stones: (STONE_SETS as readonly unknown[]).includes(s.stones) ? s.stones : 'japonaise', panelHidden: s.panelHidden === true, ...updateSettings(j),
+    stones: (STONE_SETS as readonly unknown[]).includes(s.stones) ? s.stones : 'japonaise',
+    ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false, panelHidden: s.panelHidden === true, ...updateSettings(j),
     autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
     handicap: Number.isInteger(s.handicap) && s.handicap >= 2 && s.handicap <= 9 ? s.handicap : 0,
     clock: typeof s.clock === 'string' && Object.hasOwn(CLOCKS, s.clock) ? s.clock : 'off',
@@ -1095,7 +1096,7 @@ export function App() {
               v: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
               r: () => view.current?.resetCamera?.(),
             }),
-            ...(renderer === '3d' && decor !== 'lanterne' && { // lighting has no effect at night
+            ...(renderer === '3d' && LOOKS[decor].tod === null && { // a décor with its own light ignores the hour
               l: () => set('light', LIGHTS[(LIGHTS.indexOf(settings.light) + 1) % LIGHTS.length]),
             }),
           } as Record<string, () => void>)[k]
@@ -1557,9 +1558,11 @@ export function App() {
                 <div className="field">
                   <span>{t.light} <kbd>L</kbd></span>
                   <Seg label={t.light} value={settings.light} options={LIGHTS.map(l => [l, t.lights[l], l === 'auto' ? t.lightAutoHint : undefined])} set={v => set('light', v)}
-                    disabled={decor === 'lanterne'} title={decor === 'lanterne' ? t.noEffectAtNight : undefined} />
+                    disabled={LOOKS[decor].tod !== null} title={LOOKS[decor].tod !== null ? t.ownLight : undefined} />
                 </div>
                 <Switch label={t.highContrast} on={settings.highContrast} toggle={() => set('highContrast', !settings.highContrast)} />
+                <Switch label={t.depthOfField} title={t.depthOfFieldHint} on={settings.depthOfField} toggle={() => set('depthOfField', !settings.depthOfField)} />
+                <Switch label={t.ambientSound} title={t.ambientSoundHint} on={settings.ambientSound} toggle={() => set('ambientSound', !settings.ambientSound)} />
               </>}
             </div>
           </section>}
