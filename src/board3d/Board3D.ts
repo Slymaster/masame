@@ -19,6 +19,7 @@ import { paintMarks, type BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
 import type { StoneSet } from './stoneSets'
+import type { GobanShape, Wood } from './gobans'
 import { centreShift } from '../board/frame'
 import { ambientOn, dofShare, AMBIENT_FPS, bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, seatHeight, settle, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Look, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
@@ -38,6 +39,8 @@ export interface Board3DOptions {
   dof?: boolean
   /** The Heirloom stones' age (0 new … 1 fully aged), shared by every set's materials as StoneCtx.patina. */
   patina?: number
+  /** The goban's shape and wood (gobans.ts); the table board in kaya is v0.5's. */
+  goban?: GobanShape; wood?: Wood
 }
 export type FallbackReason = 'webgl2' | 'context-lost' | 'slow'
 export interface Board3DInit {

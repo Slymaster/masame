@@ -27,6 +27,7 @@ import { loadSgf, MAX_SGF, readResult, resignResult, saveSgf, scoreResult, timeR
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import type { Decor } from './board3d/decors'
 import { readySets, STONE_DATA, type StoneSet } from './board3d/stoneSets'
+import { readyShapes, readyWoods, type GobanShape, type Wood } from './board3d/gobans'
 import { ambiances, autoDecor } from './board3d/auto'
 import { isMac, isMobile, shortcut } from './platform'
 import { useFullscreen, useWindowTheme } from './window'
@@ -77,7 +78,7 @@ const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
 const AUTOPLAY = [0.5, 1, 2, 4] as const // seconds per move
 interface Settings {
   lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; botResign: boolean; delay: boolean; territory: boolean
-  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor | 'auto'; stones: StoneSet; ambientSound: boolean; depthOfField: boolean
+  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor | 'auto'; stones: StoneSet; ambientSound: boolean; depthOfField: boolean; goban: GobanShape; wood: Wood
   langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number; autoplay: typeof AUTOPLAY[number]
   handicap: number; clock: ClockSetting
   style: 'level' | 'era'; era: number; mentor: boolean // a Master of an era instead of the AI level; the mentor (v0.5 B)
@@ -86,7 +87,7 @@ const SETTINGS_KEY = 'baduk.settings'
 function loadSettings(): Settings {
   const d: Settings = {
     lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, botResign: true, delay: true, territory: false,
-    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', ambientSound: false, depthOfField: true, langChosen: false, panelHidden: false,
+    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', ambientSound: false, depthOfField: true, goban: 'table', wood: 'kaya', langChosen: false, panelHidden: false,
     autoUpdate: true, updateChecked: 0, autoplay: 1, handicap: 0, clock: 'off', style: 'level', era: 1850, mentor: false,
   }
   let j: Partial<Settings> = {}
@@ -100,7 +101,8 @@ function loadSettings(): Settings {
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: s.decor === 'auto' || (readyDecors() as readonly unknown[]).includes(s.decor) ? s.decor : 'atelier', // a décor not shipped yet: the default
     stones: (readySets() as readonly unknown[]).includes(s.stones) && !earnedNow().has(s.stones) ? s.stones : 'japonaise', // a set still to earn: the default
-    ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false, panelHidden: s.panelHidden === true, ...updateSettings(j),
+    ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false,
+    goban: (readyShapes() as readonly unknown[]).includes(s.goban) ? s.goban : 'table', wood: (readyWoods() as readonly unknown[]).includes(s.wood) ? s.wood : 'kaya', panelHidden: s.panelHidden === true, ...updateSettings(j),
     autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
     handicap: Number.isInteger(s.handicap) && s.handicap >= 2 && s.handicap <= 9 ? s.handicap : 0,
     clock: typeof s.clock === 'string' && Object.hasOwn(CLOCKS, s.clock) ? s.clock : 'off',
@@ -162,7 +164,7 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, inert
     return () => { live = false; ro?.disconnect(); v?.destroy(); view.current = three.current = null; shift(0) }
   }, [mode, view])
   useEffect(() => { view.current?.update(state); if (import.meta.env.DEV) Object.assign(window, { __badukState: state }) })
-  useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor, options.stones, options.patina]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor, options.stones, options.patina, options.dof, options.goban, options.wood]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => three.current?.setThinking(thinking), [thinking])
   useEffect(() => { if (mode === '2d') (view.current as BoardView | null)?.setStones(isMobile ? 'japonaise' : options.stones) }, [mode, view, options.stones]) // phones keep the Japanese set
   // a fresh canvas per renderer: one canvas can't hold both a 2D and a WebGL context
@@ -1320,7 +1322,7 @@ export function App() {
         <Goban
           view={view}
           mode={renderer}
-          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor, stones: settings.stones, dof: settings.depthOfField, patina: heirloom }}
+          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor, stones: settings.stones, dof: settings.depthOfField, patina: heirloom, goban: settings.goban, wood: settings.wood }}
           thinking={thinking}
           // while the engine starts (OpenCL tuning loads the GPU) a slow verdict is not the hardware's: this session only
           onFallback={r => { if (r === 'context-lost' || (r === 'slow' && (engineBusy || reading))) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
