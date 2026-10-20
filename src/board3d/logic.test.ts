@@ -208,7 +208,7 @@ describe('décors', () => {
       const L = LOOKS[d]
       for (const v of [L.tint, L.rough, L.ibl, L.exp, L.soft, L.shade]) { expect(v).toBeGreaterThan(0); expect(v).toBeLessThanOrEqual(2) }
       expect(['walnut', 'tatami', 'paper']).toContain(L.ground)
-      if (L.sky) expect(Object.keys(import.meta.glob('../../public/assets/board3d/*.hdr'))).toContain(`../../public/assets/board3d/${L.sky}_1k.hdr`)
+      if (L.sky) expect(Object.keys(import.meta.glob('../../public/assets/board3d/**/*.hdr'))).toContain(`../../public/assets/board3d/${L.sky}_1k.hdr`)
       expect(L.key > 0 || L.lamp > 0).toBe(true) // something casts the shadows
     }
     expect(LOOKS.atelier.linen).toBe(true) // the app's own look in Study
