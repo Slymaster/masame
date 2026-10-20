@@ -280,7 +280,7 @@ describe('governor', () => {
     expect(qualityLadder(3).map(q => q.dpr)).toEqual([3, 3, 2.25, 1.875, 1])
   })
 
-  it('keeps the depth of field and bloom for the top level only', () => {
+  it('keeps the depth of field for the top level only', () => {
     for (const d of [1, 2, 3]) expect(qualityLadder(d).map(q => q.post)).toEqual([true, false, false, false, false])
   })
 

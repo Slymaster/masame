@@ -14,7 +14,6 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import type { Sign, Vertex } from '@sabaki/go-board'
 import { paintMarks, type BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
@@ -35,7 +34,7 @@ export type CameraMode = 'study' | 'contemplation'
 export type TimeMode = TimeName | 'auto'
 export interface Board3DOptions {
   camera: CameraMode; time: TimeMode; highContrast: boolean; decor: Decor; stones: StoneSet
-  /** Contemplation's depth of field and light bloom, at the top quality level: beyond the board only, as the eyes lift. */
+  /** Contemplation's depth of field, at the top quality level: beyond the board only, as the eyes lift. */
   dof?: boolean
   /** The Heirloom stones' age (0 new … 1 fully aged), shared by every set's materials as StoneCtx.patina. */
   patina?: number
@@ -74,8 +73,8 @@ const FLOOR_MARGIN = 0.8
 // the urushi lines' dome (edge slope), width wobble (±share) and gloss; the kaya's patina (roughness × (1 − patina) at
 // the centre, gone 80→220 mm out, where hands polish the board); the shoji's bars (light level left behind a bar; the share of light is LOOKS.shoji, shoji ≥ 0 overrides it);
 // Contemplation's vignette (darkening in the frame's corners); its depth of field (the most blur, as a share of the frame's height, eyes
-// fully lifted) and bloom (strength, 0 = off: only the stones' highlights ever crossed its threshold; threshold after exposure)
-const FX = { relief: 0.45, wobble: 0.08, inkRough: 0.28, patina: 0.1, shojiBar: 0.15, shoji: -1, vignette: 0.22, dof: 0.012, bloom: 0, bloomAt: 6 }
+// fully lifted). No bloom: tried, only the stones' highlights ever crossed its threshold.
+const FX = { relief: 0.45, wobble: 0.08, inkRough: 0.28, patina: 0.1, shojiBar: 0.15, shoji: -1, vignette: 0.22, dof: 0.012 }
 const SHOJI_MM = 4000, SHOJI_R = 1600 // the shoji light's distance and its cookie's half width there
 const KAYA_MM = [502, 424.5] // the kaya scan's physical size (along, across the grain), at 2K and 4K alike
 const easeIO = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
@@ -259,7 +258,6 @@ export class Board3D {
   private renderer!: THREE.WebGLRenderer
   private composer!: EffectComposer
   private dofPass!: ShaderPass
-  private bloomPass!: UnrealBloomPass
   private scene = new THREE.Scene()
   private ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 100, 6000)
   private persp = new THREE.PerspectiveCamera(FOV, 1, 10, 5000)
@@ -532,7 +530,7 @@ export class Board3D {
     for (const l of [this.key, this.lamp, this.shoji, this.spot]) l.shadow.map?.dispose() // render targets the renderer doesn't free
     for (const e of this.envs.values()) void e.then(t => t.dispose(), () => {})
     this.endFade(); this.fadeMat.dispose(); (this.fadeScene.children[0] as THREE.Mesh).geometry.dispose()
-    this.composer.dispose(); this.dofPass.dispose(); this.bloomPass.dispose()
+    this.composer.dispose(); this.dofPass.dispose()
     this.renderer.dispose()
   }
 
@@ -553,11 +551,7 @@ export class Board3D {
     this.composer.addPass(new RenderPass(scene, this.ortho))
     // Contemplation's post (top level, opts.dof): off, they are skipped and the frame is v0.5's
     this.dofPass = new ShaderPass(DOF_SHADER); this.dofPass.enabled = false
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0, 0.5, 1); this.bloomPass.enabled = false
-    const bloomSize = this.bloomPass.setSize.bind(this.bloomPass)
-    this.bloomPass.setSize = (w, h) => bloomSize(w / 2, h / 2) // a quarter-resolution glow: only its softness shows
     this.composer.addPass(this.dofPass)
-    this.composer.addPass(this.bloomPass)
     const out = new OutputPass(); out.needsSwap = false // last pass, on screen: swapping would alternate (and allocate) a second MSAA target
     this.composer.addPass(out)
 
@@ -1590,7 +1584,7 @@ export class Board3D {
     this.composer.render()
   }
 
-  /** Depth of field and bloom for this frame: top level, Contemplation's seated camera, opts.dof; the blur grows as the eyes lift. */
+  /** Depth of field for this frame: top level, Contemplation's seated camera, opts.dof; the blur grows as the eyes lift. */
   private postFor(cam: THREE.Camera) {
     const on = this.q.post && !!this.opts.dof && this.camE > 0 && cam === this.persp, r = this.renderer
     const H = r.getDrawingBufferSize(new THREE.Vector2()).y, max = on ? this.fx.dof * H * dofShare(this.orbit.tilt) : 0
@@ -1604,9 +1598,6 @@ export class Board3D {
       const n = v.set(0, 1, 0).transformDirection(p.matrixWorldInverse), o = new THREE.Vector3(0, this.ground.position.y, 0).applyMatrix4(p.matrixWorldInverse)
       u.uPlane.value.set(n.x, n.y, n.z, n.dot(o))
     }
-    this.bloomPass.enabled = on && this.fx.bloom > 0
-    // scene-referred: only what stays bright after the exposure (paper lit from within, a lamp's pool, a star) glows
-    this.bloomPass.strength = this.fx.bloom; this.bloomPass.threshold = this.fx.bloomAt / r.toneMappingExposure
   }
 
   private frame(now: number) {

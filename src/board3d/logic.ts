@@ -322,7 +322,7 @@ export const LOOKS = Object.fromEntries(DECORS.map(d => [d, INLINE_LOOKS[d] ?? l
 
 /* ---------- adaptive quality governor ---------- */
 /** fx: Contemplation's décor effects. 2 = all, animated; 1 = still (backdrop, a still light cookie, no particles); 0 = none.
- *  post: Contemplation's depth of field and light bloom (top level only, when the player keeps them on). */
+ *  post: Contemplation's depth of field (top level only, when the player keeps it on). */
 export interface Quality { dpr: number; shadow: number; msaa: number; bowlSegments: number; kaya4k: boolean; fx: 0 | 1 | 2; post: boolean }
 /** Quality ladder, best first. The pixel ratio is capped by the display's own (and at 3); for d ≤ 2 the values are v0.2's. */
 export function qualityLadder(deviceDpr: number): Quality[] {
