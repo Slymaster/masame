@@ -129,3 +129,7 @@ Capture the four first décors in Study and Contemplation at morning, afternoon 
 
 - A set's material factories get `ctx = { hc, R, time, patina }`. `time` (s, shared) advances only while ambient animation may run (Contemplation, fx 2, focused, motion allowed, nothing else moving); set `animated: true` on the set's `StoneGL` export so the view renders continuously (≤ 30 fps) when that is allowed, otherwise the stones stay still at their last time.
 - `patina` (0 … 1, shared) comes from `Board3DOptions.patina`: the Heirloom stones read it to age (the app computes it from the games in Mes parties).
+
+## Earned sets
+
+A set whose data has `rare: 'games10' | 'streak7' | 'review' | 'tsumego'` is earned (`src/stonesEarned.ts`, from the library, the ritual's streak and the exercises deck). Until then the gallery shows it with its condition and it can't be chosen; once earned it is announced once and stays earned (`masame.stones`). For captures, `localStorage.setItem('masame.unlockAll', '1')` (or `?unlock=1` in the URL) opens every set without announcing or remembering anything; the demo bench never locks a set.
