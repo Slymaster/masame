@@ -987,8 +987,11 @@ export class Board3D {
     this.shojiTex.needsUpdate = true
   }
 
-  /** The share of the key coming through the shoji (Washitsu, Contemplation). */
-  private shojiShare() { const L = LOOKS[this.decorOn ?? this.opts.decor]; return this.camE ? (this.fx.shoji >= 0 ? this.fx.shoji : L.shoji) : 0 }
+  /** The share of the key coming through the shoji (Washitsu, Contemplation); a décor's own cookie needs its scene. */
+  private shojiShare() {
+    const L = LOOKS[this.decorOn ?? this.opts.decor]
+    return !this.camE ? 0 : this.fx.shoji >= 0 ? this.fx.shoji : L.ownCookie && !this.sceneOn ? 0 : L.shoji
+  }
   /** Contemplation's extras exist only while used; set inside transition() so their shaders compile before the fade. */
   private extrasOn() {
     this.vignette.visible = this.camE > 0 && this.fx.vignette > 0

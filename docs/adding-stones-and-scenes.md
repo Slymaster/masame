@@ -54,7 +54,8 @@ A listed id without both files is **pending**: `isReadySet(id)` is false, `ready
    - `skin: 'washi' | 'laque' | 'byCamera'`: the UI card's skin. It defaults to Washi.
    - `tiltMax`: how high the seated camera may tilt, in radians from vertical. The default is 58°; outdoor décors can go up to about 80°.
    - `ambient`: a sound loop file under `assets/board3d/`. The ambience player (`ambience.ts`) plays it in 3D when the Atelier's ambient sound switch and the app's sound are on: very quiet (gain 0.1), looped without the MP3 padding gap, crossfaded over 1.5 s when the décor changes, asleep while the window is hidden.
-   - `shoji > 0` turns on the key's cookie spot: the shoji lattice, or the scene's cookie.
+   - `shoji > 0` turns on the key's cookie spot: the shoji lattice, or the scene's cookie. Set `ownCookie: true` when the
+     share is meant for your scene's cookie: at fx 0 (no scene) the window then stays open instead of showing the Japanese lattice.
    - `lamp > 0` turns on the lamp.
 3. **Scene (optional)**: `scenes/<id>.ts` default-exports a factory `(): Scene`. It is found by file name and loaded lazily when the décor is chosen.
 

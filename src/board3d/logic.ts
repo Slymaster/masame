@@ -290,6 +290,9 @@ export interface Look {
   lamp: number
   /** Contemplation: the share of the window's light that comes through a shoji, its lattice falling on the board (0 = an open window). */
   shoji: number
+  /** The shoji share lights the scene's own cookie (leaves, a Korean lattice): without the scene (fx 0) the window stays
+   *  open rather than showing the Japanese lattice. */
+  ownCookie?: boolean
   /** Contemplation, fx ≥ 1: the décor's HDRI shown behind the room, blurred (backgroundBlurriness) and dimmed. Absent = the dark room. */
   backdrop?: { blur: number; intensity: number }
   /** The UI card's skin (cardSkin): 'byCamera' = Laque in Contemplation, Washi in Study. Absent = Washi. */
