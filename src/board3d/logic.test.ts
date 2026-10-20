@@ -1,7 +1,10 @@
 declare const process: { env: Record<string, string> } // node's, without its types
 process.env.TZ = 'Europe/Paris' // the seasons' tests read local clock times, DST included
 import { describe, expect, it } from 'vitest'
-import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, DROP_MS, dropPose, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panBy, panFor, pickPoint, qualityLadder, RB, RW, seatHeight, settle, SH, SX, SZ, silhouette, SLIDE_MS, stepOrbit, TOD, todAt, seasonTod, snowOn, sunOn, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
+import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, DROP_MS, dropPose, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panBy, panFor, pickPoint, qualityLadder, seatHeight, settle, SX, SZ, silhouette, SLIDE_MS, stepOrbit, TOD, todAt, seasonTod, snowOn, sunOn, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
+import { STONES } from './stones'
+
+const J = STONES.japonaise, RB = J.rB, RW = J.rW, SH = J.shTop
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -87,11 +90,11 @@ describe('stones in a bowl', () => {
   it('heaps a bowl and a lid without two stones interpenetrating', () => {
     const r = rng(7)
     for (const [pts, R] of [[bowlHeap(RB, 40, 8, r), RB], [Array.from({ length: 60 }, (_, k) => [Math.cos(k * 2.4) * 13 * Math.sqrt(k % 8), Math.sin(k * 2.4) * 13 * Math.sqrt(k % 8)]), RW]] as const) {
-      const st = dropStones(pts as number[][], R, d => 50 + 0.05 * d, r)
+      const st = dropStones(pts as number[][], R, J, (d: number) => 50 + 0.05 * d, r)
       expect(st.length).toBeGreaterThan(14)
       for (let i = 0; i < st.length; i++) for (let j = 0; j < i; j++) {
         const a = st[i], b = st[j], d = Math.hypot(a.x - b.x, a.z - b.z)
-        if (d < 2 * R) expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(2 * lens(d / 2, R) - 1e-9)
+        if (d < 2 * R) expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(2 * lens(d / 2, R, SH, J.expTop) - 1e-9)
       }
       expect(Math.max(...st.map(s => s.y))).toBeGreaterThan(55) // some stones rest on others
     }
@@ -189,7 +192,7 @@ describe('seasons', () => {
 
 describe('card skin', () => {
   it('is Laque on the dark backdrops only, Washi in 2D', () => {
-    const table = Object.fromEntries(DECORS.flatMap(d => (['study', 'contemplation'] as const).map(c => [`${d}/${c}`, cardSkin('3d', c, d)])))
+    const table = Object.fromEntries((['atelier', 'washitsu', 'lanterne', 'clair'] as const).flatMap(d => (['study', 'contemplation'] as const).map(c => [`${d}/${c}`, cardSkin('3d', c, d)])))
     expect(table).toEqual({
       'atelier/study': 'washi', 'atelier/contemplation': 'laque', 'washitsu/study': 'washi', 'washitsu/contemplation': 'washi',
       'lanterne/study': 'laque', 'lanterne/contemplation': 'laque', 'clair/study': 'washi', 'clair/contemplation': 'washi',
@@ -400,22 +403,22 @@ describe('seated camera', () => {
     // top down: today's rounding
     for (let k = 0; k < 2000; k++) {
       const x = (r() - 0.5) * 460, z = (r() - 0.5) * 490, i = Math.round(x / SX + 9), j = Math.round(z / SZ + 9)
-      expect(pickPoint([x, 3000, z], [0, -1, 0], N, empty)).toEqual(i < 0 || j < 0 || i >= N || j >= N ? null : [i, j])
+      expect(pickPoint([x, 3000, z], [0, -1, 0], N, empty, J)).toEqual(i < 0 || j < 0 || i >= N || j >= N ? null : [i, j])
     }
     // steepest tilt, turned and zoomed: the ray through the drawn point (y = 0) or through a stone's top
     for (const o of [{ ...HOME, tilt: 58 * deg }, { ...HOME, tilt: 58 * deg, yaw: -60 * deg, zoom: 0.3 }]) {
       const eye = orbitEye(o, hc).eye
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-        expect(pickPoint(eye, sub([gx(N, i), 0, gz(N, j)], eye), N, empty)).toEqual([i, j])
+        expect(pickPoint(eye, sub([gx(N, i), 0, gz(N, j)], eye), N, empty, J)).toEqual([i, j])
         const s: Placed = { x: i, y: j, R: RB, jx: 0, jz: 0, tx: gx(N, i) + 0.5, tz: gz(N, j) - 1 }
-        expect(pickPoint(eye, sub([s.tx, 2 * SH, s.tz], eye), N, new Map([[j * N + i, s]]))).toEqual([i, j])
+        expect(pickPoint(eye, sub([s.tx, 2 * SH, s.tz], eye), N, new Map([[j * N + i, s]]), J)).toEqual([i, j])
       }
     }
     // a stone never claims a ray that misses it (the march passes y = SH exactly, where lens() is 0 outside the stone)
     const near: Placed = { x: 14, y: 1, R: RB, jx: 0, jz: 0, tx: 109.58, tz: -190.42 }
-    expect(pickPoint([gx(N, 13) - 50, 100, gz(N, 0)], [0.5, -1, 0], N, new Map([[1 * N + 14, near]]))).toEqual([13, 0])
+    expect(pickPoint([gx(N, 13) - 50, 100, gz(N, 0)], [0.5, -1, 0], N, new Map([[1 * N + 14, near]]), J)).toEqual([13, 0])
     // the old plane at y = SH misses by a third of a row at 58°
     expect(SH * Math.tan(58 * deg) / SZ).toBeGreaterThan(0.3)
-    expect(lens(0, RB)).toBe(SH)
+    expect(lens(0, RB, SH, J.expTop)).toBe(SH)
   })
 })
