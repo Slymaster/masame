@@ -7,7 +7,7 @@ import { panFor } from './logic'
 type Slots = { buf: AudioBuffer; starts: number[] }
 
 /** Each sprite is fixed-length slots; the hit is found by scanning (MP3 encoder delay differs between decoders). */
-function slots(buf: AudioBuffer, slot: number): Slots {
+export function slots(buf: AudioBuffer, slot: number): Slots {
   const d = buf.getChannelData(0), n = Math.round(slot * buf.sampleRate), starts: number[] = []
   for (let s = 0; s + n <= d.length + n / 2; s += n) {
     let peak = 0
@@ -22,6 +22,9 @@ function slots(buf: AudioBuffer, slot: number): Slots {
 
 export class StoneSound {
   enabled = true
+  private voiceOf: { rate: number; lowpass: number; gain: number; place?: string } = { rate: 1, lowpass: 1, gain: 1 }
+  /** The set's own placement sample (StoneData.snd.place): null until decoded, and for good when it fails (the shared one plays). */
+  private own: { url: string; slots: Slots | null } | null = null
   private ac: AudioContext | null = null
   private out: GainNode | null = null
   private room: GainNode | null = null
@@ -35,6 +38,20 @@ export class StoneSound {
   private thinking = false
 
   constructor(private base: string) {}
+
+  /** The stone set's voice: multipliers on the stone hits' playback rate, low-pass cutoff and gain, and its own placement sample (StoneData.snd). */
+  get tone() { return this.voiceOf }
+  set tone(v) { this.voiceOf = v; this.loadOwn() }
+
+  /** Fetches and decodes the set's placement sprite once a context exists (0.5 s slots, like place.mp3). */
+  private loadOwn() {
+    const url = this.voiceOf.place ? this.base + this.voiceOf.place : null
+    if (!url) { this.own = null; return }
+    if (this.own?.url === url || !this.ac) return
+    const own = this.own = { url, slots: null as Slots | null }, ac = this.ac
+    fetch(url).then(r => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.arrayBuffer() }).then(b => ac.decodeAudioData(b))
+      .then(b => { if (this.own === own) own.slots = slots(b, 0.5) }, () => {}) // missing or broken: the shared sample, silently
+  }
 
   /** Fetches early (no AudioContext needed); decoding waits for the first user gesture. */
   preload() {
@@ -68,6 +85,7 @@ export class StoneSound {
           this.place = slots(p, 0.5); this.clicks = slots(c, 0.2); this.bowl = b
           if (this.thinking) this.setThinking(true)
         }).catch(() => {})
+        this.loadOwn()
       }
       if (this.ac.state === 'suspended') void this.ac.resume()
     } catch { this.ac = null }
@@ -101,12 +119,12 @@ export class StoneSound {
   stone(N: number, x: number, velocity = 0.6 + Math.random() * 0.4) {
     this.prime()
     if (!this.live()) { void this.ready?.then(() => this.live() && this.stone(N, x, velocity)); return }
-    const t = this.ac!.currentTime + 0.003
-    this.voice(this.place!, this.pick(this.place!.starts.length), t, {
-      rate: 1 + (Math.random() * 2 - 1) * 0.03,
-      gain: 0.35 + 0.65 * velocity,
+    const t = this.ac!.currentTime + 0.003, own = this.own?.slots?.starts.length ? this.own.slots : this.place!
+    this.voice(own, this.pick(own.starts.length), t, {
+      rate: (1 + (Math.random() * 2 - 1) * 0.03) * this.tone.rate,
+      gain: (0.35 + 0.65 * velocity) * this.tone.gain,
       pan: panFor(N, x),
-      lp: 5000 + 9000 * velocity, // softer hits are duller
+      lp: (5000 + 9000 * velocity) * this.tone.lowpass, // softer hits are duller
     })
   }
 
@@ -120,7 +138,7 @@ export class StoneSound {
     for (let i = 0; i < k; i++) {
       const t = t0 + 0.02 + Math.random() * (0.08 + 0.04 * k)
       this.voice(this.clicks!, Math.floor(Math.random() * this.clicks!.starts.length), t, {
-        rate: 0.88 + Math.random() * 0.24, gain: 0.25 + Math.random() * 0.35, pan: pan + (Math.random() - 0.5) * 0.2, lp: 7000, dur: 0.15,
+        rate: (0.88 + Math.random() * 0.24) * this.tone.rate, gain: (0.25 + Math.random() * 0.35) * this.tone.gain, pan: pan + (Math.random() - 0.5) * 0.2, lp: 7000 * this.tone.lowpass, dur: 0.15,
       })
     }
   }
