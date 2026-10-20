@@ -1572,7 +1572,7 @@ export function App() {
                 <Gallery label={t.stonesLabel} value={settings.stones} set={v => { if (!toEarn.has(v)) set('stones', v) }}
                   options={readySets().map(s => [s, t.stoneSets[s], t.stoneHints[s], thumb('stones', s),
                     toEarn.has(s) ? t.stoneLocked(t.unlocks[STONE_DATA[s].rare as Unlock]) : undefined])} />
-                {settings.stones === 'famille' && <button className="link renew" disabled={heirloom === 0}
+                {settings.stones === 'famille' && heirloom > 0 && <button className="link renew" // nothing to renew while they are new
                   onClick={() => keepStones({ ...stonesKept, renewedAt: stoneStats.finished })}>{t.renewStones}</button>}
               </div>
               {renderer === '3d' && <>

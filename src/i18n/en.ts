@@ -123,7 +123,7 @@ export const en = {
   ambientSound: 'Ambient sound', ambientSoundHint: 'Leaves, wind or rain, very quietly',
   depthOfField: 'Depth of field', depthOfFieldHint: 'Softens what lies beyond the board',
   stoneLocked: (how: string) => `To earn: ${how}`,
-  unlocks: { games10: 'finish 10 games', streak7: 'keep a 7-day streak', review: 'review a whole game', tsumego: 'solve a tsumego from your games' },
+  unlocks: { games10: '10 finished games', streak7: '7 days in a row', review: 'a game reviewed', tsumego: 'a tsumego solved' },
   stonesEarned: (name: string) => `New stones: ${name}`,
   renewStones: 'Renew the stones',
   hidePanel: 'Hide panel', showPanel: 'Show panel',

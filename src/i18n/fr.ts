@@ -123,7 +123,7 @@ export const fr: Dict = {
   ambientSound: 'Ambiance sonore', ambientSoundHint: 'Feuilles, vent ou pluie, tout bas',
   depthOfField: 'Profondeur de champ', depthOfFieldHint: 'Adoucit ce qui est au-delà du goban',
   stoneLocked: (how: string) => `À gagner : ${how}`,
-  unlocks: { games10: 'termine 10 parties', streak7: 'tiens une série de 7 jours', review: 'revois une partie en entier', tsumego: 'résous un tsumego de tes parties' },
+  unlocks: { games10: '10 parties terminées', streak7: '7 jours de suite', review: 'une partie revue', tsumego: 'un tsumego réussi' },
   stonesEarned: (name: string) => `Nouvelles pierres : ${name}`,
   renewStones: 'Remettre à neuf',
   hidePanel: 'Masquer le panneau', showPanel: 'Afficher le panneau',
