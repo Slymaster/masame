@@ -263,7 +263,7 @@ export class Board3D {
   private boardMat!: THREE.MeshPhysicalMaterial
   /** Pale golden kaya (the scan, barely graded): readability comes from the stones' contact shadow and rim, not dark wood. */
   private woodTone = new THREE.Color(0.47, 0.442, 0.395)
-  private boardU = { uInk: { value: new THREE.Color(0x120c07) }, uLim: { value: 9 }, uStep: { value: 6 }, uFive: { value: 0 }, uHalf: { value: 0.5 }, uRelief: { value: 0 }, uWobble: { value: 0 }, uInkRough: { value: 0.45 }, uPatina: { value: 0 } }
+  private boardU = { uInk: { value: new THREE.Color(0x120c07) }, uLim: { value: 9 }, uStep: { value: 6 }, uFive: { value: 0 }, uHalf: { value: 0.5 }, uRelief: { value: 0 }, uWobble: { value: 0 }, uInkRough: { value: 0.45 }, uPatina: { value: 0 }, uWarm: { value: 0 } }
   private board: THREE.Mesh | null = null
   private labels: THREE.Mesh | null = null
   private marks: THREE.Mesh | null = null
@@ -590,13 +590,16 @@ export class Board3D {
       Object.assign(sh.uniforms, this.boardU)
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLoc;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLoc = position;')
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + GLSL_GRID)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n#ifdef WOOD_WARM\nuniform float uWarm;\n#endif\n' + GLSL_GRID)
         .replace('#include <map_fragment>', '#include <map_fragment>\nvec2 inkG; float ink = gridInk(vLoc, inkG);\ndiffuseColor.rgb = mix(diffuseColor.rgb, uInk, ink);')
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           #ifdef USE_ROUGHNESSMAP
           { float d = length((vRoughnessMapUv - 0.5) * vec2(${KAYA_MM[0]}, ${KAYA_MM[1]})); roughnessFactor *= 1.0 - uPatina * (1.0 - smoothstep(80.0, 220.0, d)); }
           #endif
           roughnessFactor = mix(roughnessFactor, uInkRough, ink);`)
+        // Look.woodWarm: the wood's sky light keeps its strength but loses the cold sky's colour (sides lit by it alone read as
+        // kaya); compiled in only for those décors, so the others' shader is untouched
+        .replace('#include <lights_fragment_maps>', '#include <lights_fragment_maps>\n#ifdef WOOD_WARM\niblIrradiance = mix(iblIrradiance, vec3(dot(iblIrradiance, vec3(0.2126, 0.7152, 0.0722))), uWarm);\n#endif')
         // the dome tilts both the wood's normal and the clear coat's (the board is only translated: object xz = world xz)
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nvec3 inkN = mat3(viewMatrix) * vec3(inkG.x, 0.0, inkG.y);\nif (uRelief > 0.0) normal = normalize(normal - inkN);')
         .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\n#ifdef USE_CLEARCOAT\nif (uRelief > 0.0) clearcoatNormal = normalize(clearcoatNormal - inkN);\n#endif')
@@ -1030,6 +1033,8 @@ export class Board3D {
     if (this.key.castShadow === lamp) { this.key.castShadow = !lamp; this.key.shadow.map?.dispose(); this.key.shadow.map = null }
     if (this.lamp.castShadow !== lamp) { this.lamp.castShadow = this.lamp.visible = lamp; this.lamp.shadow.map?.dispose(); this.lamp.shadow.map = null }
     this.extrasOn()
+    const warm = (L.woodWarm ?? 0) > 0, defs = this.boardMat.defines!
+    if ('WOOD_WARM' in defs !== warm) { if (warm) defs.WOOD_WARM = ''; else delete defs.WOOD_WARM; this.boardMat.needsUpdate = true }
     // free what the previous décor held on the GPU
     for (const [k, m] of Object.entries(this.grounds)) if (k !== L.ground) { m.map.dispose(); m.bump?.dispose() }
     const keep = L.sky ?? 'room'
@@ -1532,6 +1537,7 @@ export class Board3D {
     this.boardU.uHalf.value = this.noGrid ? 0 : lerp(0.5, 0.62, hc)
     this.boardU.uRelief.value = this.fx.relief * c; this.boardU.uWobble.value = this.fx.wobble * c
     this.boardU.uInkRough.value = lerp(0.45, this.fx.inkRough, c); this.boardU.uPatina.value = this.fx.patina * c
+    this.boardU.uWarm.value = (L.woodWarm ?? 0) * c
     this.vigU.uVig.value = this.fx.vignette
     // Contemplation's décor effects: the scene, and the HDRI behind the room (Look.backdrop)
     const fxOn = ce > 0 && this.q.fx >= 1, bd = fxOn ? L.backdrop : undefined

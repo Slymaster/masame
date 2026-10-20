@@ -5,5 +5,5 @@ import type { Look } from '../logic'
 export default {
   sky: 'bambous/ninomaru_teien', skyAz: 0.62, tod: null, ground: 'walnut', tint: 0.8, rough: 0.8, fade: false, linen: true,
   key: 0.3, ibl: 0.95, exp: 0.92, soft: 2, shade: 0.5, lamp: 0, shoji: 0,
-  skin: 'washi', tiltMax: (80 * Math.PI) / 180, ambient: 'pluie/rain.mp3',
+  woodWarm: 0.6, skin: 'washi', tiltMax: (80 * Math.PI) / 180, ambient: 'pluie/rain.mp3',
 } satisfies Look

@@ -8,5 +8,5 @@ export default {
   sky: 'nuages/kloppenheim_06_puresky', skyAz: 0.709, tod: { az: 222, el: 9, K: 3100, I: 10, env: 0.6, exp: 1, room: 0.7 },
   ground: 'walnut', tint: 0.7, rough: 0.8, fade: false, linen: true,
   key: 1, ibl: 0.85, exp: 1.2, soft: 1.5, shade: 0.62, lamp: 0, shoji: 0,
-  skin: 'washi', tiltMax: (80 * Math.PI) / 180, ambient: 'neige/wind.mp3',
+  woodWarm: 0.85, skin: 'washi', tiltMax: (80 * Math.PI) / 180, ambient: 'neige/wind.mp3',
 } satisfies Look

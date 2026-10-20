@@ -297,6 +297,9 @@ export interface Look {
   backdrop?: { blur: number; intensity: number }
   /** The UI card's skin (cardSkin): 'byCamera' = Laque in Contemplation, Washi in Study. Absent = Washi. */
   skin?: 'washi' | 'laque' | 'byCamera'
+  /** Contemplation, 0..1: how much of the sky's colour the board's wood forgets in its sky light. Under a cold sky (snow, dawn,
+   *  night) the kaya's sides, lit by the sky alone, turn grey-green; the eye adapts and still sees warm wood. Absent = 0. */
+  woodWarm?: number
   /** Contemplation: the highest the seated camera may tilt (rad from vertical; default TILT_MAX, 58°). Outdoor décors may let the eyes rise to ~80°. */
   tiltMax?: number
   /** A sound loop under assets/board3d/ (carried here; the ambience player reads it). */
