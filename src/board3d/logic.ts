@@ -300,6 +300,9 @@ export interface Look {
   /** Contemplation, 0..1: how much of the sky's colour the board's wood forgets in its sky light. Under a cold sky (snow, dawn,
    *  night) the kaya's sides, lit by the sky alone, turn grey-green; the eye adapts and still sees warm wood. Absent = 0. */
   woodWarm?: number
+  /** Study: the key's colour temperature (K) instead of the Look's fixed tod.K, for a cold light that would grey the wood
+   *  there without its scene (the cosmos's star). Absent = tod.K in both cameras. */
+  studyK?: number
   /** Contemplation: the highest the seated camera may tilt (rad from vertical; default TILT_MAX, 58°). Outdoor décors may let the eyes rise to ~80°. */
   tiltMax?: number
   /** A sound loop under assets/board3d/ (carried here; the ambience player reads it). */

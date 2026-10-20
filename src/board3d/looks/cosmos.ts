@@ -10,4 +10,5 @@ export default {
   ground: 'walnut', tint: 0.4, rough: 0.72, fade: true, linen: false,
   key: 1, ibl: 0.8, exp: 1.05, soft: 1.5, shade: 0.85, lamp: 0, shoji: 0,
   skin: 'laque', tiltMax: (80 * Math.PI) / 180,
+  studyK: 5500, // Study has no stars around it: the star's 9000 K would leave the kaya grey-olive there, so warm daylight instead
 } satisfies Look

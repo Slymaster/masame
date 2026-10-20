@@ -1619,7 +1619,7 @@ export class Board3D {
     this.aoU.uAoDir.value.set(-Math.cos(az), -Math.sin(az))
     this.aoU.uAoLean.value = THREE.MathUtils.clamp(AO_LEAN * (this.kit.spec.shTop + this.kit.spec.shBot) / 2 / Math.tan(el), AO_LEAN_MIN, AO_LEAN_MAX) / this.kit.spec.rW
     const keyI = tod.I * lift * L.key * lerp(1, 0.2, ok), sj = this.shoji.visible ? this.shojiShare() : 0
-    this.key.color.copy(kelvin(tod.K)); this.key.intensity = keyI * (1 - sj)
+    this.key.color.copy(kelvin(L.studyK ? lerp(L.studyK, tod.K, ce) : tod.K)); this.key.intensity = keyI * (1 - sj)
     if (sj) { // through the shoji, from far out on the key's bearing (it follows the hour): panes as bright as before, bars darker
       this.shoji.position.copy(this.key.position).setLength(SHOJI_MM); this.shoji.color.copy(this.key.color); this.shoji.intensity = keyI * sj
     }
