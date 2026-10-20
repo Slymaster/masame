@@ -7,7 +7,7 @@ import type { StoneCtx, StoneGL } from '../stones'
 
 /** Tunables (read when the materials are built). bands: how much the layers show; tint: the white bands' colour. */
 export const TUNE = {
-  black: 0x060607, blackRough: 0.14, blackCoatRough: 0.07, blackBands: 0.006,
+  black: 0x060607, blackRough: 0.14, blackCoatRough: 0.07, blackBands: 0.011,
   white: 0xe9ecef, whiteRough: 0.26, whiteCoat: 0.6, whiteCoatRough: 0.14, whiteBands: 0.07, tint: [1.0, 0.75, 0.42], wax: 0.2,
 }
 const v3 = (c: number[]) => `vec3(${c.map(x => x.toFixed(3)).join(', ')})`

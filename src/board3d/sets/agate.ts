@@ -13,7 +13,7 @@ export default {
     white: [[252, 252, 251], [242, 243, 244], [226, 229, 233], [232, 235, 239]],
     marks: { black: 'bands', white: 'bands' },
     finish: {
-      black: { mark: { color: [74, 76, 82], amount: 0.45, scale: 1.4, count: 0.7 }, highlight: { strength: 0.3, size: 0.34, color: [255, 252, 246] } },
+      black: { mark: { color: [74, 76, 82], amount: 0.68, scale: 1.4, count: 0.7 }, highlight: { strength: 0.3, size: 0.34, color: [255, 252, 246] } },
       white: {
         mark: { color: [118, 136, 160], amount: 0.45, scale: 1.4, count: 0.7 },
         rim: { color: [214, 224, 236], strength: 0.3, width: 0.3 },
