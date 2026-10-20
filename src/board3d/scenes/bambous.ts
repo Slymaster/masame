@@ -84,7 +84,11 @@ export function canopy(c: Canopy = CANOPY) {
 
 /* ---------- the engawa: weathered cedar planks running across the view ---------- */
 const PLANK = 120, TILE: [number, number] = [1600, 960] // mm; the tile holds 8 planks, one butt joint each
-export function engawa(): [HTMLCanvasElement, HTMLCanvasElement] {
+let planks: [HTMLCanvasElement, HTMLCanvasElement] | null = null
+/** The planks' colour and bump canvases, drawn once per session (a ~350 ms pixel loop) and shared by every scene that lays
+ *  them (bambous, hanami, pluie, nuages): wrap them in your own textures, tint through the material, never draw on them. */
+export const engawa = () => (planks ??= drawEngawa())
+function drawEngawa(): [HTMLCanvasElement, HTMLCanvasElement] {
   const PX = 1.28, w = Math.round(TILE[0] * PX), h = Math.round(TILE[1] * PX), ph = PLANK * PX, n = Math.round(TILE[1] / PLANK)
   const col = Object.assign(document.createElement('canvas'), { width: w, height: h }), bump = Object.assign(document.createElement('canvas'), { width: w, height: h })
   const ci = new ImageData(w, h), bi = new ImageData(w, h), r = rng(31)
