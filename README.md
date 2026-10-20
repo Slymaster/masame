@@ -68,6 +68,7 @@ The board takes the window; beside it, one floating card holds the game. Its hea
 ### Play
 
 - **The Living Atelier.** A real-time three.js board with physically based wood and stones, light that follows the time of day, two views (Study, and a seated Contemplation view you can turn and zoom with the mouse), and bowls with lids for the spare and captured stones. 9×9, 13×13 and 19×19.
+- **Stones and worlds.** Thirteen stone sets, from Japanese slate and shell to Yunnan yunzi, Korean glass, jade, agate, river pebbles and blown glass, with four more you earn; thirteen décors, from the Atelier to a bamboo garden, a snowy night, a hanok, the Honinbo hall, a terrace above the clouds and the cosmos, where you can lift your eyes to the world beyond the board; three goban shapes (table, legged, folding) in six woods. All in the Workshop, as galleries of pictures, with ready-made moods.
 - **A human opponent.** KataGo with its human SL network imitates a player from 20k to 9d, with optional automatic level adjustment and natural thinking times. Handicap games from 2 to 9 stones, proposed from the gap between your level and the AI's.
 - **Masters of an era.** Play the professionals of 1850, 1900, 1935, 1970, 2005 or 2023, as KataGo's human network plays them, with the handicap of the old teaching games, up to nine stones.
 - **The Mentor.** Switch it on, and Masame stops you when a move costs too much (4 points at 19×19, 3 at 13×13, 2 at 9×9): try again, or keep it. A game with the mentor is a lesson, so it never counts toward your rank.
@@ -107,6 +108,7 @@ The board takes the window; beside it, one floating card holds the game. Its hea
 ### Settings
 
 - **Seasons in the light.** In Auto, the light follows the hour and the date: a longer golden hour in summer, low cold light in winter, and the glare of snow in the Washitsu from December to February.
+- **Auto décor, ambient sound, depth of field.** The décor can follow the season and the hour; a quiet ambient sound (leaves, wind, rain) and a lens-like depth of field when you lift your eyes are there if you want them.
 - **Two languages.** Entirely in French and English, following the system language, switchable in the app.
 - **A 2D light mode.** A Canvas board, used automatically when the 3D renderer is unavailable.
 
@@ -175,7 +177,7 @@ OGS doesn't allow engine help during a game, so while an OGS game is going on, L
 
 ## Roadmap
 
-The foundations, the 3D Living Atelier and the teacher are in place, with the OGS client. Version 0.3 added the joseki trainer, variations and autoplay; version 0.4 read your games: the automatic review, exercises from your games, your rank read in your moves, the daily ritual, handicap, free analysis, a local clock and the postcard. Version 0.5 makes your lessons from your games: the library, tsumego, counting, replay from memory and the Classics, with the Masters of an era, the mentor, the position editor and the kifu. Next comes Masame on Android, as a beta, and a signed Windows installer. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
+The foundations, the 3D Living Atelier and the teacher are in place, with the OGS client. Version 0.3 added the joseki trainer, variations and autoplay; version 0.4 read your games: the automatic review, exercises from your games, your rank read in your moves, the daily ritual, handicap, free analysis, a local clock and the postcard. Version 0.5 makes your lessons from your games: the library, tsumego, counting, replay from memory and the Classics, with the Masters of an era, the mentor, the position editor and the kifu. Version 0.6 brings stones and worlds: thirteen stone sets, thirteen décors and three goban shapes in six woods. Next comes Masame on Android, as a beta, and a signed Windows installer. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
 
 ## Credits
 
@@ -184,7 +186,7 @@ The foundations, the 3D Living Atelier and the teacher are in place, with the OG
 - [goban](https://github.com/online-go/goban) by Online-Go.com: the OGS client's connection and protocol (`goban-engine`, Apache-2.0).
 - [FSRS](https://github.com/open-spaced-repetition) by Open Spaced Repetition: the spaced repetition behind joseki practice (MIT).
 - [three.js](https://threejs.org/), [Tauri](https://tauri.app/) and [React](https://react.dev/).
-- Wood textures from [ambientCG](https://ambientcg.com/), lighting (HDRI) from [Poly Haven](https://polyhaven.com/), stone sounds from [Freesound](https://freesound.org/) by billhails2, Hongsungbock and MPooman — all CC0.
+- Wood textures from [ambientCG](https://ambientcg.com/), lighting (HDRI) from [Poly Haven](https://polyhaven.com/) by Greg Zaal, Jarod Guest, Sergej Majboroda, Dario Barresi and Andreas Mischok, stone and ambient sounds from [Freesound](https://freesound.org/) by billhails2, Hongsungbock, MPooman, ellie.vanderlip, Olichite, Nox_Sound, kyles, PhilllChabbb and callmethefoo — all CC0.
 - Typefaces: Cormorant Garamond and Manrope, under the SIL Open Font License.
 
 ## Licence
