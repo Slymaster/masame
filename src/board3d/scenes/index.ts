@@ -33,6 +33,10 @@ export interface SceneCtx {
   /** Where the lamp stands and what it lights (mm, the board top's centre is the origin), e.g. an andon on the floor beside
    *  the board, its shadow camera fitted to that distance; null = hanging on the key's bearing like the Lanterne's. */
   setLampPose(pos: THREE.Vector3 | null, target?: THREE.Vector3): void
+  /** The scene's own environment: an equirectangular texture it made (a starfield, a cloud sea), PMREM'd and freed by
+   *  Board3D; it replaces the Look's sky in reflections and in Look.backdrop while the scene is mounted. null = the Look's.
+   *  The texture you pass stays yours: dispose it in dispose(). */
+  setEnvironment(tex: THREE.Texture | null): void
 }
 
 /** A ground for the table: tile it yourself (wrap, repeat over the 3200 mm table, colour space). tint multiplies its colour (default 1). */

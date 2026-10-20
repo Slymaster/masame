@@ -8,7 +8,7 @@ import { dimOf, ghostOf, pendingOf, STONES, stoneGeo } from './stones'
 const hex = (c: THREE.Color) => c.getHex()
 /** A single convex stone (Chinese yunzi-like), only for these tests. */
 const YUNZI: StoneShape = { rB: 11.1, rW: 11.1, shTop: 6.6, shBot: 0.8, expTop: 0.7, expBot: 0.25 }
-const hc = { value: 0 }
+const hc = { value: 0 }, time = { value: 0 }, patina = { value: 0 }
 
 describe('stone sets', () => {
   it('has one row per set, with real-world sizes, both materials and a 2D palette', () => {
@@ -19,7 +19,7 @@ describe('stone sets', () => {
       expect(half, name).toBeGreaterThanOrEqual(3.0); expect(half, name).toBeLessThanOrEqual(5.5)
       expect(s.shBot, name).toBeGreaterThanOrEqual(0.5); expect(s.shTop, name).toBeGreaterThanOrEqual(s.shBot) // the dome is on top
       for (const e of [s.expTop, s.expBot]) { expect(e, name).toBeGreaterThan(0); expect(e, name).toBeLessThanOrEqual(1.5) }
-      for (const m of [s.black({ hc, R: s.rB }), s.white({ hc, R: s.rW })]) {
+      for (const m of [s.black({ hc, R: s.rB, time, patina }), s.white({ hc, R: s.rW, time, patina })]) {
         expect(m).toBeInstanceOf(THREE.MeshPhysicalMaterial)
         expect(m.onBeforeCompile, name).toBeTypeOf('function')
         expect(m.customProgramCacheKey(), name).not.toBe('') // one program per set and colour
@@ -75,7 +75,7 @@ describe('lens', () => {
 })
 
 describe('derived materials', () => {
-  const j = STONES.japonaise, slate = j.black({ hc, R: j.rB }), shell = j.white({ hc, R: j.rW })
+  const j = STONES.japonaise, slate = j.black({ hc, R: j.rB, time, patina }), shell = j.white({ hc, R: j.rW, time, patina })
 
   it('dims the Japanese stones to exactly v0.5 dying stones', () => {
     const b = dimOf(slate), w = dimOf(shell)

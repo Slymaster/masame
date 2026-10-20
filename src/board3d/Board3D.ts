@@ -35,6 +35,8 @@ export interface Board3DOptions {
   camera: CameraMode; time: TimeMode; highContrast: boolean; decor: Decor; stones: StoneSet
   /** Depth of field in Contemplation (wave 3): accepted, not used yet. */
   dof?: boolean
+  /** The Heirloom stones' age (0 new … 1 fully aged), shared by every set's materials as StoneCtx.patina. */
+  patina?: number
 }
 export type FallbackReason = 'webgl2' | 'context-lost' | 'slow'
 export interface Board3DInit {
@@ -80,7 +82,7 @@ const sstep = (a: number, b: number, v: number) => { const t = clamp01((v - a) /
 const freeGround = (g: SceneGround) => { g.map.dispose(); g.bumpMap?.dispose() }
 const mkCanvas = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h })
 
-interface Mounted { s: Scene; g: THREE.Group; cookie: THREE.Texture | null; ground: SceneGround | null; lampColor: THREE.Color | null; lampPose: { pos: THREE.Vector3; target: THREE.Vector3 } | null }
+interface Mounted { s: Scene; g: THREE.Group; cookie: THREE.Texture | null; ground: SceneGround | null; lampColor: THREE.Color | null; lampPose: { pos: THREE.Vector3; target: THREE.Vector3 } | null; env: THREE.WebGLRenderTarget | null }
 
 interface Stone extends Placed {
   p: number; c: Sign; seed: number; rotY: number
@@ -238,8 +240,10 @@ export class Board3D {
   private vignette!: THREE.Mesh
   private fx = { ...FX }
   private hc = { value: 0 }
+  /** The stones' ambient clock and the Heirloom patina, shared by every set's materials (stones.ts StoneCtx). */
+  private stoneTime = { value: 0 }; private patinaU = { value: 0 }
   /** The stone set's geometry and materials (stones.ts); swapped whole by applyStones(). */
-  private kit: StoneKit = stoneKit('japonaise', this.hc)
+  private kit: StoneKit = stoneKit('japonaise', this.hc, this.stoneTime, this.patinaU)
   private layerB = stoneLayer(this.kit.geoB, this.kit.black, 400)
   private layerW = stoneLayer(this.kit.geoW, this.kit.white, 400)
   private dimB = stoneLayer(this.kit.geoB, this.kit.blackDim, 400)
@@ -294,6 +298,7 @@ export class Board3D {
   /** The décor's scene (scenes/<décor>.ts) under sceneRoot, with the light cookie it asked for. */
   private sceneRoot!: THREE.Group
   private sceneOn: Mounted | null = null
+  private decorEnv: THREE.Texture | null = null // the Look's environment, under a scene's own (setEnvironment)
   private ambT = 0; private ambLast = 0; private ambWait = false // ambient animation clock (s), last ambient frame, waiting for the next one
 
   private state: Board3DState | null = null
@@ -377,6 +382,7 @@ export class Board3D {
     else if (prev.highContrast !== this.opts.highContrast) this.applyOptions()
     if (prev.decor !== this.opts.decor) void this.switchDecor()
     if (prev.stones !== this.opts.stones) void this.transition(() => this.applyStones())
+    if (prev.patina !== this.opts.patina) { this.patinaU.value = this.opts.patina ?? 0; this.invalidate() }
   }
   get options(): Readonly<Board3DOptions> { return this.opts }
 
@@ -478,7 +484,7 @@ export class Board3D {
     clearInterval(this.autoTimer); clearTimeout(this.resizeTimer)
     this.cleanup()
     this.sound.destroy()
-    this.sceneOn?.s.dispose()
+    this.sceneOn?.s.dispose(); this.sceneOn?.env?.dispose()
     if (!this.renderer) return
     this.scene.traverse(o => {
       const m = o as THREE.Mesh
@@ -898,13 +904,18 @@ export class Board3D {
     const f = SCENES[d], fx = this.q.fx
     if ((!f && !make) || fx < 1) return null
     try {
-      const s = make ? make() : (await f!()).default(), rec: Mounted = { s, g: new THREE.Group(), cookie: null, ground: null, lampColor: null, lampPose: null }
+      const s = make ? make() : (await f!()).default(), rec: Mounted = { s, g: new THREE.Group(), cookie: null, ground: null, lampColor: null, lampPose: null, env: null }
       const ctx: SceneCtx = {
         root: rec.g, renderer: this.renderer, key: this.key, base: this.base, fx: fx as 1 | 2, board: { BW: this.D.BW, BD: this.D.BD },
         setCookie: t => { rec.cookie = t; if (this.sceneOn === rec) this.shoji.map = t ?? this.shojiTex },
         setGround: g => { const old = rec.ground; rec.ground = g; if (this.sceneOn === rec) this.applyGround(); if (old && old !== g) freeGround(old) },
         lamp: this.lamp,
         setLampColor: c => { rec.lampColor = c; this.invalidate() },
+        setEnvironment: tex => {
+          rec.env?.dispose(); rec.env = null
+          if (tex) { const pm = new THREE.PMREMGenerator(this.renderer); tex.mapping = THREE.EquirectangularReflectionMapping; rec.env = pm.fromEquirectangular(tex); pm.dispose() }
+          if (this.sceneOn === rec) this.scene.environment = rec.env?.texture ?? this.decorEnv
+        },
         setLampPose: (pos, target) => { rec.lampPose = pos ? { pos: pos.clone(), target: (target ?? new THREE.Vector3()).clone() } : null; this.invalidate() },
       }
       await s.build(ctx)
@@ -915,7 +926,8 @@ export class Board3D {
   /** Swaps the mounted scene (inside transition()), freeing the previous one. */
   private mountScene(rec: Mounted | null) {
     const old = this.sceneOn
-    if (old) { this.sceneRoot.remove(old.g); old.s.dispose(); if (old.ground) freeGround(old.ground) }
+    this.scene.environment = rec?.env?.texture ?? this.decorEnv // a scene's own sky (a starfield) or the Look's
+    if (old) { this.sceneRoot.remove(old.g); old.s.dispose(); if (old.ground) freeGround(old.ground); old.env?.dispose() }
     this.sceneOn = rec; this.ambT = 0; this.ambLast = 0
     if (rec) this.sceneRoot.add(rec.g)
     this.shoji.map = rec?.cookie ?? this.shojiTex
@@ -924,7 +936,7 @@ export class Board3D {
 
   /** A décor's ambient animation runs this frame (logic.ts ambientOn). */
   private ambient(busy: boolean) {
-    return !!this.sceneOn?.s.animated && ambientOn({
+    return !!(this.sceneOn?.s.animated || this.kit.spec.animated) && ambientOn({
       animated: true, contemplation: this.camE > 0, fx: this.q.fx, visible: document.visibilityState === 'visible',
       focused: document.hasFocus(), reducedMotion: this.instant(), busy,
     })
@@ -1011,7 +1023,7 @@ export class Board3D {
   private applyDecor(d: Decor, env: THREE.Texture) {
     const L = LOOKS[d]
     this.decorOn = d
-    this.scene.environment = env
+    this.decorEnv = env; this.scene.environment = env
     this.applyGround()
     const lamp = L.lamp > 0
     if (this.key.castShadow === lamp) { this.key.castShadow = !lamp; this.key.shadow.map?.dispose(); this.key.shadow.map = null }
@@ -1072,7 +1084,7 @@ export class Board3D {
    * Called under transition(), so the new programs compile while the last frame is still shown.
    */
   private applyStones() {
-    const old = this.kit, k = this.kit = stoneKit(this.opts.stones, this.hc)
+    const old = this.kit, k = this.kit = stoneKit(this.opts.stones, this.hc, this.stoneTime, this.patinaU)
     if (k.spec === old.spec) { disposeKit(k); this.kit = old; return }
     const swap = (L: THREE.InstancedMesh, geo: THREE.BufferGeometry, mat: THREE.Material) => { L.geometry.dispose(); L.geometry = seeded(geo, L.instanceMatrix.count); L.material = mat }
     swap(this.layerB, k.geoB, k.black); swap(this.layerW, k.geoW, k.white)
@@ -1551,7 +1563,7 @@ export class Board3D {
     }
     // the décor's animation: only on otherwise still frames, which the governor never samples
     const amb = this.ambient(busy || !!this.fade)
-    if (amb) { const dt = this.ambLast ? Math.min(now - this.ambLast, 100) / 1000 : 0; this.ambT += dt; this.sceneOn!.s.update(dt, this.ambT); this.ambLast = now } else this.ambLast = 0
+    if (amb) { const dt = this.ambLast ? Math.min(now - this.ambLast, 100) / 1000 : 0; this.ambT += dt; this.sceneOn?.s.update(dt, this.ambT); this.stoneTime.value = this.ambT; this.ambLast = now } else this.ambLast = 0
     this.render()
     if (this.drawFade(now)) busy = true
     this.lastFrame = busy ? now : 0

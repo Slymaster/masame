@@ -81,6 +81,7 @@ A listed id without both files is **pending**: `isReadySet(id)` is false, `ready
    - `setGround({ map, bumpMap?, roughness?, tint? } | null)`: the scene's own table surface, with the same fade and shadows as a Look's ground, in both cameras. Board3D frees these textures with the scene; don't dispose them yourself.
    - `lamp`: the lamp spotlight (needs `Look.lamp > 0`; its intensity comes from the Look, its position from the key's bearing).
    - `setLampColor(color | null)`: an andon's warm paper, a red lantern. `null` uses the hour's colour temperature.
+   - `setEnvironment(tex | null)`: your scene's own sky for reflections and `Look.backdrop` (an equirectangular texture you made, e.g. a starfield or a cloud sea); Board3D PMREMs and frees the PMREM, you dispose your texture. `null` = the Look's sky.
    - `setLampPose(pos | null, target?)`: where the lamp stands and what it lights (mm, the board top's centre is the origin), for a lamp you also model, such as an andon on the floor beside the board; its shadow camera follows. `null` hangs it on the key's bearing like the Lanterne's. Change the lamp only through these two calls.
 
    **`Scene`**:
@@ -123,3 +124,8 @@ Run `pnpm dev`, open `http://localhost:1420/board3d.html`; `view` is on `window`
 ## Checking the default is unchanged
 
 Capture the four first décors in Study and Contemplation at morning, afternoon and evening, plus a full 19×19 (counting, Ombre with ghost and coordinates). Do this before and after your change at quality 0 after a fresh load, then compare with `magick compare -metric AE`. Two runs of the same build differ by 0 px, so any difference is real.
+
+## Stone materials that move or age
+
+- A set's material factories get `ctx = { hc, R, time, patina }`. `time` (s, shared) advances only while ambient animation may run (Contemplation, fx 2, focused, motion allowed, nothing else moving); set `animated: true` on the set's `StoneGL` export so the view renders continuously (≤ 30 fps) when that is allowed, otherwise the stones stay still at their last time.
+- `patina` (0 … 1, shared) comes from `Board3DOptions.patina`: the Heirloom stones read it to age (the app computes it from the games in Mes parties).

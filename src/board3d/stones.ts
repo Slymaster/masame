@@ -8,12 +8,16 @@ import type { Sign } from '@sabaki/go-board'
 import { lensBot, lensTop, type StoneShape } from './logic'
 import { isReadySet, STONE_DATA, STONE_SETS, type StoneData, type StoneSet } from './stoneSets'
 
-/** What a material factory gets: the high-contrast uniform (0..1, shared, live) and the stone's radius (mm). */
-export interface StoneCtx { hc: { value: number }; R: number }
+/** What a material factory gets: the high-contrast uniform (0..1, shared, live), the stone's radius (mm), the ambient clock
+ *  (s, shared; it advances only while ambient animation may run: see StoneGL.animated) and the Heirloom patina (0..1, shared,
+ *  from Board3DOptions.patina). */
+export interface StoneCtx { hc: { value: number }; R: number; time: { value: number }; patina: { value: number } }
 /** A set's materials: sets/<id>.gl.ts default-exports it. */
 export interface StoneGL {
   black: (ctx: StoneCtx) => THREE.MeshPhysicalMaterial
   white: (ctx: StoneCtx) => THREE.MeshPhysicalMaterial
+  /** true if a material moves with ctx.time (glowing cracks): the view then renders continuously when allowed (≤ 30 fps). */
+  animated?: boolean
 }
 /** A whole set: its three-free data (sets/<id>.ts, stoneSets.ts) and its materials. */
 export interface StoneSpec extends StoneData, StoneGL {}
@@ -97,9 +101,9 @@ export interface StoneKit {
   black: THREE.MeshPhysicalMaterial; white: THREE.MeshPhysicalMaterial
   blackDim: THREE.MeshPhysicalMaterial; whiteDim: THREE.MeshPhysicalMaterial
 }
-export function stoneKit(set: StoneSet, hc: { value: number }): StoneKit {
+export function stoneKit(set: StoneSet, hc: { value: number }, time = { value: 0 }, patina = { value: 0 }): StoneKit {
   const spec = STONES[set] ?? STONES.japonaise
-  const black = spec.black({ hc, R: spec.rB }), white = spec.white({ hc, R: spec.rW })
+  const black = spec.black({ hc, R: spec.rB, time, patina }), white = spec.white({ hc, R: spec.rW, time, patina })
   black.userData.coat = black.clearcoat; white.userData.coat = white.clearcoat // Board3D scales the coat per view from these
   return { spec, black, white, blackDim: dimOf(black), whiteDim: dimOf(white), geoB: stoneGeo(spec.rB, spec), geoW: stoneGeo(spec.rW, spec) }
 }
