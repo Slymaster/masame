@@ -26,7 +26,7 @@ import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
 import { loadSgf, MAX_SGF, readResult, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import type { Decor } from './board3d/decors'
-import { readySets, type StoneSet } from './board3d/stoneSets'
+import { readySets, STONE_DATA, type StoneSet } from './board3d/stoneSets'
 import { ambiances, autoDecor } from './board3d/auto'
 import { isMac, isMobile, shortcut } from './platform'
 import { useFullscreen, useWindowTheme } from './window'
@@ -38,9 +38,9 @@ import { phaseLine, useExercises } from './exercises/useExercises'
 import { anchored, loadRanks, localRank, rankName, readRank, saveRanks, withReading, type Reading } from './rank'
 import { useAutoReview } from './exercises/useAutoReview'
 import { useMining } from './tsumego/useMining'
-import { recordKey, weakest } from './exercises/deck'
+import { load as loadDeck, recordKey, weakest } from './exercises/deck'
 import { tone } from './joseki/practice'
-import { openingBook } from './today/ritual'
+import { load as loadRitual, openingBook } from './today/ritual'
 import { useToday } from './today/useToday'
 import { MonthLetters } from './MonthLetters'
 import { canGuess, useClassics } from './classics/useClassics'
@@ -53,6 +53,7 @@ import { isLocal, local, noteRank, noteReview, resumable, unfinished, useCurrent
 import { useMentor } from './useMentor'
 import { useCounting } from './count/useCounting'
 import { useMemory } from './memory/useMemory'
+import { loadStones, lockedSets, patina, saveStones, statsOf, toAnnounce, unlockAll, unlocked, type Unlock } from './stonesEarned'
 import { COUNTS, countStep, handStep, HAND } from './today/ritual'
 import { useEditor } from './editor/useEditor'
 import { Kifu } from './KifuPage'
@@ -99,7 +100,7 @@ function loadSettings(): Settings {
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: s.decor === 'auto' || (readyDecors() as readonly unknown[]).includes(s.decor) ? s.decor : 'atelier', // a décor not shipped yet: the default
-    stones: (readySets() as readonly unknown[]).includes(s.stones) ? s.stones : 'japonaise',
+    stones: (readySets() as readonly unknown[]).includes(s.stones) && !earnedNow().has(s.stones) ? s.stones : 'japonaise', // a set still to earn: the default
     ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false, panelHidden: s.panelHidden === true, ...updateSettings(j),
     autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
     handicap: Number.isInteger(s.handicap) && s.handicap >= 2 && s.handicap <= 9 ? s.handicap : 0,
@@ -107,6 +108,9 @@ function loadSettings(): Settings {
     style: s.style === 'era' ? 'era' : 'level', era: clampEra(s.era), mentor: s.mentor === true,
   }
 }
+
+/** The stone sets still to earn, from the stores readable now (the library, when loaded; an earned set once said stays earned). */
+const earnedNow = (entries = library.get()) => lockedSets(unlocked(statsOf(entries, loadRitual(), loadDeck().p)), loadStones().said, unlockAll())
 
 /** Board3D.supported() without loading three.js, which stays out of the first bundle (same check). */
 function webgl2() {
@@ -159,7 +163,7 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, inert
     return () => { live = false; ro?.disconnect(); v?.destroy(); view.current = three.current = null; shift(0) }
   }, [mode, view])
   useEffect(() => { view.current?.update(state); if (import.meta.env.DEV) Object.assign(window, { __badukState: state }) })
-  useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor, options.stones]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor, options.stones, options.patina]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => three.current?.setThinking(thinking), [thinking])
   useEffect(() => { if (mode === '2d') (view.current as BoardView | null)?.setStones(isMobile ? 'japonaise' : options.stones) }, [mode, view, options.stones]) // phones keep the Japanese set
   // a fresh canvas per renderer: one canvas can't hold both a 2D and a WebGL context
@@ -346,6 +350,22 @@ export function App() {
   // `trainers` below, its row in the Learn sheet's `decks`, and its command in `commands` (menu ids: src/menu.ts).
   type Panel = 'joseki' | 'fuseki' | 'exercises' | 'count' | 'memory' | 'editor' | 'classics'
   const [panel, setPanel] = useState<Panel | null>(null)
+  // earned stone sets and the Heirloom patina, read again when the library changes or a sheet or panel opens or closes
+  const entries = useSyncExternalStore(library.subscribe, library.get)
+  useEffect(() => { if (inTauri()) library.load().catch(() => {}) }, [])
+  const [stonesKept, setStonesKept] = useState(loadStones)
+  const stoneStats = useMemo(() => statsOf(entries, loadRitual(), loadDeck().p), [entries, sheet, panel])
+  const reached = useMemo(() => unlocked(stoneStats), [stoneStats])
+  const allStones = useMemo(() => unlockAll(), [])
+  const toEarn = lockedSets(reached, stonesKept.said, allStones)
+  const heirloom = patina(stoneStats.finished, stonesKept.renewedAt)
+  const keepStones = (k: typeof stonesKept) => { saveStones(k); setStonesKept(k) }
+  useEffect(() => { // a set just earned: said once (the owner's unlock flag says nothing and keeps nothing)
+    const fresh = allStones ? [] : toAnnounce(reached, stonesKept.said)
+    if (!fresh.length) return
+    keepStones({ ...stonesKept, said: [...stonesKept.said, ...fresh] })
+    setNote(short(d => d.stonesEarned(fresh.map(s => d.stoneSets[s]).join(', '))))
+  }, [reached]) // eslint-disable-line react-hooks/exhaustive-deps
   /** A trainer's setOpen: opening it replaces any other; closing it closes only itself. */
   const panelOpen = (name: Panel) => (o: boolean) => setPanel(p => (o ? name : p === name ? null : p))
   // "Auto" décor: resolved at launch, at each new game and when a classic opens, never during a game
@@ -1300,7 +1320,7 @@ export function App() {
         <Goban
           view={view}
           mode={renderer}
-          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor, stones: settings.stones, dof: settings.depthOfField }}
+          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor, stones: settings.stones, dof: settings.depthOfField, patina: heirloom }}
           thinking={thinking}
           // while the engine starts (OpenCL tuning loads the GPU) a slow verdict is not the hardware's: this session only
           onFallback={r => { if (r === 'context-lost' || (r === 'slow' && (engineBusy || reading))) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
@@ -1549,14 +1569,17 @@ export function App() {
               </>}
               <div className="field">
                 <span>{t.stonesLabel}</span>
-                <Gallery label={t.stonesLabel} value={settings.stones} set={v => set('stones', v)}
-                  options={readySets().map(s => [s, t.stoneSets[s], t.stoneHints[s], thumb('stones', s)])} />
+                <Gallery label={t.stonesLabel} value={settings.stones} set={v => { if (!toEarn.has(v)) set('stones', v) }}
+                  options={readySets().map(s => [s, t.stoneSets[s], t.stoneHints[s], thumb('stones', s),
+                    toEarn.has(s) ? t.stoneLocked(t.unlocks[STONE_DATA[s].rare as Unlock]) : undefined])} />
+                {settings.stones === 'famille' && <button className="link renew" disabled={heirloom === 0}
+                  onClick={() => keepStones({ ...stonesKept, renewedAt: stoneStats.finished })}>{t.renewStones}</button>}
               </div>
               {renderer === '3d' && <>
                 {moods.length > 0 && <div className="field">
                   <span>{t.ambiancesLabel}</span>
                   <Gallery label={t.ambiancesLabel} value={moods.find(a => a.decor === settings.decor && a.stones === settings.stones)?.id ?? null}
-                    set={id => { const a = moods.find(m => m.id === id)!; set('decor', a.decor); set('stones', a.stones) }}
+                    set={id => { const a = moods.find(m => m.id === id)!; set('decor', a.decor); if (!toEarn.has(a.stones)) set('stones', a.stones) }}
                     options={moods.map(a => [a.id, t.ambiances[a.id], t.ambianceHints[a.id], thumb('decor', a.decor)])} />
                 </div>}
                 <div className="field">
