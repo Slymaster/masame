@@ -1670,7 +1670,7 @@ export class Board3D {
     for (const m of [K.black, K.blackDim]) { const b = m.userData.coat; m.clearcoat = lerp(lerp(b * 0.6, b, c), b * 0.08 / 0.3, hc); m.envMapIntensity = lerp(0.6, 1, c) }
     this.boardMat.color.copy(this.woodTone).multiplyScalar(lerp(1, 0.88, hc))
     this.boardU.uMean.value.set(this.boardMat.color.r * KAYA_MEAN[0], this.boardMat.color.g * KAYA_MEAN[1], this.boardMat.color.b * KAYA_MEAN[2])
-    this.boardMat.normalScale.setScalar(lerp(0.6, 0.25, hc))
+    this.boardMat.normalScale.setScalar(lerp(0.6, 0.25, hc) * (this.wood.normal ?? 1))
     this.boardU.uHalf.value = this.noGrid ? 0 : lerp(0.5, 0.62, hc)
     this.boardU.uRelief.value = this.fx.relief * c; this.boardU.uWobble.value = this.fx.wobble * c
     this.boardU.uInkRough.value = lerp(0.45, this.fx.inkRough, c); this.boardU.uPatina.value = this.fx.patina * c

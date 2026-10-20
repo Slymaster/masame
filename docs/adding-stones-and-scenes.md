@@ -132,6 +132,7 @@ A listed id without `looks/<id>.ts` is **pending**: `isReadyDecor(id)` is false,
      contrast: 1, saturation: 1,        // the grain's contrast around the wood's mean, its colour saturation (1 = the scan's)
      grain: { scale: 1, rotate: 0 },    // figure width (2 = twice as wide) and its turn on the top (rad)
      roughness: 1,                      // multiplier on the scan's roughness
+     normal: 1,                         // scale of the scan's normal map (bamboo: ~0.15, so kaya's rings leave its reflections)
      clearcoat: 0.18, clearcoatRoughness: 0.4,
      snd: { rate: 1, lowpass: 1, gain: 1 },             // the stone-on-board knock, multiplied into the set's voice (3D and 2D)
      skin2d: { light: [224, 180, 110], dark: [176, 120, 58] }, // the 2D board's grain colours (sRGB); BoardView.setWood(id)

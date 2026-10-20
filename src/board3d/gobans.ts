@@ -58,6 +58,8 @@ export interface WoodData {
   grain?: { scale?: number; rotate?: number }
   /** Multiplier on the scan's roughness (1 = kaya's), and the finish: clear coat strength and roughness (kaya: 0.18, 0.4). */
   roughness?: number; clearcoat?: number; clearcoatRoughness?: number
+  /** Scale of the kaya scan's normal map (1 = kaya's relief; a procedural wood such as bamboo drops the rings with ~0.15). */
+  normal?: number
   /** The stone-on-board knock: multipliers on the set's rate, low-pass and gain (a harder, lighter wood rings higher). */
   snd?: { rate?: number; lowpass?: number; gain?: number }
   /** The 2D board's wood: its light and dark grain colours (sRGB 0–255; kaya: [224, 180, 110] and [176, 120, 58]). */
