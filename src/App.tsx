@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { BoardView } from './board/BoardView'
+import { Ambience } from './board3d/ambience'
 import { centreShift } from './board/frame'
 import type { Board3D, Board3DOptions, Board3DState, FallbackReason, TimeMode } from './board3d/Board3D'
 import { rng } from './board/noise'
@@ -160,6 +161,7 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, inert
   useEffect(() => { view.current?.update(state); if (import.meta.env.DEV) Object.assign(window, { __badukState: state }) })
   useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor, options.stones]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => three.current?.setThinking(thinking), [thinking])
+  useEffect(() => { if (mode === '2d') (view.current as BoardView | null)?.setStones(isMobile ? 'japonaise' : options.stones) }, [mode, view, options.stones]) // phones keep the Japanese set
   // a fresh canvas per renderer: one canvas can't hold both a 2D and a WebGL context
   return <div className="board-wrap" ref={wrap} inert={inert}><canvas key={mode} ref={canvas} data-r={mode} aria-label={t.boardLabel(state.signMap.length)} />{children}</div>
 }
@@ -354,6 +356,8 @@ export function App() {
   // the card's skin follows the scene's backdrop; set before paint, and crossfaded only once the first frame is shown
   const skin = cardSkin(renderer, settings.camera, decor)
   useLayoutEffect(() => { document.documentElement.dataset.skin = skin }, [skin])
+  const [ambience] = useState(() => new Ambience())
+  useEffect(() => ambience.play(settings.ambientSound && sound && renderer === '3d' ? LOOKS[decor].ambient : null), [ambience, settings.ambientSound, sound, renderer, decor])
   useWindowTheme(skin)
   // Autoplay: the line being played, one move per settings.autoplay seconds, dropped like the bot's moves
   const [auto, setAuto] = useState<Game | null>(null)

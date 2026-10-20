@@ -19,6 +19,19 @@ Everything lives in `src/board3d/`. Adding a set or a décor means adding files 
    } satisfies StoneData
    ```
 
+   **The 2D board** (the only board on phones) draws `skin2d`: a radial gradient through the colours (centre → rim), then the colour's mark clipped to the stone, then an optional rim glow and the highlight. Marks: `'none'`, `'growth'` (the Hyuga shell's lines), `'veins'` (jade, marble), `'bands'` (agate), `'bubbles'` (glass, amber), `'speckles'` (pebbles, granite), `'stars'` (nebula), `'cracks'` (ember, glowing), `'sheen'` (a brushed band, metal). The optional `finish: { black?, white? }` tunes each colour:
+
+   ```ts
+   finish: {
+     black: { rim: { color: [90, 180, 120], strength: 0.4, width: 0.35 },   // a glow inside the rim: translucent stones
+              highlight: { strength: 0.45, size: 0.3, color: [255, 220, 170] }, // the specular spot (glass, metal: smaller, stronger)
+              mark: { color: [140, 200, 160], amount: 1, scale: 1, count: 1 },  // the mark's colour, opacity, size, number
+              stops: [0, 0.3, 0.8, 1] },                                         // gradient stop positions (default: the Japanese spacing for 4 colours)
+   },
+   ```
+
+   Without `finish` a set draws with the Japanese stones' highlight and edge. `snd` also scales the 2D board's synthesized clack (rate: pitch and length, lowpass: a cutoff of 12 kHz × the value when below 1, gain).
+
    A single-convex stone (Chinese yunzi: flat underneath, domed on top) gets a small, nearly flat bottom, for example `shTop: 6.6, shBot: 0.8, expTop: 0.7, expBot: 0.25`. A small `expBot` gives a rounded rim around a flat base. Everything that touches the board uses the right half: the rest height (the girdle sits at `shBot`), the drop, picking, the contact shadow, the bowls and lids, the last-move ring and the counting tiles (both on the top).
 3. **Materials**: `sets/<id>.gl.ts` default-exports `{ black, white } satisfies StoneGL`. Each one is `(ctx: { hc, R }) => THREE.MeshPhysicalMaterial`.
    - Use `stoneVS(shader)` from `stoneGlsl.ts` in `onBeforeCompile`. It gives you `vObj` (object-space position in mm) and `vSeed` (0..1 per stone), plus `vnoise`/`h21`. All per-stone variation comes from `vSeed`. There is no per-stone geometry, and a stone stays under about 2,000 triangles.
@@ -38,7 +51,7 @@ A listed id without both files is **pending**: `isReadySet(id)` is false, `ready
    - `backdrop: { blur, intensity }`: the décor's HDRI shown behind the room in Contemplation (`backgroundBlurriness`).
    - `skin: 'washi' | 'laque' | 'byCamera'`: the UI card's skin. It defaults to Washi.
    - `tiltMax`: how high the seated camera may tilt, in radians from vertical. The default is 58°; outdoor décors can go up to about 80°.
-   - `ambient`: a sound loop file under `assets/board3d/` (carried here; the ambience player reads it).
+   - `ambient`: a sound loop file under `assets/board3d/`. The ambience player (`ambience.ts`) plays it in 3D when the Atelier's ambient sound switch and the app's sound are on: very quiet (gain 0.1), looped without the MP3 padding gap, crossfaded over 1.5 s when the décor changes, asleep while the window is hidden.
    - `shoji > 0` turns on the key's cookie spot: the shoji lattice, or the scene's cookie.
    - `lamp > 0` turns on the lamp.
 3. **Scene (optional)**: `scenes/<id>.ts` default-exports a factory `(): Scene`. It is found by file name and loaded lazily when the décor is chosen.
