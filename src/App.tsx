@@ -71,7 +71,7 @@ const BOT_ATTEMPTS = 3 // a failed query (engine restarting on another net, cras
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const random = rng(Date.now())
 /** A gallery tile's picture (public/assets/gallery, see scripts/gallery-thumbs.md); a missing one shows the tile's placeholder. */
-const thumb = (kind: 'decor' | 'stones', id: string) => `${import.meta.env.BASE_URL}assets/gallery/${kind}-${id}.webp`
+const thumb = (kind: 'decor' | 'stones' | 'goban' | 'wood', id: string) => `${import.meta.env.BASE_URL}assets/gallery/${kind}-${id}.webp`
 
 type Renderer = '3d' | '2d'
 const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
@@ -166,7 +166,11 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, inert
   useEffect(() => { view.current?.update(state); if (import.meta.env.DEV) Object.assign(window, { __badukState: state }) })
   useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor, options.stones, options.patina, options.dof, options.goban, options.wood]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => three.current?.setThinking(thinking), [thinking])
-  useEffect(() => { if (mode === '2d') (view.current as BoardView | null)?.setStones(isMobile ? 'japonaise' : options.stones) }, [mode, view, options.stones]) // phones keep the Japanese set
+  useEffect(() => { // phones keep the Japanese set on kaya
+    if (mode !== '2d') return
+    const b = view.current as BoardView | null
+    b?.setStones(isMobile ? 'japonaise' : options.stones); b?.setWood(isMobile ? 'kaya' : options.wood ?? 'kaya')
+  }, [mode, view, options.stones, options.wood])
   // a fresh canvas per renderer: one canvas can't hold both a 2D and a WebGL context
   return <div className="board-wrap" ref={wrap} inert={inert}><canvas key={mode} ref={canvas} data-r={mode} aria-label={t.boardLabel(state.signMap.length)} />{children}</div>
 }
@@ -1577,11 +1581,21 @@ export function App() {
                 {settings.stones === 'famille' && heirloom > 0 && <button className="link renew" // nothing to renew while they are new
                   onClick={() => keepStones({ ...stonesKept, renewedAt: stoneStats.finished })}>{t.renewStones}</button>}
               </div>
+              {renderer === '3d' && readyShapes().length > 1 && <div className="field">
+                <span>{t.gobanLabel}</span>
+                <Gallery label={t.gobanLabel} value={settings.goban} set={v => set('goban', v)}
+                  options={readyShapes().map(g => [g, t.gobans[g], t.gobanHints[g], thumb('goban', g)])} />
+              </div>}
+              {readyWoods().length > 1 && <div className="field">
+                <span>{t.woodLabel}</span>
+                <Gallery label={t.woodLabel} value={settings.wood} set={v => set('wood', v)}
+                  options={readyWoods().map(w => [w, t.woods[w], t.woodHints[w], thumb('wood', w)])} />
+              </div>}
               {renderer === '3d' && <>
                 {moods.length > 0 && <div className="field">
                   <span>{t.ambiancesLabel}</span>
                   <Gallery label={t.ambiancesLabel} value={moods.find(a => a.decor === settings.decor && a.stones === settings.stones)?.id ?? null}
-                    set={id => { const a = moods.find(m => m.id === id)!; set('decor', a.decor); set('stones', a.stones) }}
+                    set={id => { const a = moods.find(m => m.id === id)!; set('decor', a.decor); set('stones', a.stones); if (a.goban) set('goban', a.goban) }}
                     options={moods.map(a => [a.id, t.ambiances[a.id], `${t.decors[a.decor]} · ${t.stoneSets[a.stones]}`, thumb('decor', a.decor)])} />
                 </div>}
                 <div className="field">

@@ -4,6 +4,7 @@
 import type { Decor } from './decors'
 import { readySets, type StoneSet } from './stoneSets'
 import { readyDecors, sunOn } from './logic'
+import { isReadyShape, type GobanShape } from './gobans'
 
 // only what is ready: a listed id whose files have not landed yet is never chosen
 const isDecor = (d: string): d is Decor => (readyDecors() as readonly string[]).includes(d)
@@ -33,14 +34,15 @@ export const AMBIANCES = [
   { id: 'nuitBlanche', decor: 'neige', stones: ['lune', 'japonaise'] },
   { id: 'hanok', decor: 'hanok', stones: ['coreennes'] },
   { id: 'pavillon', decor: 'pavillon', stones: ['yunzi'] },
-  { id: 'edo', decor: 'honinbo', stones: ['japonaise'] },
+  { id: 'edo', decor: 'honinbo', stones: ['japonaise'], goban: 'ashi' },
 ] as const
 export type AmbianceId = typeof AMBIANCES[number]['id']
 
 /** The ambiances whose décor and stones both exist, resolved. */
-export function ambiances(locked: ReadonlySet<string> = new Set()): { id: AmbianceId; decor: Decor; stones: StoneSet }[] {
+export function ambiances(locked: ReadonlySet<string> = new Set()): { id: AmbianceId; decor: Decor; stones: StoneSet; goban?: GobanShape }[] {
   return AMBIANCES.flatMap(a => {
+    const goban = 'goban' in a && isReadyShape(a.goban) ? a.goban : undefined // a mood may stand its board too (Edo: the legged goban)
     const stones = (a.stones as readonly string[]).find((s): s is StoneSet => isStones(s) && !locked.has(s)) // an earned set not earned yet gives way
-    return isDecor(a.decor) && stones ? [{ id: a.id, decor: a.decor, stones }] : []
+    return isDecor(a.decor) && stones ? [{ id: a.id, decor: a.decor, stones, ...(goban && { goban }) }] : []
   })
 }
