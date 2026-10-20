@@ -103,13 +103,13 @@ A listed id without `looks/<id>.ts` is **pending**: `isReadyDecor(id)` is false,
    ```ts
    import type { ShapeData } from '../gobans'
    export default {
-     thickness: 151,                   // the block
+     thickness: 145,                   // the block
      round: 1.6,                       // edge rounding (the table board's 2.2)
      legs: {                           // optional: four turned legs standing on the ground
-       height: 100,
+       height: 120,
        profile: [[0, 0], [24, 0], …],  // [radius, height] from the floor up to the block
-       inset: [64, 68],                // each leg's axis from the block's sides (across, along)
-       ridges: 6, depth: 0.06,         // optional lobes round the leg (a gardenia fruit), relief as a share of the radius
+       inset: [64, 68],                // each leg's axis from the block's sides (across, along); closer in on small boards (legInset)
+       ridges: 6, depth: 0.12, sharp: true, // optional lobes round the leg (a gardenia fruit), relief as a share of the radius, crested
      },
      fold: { gap: 0.35 },              // optional: a folding board's seam across the middle (z = 0)
    } satisfies ShapeData
@@ -132,6 +132,7 @@ A listed id without `looks/<id>.ts` is **pending**: `isReadyDecor(id)` is false,
      contrast: 1, saturation: 1,        // the grain's contrast around the wood's mean, its colour saturation (1 = the scan's)
      grain: { scale: 1, rotate: 0 },    // figure width (2 = twice as wide) and its turn on the top (rad)
      roughness: 1,                      // multiplier on the scan's roughness
+     normal: 1,                         // scale of the scan's normal map (bamboo: ~0.15, so kaya's rings leave its reflections)
      clearcoat: 0.18, clearcoatRoughness: 0.4,
      snd: { rate: 1, lowpass: 1, gain: 1 },             // the stone-on-board knock, multiplied into the set's voice (3D and 2D)
      skin2d: { light: [224, 180, 110], dark: [176, 120, 58] }, // the 2D board's grain colours (sRGB); BoardView.setWood(id)

@@ -20,7 +20,7 @@ import { paintMarks, type BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
 import type { StoneSet } from './stoneSets'
-import { groundY, shapeOf, TABLE, KAYA, woodOf, type GobanShape, type ShapeData, type Wood, type WoodData } from './gobans'
+import { groundY, legInset, shapeOf, TABLE, KAYA, woodOf, type GobanShape, type ShapeData, type Wood, type WoodData } from './gobans'
 import { centreShift } from '../board/frame'
 import { drawBlurred } from '../board/canvasBlur'
 import { ambientOn, dofShare, AMBIENT_FPS, bowlHeap, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, seatHeight, settle, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Look, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
@@ -188,21 +188,23 @@ function lathe(prof: number[][], seg: number) {
  * UVs: planar like the block's sides, the fibres running up the leg (a turned leg's grain is vertical).
  */
 function legGeos(sh: ShapeData, BW: number, BD: number, U: number, V: number) {
-  const L = sh.legs!, k = L.ridges ?? 0, dep = L.depth ?? 0, seg = 48, np = L.profile.length, y0 = -sh.thickness / 2 - L.height
-  const rMax = Math.max(...L.profile.map(p => p[0])), n = new THREE.Vector3()
+  const L = sh.legs!, k = L.ridges ?? 0, dep = L.depth ?? 0, seg = 72, np = L.profile.length, y0 = -sh.thickness / 2 - L.height
+  const rMax = Math.max(...L.profile.map(p => p[0])), n = new THREE.Vector3(), [ix, iz] = legInset(sh, BW, BD)
   return [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz], leg) => {
     const g = new THREE.LatheGeometry(L.profile.map(([r, h]) => new THREE.Vector2(r, h)), seg), P = g.attributes.position, uv = g.attributes.uv
     if (k && dep) {
       for (let i = 0; i < P.count; i++) {
-        const x = P.getX(i), z = P.getZ(i), r = Math.hypot(x, z), f = 1 + dep * Math.cos(k * Math.atan2(z, x)) * (r / rMax) ** 2
+        const x = P.getX(i), z = P.getZ(i), r = Math.hypot(x, z), a = Math.atan2(z, x), f = 1 + dep * (L.sharp ? 1 - 2 * Math.abs(Math.sin(k * a / 2)) : Math.cos(k * a)) * (r / rMax) ** 2
         P.setXYZ(i, x * f, P.getY(i), z * f)
       }
       g.computeVertexNormals()
       const N = g.attributes.normal // the lathe's first and last columns are the same seam: one normal for both
       for (let j = 0; j < np; j++) { const b = seg * np + j; n.set(N.getX(j) + N.getX(b), N.getY(j) + N.getY(b), N.getZ(j) + N.getZ(b)).normalize(); N.setXYZ(j, n.x, n.y, n.z); N.setXYZ(b, n.x, n.y, n.z) }
     }
-    for (let i = 0; i < P.count; i++) uv.setXY(i, 0.5 + (P.getY(i) + 37 * leg) / U, 0.5 + (P.getX(i) + 0.4 * P.getZ(i) + 53 * leg) / V)
-    return g.translate(sx * (BW / 2 - L.inset[0]), y0, sz * (BD / 2 - L.inset[1]))
+    for (let i = 0; i < P.count; i++) uv.setXY(i, 0.5 + (P.getY(i) + 37 * leg) / (2.2 * U), 0.5 + 1.3 * (P.getX(i) + 0.4 * P.getZ(i) + 53 * leg) / V) // stretched up the fibres: no knot-like arcs on so short a piece
+    const flat = g.translate(sx * (BW / 2 - ix), y0, sz * (BD / 2 - iz)).toNonIndexed() // like the block's
+    g.dispose()
+    return flat
   })
 }
 
@@ -1668,7 +1670,7 @@ export class Board3D {
     for (const m of [K.black, K.blackDim]) { const b = m.userData.coat; m.clearcoat = lerp(lerp(b * 0.6, b, c), b * 0.08 / 0.3, hc); m.envMapIntensity = lerp(0.6, 1, c) }
     this.boardMat.color.copy(this.woodTone).multiplyScalar(lerp(1, 0.88, hc))
     this.boardU.uMean.value.set(this.boardMat.color.r * KAYA_MEAN[0], this.boardMat.color.g * KAYA_MEAN[1], this.boardMat.color.b * KAYA_MEAN[2])
-    this.boardMat.normalScale.setScalar(lerp(0.6, 0.25, hc))
+    this.boardMat.normalScale.setScalar(lerp(0.6, 0.25, hc) * (this.wood.normal ?? 1))
     this.boardU.uHalf.value = this.noGrid ? 0 : lerp(0.5, 0.62, hc)
     this.boardU.uRelief.value = this.fx.relief * c; this.boardU.uWobble.value = this.fx.wobble * c
     this.boardU.uInkRough.value = lerp(0.45, this.fx.inkRough, c); this.boardU.uPatina.value = this.fx.patina * c
@@ -1796,14 +1798,14 @@ export class Board3D {
       /** The ambient animation: running now, its clock (s). */
       get ambient() { return { on: self.ambient(false), t: self.ambT, scene: !!self.sceneOn } },
       /** Macro framing for material inspection (null restores the camera). */
-      closeUp(at: [number, number] | null, dist = 160, tilt = 50) {
+      closeUp(at: [number, number] | null, dist = 160, tilt = 50, y = 0, yaw = 0) {
         if (!at) { self.camOverride = null; self.invalidate(); return }
         const p = (self.camOverride ??= new THREE.PerspectiveCamera()), t = THREE.MathUtils.degToRad(tilt)
-        p.up.set(0, 0, -1)
+        if (tilt > 60) p.up.set(0, 1, 0); else p.up.set(0, 0, -1) // a side view stays upright
         self.updateScene(performance.now() + 1e5)
         p.fov = 24; p.aspect = self.fr.w / self.fr.h; p.setViewOffset(self.fr.w, self.fr.h, -self.fr.x, -self.fr.y, self.W, self.H)
-        p.position.set(at[0] - 40, dist * Math.cos(t), at[1] + dist * Math.sin(t)); p.near = 5; p.far = 3000
-        p.lookAt(at[0], 0, at[1]); p.updateProjectionMatrix()
+        p.position.set(at[0] - 40 + dist * Math.sin(t) * Math.sin(yaw), y + dist * Math.cos(t), at[1] + dist * Math.sin(t) * Math.cos(yaw)); p.near = 5; p.far = 3000
+        p.lookAt(at[0], y, at[1]); p.updateProjectionMatrix()
         self.render(p)
       },
     }
