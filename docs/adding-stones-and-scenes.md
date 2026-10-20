@@ -13,7 +13,7 @@ Everything lives in `src/board3d/`. Adding a set or a décor means adding files 
      rB: 11.1, rW: 10.95,           // radii (mm): 10.6–11.3
      shTop: 4.5, shBot: 4.5,        // dome height above / below the girdle (mm); (shTop + shBot) / 2 in 3.8–5.5
      expTop: 0.78, expBot: 0.78,    // profile exponents (lens()): smaller = fuller dome
-     snd: { rate: 1, lowpass: 1, gain: 1 },   // multipliers on the stone sounds
+     snd: { rate: 1, lowpass: 1, gain: 1 },   // multipliers on the stone sounds; optional place: '<id>/place.mp3' (below)
      skin2d: { black: [[r, g, b], …], white: [[r, g, b], …], marks: { black: 'none', white: 'growth' } },
      rare: undefined,               // an Unlock id for the four earned sets (wave 3)
    } satisfies StoneData
@@ -31,6 +31,8 @@ Everything lives in `src/board3d/`. Adding a set or a décor means adding files 
    ```
 
    Without `finish` a set draws with the Japanese stones' highlight and edge. `snd` also scales the 2D board's synthesized clack (rate: pitch and length, lowpass: a cutoff of 12 kHz × the value when below 1, gain).
+
+   **Its own placement sound** (optional): `snd.place` is a path under `assets/board3d/`, for example `'<id>/place.mp3'`. The file is laid out like the shared `place.mp3`: a mono MP3 of single placements, one per fixed **0.5 s slot** (slot k starts at k × 0.5 s; the hit is found by scanning each slot, so a little lead-in silence is fine; keep each hit and its ring under 0.45 s). Both boards load it lazily for that set, play a random slot instead of the shared sample, and still scale it by rate, lowpass and gain. The 2D board's first clack while it loads is the synthesized one. A missing or broken file falls back silently to the shared sound (3D: `place.mp3`, 2D: the synthesized clack). Captures keep their own sound.
 
    A single-convex stone (Chinese yunzi: flat underneath, domed on top) gets a small, nearly flat bottom, for example `shTop: 6.6, shBot: 0.8, expTop: 0.7, expBot: 0.25`. A small `expBot` gives a rounded rim around a flat base. Everything that touches the board uses the right half: the rest height (the girdle sits at `shBot`), the drop, picking, the contact shadow, the bowls and lids, the last-move ring and the counting tiles (both on the top).
 3. **Materials**: `sets/<id>.gl.ts` default-exports `{ black, white } satisfies StoneGL`. Each one is `(ctx: { hc, R }) => THREE.MeshPhysicalMaterial`.

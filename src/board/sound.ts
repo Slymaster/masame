@@ -2,6 +2,7 @@
 // A stone set's voice (StoneData.snd) scales it: rate (pitch and speed), a low-pass cutoff, and gain; 1, 1, 1 = the slate and shell.
 
 import type { StoneData } from '../board3d/stoneSets'
+import { slots } from '../board3d/sound3d'
 
 type Snd = StoneData['snd']
 const PLAIN: Snd = { rate: 1, lowpass: 1, gain: 1 }
@@ -80,5 +81,26 @@ export function playTap(snd: Snd = PLAIN) {
 export function playClack(snd: Snd = PLAIN) {
   let c: AudioContext
   try { c = context() } catch { return } // no audio device: stay silent
-  clack(c, c.currentTime + 0.005, snd)
+  const s = sample(c, snd.place)
+  if (!s) { clack(c, c.currentTime + 0.005, snd); return }
+  // one of the set's recorded placements (a mid velocity of the 3D board's stone(), same scaling by the set's voice)
+  const src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain()
+  src.buffer = s.buf; src.playbackRate.value = (1 + (Math.random() * 2 - 1) * 0.03) * snd.rate
+  f.type = 'lowpass'; f.frequency.value = 12200 * snd.lowpass
+  g.gain.value = 0.87 * snd.gain
+  src.connect(f).connect(g).connect(c.destination)
+  src.start(c.currentTime + 0.005, s.starts[Math.floor(Math.random() * s.starts.length)], 0.45)
+}
+
+/** The set's own placement sprite (StoneData.snd.place, 0.5 s slots): fetched on its first clack, which is still the synthesized one; failing = synthesized for good. */
+let own: { url: string; slots: ReturnType<typeof slots> | null } | null = null
+function sample(c: AudioContext, place?: string) {
+  if (!place) return null
+  const url = `${import.meta.env.BASE_URL}assets/board3d/${place}`
+  if (own?.url !== url) {
+    const o = own = { url, slots: null as ReturnType<typeof slots> | null }
+    fetch(url).then(r => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.arrayBuffer() }).then(b => c.decodeAudioData(b))
+      .then(b => { o.slots = slots(b, 0.5) }, () => {})
+  }
+  return own.slots?.starts.length ? own.slots : null
 }

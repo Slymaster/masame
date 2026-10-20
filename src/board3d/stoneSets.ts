@@ -58,8 +58,13 @@ export interface Skin2D {
 export type Unlock = string
 /** A set's three-free data: sets/<id>.ts default-exports it (its materials live in sets/<id>.gl.ts). */
 export interface StoneData extends StoneShape {
-  /** Multipliers on the stone sounds' playback rate, low-pass cutoff and gain (1, 1, 1 = the recorded slate and shell). */
-  snd: { rate: number; lowpass: number; gain: number }
+  /**
+   * Multipliers on the stone sounds' playback rate, low-pass cutoff and gain (1, 1, 1 = the recorded slate and shell).
+   * `place`: the set's own placement sample, a path under assets/board3d/ (e.g. '<id>/place.mp3'): a mono MP3 of single
+   * placements, one per fixed 0.5 s slot like place.mp3, still scaled by rate, lowpass and gain. Missing or failing: the
+   * shared sound plays. Captures keep their own sound.
+   */
+  snd: { rate: number; lowpass: number; gain: number; place?: string }
   skin2d: Skin2D
   rare?: Unlock
 }
