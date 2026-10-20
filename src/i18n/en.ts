@@ -90,7 +90,7 @@ export const en = {
   gobans: { table: 'Table board', ashi: 'Legged goban', pliant: 'Folding board' },
   gobanHints: { table: '6 cm thick, on the table', ashi: 'A thick block on four legs, on the floor', pliant: 'Thin, folds in two, on the table' },
   woods: { kaya: 'Kaya', shinkaya: 'Shin-kaya', katsura: 'Katsura', icho: 'Ginkgo', hiba: 'Hiba', bambou: 'Bamboo' },
-  woodHints: { kaya: 'Golden, straight-grained', shinkaya: 'Pale spruce, crisp grain', katsura: 'Warm brown, fine grain', icho: 'Pale yellow, very fine', hiba: 'Lemon yellow, tight grain', bambou: 'Glued strips, faint nodes' },
+  woodHints: { kaya: 'Golden, straight-grained', shinkaya: 'Pale spruce, straight grain', katsura: 'Tea-brown, darkens with age', icho: 'Pale yellow, very fine grain', hiba: 'Light yellow, soft', bambou: 'Glued strips, faint nodes' },
   stoneSets: {
     japonaise: 'Japanese',
     yunzi: 'Yunzi',

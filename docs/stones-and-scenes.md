@@ -38,3 +38,22 @@ lune et obsidienne — a 7-day streak; Nébuleuse — review a whole game; Brais
 Sounds (Freesound, Creative Commons 0 on each page): forest loop 570492 (Nox_Sound), winter wind 637566 (kyles), rain
 232731 (PhilllChabbb), room tone 744447 (callmethefoo); stone clicks cut from 704379 (ellie.vanderlip, pebbles on wood)
 and 238886 (Olichite, glass marbles on wood). Every file and its licence page is listed in `public/assets/board3d/CREDITS.md`.
+
+## Gobans
+
+| Goban | What we render | Sourced | Design choice |
+|---|---|---|---|
+| Table board | Today's board, 6 cm thick, on the table | About 42.4 × 45.5 cm overall (not the playing surface), 1–3 sun thick, 2 sun (≈ 6 cm) the usual size | — |
+| Legged goban | A thick block on four carved legs, standing on the floor, the bowls on the floor beside it | Floor boards usually 9–18 cm thick on four detachable legs about 12 cm high; legs carved after the gardenia fruit (the "no mouth" story is a saying first written in 1801, not history); a recess under the board that makers say limits warping and cracking | Leg width and the recess's size are not sourced anywhere: ours |
+| Folding board | A thin hinged board on the table | 1.3–2 cm thick, hinged in the middle, usually agathis | — |
+
+| Wood | Sourced | Design choice |
+|---|---|---|
+| Kaya | The most prized board wood: pale yellow to gold, fine, fragrant, loved for its click, deepening to amber | — |
+| Shin-kaya | "New kaya" is imported spruce, not kaya: whitish, soft, usually straight-grained, cheaper | Which spruce (sources disagree) |
+| Katsura | Tea-brown, firm, usually flat-sawn, darkens with age | Its figure, drawn by us |
+| Ginkgo | Pale yellow, soft, fine grain; once as popular as kaya, now rare (medium confidence) | — |
+| Hiba | Pale yellow, fine, soft; mostly North American yellow cedar today (medium confidence) | — |
+| Bamboo | A modern laminated board (low confidence; no tradition) | The strips are ours |
+
+Not claimed anywhere in the app: the leg or recess stories as history, that the recess amplifies the sound, any wood's sound beyond kaya's, that thicker boards sound better, or that bamboo boards are traditional. Sources: `.claude/research/gobans.md` (local).
