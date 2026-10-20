@@ -90,7 +90,7 @@ A listed id without both files is **pending**: `isReadySet(id)` is false, `ready
    - `dispose()` frees what `build()` made.
    - `animated`: false keeps rendering on demand.
 
-   **When the animation runs**: at most 30 fps, at fx 2 (the two best quality levels), in Contemplation, with the window visible and focused, motion not reduced, and nothing else moving. The governor never samples these frames.
+   **When the animation runs**: at most 30 fps when nothing else moves (every frame while something does), at fx 2 (the two best quality levels), in Contemplation, with the window visible and focused and motion not reduced. It keeps running while stones fall or the camera glides, and pauses only during a crossfade; the governor's samples of busy frames include its small cost.
 4. **Text**: `t.decors` / `t.decorHints`, plus the thumbnail.
 
 A listed id without `looks/<id>.ts` is **pending**: `isReadyDecor(id)` is false, `readyDecors()` leaves it out, and `LOOKS[id]` is the Atelier's.
