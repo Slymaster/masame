@@ -80,7 +80,7 @@ const sstep = (a: number, b: number, v: number) => { const t = clamp01((v - a) /
 const freeGround = (g: SceneGround) => { g.map.dispose(); g.bumpMap?.dispose() }
 const mkCanvas = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h })
 
-interface Mounted { s: Scene; g: THREE.Group; cookie: THREE.Texture | null; ground: SceneGround | null; lampColor: THREE.Color | null }
+interface Mounted { s: Scene; g: THREE.Group; cookie: THREE.Texture | null; ground: SceneGround | null; lampColor: THREE.Color | null; lampPose: { pos: THREE.Vector3; target: THREE.Vector3 } | null }
 
 interface Stone extends Placed {
   p: number; c: Sign; seed: number; rotY: number
@@ -898,13 +898,14 @@ export class Board3D {
     const f = SCENES[d], fx = this.q.fx
     if ((!f && !make) || fx < 1) return null
     try {
-      const s = make ? make() : (await f!()).default(), rec: Mounted = { s, g: new THREE.Group(), cookie: null, ground: null, lampColor: null }
+      const s = make ? make() : (await f!()).default(), rec: Mounted = { s, g: new THREE.Group(), cookie: null, ground: null, lampColor: null, lampPose: null }
       const ctx: SceneCtx = {
         root: rec.g, renderer: this.renderer, key: this.key, base: this.base, fx: fx as 1 | 2, board: { BW: this.D.BW, BD: this.D.BD },
         setCookie: t => { rec.cookie = t; if (this.sceneOn === rec) this.shoji.map = t ?? this.shojiTex },
         setGround: g => { const old = rec.ground; rec.ground = g; if (this.sceneOn === rec) this.applyGround(); if (old && old !== g) freeGround(old) },
         lamp: this.lamp,
         setLampColor: c => { rec.lampColor = c; this.invalidate() },
+        setLampPose: (pos, target) => { rec.lampPose = pos ? { pos: pos.clone(), target: (target ?? new THREE.Vector3()).clone() } : null; this.invalidate() },
       }
       await s.build(ctx)
       return rec
@@ -1469,7 +1470,12 @@ export class Board3D {
       this.shoji.position.copy(this.key.position).setLength(SHOJI_MM); this.shoji.color.copy(this.key.color); this.shoji.intensity = keyI * sj
     }
     if (L.lamp) { // Lanterne: the lamp hangs on the same bearing, closer, its cone pooling over board and bowls
-      this.lamp.position.copy(this.key.position).setLength(1250); this.lamp.color.copy(this.sceneOn?.lampColor ?? kelvin(tod.K))
+      const pose = this.sceneOn?.lampPose, sc = this.lamp.shadow.camera
+      if (pose) { this.lamp.position.copy(pose.pos); this.lamp.target.position.copy(pose.target) } // a scene's own lamp (an andon on the floor)
+      else { this.lamp.position.copy(this.key.position).setLength(1250); this.lamp.target.position.set(0, 0, 0) }
+      const d = this.lamp.position.distanceTo(this.lamp.target.position), near = pose ? Math.max(20, d - 800) : 500, far = pose ? d + 1400 : 2600
+      if (sc.near !== near || sc.far !== far) { sc.near = near; sc.far = far; sc.updateProjectionMatrix() }
+      this.lamp.color.copy(this.sceneOn?.lampColor ?? kelvin(tod.K))
       this.lamp.intensity = L.lamp * 1e6 * lerp(1, 0.25, ok)
     }
     this.scene.environmentIntensity = lerp(Math.max(tod.env, 0.5), tod.env, ce) * L.ibl * lerp(1, 0.35, ok)

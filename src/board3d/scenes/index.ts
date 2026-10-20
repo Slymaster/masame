@@ -25,10 +25,14 @@ export interface SceneCtx {
    * textures with the scene (or when replaced): don't dispose them in dispose().
    */
   setGround(g: SceneGround | null): void
-  /** The Lanterne's lamp, on when Look.lamp > 0 (intensity from it, position on the key's bearing, set by Board3D). */
+  /** The Lanterne's lamp, on when Look.lamp > 0 (intensity from it, position on the key's bearing, set by Board3D).
+   *  Change it only through setLampColor and setLampPose: Board3D owns its other settings. */
   lamp: THREE.SpotLight
   /** The lamp's colour (an andon's warm paper, a red lantern); null = the hour's colour temperature. */
   setLampColor(c: THREE.Color | null): void
+  /** Where the lamp stands and what it lights (mm, the board top's centre is the origin), e.g. an andon on the floor beside
+   *  the board, its shadow camera fitted to that distance; null = hanging on the key's bearing like the Lanterne's. */
+  setLampPose(pos: THREE.Vector3 | null, target?: THREE.Vector3): void
 }
 
 /** A ground for the table: tile it yourself (wrap, repeat over the 3200 mm table, colour space). tint multiplies its colour (default 1). */

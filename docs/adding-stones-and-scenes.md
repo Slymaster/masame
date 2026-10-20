@@ -81,6 +81,7 @@ A listed id without both files is **pending**: `isReadySet(id)` is false, `ready
    - `setGround({ map, bumpMap?, roughness?, tint? } | null)`: the scene's own table surface, with the same fade and shadows as a Look's ground, in both cameras. Board3D frees these textures with the scene; don't dispose them yourself.
    - `lamp`: the lamp spotlight (needs `Look.lamp > 0`; its intensity comes from the Look, its position from the key's bearing).
    - `setLampColor(color | null)`: an andon's warm paper, a red lantern. `null` uses the hour's colour temperature.
+   - `setLampPose(pos | null, target?)`: where the lamp stands and what it lights (mm, the board top's centre is the origin), for a lamp you also model, such as an andon on the floor beside the board; its shadow camera follows. `null` hangs it on the key's bearing like the Lanterne's. Change the lamp only through these two calls.
 
    **`Scene`**:
    - `build(ctx)` may be async (it is awaited before the crossfade, and shaders compile under it).
