@@ -100,7 +100,7 @@ function loadSettings(): Settings {
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: s.decor === 'auto' || (readyDecors() as readonly unknown[]).includes(s.decor) ? s.decor : 'atelier', // a décor not shipped yet: the default
-    stones: (readySets() as readonly unknown[]).includes(s.stones) && !earnedNow().has(s.stones) ? s.stones : 'japonaise', // a set still to earn: the default
+    stones: (readySets() as readonly unknown[]).includes(s.stones) ? s.stones : 'japonaise', // a set still to earn is kept and shown as the default (stonesOn)
     ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false,
     goban: (readyShapes() as readonly unknown[]).includes(s.goban) ? s.goban : 'table', wood: (readyWoods() as readonly unknown[]).includes(s.wood) ? s.wood : 'kaya', panelHidden: s.panelHidden === true, ...updateSettings(j),
     autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
@@ -110,8 +110,6 @@ function loadSettings(): Settings {
   }
 }
 
-/** The stone sets still to earn, from the stores readable now (the library, when loaded; an earned set once said stays earned). */
-const earnedNow = (entries = library.get()) => lockedSets(unlocked(statsOf(entries, loadRitual(), loadDeck().p)), loadStones().said, unlockAll())
 
 /** Board3D.supported() without loading three.js, which stays out of the first bundle (same check). */
 function webgl2() {
@@ -363,6 +361,8 @@ export function App() {
   const reached = useMemo(() => unlocked(stoneStats), [stoneStats])
   const allStones = useMemo(() => unlockAll(), [])
   const toEarn = lockedSets(reached, stonesKept.said, allStones)
+  // the set on the board: a saved set still to earn shows as the Japanese one until the library says it is earned
+  const stonesOn: StoneSet = toEarn.has(settings.stones) ? 'japonaise' : settings.stones
   const moods = ambiances(toEarn) // the couples whose décor and stones exist, with stones you have
   const heirloom = patina(stoneStats.finished, stonesKept.renewedAt)
   const keepStones = (k: typeof stonesKept) => { saveStones(k); setStonesKept(k) }
@@ -1326,7 +1326,7 @@ export function App() {
         <Goban
           view={view}
           mode={renderer}
-          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor, stones: settings.stones, dof: settings.depthOfField, patina: heirloom, goban: settings.goban, wood: settings.wood }}
+          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor, stones: stonesOn, dof: settings.depthOfField, patina: heirloom, goban: settings.goban, wood: settings.wood }}
           thinking={thinking}
           // while the engine starts (OpenCL tuning loads the GPU) a slow verdict is not the hardware's: this session only
           onFallback={r => { if (r === 'context-lost' || (r === 'slow' && (engineBusy || reading))) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
@@ -1575,10 +1575,10 @@ export function App() {
               </>}
               <div className="field">
                 <span>{t.stonesLabel}</span>
-                <Gallery label={t.stonesLabel} value={settings.stones} set={v => { if (!toEarn.has(v)) set('stones', v) }}
+                <Gallery label={t.stonesLabel} value={stonesOn} set={v => { if (!toEarn.has(v)) set('stones', v) }}
                   options={readySets().map(s => [s, t.stoneSets[s], t.stoneHints[s], thumb('stones', s),
                     toEarn.has(s) ? t.stoneLocked(t.unlocks[STONE_DATA[s].rare as Unlock]) : undefined])} />
-                {settings.stones === 'famille' && heirloom > 0 && <button className="link renew" // nothing to renew while they are new
+                {stonesOn === 'famille' && heirloom > 0 && <button className="link renew" // nothing to renew while they are new
                   onClick={() => keepStones({ ...stonesKept, renewedAt: stoneStats.finished })}>{t.renewStones}</button>}
               </div>
               {renderer === '3d' && readyShapes().length > 1 && <div className="field">
@@ -1594,7 +1594,7 @@ export function App() {
               {renderer === '3d' && <>
                 {moods.length > 0 && <div className="field">
                   <span>{t.ambiancesLabel}</span>
-                  <Gallery label={t.ambiancesLabel} value={moods.find(a => a.decor === settings.decor && a.stones === settings.stones)?.id ?? null}
+                  <Gallery label={t.ambiancesLabel} value={moods.find(a => a.decor === settings.decor && a.stones === stonesOn)?.id ?? null}
                     set={id => { const a = moods.find(m => m.id === id)!; set('decor', a.decor); set('stones', a.stones); if (a.goban) set('goban', a.goban) }}
                     options={moods.map(a => [a.id, t.ambiances[a.id], `${t.decors[a.decor]} · ${t.stoneSets[a.stones]}`, thumb('decor', a.decor)])} />
                 </div>}
