@@ -55,7 +55,7 @@ void main() {
   if (uStretch > 0.0) { // a streak along the fall as the camera sees it
     vec3 dn = mat3(viewMatrix) * vec3(0.0, -1.0, 0.0);
     vec2 d = normalize(dn.xy + vec2(1e-4, 0.0));
-    q = vec2(-d.y, d.x) * q.x + d * q.y * uStretch;
+    q = vec2(d.y, -d.x) * q.x + d * q.y * uStretch; // a right-handed basis: a mirrored quad would be culled
   } else { float a = uSpin * uT + ph; q = mat2(cos(a), sin(a), -sin(a), cos(a)) * q; }
   mv.xy += q;
   gl_Position = projectionMatrix * mv;
