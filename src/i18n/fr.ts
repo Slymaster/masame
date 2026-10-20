@@ -86,6 +86,11 @@ export const fr: Dict = {
   },
   decorAuto: 'Auto', decorAutoHint: 'Suit la saison et l’heure',
   stonesLabel: 'Pierres',
+  gobanLabel: 'Goban', woodLabel: 'Bois',
+  gobans: { table: 'Goban de table', ashi: 'Goban à pieds', pliant: 'Planche pliante' },
+  gobanHints: { table: '6 cm d’épaisseur, sur la table', ashi: 'Un bloc épais sur quatre pieds, au sol', pliant: 'Mince, pliée en deux, sur la table' },
+  woods: { kaya: 'Kaya', shinkaya: 'Shin-kaya', katsura: 'Katsura', icho: 'Ginkgo', hiba: 'Hiba', bambou: 'Bambou' },
+  woodHints: { kaya: 'Doré, au fil droit', shinkaya: 'Épicéa clair, fil marqué', katsura: 'Brun chaud, grain fin', icho: 'Jaune pâle, très fin', hiba: 'Jaune citron, fil serré', bambou: 'Lamelles collées, nœuds discrets' },
   stoneSets: {
     japonaise: 'Japonaises',
     yunzi: 'Yunzi',

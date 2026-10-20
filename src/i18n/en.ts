@@ -86,6 +86,11 @@ export const en = {
   },
   decorAuto: 'Auto', decorAutoHint: 'Follows the season and the hour',
   stonesLabel: 'Stones',
+  gobanLabel: 'Board', woodLabel: 'Wood',
+  gobans: { table: 'Table board', ashi: 'Legged goban', pliant: 'Folding board' },
+  gobanHints: { table: '6 cm thick, on the table', ashi: 'A thick block on four legs, on the floor', pliant: 'Thin, folds in two, on the table' },
+  woods: { kaya: 'Kaya', shinkaya: 'Shin-kaya', katsura: 'Katsura', icho: 'Ginkgo', hiba: 'Hiba', bambou: 'Bamboo' },
+  woodHints: { kaya: 'Golden, straight-grained', shinkaya: 'Pale spruce, crisp grain', katsura: 'Warm brown, fine grain', icho: 'Pale yellow, very fine', hiba: 'Lemon yellow, tight grain', bambou: 'Glued strips, faint nodes' },
   stoneSets: {
     japonaise: 'Japanese',
     yunzi: 'Yunzi',
