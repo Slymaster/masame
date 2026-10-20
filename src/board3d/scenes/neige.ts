@@ -2,11 +2,11 @@
 // planks under the board, and a narrow line of snow along the veranda's far edge.
 import * as THREE from 'three'
 import { particles, PARTICLES, skyDome, type ParticleLook } from '../fx'
-import type { Scene } from '.'
+import { edgeZ, type Scene } from '.'
 
 const PLANK_MM = 720, PLANKS = 5 // one tile: five 144 mm planks, running side to side like an engawa's
-/** The veranda's edge (mm, beyond the board): the snow line lies just past it, the falling snow further out. */
-const EDGE_Z = -420
+/** The veranda's edge with the table board (mm, beyond the board; edgeZ moves it out over a lower floor): the snow line lies just past it, the falling snow further out. */
+const EDGE_Z = -540
 // the garden behind the room: the graded birchwood, pre-blurred (backdrop_2k.jpg), the birches on the far side
 const GARDEN = /* glsl */`
 uniform sampler2D uMap; uniform float uRot, uGain;
@@ -77,16 +77,16 @@ export default (): Scene => {
       const fade = new THREE.CanvasTexture(fadeCv)
       const mat = new THREE.MeshStandardMaterial({ color: 0x404858, roughness: 0.95, emissive: 0x34425e }) // mostly its own cool glow: the night sky's light, barely warmed by the lamp
       const fieldMat = mat.clone(); Object.assign(fieldMat, { alphaMap: fade, transparent: true, depthWrite: false })
-      const Y = ctx.board.groundY, geo = new THREE.CylinderGeometry(1, 1, 8000, 24, 1, true, 0, Math.PI)
-      geo.rotateZ(Math.PI / 2); geo.scale(1, 26, 80).translate(0, Y, EDGE_Z)
-      const field = new THREE.PlaneGeometry(8000, 2400).rotateX(-Math.PI / 2).translate(0, Y + 1, EDGE_Z - 1200)
-      const around = new THREE.PlaneGeometry(9000, 4000).rotateX(-Math.PI / 2).translate(0, Y - 4, EDGE_Z + 2000) // beside the veranda, under the planks
+      const Y = ctx.board.groundY, E = edgeZ(EDGE_Z, Y), geo = new THREE.CylinderGeometry(1, 1, 8000, 24, 1, true, 0, Math.PI)
+      geo.rotateZ(Math.PI / 2); geo.scale(1, 26, 80).translate(0, Y, E)
+      const field = new THREE.PlaneGeometry(8000, 2400).rotateX(-Math.PI / 2).translate(0, Y + 1, E - 1200)
+      const around = new THREE.PlaneGeometry(9000, 4000).rotateX(-Math.PI / 2).translate(0, Y - 4, E + 2000) // beside the veranda, under the planks
       const meshes = [new THREE.Mesh(geo, mat), new THREE.Mesh(field, fieldMat), new THREE.Mesh(around, mat)]
       for (const m of meshes) { m.receiveShadow = true; ctx.root.add(m) }
       owned.push(geo, field, around, mat, fieldMat, fade)
       // the snowfall: the garden beyond the edge, and a few flakes the wind carries in beside the board (never over it), gone above the planks
       const side = ctx.board.BW / 2 + 200
-      if (ctx.fx === 2) snow = [particles(SNOW, [-2200, Y, -2800, 2200, 1300, EDGE_Z - 60], 3000, Y + 100),
+      if (ctx.fx === 2) snow = [particles(SNOW, [-2200, Y, -2800, 2200, 1300, E - 60], 3000, Y + 100),
         particles(SNOW, [-side - 300, 120, -450, -side, 520, 300], 50, 170, 2), particles(SNOW, [side, 120, -450, side + 300, 520, 300], 50, 170, 3)]
       for (const p of snow) ctx.root.add(p.mesh)
     },

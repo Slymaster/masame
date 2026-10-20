@@ -4,6 +4,9 @@
 
 import type * as THREE from 'three'
 import type { Decor } from '../decors'
+import { groundY, TABLE } from '../gobans'
+
+const TABLE_Y = groundY(TABLE)
 
 export interface SceneCtx {
   /** Add everything here: shown in Contemplation at fx ≥ 1 only (Study never sees it). */
@@ -54,6 +57,12 @@ export interface Scene {
   /** true if update() moves anything: the view then renders continuously (≤ 30 fps) when allowed, otherwise on demand. */
   readonly animated: boolean
 }
+
+/** A veranda's far edge (mm, z) set for the table board, moved out as the ground lies lower (a legged goban's floor) so
+ *  the home seat sees as much plank with any goban: the window's top ray falls ~38° from vertical there (the home tilt,
+ *  22°, plus the app frame's top edge, which lies above the board's frame). */
+const TOP_RAY = Math.tan((38 * Math.PI) / 180)
+export const edgeZ = (zTable: number, groundY: number) => zTable + (groundY - TABLE_Y) * TOP_RAY
 
 /** Every scenes/<décor>.ts, loaded when its décor is chosen. Décors without one (the first four) render exactly as before. */
 const FILES = import.meta.glob<{ default: () => Scene }>(['./*.ts', '!./index.ts', '!./demo.ts', '!./*.test.ts'])
