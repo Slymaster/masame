@@ -154,7 +154,7 @@ export function make(c: Canopy = CANOPY) {
         const fallen: [number, number, number, number][] = [[-BW / 2 - 70, BD / 2 + 75, 0.5, 150], [BW / 2 + 95, -BD / 2 - 55, 2.6, 135], [BW / 2 - 40, BD / 2 + 110, -0.3, 120]]
         const leaves = new THREE.InstancedMesh(lgeo, lm, fallen.length), m4 = new THREE.Matrix4(), qq = new THREE.Quaternion()
         fallen.forEach(([x, z, a, L], i) => leaves.setMatrixAt(i, m4.compose(new THREE.Vector3(x, -BT + 0.4, z), qq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), a), new THREE.Vector3(L, 1, L * 0.17))))
-        leaves.receiveShadow = true; ctx.root.add(leaves); own.push(lt, lm, lgeo)
+        leaves.receiveShadow = true; ctx.root.add(leaves); own.push(leaves, lt, lm, lgeo) // the instanced mesh frees its own instance buffers
         // green culms past the veranda's edge, in the camera's reach (its far plane is ~2.5 m behind the board)
         const ct = new THREE.CanvasTexture(culmMap()); ct.colorSpace = THREE.SRGBColorSpace; ct.wrapS = ct.wrapT = THREE.RepeatWrapping; ct.repeat.set(1, 20)
         const cmat = new THREE.MeshStandardMaterial({ map: ct, roughness: 0.45, metalness: 0, transparent: true })
@@ -182,7 +182,7 @@ export function make(c: Canopy = CANOPY) {
           cm2.setColorAt(i, col.setRGB(1, 1, 1).lerp(new THREE.Color(0.86, 0.92, 0.8), far).multiplyScalar(0.78 + 0.3 * ((i * 0.618) % 1)))
         })
         cm2.renderOrder = -2 // before the table, which blends its faded edge over them
-        ctx.root.add(cm2); own.push(ct, cmat, cgeo)
+        ctx.root.add(cm2); own.push(cm2, ct, cmat, cgeo)
       },
       update(_dt, t) { komorebi?.update(t); dust?.update(t); if (culmU) culmU.uT.value = t },
       dispose() { komorebi?.dispose(); for (const o of own) o.dispose() },
