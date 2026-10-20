@@ -62,7 +62,7 @@ describe('ambiances', () => {
     expect(list()).toEqual([
       { id: 'jardin', decor: 'bambous', stones: 'jade' },
       { id: 'nuitBlanche', decor: 'neige', stones: 'japonaise' }, // no moon stones yet
-      { id: 'edo', decor: 'honinbo', stones: 'japonaise' },
+      { id: 'edo', decor: 'honinbo', stones: 'japonaise', goban: 'ashi' }, // the Edo mood stands its legged goban
     ])
     vi.doUnmock('./logic'); vi.doUnmock('./stoneSets')
   })
