@@ -28,6 +28,13 @@
     <td width="50%"><img src="docs/images/contemplation-en.jpg" alt="Contemplation view" width="100%"><br><sub><b>Contemplation.</b> The board as it sits on the table, seen from where you sit, in the evening.</sub></td>
   </tr>
   <tr>
+    <td width="50%"><img src="docs/images/workshop-en.jpg" alt="Settings, the Workshop" width="100%"><br><sub><b>Workshop.</b> Décors, stones, gobans and woods, each a gallery of pictures.</sub></td>
+    <td width="50%"><img src="docs/images/worlds.jpg" alt="Four décors seen with the eyes lifted" width="100%"><br><sub><b>Worlds.</b> Lift your eyes: the bamboo garden, a snowy night, the Honinbo hall by its lamp, the cosmos.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/stones.jpg" alt="Five stone sets in close-up" width="100%"><br><sub><b>Stones.</b> Yunzi against the light, jade, agate, blown glass, ember and ice.</sub></td>
+  </tr>
+  <tr>
     <td width="50%"><img src="docs/images/learn-en.jpg" alt="Learn, the Today tab" width="100%"><br><sub><b>Learn.</b> Today's ritual, then each deck with what is due.</sub></td>
     <td width="50%"><img src="docs/images/games-en.jpg" alt="My games" width="100%"><br><sub><b>My games.</b> Every game kept on your machine, the ongoing OGS games first.</sub></td>
   </tr>

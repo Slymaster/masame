@@ -28,6 +28,13 @@
     <td width="50%"><img src="docs/images/contemplation-fr.jpg" alt="Vue Contemplation" width="100%"><br><sub><b>Contemplation.</b> Le goban posé sur la table, vu de ta place, le soir.</sub></td>
   </tr>
   <tr>
+    <td width="50%"><img src="docs/images/workshop-fr.jpg" alt="Réglages, l'Atelier" width="100%"><br><sub><b>Atelier.</b> Décors, pierres, gobans et bois, chacun en galerie d'images.</sub></td>
+    <td width="50%"><img src="docs/images/worlds.jpg" alt="Quatre décors vus les yeux levés" width="100%"><br><sub><b>Des mondes.</b> Lève les yeux : le Jardin de bambous, la Nuit de neige, la Salle Honinbo à la lueur de son andon, le Cosmos.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/stones.jpg" alt="Cinq jeux de pierres en gros plan" width="100%"><br><sub><b>Pierres.</b> Yunzi à contre-jour, jade, agate, verre soufflé, braise et glace.</sub></td>
+  </tr>
+  <tr>
     <td width="50%"><img src="docs/images/learn-fr.jpg" alt="Apprendre, l'onglet Aujourd'hui" width="100%"><br><sub><b>Apprendre.</b> Le rituel du jour, puis chaque paquet avec ce qui est à revoir.</sub></td>
     <td width="50%"><img src="docs/images/games-fr.jpg" alt="Mes parties" width="100%"><br><sub><b>Mes parties.</b> Chaque partie gardée sur ta machine, les parties OGS en cours d'abord.</sub></td>
   </tr>
