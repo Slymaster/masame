@@ -27,11 +27,12 @@ const FIXTURES: [string, boolean, string][] = [
 ]
 
 describe('autoDecor', () => {
-  it('returns only décors that exist: the Atelier while the new ones are missing', () => {
+  it('returns only décors that exist, each rule giving way while its décor is missing', () => {
     for (const [at, classic, want] of FIXTURES) {
       const d = autoDecor(new Date(at), undefined, { classic })
       expect(readyDecors()).toContain(d)
-      expect(d).toBe((readyDecors() as readonly string[]).includes(want) ? want : 'atelier')
+      // a missing décor gives way to the next rule (a winter night classic is the snow night until Honinbo lands)
+      if ((readyDecors() as readonly string[]).includes(want)) expect(d).toBe(want)
     }
   })
   it('follows the season and the hour once every décor exists', async () => {
