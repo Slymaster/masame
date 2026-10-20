@@ -2,14 +2,22 @@
 // the décors' looks, the quality governor and the contrast measure. Covered by logic.test.ts.
 
 import { hash, rng } from '../board/noise'
-import type { Decor } from './decors'
+import { DECORS, type Decor } from './decors'
 
 /* ---------- real dimensions (mm) ---------- */
 export const SX = 22, SZ = 23.7          // grid spacing across / along (cells are longer than wide)
 export const BT = 60                      // board thickness (a table board, not a legged one)
 
-/** A stone set's shape (mm): radii of the black and white stones, half thickness, and the lens profile's exponent. */
-export interface StoneShape { rB: number; rW: number; sh: number; lensExp: number }
+/**
+ * A stone set's shape (mm): radii of the black and white stones; the height of the dome above the girdle (shTop) and below
+ * it (shBot), each with its profile's exponent (lens()). Japanese stones are symmetric biconvex (4.5 / 4.5, 0.78); Chinese
+ * yunzi are single convex: a dome on top, nearly flat underneath (shBot ≈ 0.6–1 mm, a small expBot for a rounded rim).
+ * A stone at rest has its girdle at y = shBot and its top at shBot + shTop.
+ */
+export interface StoneShape { rB: number; rW: number; shTop: number; shBot: number; expTop: number; expBot: number }
+/** The height of a stone's top (or bottom) surface above (below) its girdle at r from its axis. */
+export const lensTop = (r: number, R: number, s: StoneShape) => lens(r, R, s.shTop, s.expTop)
+export const lensBot = (r: number, R: number, s: StoneShape) => lens(r, R, s.shBot, s.expBot)
 
 /** Half thickness of a biconvex stone of half thickness sh at distance r from its axis (dome with a rounded girdle). */
 export const lens = (r: number, R: number, sh: number, exp: number) => sh * Math.pow(Math.max(0, 1 - (r / R) ** 2), exp)
@@ -140,7 +148,8 @@ export interface Rest { x: number; z: number; y: number; tilt: number; dir: numb
 /**
  * Drops stones one after another at the given (x, z) onto a floor (centre height of a lone stone at distance d from
  * the axis) and onto the stones already there. Two flat lenses d apart clear each other when their centres differ by
- * 2·lens(d/2) (the profile is concave, so the closest pair of surfaces is midway). A stone resting on another dips away
+ * lensTop(d/2) + lensBot(d/2) (the profile is concave, so the closest pair of surfaces is about midway: exact for a
+ * symmetric stone; shortcut: for an asymmetric one the closest pair shifts a little, ample for heaped stones). A stone resting on another dips away
  * from it; it is raised by R·sin(tilt) so the tilt can't reach into anything either. Stones landing above maxY are dropped.
  */
 export function dropStones(xz: number[][], R: number, shape: StoneShape, floor: (d: number) => number, rnd: () => number, maxTilt = 0.1, maxY = Infinity): Rest[] {
@@ -149,7 +158,7 @@ export function dropStones(xz: number[][], R: number, shape: StoneShape, floor: 
     let y = floor(Math.hypot(x, z)), on: Rest | null = null
     for (const o of out) {
       const d = Math.hypot(x - o.x, z - o.z)
-      const h = 2 * lens(d / 2, R, shape.sh, shape.lensExp)
+      const h = lensTop(d / 2, R, shape) + lensBot(d / 2, R, shape)
       if (d < 2 * R && o.y + h > y) { y = o.y + h; on = o }
     }
     const tilt = on ? maxTilt * (0.5 + 0.5 * rnd()) : maxTilt * 0.25 * rnd()
@@ -249,10 +258,11 @@ export function seasonTod(date: Date, decor: Decor): Tod {
   return tod
 }
 
-/** The UI card's skin follows the scene's backdrop: Laque on the dark rooms (the Lanterne, the Atelier seen in
+/** The UI card's skin follows the scene's backdrop (Look.skin): Laque on the dark rooms (the Lanterne, the Atelier seen in
  *  Contemplation), Washi on light ones (Study's linen, Clair and Washitsu) and always in 2D. */
 export function cardSkin(renderer: '2d' | '3d', camera: 'study' | 'contemplation', decor: Decor): 'washi' | 'laque' {
-  return renderer === '3d' && (decor === 'lanterne' || (camera === 'contemplation' && decor === 'atelier')) ? 'laque' : 'washi'
+  const k = LOOKS[decor].skin
+  return renderer === '3d' && (k === 'laque' || (k === 'byCamera' && camera === 'contemplation')) ? 'laque' : 'washi'
 }
 
 /* ---------- décors ---------- */
@@ -282,16 +292,30 @@ export interface Look {
   shoji: number
   /** Contemplation, fx ≥ 1: the décor's HDRI shown behind the room, blurred (backgroundBlurriness) and dimmed. Absent = the dark room. */
   backdrop?: { blur: number; intensity: number }
+  /** The UI card's skin (cardSkin): 'byCamera' = Laque in Contemplation, Washi in Study. Absent = Washi. */
+  skin?: 'washi' | 'laque' | 'byCamera'
+  /** Contemplation: the highest the seated camera may tilt (rad from vertical; default TILT_MAX, 58°). Outdoor décors may let the eyes rise to ~80°. */
+  tiltMax?: number
+  /** A sound loop under assets/board3d/ (carried here; the ambience player reads it). */
+  ambient?: string
 }
 const NIGHT: Tod = { az: 215, el: 64, K: 2650, I: 0, env: 0.5, exp: 1, room: 0 }
-export const LOOKS: Record<Decor, Look> = {
-  atelier: { sky: 'studio_country_hall', skyAz: 0.52, tod: null, ground: 'walnut', tint: 1, rough: 0.72, fade: true, linen: true, key: 1, ibl: 1, exp: 1, soft: 1, shade: 1, lamp: 0, shoji: 0 },
-  washitsu: { sky: 'empty_play_room', skyAz: 0.38, tod: null, ground: 'tatami', tint: 0.92, rough: 0.82, fade: false, linen: false, key: 0.92, ibl: 1.1, exp: 1, soft: 1.3, shade: 0.95, lamp: 0, shoji: 0.35 },
+const INLINE_LOOKS: Partial<Record<string, Look>> & { atelier: Look } = {
+  atelier: { sky: 'studio_country_hall', skyAz: 0.52, tod: null, ground: 'walnut', tint: 1, rough: 0.72, fade: true, linen: true, key: 1, ibl: 1, exp: 1, soft: 1, shade: 1, lamp: 0, shoji: 0, skin: 'byCamera' },
+  washitsu: { sky: 'empty_play_room', skyAz: 0.38, tod: null, ground: 'tatami', tint: 0.92, rough: 0.82, fade: false, linen: false, key: 0.92, ibl: 1.1, exp: 1, soft: 1.3, shade: 0.95, lamp: 0, shoji: 0.35, skin: 'washi' },
   // time of day has no effect here: a lantern at night
-  lanterne: { sky: 'studio_country_hall', skyAz: 0.52, tod: NIGHT, ground: 'walnut', tint: 0.5, rough: 0.72, fade: true, linen: false, key: 0, ibl: 0.25, exp: 1.6, soft: 1, shade: 1, lamp: 3.6, shoji: 0 },
+  lanterne: { sky: 'studio_country_hall', skyAz: 0.52, tod: NIGHT, ground: 'walnut', tint: 0.5, rough: 0.72, fade: true, linen: false, key: 0, ibl: 0.25, exp: 1.6, soft: 1, shade: 1, lamp: 3.6, shoji: 0, skin: 'laque' },
   // skyAz: estimate from RoomEnvironment's layout (its two strong side panels at ±153°, the third at 92°), not measured on a render
-  clair: { sky: null, skyAz: 2.9, tod: null, ground: 'paper', tint: 1, rough: 0.94, fade: false, linen: false, key: 0.9, ibl: 0.9, exp: 0.82, soft: 2, shade: 0.8, lamp: 0, shoji: 0 },
+  clair: { sky: null, skyAz: 2.9, tod: null, ground: 'paper', tint: 1, rough: 0.94, fade: false, linen: false, key: 0.9, ibl: 0.9, exp: 0.82, soft: 2, shade: 0.8, lamp: 0, shoji: 0, skin: 'washi' },
 }
+// one file per new décor: looks/<id>.ts default-exports its Look (no three.js)
+const LOOK_FILES = import.meta.glob<{ default: Look }>('./looks/*.ts', { eager: true })
+const lookFiles = Object.fromEntries(Object.entries(LOOK_FILES).map(([f, m]) => [f.slice(8, -3), m.default])) as Partial<Record<string, Look>>
+/** A décor is ready once its Look exists (inline above or in looks/); a listed id without one is pending. */
+export const isReadyDecor = (d: Decor) => d in INLINE_LOOKS || d in lookFiles
+export const readyDecors = () => DECORS.filter(isReadyDecor)
+/** Every décor's look; a pending décor shows the Atelier's (never a crash). */
+export const LOOKS = Object.fromEntries(DECORS.map(d => [d, INLINE_LOOKS[d] ?? lookFiles[d] ?? INLINE_LOOKS.atelier])) as Record<Decor, Look>
 
 /* ---------- adaptive quality governor ---------- */
 /** fx: Contemplation's décor effects. 2 = all, animated; 1 = still (backdrop, a still light cookie, no particles); 0 = none. */
@@ -391,10 +415,10 @@ const clampV = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 /** Limits for a visible height hc: zoom 1 is the home distance. The target may leave home by a quarter of the board at
  *  zoom 1, and up to the corners as the view zooms in: the view's centre always shows the board, and zooming out of a
  *  corner draws the board back into view. */
-export function clampOrbit(o: Orbit, hc: number, BW: number, BD: number): Orbit {
+export function clampOrbit(o: Orbit, hc: number, BW: number, BD: number, tiltMax = TILT_MAX): Orbit {
   const zMin = Math.min(1, ZOOM_MM / hc), zoom = clampV(o.zoom, zMin, 1), s = zMin < 1 ? (1 - zoom) / (1 - zMin) : 0
   const cx = HOME.tx * (1 - s), cz = HOME.tz * (1 - s), hx = (BW / 4) * (1 + s), hz = (BD / 4) * (1 + s)
-  return { yaw: clampV(o.yaw, -YAW_MAX, YAW_MAX), tilt: clampV(o.tilt, TILT_MIN, TILT_MAX), zoom, tx: clampV(o.tx, cx - hx, cx + hx), tz: clampV(o.tz, cz - hz, cz + hz) }
+  return { yaw: clampV(o.yaw, -YAW_MAX, YAW_MAX), tilt: clampV(o.tilt, TILT_MIN, tiltMax), zoom, tx: clampV(o.tx, cx - hx, cx + hx), tz: clampV(o.tz, cz - hz, cz + hz) }
 }
 
 /** Pan: the camera slides by a - b on the plane y = TGT_Y, so the point a (grabbed) shows where b (now under the cursor) was. */
@@ -443,18 +467,19 @@ export function wheelIntent(e: { deltaX: number; deltaY: number; deltaMode: numb
 }
 
 /**
- * The point a ray points at in the seated view: the first stone it crosses (lens shape) between y = 2·sh and the board,
+ * The point a ray points at in the seated view: the first stone it crosses (lens shape) between its top and the board,
  * otherwise the board surface at y = 0, rounded to the nearest intersection (null off the grid).
  */
 export function pickPoint(o: number[], d: number[], N: number, stones: Map<number, Placed>, shape: StoneShape): [number, number] | null {
   if (d[1] >= 0) return null
-  const SH = shape.sh, t0 = (2 * SH - o[1]) / d[1], t1 = -o[1] / d[1], n = Math.ceil(((t1 - t0) * Math.hypot(d[0], d[2])) / 0.5) + 1
+  const SB = shape.shBot, t0 = (SB + shape.shTop - o[1]) / d[1], t1 = -o[1] / d[1], n = Math.ceil(((t1 - t0) * Math.hypot(d[0], d[2])) / 0.5) + 1
   for (let k = 0; k <= n; k++) {
     const t = t0 + ((t1 - t0) * k) / n, x = o[0] + d[0] * t, y = o[1] + d[1] * t, z = o[2] + d[2] * t
     const i = Math.round(x / SX + (N - 1) / 2), j = Math.round(z / SZ + (N - 1) / 2)
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
       const i2 = i + di, j2 = j + dj, s = i2 >= 0 && j2 >= 0 && i2 < N && j2 < N ? stones.get(j2 * N + i2) : undefined
-      if (s && Math.abs(y - SH) < lens(Math.hypot(x - s.tx, z - s.tz), s.R, SH, shape.lensExp)) return [s.x, s.y]
+      const r = s ? Math.hypot(x - s.tx, z - s.tz) : 0, h = y - SB
+      if (s && h < lensTop(r, s.R, shape) && -h < lensBot(r, s.R, shape)) return [s.x, s.y]
     }
   }
   const x = o[0] + d[0] * t1, z = o[2] + d[2] * t1, i = Math.round(x / SX + (N - 1) / 2), j = Math.round(z / SZ + (N - 1) / 2)

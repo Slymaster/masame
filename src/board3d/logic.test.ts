@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, DROP_MS, dropPose, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panBy, panFor, pickPoint, qualityLadder, seatHeight, settle, SX, SZ, silhouette, SLIDE_MS, stepOrbit, TOD, todAt, seasonTod, snowOn, sunOn, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
 import { STONES } from './stones'
 
-const J = STONES.japonaise, RB = J.rB, RW = J.rW, SH = J.sh
+const J = STONES.japonaise, RB = J.rB, RW = J.rW, SH = J.shTop
 import { DECORS } from './decors'
 import { rng } from '../board/noise'
 
@@ -94,7 +94,7 @@ describe('stones in a bowl', () => {
       expect(st.length).toBeGreaterThan(14)
       for (let i = 0; i < st.length; i++) for (let j = 0; j < i; j++) {
         const a = st[i], b = st[j], d = Math.hypot(a.x - b.x, a.z - b.z)
-        if (d < 2 * R) expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(2 * lens(d / 2, R, SH, J.lensExp) - 1e-9)
+        if (d < 2 * R) expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(2 * lens(d / 2, R, SH, J.expTop) - 1e-9)
       }
       expect(Math.max(...st.map(s => s.y))).toBeGreaterThan(55) // some stones rest on others
     }
@@ -192,7 +192,7 @@ describe('seasons', () => {
 
 describe('card skin', () => {
   it('is Laque on the dark backdrops only, Washi in 2D', () => {
-    const table = Object.fromEntries(DECORS.flatMap(d => (['study', 'contemplation'] as const).map(c => [`${d}/${c}`, cardSkin('3d', c, d)])))
+    const table = Object.fromEntries((['atelier', 'washitsu', 'lanterne', 'clair'] as const).flatMap(d => (['study', 'contemplation'] as const).map(c => [`${d}/${c}`, cardSkin('3d', c, d)])))
     expect(table).toEqual({
       'atelier/study': 'washi', 'atelier/contemplation': 'laque', 'washitsu/study': 'washi', 'washitsu/contemplation': 'washi',
       'lanterne/study': 'laque', 'lanterne/contemplation': 'laque', 'clair/study': 'washi', 'clair/contemplation': 'washi',
@@ -419,6 +419,6 @@ describe('seated camera', () => {
     expect(pickPoint([gx(N, 13) - 50, 100, gz(N, 0)], [0.5, -1, 0], N, new Map([[1 * N + 14, near]]), J)).toEqual([13, 0])
     // the old plane at y = SH misses by a third of a row at 58°
     expect(SH * Math.tan(58 * deg) / SZ).toBeGreaterThan(0.3)
-    expect(lens(0, RB, SH, J.lensExp)).toBe(SH)
+    expect(lens(0, RB, SH, J.expTop)).toBe(SH)
   })
 })

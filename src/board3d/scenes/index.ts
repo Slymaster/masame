@@ -1,5 +1,5 @@
 // A décor's scenery and life (leaves, snow, smoke…), one file per décor: scenes/<décor>.ts default-exports a factory
-// `(): Scene`. Board3D mounts it with the décor, shows it only in Contemplation (fx ≥ 1), animates it only at fx 2, and
+// `(): Scene`, found by file name (no table to edit). Board3D mounts it with the décor, shows it only in Contemplation (fx ≥ 1), animates it only at fx 2, and
 // disposes it when the décor changes. See docs/adding-stones-and-scenes.md.
 
 import type * as THREE from 'three'
@@ -19,7 +19,20 @@ export interface SceneCtx {
   board: { BW: number; BD: number }
   /** A light cookie on the shoji spot (the décor's Look.shoji share of the key, Contemplation); null = the shoji lattice. */
   setCookie(tex: THREE.Texture | null): void
+  /**
+   * The scene's own ground on the table (engawa planks, a stone terrace…; canvas-made like tatamiMaps/paperMap), with the
+   * same fade and shadows as a Look's ground, in both cameras; null = back to the Look's ground. Board3D frees its
+   * textures with the scene (or when replaced): don't dispose them in dispose().
+   */
+  setGround(g: SceneGround | null): void
+  /** The Lanterne's lamp, on when Look.lamp > 0 (intensity from it, position on the key's bearing, set by Board3D). */
+  lamp: THREE.SpotLight
+  /** The lamp's colour (an andon's warm paper, a red lantern); null = the hour's colour temperature. */
+  setLampColor(c: THREE.Color | null): void
 }
+
+/** A ground for the table: tile it yourself (wrap, repeat over the 3200 mm table, colour space). tint multiplies its colour (default 1). */
+export interface SceneGround { map: THREE.Texture; bumpMap?: THREE.Texture | null; roughness?: number; tint?: number }
 
 export interface Scene {
   /** Builds into ctx.root; may load assets (awaited before the décor fades in, shaders compiled under the crossfade). */
@@ -32,6 +45,6 @@ export interface Scene {
   readonly animated: boolean
 }
 
-/** One line per décor that has a scene. Décors without one (the first four) render exactly as before. */
-export const SCENES: Partial<Record<Decor, () => Promise<{ default: () => Scene }>>> = {
-}
+/** Every scenes/<décor>.ts, loaded when its décor is chosen. Décors without one (the first four) render exactly as before. */
+const FILES = import.meta.glob<{ default: () => Scene }>(['./*.ts', '!./index.ts', '!./demo.ts', '!./*.test.ts'])
+export const SCENES = Object.fromEntries(Object.entries(FILES).map(([f, load]) => [f.slice(2, -3), load])) as Partial<Record<Decor, () => Promise<{ default: () => Scene }>>>

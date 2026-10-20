@@ -21,7 +21,7 @@ import type { StoneSet } from './stoneSets'
 import { centreShift } from '../board/frame'
 import { ambientOn, AMBIENT_FPS, bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, seatHeight, settle, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Look, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
-import { SCENES, type Scene, type SceneCtx } from './scenes'
+import { SCENES, type Scene, type SceneCtx, type SceneGround } from './scenes'
 import { disposeKit, ghostOf, markerGeo, pendingOf, seeded, stoneKit, stoneLayer, type StoneKit } from './stones'
 import { cropRect, postcardCanvas, signatureFonts, toPng } from '../postcard'
 
@@ -31,7 +31,11 @@ export interface Board3DState extends BoardState {
 }
 export type CameraMode = 'study' | 'contemplation'
 export type TimeMode = TimeName | 'auto'
-export interface Board3DOptions { camera: CameraMode; time: TimeMode; highContrast: boolean; decor: Decor; stones: StoneSet }
+export interface Board3DOptions {
+  camera: CameraMode; time: TimeMode; highContrast: boolean; decor: Decor; stones: StoneSet
+  /** Depth of field in Contemplation (wave 3): accepted, not used yet. */
+  dof?: boolean
+}
 export type FallbackReason = 'webgl2' | 'context-lost' | 'slow'
 export interface Board3DInit {
   /** The app should switch to the 2D BoardView (WebGL2 missing, context lost, or still too slow at the lowest quality). */
@@ -57,7 +61,7 @@ const AO_K = 1.4 // contact-shadow quad half size, in stone radii
 const AO_PEAK_WHITE = 0.35, AO_PEAK_BLACK = 0.25, AO_REACH = 0.2, AO_REACH_LIT = 0.08, AO_LIT = 0.12
 // a thin soft line all round the silhouette, so a white stone's lit side still has an edge (0 = none)
 const AO_LINE_WHITE = 0.4, AO_LINE_BLACK = 0, AO_LINE_W = 0.03
-// the shadow side reaches further by AO_LEAN·sh/tan(el) mm, clamped
+// the shadow side reaches further by AO_LEAN·(half the stone's height)/tan(el) mm, clamped
 const AO_LEAN = 0.1, AO_LEAN_MIN = 0.3, AO_LEAN_MAX = 1.5
 const CAST_STUDY = 0.95, CAST_ROOM = 0.8 // cast-shadow strength (× the décor's shade)
 // Study + linen: the board's shadow on the linen stays within this share of the frame margin (true direction, never cut)
@@ -73,9 +77,10 @@ const easeIO = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2
 const lerp = THREE.MathUtils.lerp
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
 const sstep = (a: number, b: number, v: number) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t) }
+const freeGround = (g: SceneGround) => { g.map.dispose(); g.bumpMap?.dispose() }
 const mkCanvas = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h })
 
-interface Mounted { s: Scene; g: THREE.Group; cookie: THREE.Texture | null }
+interface Mounted { s: Scene; g: THREE.Group; cookie: THREE.Texture | null; ground: SceneGround | null; lampColor: THREE.Color | null }
 
 interface Stone extends Placed {
   p: number; c: Sign; seed: number; rotY: number
@@ -797,7 +802,7 @@ export class Board3D {
         for (const t of Object.values(maps)) t.dispose()
         setMaps(big)
         if (this.grounds.walnut) { this.grounds.walnut.map.dispose(); delete this.grounds.walnut }
-        if (LOOKS[decor].ground === 'walnut') this.tableMat.map = this.groundMaps('walnut').map
+        if (LOOKS[decor].ground === 'walnut') this.applyGround()
         for (const t of Object.values(big)) this.renderer.initTexture(t)
       }
       this.ready = true
@@ -893,10 +898,13 @@ export class Board3D {
     const f = SCENES[d], fx = this.q.fx
     if ((!f && !make) || fx < 1) return null
     try {
-      const s = make ? make() : (await f!()).default(), rec: Mounted = { s, g: new THREE.Group(), cookie: null }
+      const s = make ? make() : (await f!()).default(), rec: Mounted = { s, g: new THREE.Group(), cookie: null, ground: null, lampColor: null }
       const ctx: SceneCtx = {
         root: rec.g, renderer: this.renderer, key: this.key, base: this.base, fx: fx as 1 | 2, board: { BW: this.D.BW, BD: this.D.BD },
         setCookie: t => { rec.cookie = t; if (this.sceneOn === rec) this.shoji.map = t ?? this.shojiTex },
+        setGround: g => { const old = rec.ground; rec.ground = g; if (this.sceneOn === rec) this.applyGround(); if (old && old !== g) freeGround(old) },
+        lamp: this.lamp,
+        setLampColor: c => { rec.lampColor = c; this.invalidate() },
       }
       await s.build(ctx)
       return rec
@@ -906,10 +914,11 @@ export class Board3D {
   /** Swaps the mounted scene (inside transition()), freeing the previous one. */
   private mountScene(rec: Mounted | null) {
     const old = this.sceneOn
-    if (old) { this.sceneRoot.remove(old.g); old.s.dispose() }
+    if (old) { this.sceneRoot.remove(old.g); old.s.dispose(); if (old.ground) freeGround(old.ground) }
     this.sceneOn = rec; this.ambT = 0; this.ambLast = 0
     if (rec) this.sceneRoot.add(rec.g)
     this.shoji.map = rec?.cookie ?? this.shojiTex
+    this.applyGround()
   }
 
   /** A décor's ambient animation runs this frame (logic.ts ambientOn). */
@@ -988,11 +997,18 @@ export class Board3D {
     if (this.shoji.visible !== on || this.shoji.castShadow !== cast) { this.shoji.visible = on; this.shoji.castShadow = cast; this.shoji.shadow.map?.dispose(); this.shoji.shadow.map = null }
   }
 
+  /** The table's surface: the mounted scene's own ground (SceneCtx.setGround), or the Look's. */
+  private applyGround() {
+    const L = LOOKS[this.decorOn ?? this.opts.decor], sg = this.sceneOn?.ground, g = sg ? null : this.groundMaps(L.ground)
+    Object.assign(this.tableMat, sg ? { map: sg.map, bumpMap: sg.bumpMap ?? null, bumpScale: 0.8, roughness: sg.roughness ?? L.rough } : { map: g!.map, bumpMap: g!.bump ?? null, bumpScale: 0.8, roughness: L.rough })
+    this.tableMat.needsUpdate = true
+  }
+
   private applyDecor(d: Decor, env: THREE.Texture) {
-    const L = LOOKS[d], g = this.groundMaps(L.ground)
+    const L = LOOKS[d]
     this.decorOn = d
     this.scene.environment = env
-    Object.assign(this.tableMat, { map: g.map, bumpMap: g.bump ?? null, bumpScale: 0.8, roughness: L.rough }); this.tableMat.needsUpdate = true
+    this.applyGround()
     const lamp = L.lamp > 0
     if (this.key.castShadow === lamp) { this.key.castShadow = !lamp; this.key.shadow.map?.dispose(); this.key.shadow.map = null }
     if (this.lamp.castShadow !== lamp) { this.lamp.castShadow = this.lamp.visible = lamp; this.lamp.shadow.map?.dispose(); this.lamp.shadow.map = null }
@@ -1156,11 +1172,11 @@ export class Board3D {
     // the player sits at +z: Black's bowl to the right, White's across the board
     // the stones at rest are dropped once, in order, onto the bowl's fill and the lid's dish: nothing interpenetrates
     const lidY = (d: number) => d < 31 ? 5 + d / 31 : 6 + (d - 31) * 7 / 19
-    const sp = this.kit.spec, SH = sp.sh
+    const sp = this.kit.spec, SH = sp.shBot // a stone resting flat has its girdle this high
     const heap = (c: Sign) => {
       const R = c === 1 ? sp.rB : sp.rW, r = rng(c === 1 ? 11 : 23)
       // a hidden bed first, so the gaps of the visible layer show stones rather than the bottom of the bowl
-      return dropStones([...bowlHeap(R, 43, 0, r), ...bowlHeap(R, 40, 6, r)], R, sp, d => 50 + SH + 2.5 * (1 - (d / 43) ** 2), r, 0.12, 50 + 5 * SH + 2)
+      return dropStones([...bowlHeap(R, 43, 0, r), ...bowlHeap(R, 40, 6, r)], R, sp, d => 50 + SH + 2.5 * (1 - (d / 43) ** 2), r, 0.12, 50 + 2.5 * (sp.shTop + sp.shBot) + 2)
     }
     const pile = (prisoner: Sign) => {
       const R = prisoner === 1 ? sp.rB : sp.rW, r = rng(prisoner === 1 ? 5 : 17)
@@ -1274,7 +1290,7 @@ export class Board3D {
 
   private updateStones(now: number): boolean {
     let busy = false, nb = 0, nw = 0, db = 0, dw = 0, na = 0
-    const s0 = this.state, N = this.N, own = this.own, counting = s0?.counting, last = s0?.last, SH = this.kit.spec.sh
+    const s0 = this.state, N = this.N, own = this.own, counting = s0?.counting, last = s0?.last, SH = this.kit.spec.shBot, TOP = SH + this.kit.spec.shTop
     const lastP = last ? last[1] * N + last[0] : -1
     this.markers[1].visible = this.markers[-1].visible = false
     const put = (s: Stone, y: number, aoA: number, aoS: number, dim: boolean, sx: number, sz: number) => {
@@ -1314,7 +1330,7 @@ export class Board3D {
     if (counting) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const o = counting.territory[y]?.[x]
       if (!o) continue
-      const lift = s0!.signMap[y][x] ? 2 * SH + 0.8 : 0.6
+      const lift = s0!.signMap[y][x] ? TOP + 0.8 : 0.6
       this._m.makeTranslation(gx(N, x), lift, gz(N, y))
       if (o === 1) t1.setMatrixAt(n1++, this._m); else t2.setMatrixAt(n2++, this._m)
     }
@@ -1375,8 +1391,9 @@ export class Board3D {
     const { BW, BD } = this.D, a = this.fr.w / this.fr.h, hs = Math.max(BD * 1.1, (BW * 1.1) / Math.max(0.4, a)), o = this.ortho
     o.top = hs / 2; o.bottom = -hs / 2; o.left = (-hs / 2) * a; o.right = (hs / 2) * a; o.updateProjectionMatrix()
     this.seatH = seatHeight(BW, BD, a); this.persp.aspect = a
-    this.orbitGoal = clampOrbit(this.orbitGoal, this.seatH, BW, BD)
-    this.orbit = clampOrbit(this.orbit, this.seatH, BW, BD)
+    const tm = LOOKS[this.decorOn ?? this.opts.decor].tiltMax
+    this.orbitGoal = clampOrbit(this.orbitGoal, this.seatH, BW, BD, tm)
+    this.orbit = clampOrbit(this.orbit, this.seatH, BW, BD, tm)
     this.placePersp(this.orbit)
   }
 
@@ -1414,7 +1431,7 @@ export class Board3D {
     const r = this.canvas.getBoundingClientRect(), ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
     this.ray.setFromCamera(ndc, this.activeCam())
     if (this.camE) { const { origin: o, direction: d } = this.ray.ray; return pickPoint([o.x, o.y, o.z], [d.x, d.y, d.z], this.N, this.stones, this.kit.spec) }
-    const hit = this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.kit.spec.sh), new THREE.Vector3())
+    const hit = this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.kit.spec.shBot), new THREE.Vector3())
     if (!hit) return null
     const N = this.N, i = Math.round(hit.x / SX + (N - 1) / 2), j = Math.round(hit.z / SZ + (N - 1) / 2)
     if (i < 0 || j < 0 || i >= N || j >= N) return null
@@ -1442,14 +1459,14 @@ export class Board3D {
     this.key.position.set(Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)).multiplyScalar(1600)
     // contact shadow away from the window, reaching further when the sun is low (lean in radii)
     this.aoU.uAoDir.value.set(-Math.cos(az), -Math.sin(az))
-    this.aoU.uAoLean.value = THREE.MathUtils.clamp(AO_LEAN * this.kit.spec.sh / Math.tan(el), AO_LEAN_MIN, AO_LEAN_MAX) / this.kit.spec.rW
+    this.aoU.uAoLean.value = THREE.MathUtils.clamp(AO_LEAN * (this.kit.spec.shTop + this.kit.spec.shBot) / 2 / Math.tan(el), AO_LEAN_MIN, AO_LEAN_MAX) / this.kit.spec.rW
     const keyI = tod.I * lift * L.key * lerp(1, 0.2, ok), sj = this.shoji.visible ? this.shojiShare() : 0
     this.key.color.copy(kelvin(tod.K)); this.key.intensity = keyI * (1 - sj)
     if (sj) { // through the shoji, from far out on the key's bearing (it follows the hour): panes as bright as before, bars darker
       this.shoji.position.copy(this.key.position).setLength(SHOJI_MM); this.shoji.color.copy(this.key.color); this.shoji.intensity = keyI * sj
     }
     if (L.lamp) { // Lanterne: the lamp hangs on the same bearing, closer, its cone pooling over board and bowls
-      this.lamp.position.copy(this.key.position).setLength(1250); this.lamp.color.copy(kelvin(tod.K))
+      this.lamp.position.copy(this.key.position).setLength(1250); this.lamp.color.copy(this.sceneOn?.lampColor ?? kelvin(tod.K))
       this.lamp.intensity = L.lamp * 1e6 * lerp(1, 0.25, ok)
     }
     this.scene.environmentIntensity = lerp(Math.max(tod.env, 0.5), tod.env, ce) * L.ibl * lerp(1, 0.35, ok)
@@ -1465,7 +1482,9 @@ export class Board3D {
     // other décors draw their ground in Study too (tatami, paper, the lamp-lit table)
     const linen = L.linen && !c
     this.renderer.setClearColor(this.roomColor, linen ? 0 : 1)
-    if (L.ground === 'walnut') { this.tableMat.color.setRGB(0.1, 0.064, 0.048).multiplyScalar((0.45 + 0.55 * tod.room) * L.tint); this.tableMat.envMapIntensity = 0.2 + 0.4 * tod.room } // no bright grazing sheen in the dark
+    const sg = this.sceneOn?.ground
+    if (sg) { this.tableMat.color.setScalar(sg.tint ?? 1); this.tableMat.envMapIntensity = 1 }
+    else if (L.ground === 'walnut') { this.tableMat.color.setRGB(0.1, 0.064, 0.048).multiplyScalar((0.45 + 0.55 * tod.room) * L.tint); this.tableMat.envMapIntensity = 0.2 + 0.4 * tod.room } // no bright grazing sheen in the dark
     else { this.tableMat.color.setScalar(L.tint); this.tableMat.envMapIntensity = 1 }
     this.tableMat.visible = !linen
     // the fade into the room only where it's wanted: otherwise the alpha map is sampled in its opaque middle
@@ -1554,7 +1573,7 @@ export class Board3D {
     return {
       get quality() { return { level: self.governor.level, ...self.q } },
       /** CSS-pixel position of an intersection (stone top). */
-      project(i: number, j: number, y = self.kit.spec.sh * 2) {
+      project(i: number, j: number, y = self.kit.spec.shBot + self.kit.spec.shTop) {
         const v = new THREE.Vector3(gx(self.N, i), y, gz(self.N, j)).project(self.activeCam())
         return [((v.x + 1) / 2) * self.W, ((1 - v.y) / 2) * self.H]
       },
@@ -1562,7 +1581,7 @@ export class Board3D {
       stones() {
         const cam = self.activeCam(), v = new THREE.Vector3(), css = () => [((v.x + 1) / 2) * self.W, ((1 - v.y) / 2) * self.H]
         return [...self.stones.entries()].filter(([k]) => k >= 0).map(([, s]) => {
-          const SH = self.kit.spec.sh, [x, y] = (v.set(s.tx, SH, s.tz).project(cam), css()), [x2] = (v.set(s.tx + s.R, SH, s.tz).project(cam), css())
+          const SH = self.kit.spec.shBot, [x, y] = (v.set(s.tx, SH, s.tz).project(cam), css()), [x2] = (v.set(s.tx + s.R, SH, s.tz).project(cam), css())
           return { x, y, r: x2 - x, c: s.c }
         })
       },
