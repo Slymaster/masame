@@ -3,7 +3,7 @@
 // leaves lie on the planks by the frame's edges, and green culms stand between the veranda and the blurred garden.
 import * as THREE from 'three'
 import type { Scene } from '.'
-import { cookie, particles } from '../fx'
+import { blurCanvas, cookie, particles } from '../fx'
 import { BT } from '../logic'
 
 /** The leaf canopy's character (variants A/B/C were rendered from these). */
@@ -42,11 +42,13 @@ export function canopy(c: Canopy = CANOPY) {
   const r = rng(7), g = Math.round(255 * c.floor), ink = `rgb(${g},${g},${g})`
   const sprite = (w: number, h: number, blur: number, draw: (x: CanvasRenderingContext2D) => void) => {
     const cv = Object.assign(document.createElement('canvas'), { width: w, height: h }), x = cv.getContext('2d')!
-    x.filter = `blur(${blur}px)`; x.fillStyle = ink; draw(x); return cv
+    x.fillStyle = ink; draw(x); return blurCanvas(cv, blur) // blurred by hand: WebKit ignores ctx.filter
   }
   // a near leaf (6 mm penumbra: the cookie's own texels) and a far fan, blurred by the sun's disc from higher up
   const leaf = sprite(32, 8, 0.5, x => { x.translate(2, 4); leafPath(x, 27 * c.scale, 4 * c.scale) })
-  const fan = sprite(64, 64, 3, x => { x.translate(32, 32); for (let k = 0; k < 6; k++) { x.save(); x.rotate(-1.1 + k * 0.45 + r() * 0.2); leafPath(x, (20 + 8 * r()) * c.scale, 5 * c.scale); x.restore() } })
+  const fan = sprite(64, 64, 0, x => { // each leaf blurred on its own, then laid over the others (as ctx.filter drew them)
+    for (let k = 0; k < 6; k++) { const a = -1.1 + k * 0.45 + r() * 0.2, L = (20 + 8 * r()) * c.scale; x.drawImage(sprite(64, 64, 3, y => { y.translate(32, 32); y.rotate(a); leafPath(y, L, 5 * c.scale) }), 0, 0) }
+  })
   // fans of 3–6 leaves at a twig's tip, spread over the visible ground (the board in the middle), each twig its own sway
   type Twig = { x: number; y: number; a: number; T: number; ph: number; amp: number; leaves: [number, number][] }
   const twigs = (n: number, far: boolean): Twig[] => Array.from({ length: n }, () => {
@@ -59,6 +61,9 @@ export function canopy(c: Canopy = CANOPY) {
   })
   const nearT = twigs(c.near, false), farT = twigs(c.far, true)
   const stems = Array.from({ length: c.stems }, () => ({ u: S * (0.3 + 0.4 * r()), a: (r() - 0.5) * 0.5, w: 7 + 4 * r(), T: 9 + 3 * r(), ph: r() * 6.283 }))
+  // culms far above: long soft bars (2 px penumbra), each pre-blurred once across its width
+  const bars = stems.map(s => sprite(Math.ceil(s.w) + 16, 2 * S, 0, x => x.fillRect((Math.ceil(s.w) + 16 - s.w) / 2, 0, s.w, 2 * S)))
+  bars.forEach(b => blurCanvas(b, 2, 3, 'x'))
   return (x: CanvasRenderingContext2D, t: number) => {
     x.globalCompositeOperation = 'source-over'; x.fillStyle = '#fff'; x.fillRect(0, 0, S, S)
     x.globalCompositeOperation = 'darken'
@@ -68,12 +73,10 @@ export function canopy(c: Canopy = CANOPY) {
       return [w.x + Math.cos(w.a + 1.57) * w.amp * s, w.y + Math.sin(w.a + 1.57) * w.amp * s, w.a + 0.06 * s] as const
     }
     for (const w of farT) { const [px, py, a] = at(w); x.setTransform(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), px, py); x.drawImage(fan, -32, -32) }
-    x.filter = 'blur(2px)'; x.fillStyle = `rgb(${g},${g},${g})`
-    for (const s of stems) { // culms far above: long soft bars, barely moving
+    stems.forEach((s, i) => { // barely moving
       const a = s.a + 0.01 * Math.sin(t * 6.283 / s.T + s.ph)
-      x.setTransform(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), s.u, S / 2); x.fillRect(-s.w / 2, -S, s.w, 2 * S)
-    }
-    x.filter = 'none'
+      x.setTransform(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), s.u, S / 2); x.drawImage(bars[i], -bars[i].width / 2, -S)
+    })
     for (const w of nearT) {
       const [px, py, a] = at(w)
       for (const [da, k] of w.leaves) { const b = a + da; x.setTransform(Math.cos(b) * k, Math.sin(b) * k, -Math.sin(b) * k, Math.cos(b) * k, px, py); x.drawImage(leaf, -2, -4) }

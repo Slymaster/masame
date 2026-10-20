@@ -138,3 +138,36 @@ export function skyDome(glsl = SKY_GRADIENT, uniforms: Record<string, THREE.IUni
   const mesh = Object.assign(new THREE.Mesh(geo, material), { frustumCulled: false, renderOrder: -1000 })
   return { mesh, material, update(t: number) { material.uniforms.uT.value = t }, dispose() { geo.dispose(); material.dispose() } }
 }
+
+/* ---------- canvas blur that WebKit honours (added by the v0.6 polish pass) ---------- */
+/**
+ * Gaussian blur (σ in px) of one canvas's pixels, in place: WKWebView ignores `CanvasRenderingContext2D.filter`, so sprites
+ * and cookies are softened here instead. `ch` picks the channel blurred (3 = alpha: a one-colour sprite, its colour kept;
+ * 0 = a grey image, written back to r, g and b). `axes: 'x'` for a bar that only needs its long edges soft. Edges clamp.
+ * Separable, (6σ + 1) taps a pass: ~25 ms for 1024² at σ 1 on this Mac.
+ */
+export function blurCanvas(cv: HTMLCanvasElement, sigma: number, ch: 0 | 3 = 3, axes: 'xy' | 'x' = 'xy') {
+  if (sigma <= 0) return cv
+  const x = cv.getContext('2d')!, w = cv.width, h = cv.height, im = x.getImageData(0, 0, w, h), d = im.data
+  const R = Math.ceil(sigma * 3), k = Array.from({ length: 2 * R + 1 }, (_, i) => Math.exp(-((i - R) ** 2) / (2 * sigma * sigma)))
+  const ks = k.reduce((a, b) => a + b), a = new Float32Array(w * h), b = new Float32Array(w * h)
+  for (let i = 0; i < w * h; i++) a[i] = d[i * 4 + ch]
+  const pass = (src: Float32Array, dst: Float32Array, dx: number, dy: number) => {
+    for (let y = 0; y < h; y++) for (let px = 0; px < w; px++) {
+      let s = 0
+      for (let j = -R; j <= R; j++) {
+        const sx = Math.min(w - 1, Math.max(0, px + j * dx)), sy = Math.min(h - 1, Math.max(0, y + j * dy))
+        s += k[j + R] * src[sy * w + sx]
+      }
+      dst[y * w + px] = s / ks
+    }
+  }
+  pass(a, b, 1, 0)
+  if (axes === 'xy') pass(b, a, 0, 1); else a.set(b)
+  let o = 0 // alpha: the sprite's one colour (its most opaque pixel's) everywhere, or the soft edge would fade through black
+  if (ch === 3) for (let i = 0; i < w * h; i++) if (d[i * 4 + 3] > d[o * 4 + 3]) o = i
+  const [r, g, bl] = [d[o * 4], d[o * 4 + 1], d[o * 4 + 2]]
+  for (let i = 0; i < w * h; i++) { if (ch === 3) { d[i * 4] = r; d[i * 4 + 1] = g; d[i * 4 + 2] = bl; d[i * 4 + 3] = a[i] } else d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = a[i] }
+  x.putImageData(im, 0, 0)
+  return cv
+}

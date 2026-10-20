@@ -2,6 +2,7 @@
 // floor (laminated hanji, finished with soybean and perilla oil: a warm satin sheen). Both are canvas-made and still.
 import * as THREE from 'three'
 import type { Scene } from '.'
+import { blurCanvas } from '../fx'
 
 const COOKIE_MM = 3200 // the shoji spot's cookie spans 2 × SHOJI_R (Board3D) at its distance
 const FLOOR_MM = 1200, TABLE_MM = 3200
@@ -35,8 +36,7 @@ function latticeCookie(S = 1024) {
     g.addColorStop(0, `rgba(222,222,222,${0.25 + 0.3 * r()})`); g.addColorStop(1, 'rgba(255,255,255,0)')
     t.fillStyle = g; t.fillRect(cx - rad, cy - rad, 2 * rad, 2 * rad)
   }
-  x.fillStyle = '#fff'; x.fillRect(0, 0, S, S) // opaque under the blur's edges
-  x.filter = `blur(${(3 * k).toFixed(1)}px)`; x.drawImage(tmp, 0, 0); x.filter = 'none'
+  x.drawImage(tmp, 0, 0); blurCanvas(cv, 3 * k, 0) // the paper's 3 mm softening, by hand: WebKit ignores ctx.filter
   const tex = new THREE.CanvasTexture(cv)
   tex.colorSpace = THREE.NoColorSpace
   return tex
