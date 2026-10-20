@@ -8,6 +8,7 @@ import { playClack, playTap } from './sound'
 import { gx, gz, jitter, settle, type Placed } from '../board3d/logic'
 import { postcardCanvas, signatureFonts, toPng } from '../postcard'
 import { tap } from './frame'
+import { drawBlurred } from './canvasBlur'
 import { STONE_DATA, type Mark2D, type Mark2DParams, type Skin2D, type StoneSet } from '../board3d/stoneSets'
 
 export interface BoardState {
@@ -180,9 +181,9 @@ function drawTerritory(x: CanvasRenderingContext2D, g: Geom, own: number[], sign
     t.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${k * a})`
     t.fillRect(g.P[X] - c / 2, g.P[Y] - c / 2, c, c)
   }
-  x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.filter = `blur(${c * 0.3 * dpr}px)`
-  x.globalCompositeOperation = 'multiply'; x.drawImage(dark, 0, 0)
-  x.globalCompositeOperation = 'screen'; x.drawImage(light, 0, 0)
+  x.save(); x.setTransform(1, 0, 0, 1, 0, 0)
+  x.globalCompositeOperation = 'multiply'; drawBlurred(x, dark, c * 0.3 * dpr)
+  x.globalCompositeOperation = 'screen'; drawBlurred(x, light, c * 0.3 * dpr)
   x.restore()
 }
 
