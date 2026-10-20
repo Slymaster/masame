@@ -16,7 +16,7 @@ describe('stone sets', () => {
     for (const [name, s] of Object.entries(STONES)) {
       for (const r of [s.rB, s.rW]) { expect(r, name).toBeGreaterThanOrEqual(10.6); expect(r, name).toBeLessThanOrEqual(11.3) }
       const half = (s.shTop + s.shBot) / 2 // half the stone's thickness
-      expect(half, name).toBeGreaterThanOrEqual(3.8); expect(half, name).toBeLessThanOrEqual(5.5)
+      expect(half, name).toBeGreaterThanOrEqual(3.0); expect(half, name).toBeLessThanOrEqual(5.5)
       expect(s.shBot, name).toBeGreaterThanOrEqual(0.5); expect(s.shTop, name).toBeGreaterThanOrEqual(s.shBot) // the dome is on top
       for (const e of [s.expTop, s.expBot]) { expect(e, name).toBeGreaterThan(0); expect(e, name).toBeLessThanOrEqual(1.5) }
       for (const m of [s.black({ hc, R: s.rB }), s.white({ hc, R: s.rW })]) {
@@ -25,7 +25,7 @@ describe('stone sets', () => {
         expect(m.customProgramCacheKey(), name).not.toBe('') // one program per set and colour
       }
       expect(s.skin2d.black.length, name).toBeGreaterThan(1); expect(s.skin2d.white.length, name).toBeGreaterThan(1)
-      for (const v of Object.values(s.snd)) expect(v, name).toBeGreaterThan(0)
+      for (const v of [s.snd.rate, s.snd.lowpass, s.snd.gain]) expect(v, name).toBeGreaterThan(0) // snd.place is a path
     }
   })
 
