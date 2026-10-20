@@ -321,17 +321,18 @@ export const readyDecors = () => DECORS.filter(isReadyDecor)
 export const LOOKS = Object.fromEntries(DECORS.map(d => [d, INLINE_LOOKS[d] ?? lookFiles[d] ?? INLINE_LOOKS.atelier])) as Record<Decor, Look>
 
 /* ---------- adaptive quality governor ---------- */
-/** fx: Contemplation's décor effects. 2 = all, animated; 1 = still (backdrop, a still light cookie, no particles); 0 = none. */
-export interface Quality { dpr: number; shadow: number; msaa: number; bowlSegments: number; kaya4k: boolean; fx: 0 | 1 | 2 }
+/** fx: Contemplation's décor effects. 2 = all, animated; 1 = still (backdrop, a still light cookie, no particles); 0 = none.
+ *  post: Contemplation's depth of field and light bloom (top level only, when the player keeps them on). */
+export interface Quality { dpr: number; shadow: number; msaa: number; bowlSegments: number; kaya4k: boolean; fx: 0 | 1 | 2; post: boolean }
 /** Quality ladder, best first. The pixel ratio is capped by the display's own (and at 3); for d ≤ 2 the values are v0.2's. */
 export function qualityLadder(deviceDpr: number): Quality[] {
   const d = Math.min(Math.max(deviceDpr, 1), 3)
   return [
-    { dpr: d, shadow: 4096, msaa: 4, bowlSegments: 72, kaya4k: true, fx: 2 },
-    { dpr: d, shadow: 2048, msaa: 4, bowlSegments: 72, kaya4k: true, fx: 2 },
-    { dpr: Math.min(d, Math.max(1.5, 0.75 * d)), shadow: 2048, msaa: 4, bowlSegments: 48, kaya4k: false, fx: 1 },
-    { dpr: Math.min(d, Math.max(1.25, 0.625 * d)), shadow: 2048, msaa: 0, bowlSegments: 48, kaya4k: false, fx: 1 },
-    { dpr: 1, shadow: 1024, msaa: 0, bowlSegments: 32, kaya4k: false, fx: 0 },
+    { dpr: d, shadow: 4096, msaa: 4, bowlSegments: 72, kaya4k: true, fx: 2, post: true },
+    { dpr: d, shadow: 2048, msaa: 4, bowlSegments: 72, kaya4k: true, fx: 2, post: false },
+    { dpr: Math.min(d, Math.max(1.5, 0.75 * d)), shadow: 2048, msaa: 4, bowlSegments: 48, kaya4k: false, fx: 1, post: false },
+    { dpr: Math.min(d, Math.max(1.25, 0.625 * d)), shadow: 2048, msaa: 0, bowlSegments: 48, kaya4k: false, fx: 1, post: false },
+    { dpr: 1, shadow: 1024, msaa: 0, bowlSegments: 32, kaya4k: false, fx: 0, post: false },
   ]
 }
 
@@ -404,6 +405,9 @@ export const panFor = (N: number, x: number) => (N > 1 ? (x / (N - 1)) * 2 - 1 :
 
 /* ---------- seated camera (Contemplation) ---------- */
 export const FOV = 28, TILT_HOME = (22 * Math.PI) / 180, TGT_Y = -6
+const DOF_T0 = (26 * Math.PI) / 180, DOF_T1 = (70 * Math.PI) / 180
+/** Depth of field's share (0..1) at a seated tilt: none at the home seat, growing as the eyes lift towards the horizon. */
+export const dofShare = (tilt: number) => { const t = Math.min(1, Math.max(0, (tilt - DOF_T0) / (DOF_T1 - DOF_T0))); return t * t * (3 - 2 * t) }
 /** Visible height (mm) of the seated view: the whole board stays in frame, bowls partly out ("framing A", 1.33× v0.2). */
 export const seatHeight = (BW: number, BD: number, aspect: number) => Math.max(BD * 1.12, ((BW + 380) * 1.04) / 1.33 / Math.max(0.4, aspect))
 

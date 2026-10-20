@@ -1,7 +1,7 @@
 declare const process: { env: Record<string, string> } // node's, without its types
 process.env.TZ = 'Europe/Paris' // the seasons' tests read local clock times, DST included
 import { describe, expect, it } from 'vitest'
-import { skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, DROP_MS, dropPose, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panBy, panFor, pickPoint, qualityLadder, seatHeight, settle, SX, SZ, silhouette, SLIDE_MS, stepOrbit, TOD, todAt, seasonTod, snowOn, sunOn, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
+import { dofShare, skipPinchWheel, bowlHeap, cardSkin, clampOrbit, contrast, dims, DROP_MS, dropPose, dropStones, fit, FIT_REACH, FOV, Governor, gx, gz, HOME, JIT_ACROSS, JIT_ALONG, jitter, lens, LOOKS, orbitEye, panBy, panFor, pickPoint, qualityLadder, seatHeight, settle, SX, SZ, silhouette, SLIDE_MS, stepOrbit, TOD, todAt, seasonTod, snowOn, sunOn, wheelIntent, worstGap, zoomAt, type Orbit, type Placed } from './logic'
 import { STONES } from './stones'
 
 const J = STONES.japonaise, RB = J.rB, RW = J.rW, SH = J.shTop
@@ -278,6 +278,17 @@ describe('governor', () => {
       expect(l.at(-1)).toMatchObject({ dpr: 1, shadow: 1024, msaa: 0 })
     }
     expect(qualityLadder(3).map(q => q.dpr)).toEqual([3, 3, 2.25, 1.875, 1])
+  })
+
+  it('keeps the depth of field and bloom for the top level only', () => {
+    for (const d of [1, 2, 3]) expect(qualityLadder(d).map(q => q.post)).toEqual([true, false, false, false, false])
+  })
+
+  it('blurs nothing at the home seat and more as the eyes lift', () => {
+    expect(dofShare(HOME.tilt)).toBe(0)
+    expect(dofShare((80 * Math.PI) / 180)).toBe(1)
+    const s = [30, 40, 50, 60].map(t => dofShare((t * Math.PI) / 180))
+    for (let i = 1; i < s.length; i++) expect(s[i]).toBeGreaterThan(s[i - 1])
   })
 
   it('keeps v0.2 pixel ratios up to dpr 2', () => {

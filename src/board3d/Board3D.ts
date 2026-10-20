@@ -13,13 +13,15 @@ import { HDRLoader } from 'three/addons/loaders/HDRLoader.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import type { Sign, Vertex } from '@sabaki/go-board'
 import { paintMarks, type BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
 import type { StoneSet } from './stoneSets'
 import { centreShift } from '../board/frame'
-import { ambientOn, AMBIENT_FPS, bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, seatHeight, settle, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Look, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
+import { ambientOn, dofShare, AMBIENT_FPS, bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, seatHeight, settle, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Look, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
 import { SCENES, type Scene, type SceneCtx, type SceneGround } from './scenes'
 import { disposeKit, ghostOf, markerGeo, pendingOf, seeded, stoneKit, stoneLayer, type StoneKit } from './stones'
@@ -33,7 +35,7 @@ export type CameraMode = 'study' | 'contemplation'
 export type TimeMode = TimeName | 'auto'
 export interface Board3DOptions {
   camera: CameraMode; time: TimeMode; highContrast: boolean; decor: Decor; stones: StoneSet
-  /** Depth of field in Contemplation (wave 3): accepted, not used yet. */
+  /** Contemplation's depth of field and light bloom, at the top quality level: beyond the board only, as the eyes lift. */
   dof?: boolean
   /** The Heirloom stones' age (0 new … 1 fully aged), shared by every set's materials as StoneCtx.patina. */
   patina?: number
@@ -71,14 +73,44 @@ const FLOOR_MARGIN = 0.8
 // realism, kept subtle and only in Contemplation (Study stays as tuned for readability; debug.tune() sets them live):
 // the urushi lines' dome (edge slope), width wobble (±share) and gloss; the kaya's patina (roughness × (1 − patina) at
 // the centre, gone 80→220 mm out, where hands polish the board); the shoji's bars (light level left behind a bar; the share of light is LOOKS.shoji, shoji ≥ 0 overrides it);
-// Contemplation's vignette (darkening in the frame's corners)
-const FX = { relief: 0.45, wobble: 0.08, inkRough: 0.28, patina: 0.1, shojiBar: 0.15, shoji: -1, vignette: 0.22 }
+// Contemplation's vignette (darkening in the frame's corners); its depth of field (the most blur, as a share of the frame's height, eyes
+// fully lifted) and bloom (strength, 0 = off: only the stones' highlights ever crossed its threshold; threshold after exposure)
+const FX = { relief: 0.45, wobble: 0.08, inkRough: 0.28, patina: 0.1, shojiBar: 0.15, shoji: -1, vignette: 0.22, dof: 0.012, bloom: 0, bloomAt: 6 }
 const SHOJI_MM = 4000, SHOJI_R = 1600 // the shoji light's distance and its cookie's half width there
 const KAYA_MM = [502, 424.5] // the kaya scan's physical size (along, across the grain), at 2K and 4K alike
 const easeIO = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const lerp = THREE.MathUtils.lerp
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
 const sstep = (a: number, b: number, v: number) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t) }
+/** Depth of field behind the board: a gather over a Vogel disc, the circle of confusion from depth (0 up to the focus at the
+ *  board's far edge, so the board, its lines and its stones are never touched). A nearer, sharper sample never bleeds outward. */
+const DOF_SHADER = {
+  uniforms: { tDiffuse: { value: null }, tDepth: { value: null }, uFocus: { value: 1000 }, uMax: { value: 0 }, uTexel: { value: new THREE.Vector2() }, uInvProj: { value: new THREE.Matrix4() }, uPlane: { value: new THREE.Vector4() } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse, tDepth; uniform float uFocus, uMax; uniform vec2 uTexel; uniform mat4 uInvProj; uniform vec4 uPlane;
+    varying vec2 vUv;
+    float coc(vec2 uv) { // px
+      float d = texture2D(tDepth, uv).x;
+      vec4 f = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); vec3 r = f.xyz / f.w; float dn = dot(uPlane.xyz, r), z = -r.z;
+      // the table writes no depth (it fades out): where nothing was drawn, or only what lies under it, the table's plane
+      // where the ray meets it, else the sky at infinity
+      if (d >= 1.0 || dn < uPlane.w) { float t = uPlane.w / dn; z = t > 0.0 ? z * t : 1e9; }
+      return uMax * clamp(1.0 - uFocus / z, 0.0, 1.0);
+    }
+    void main() {
+      vec4 c0 = texture2D(tDiffuse, vUv); float s0 = coc(vUv);
+      if (s0 < 0.5) { gl_FragColor = c0; return; }
+      vec4 acc = c0; float tot = 1.0;
+      for (int i = 0; i < 48; i++) {
+        float r = sqrt((float(i) + 0.5) / 48.0) * s0, a = float(i) * 2.39996323;
+        vec2 uv = vUv + vec2(cos(a), sin(a)) * r * uTexel;
+        float w = smoothstep(r - 1.0, r + 1.0, coc(uv));
+        acc += texture2D(tDiffuse, uv) * w; tot += w;
+      }
+      gl_FragColor = acc / tot;
+    }`,
+}
 const freeGround = (g: SceneGround) => { g.map.dispose(); g.bumpMap?.dispose() }
 const mkCanvas = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h })
 
@@ -226,6 +258,8 @@ export class Board3D {
 
   private renderer!: THREE.WebGLRenderer
   private composer!: EffectComposer
+  private dofPass!: ShaderPass
+  private bloomPass!: UnrealBloomPass
   private scene = new THREE.Scene()
   private ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 100, 6000)
   private persp = new THREE.PerspectiveCamera(FOV, 1, 10, 5000)
@@ -498,7 +532,7 @@ export class Board3D {
     for (const l of [this.key, this.lamp, this.shoji, this.spot]) l.shadow.map?.dispose() // render targets the renderer doesn't free
     for (const e of this.envs.values()) void e.then(t => t.dispose(), () => {})
     this.endFade(); this.fadeMat.dispose(); (this.fadeScene.children[0] as THREE.Mesh).geometry.dispose()
-    this.composer.dispose()
+    this.composer.dispose(); this.dofPass.dispose(); this.bloomPass.dispose()
     this.renderer.dispose()
   }
 
@@ -513,10 +547,17 @@ export class Board3D {
     r.shadowMap.type = THREE.PCFShadowMap // PCF + radius (Vogel disk) = soft penumbra
     r.setPixelRatio(this.q.dpr)
     const float = r.extensions.has('EXT_color_buffer_float')
-    const rt = new THREE.WebGLRenderTarget(1, 1, { type: float ? THREE.HalfFloatType : THREE.UnsignedByteType, samples: this.q.msaa })
+    const rt = new THREE.WebGLRenderTarget(1, 1, { type: float ? THREE.HalfFloatType : THREE.UnsignedByteType, samples: this.q.msaa, depthTexture: new THREE.DepthTexture(1, 1) })
     this.composer = new EffectComposer(r, rt)
     this.composer.setPixelRatio(this.q.dpr)
     this.composer.addPass(new RenderPass(scene, this.ortho))
+    // Contemplation's post (top level, opts.dof): off, they are skipped and the frame is v0.5's
+    this.dofPass = new ShaderPass(DOF_SHADER); this.dofPass.enabled = false
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0, 0.5, 1); this.bloomPass.enabled = false
+    const bloomSize = this.bloomPass.setSize.bind(this.bloomPass)
+    this.bloomPass.setSize = (w, h) => bloomSize(w / 2, h / 2) // a quarter-resolution glow: only its softness shows
+    this.composer.addPass(this.dofPass)
+    this.composer.addPass(this.bloomPass)
     const out = new OutputPass(); out.needsSwap = false // last pass, on screen: swapping would alternate (and allocate) a second MSAA target
     this.composer.addPass(out)
 
@@ -1545,7 +1586,27 @@ export class Board3D {
   private camOverride: THREE.PerspectiveCamera | null = null // debug close-up
   private render(cam: THREE.Camera = this.camOverride ?? this.activeCam()) {
     ;(this.composer.passes[0] as RenderPass).camera = cam
+    this.postFor(cam)
     this.composer.render()
+  }
+
+  /** Depth of field and bloom for this frame: top level, Contemplation's seated camera, opts.dof; the blur grows as the eyes lift. */
+  private postFor(cam: THREE.Camera) {
+    const on = this.q.post && !!this.opts.dof && this.camE > 0 && cam === this.persp, r = this.renderer
+    const H = r.getDrawingBufferSize(new THREE.Vector2()).y, max = on ? this.fx.dof * H * dofShare(this.orbit.tilt) : 0
+    this.dofPass.enabled = max >= 0.5
+    if (this.dofPass.enabled) {
+      const u = this.dofPass.uniforms, p = this.persp, rt = this.composer.readBuffer, v = new THREE.Vector3(), { BW, BD } = this.D
+      let far = 0 // the board's far edge, stones' tops included: everything nearer stays sharp
+      for (const x of [-BW / 2, BW / 2]) for (const z of [-BD / 2, BD / 2]) far = Math.max(far, -v.set(x, 12, z).applyMatrix4(p.matrixWorldInverse).z)
+      u.tDepth.value = rt.depthTexture; u.uFocus.value = far * 1.02 + 10
+      u.uMax.value = max; u.uTexel.value.set(1 / rt.width, 1 / rt.height); u.uInvProj.value.copy(p.projectionMatrixInverse)
+      const n = v.set(0, 1, 0).transformDirection(p.matrixWorldInverse), o = new THREE.Vector3(0, this.ground.position.y, 0).applyMatrix4(p.matrixWorldInverse)
+      u.uPlane.value.set(n.x, n.y, n.z, n.dot(o))
+    }
+    this.bloomPass.enabled = on && this.fx.bloom > 0
+    // scene-referred: only what stays bright after the exposure (paper lit from within, a lamp's pool, a star) glows
+    this.bloomPass.strength = this.fx.bloom; this.bloomPass.threshold = this.fx.bloomAt / r.toneMappingExposure
   }
 
   private frame(now: number) {
