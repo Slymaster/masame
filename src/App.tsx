@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { BoardView } from './board/BoardView'
 import { centreShift } from './board/frame'
 import type { Board3D, Board3DOptions, Board3DState, FallbackReason, TimeMode } from './board3d/Board3D'
@@ -14,6 +14,7 @@ import { Clock } from './Clock'
 import { handicapStones, proposeHandicap, stepHandicap } from './handicap'
 import { CLOCKS, flagAt, read, sgfTime, startClock, sync, timeUp, type ClockSetting, type LocalClock } from './localClock'
 import { Seg } from './Seg'
+import { Gallery } from './Gallery'
 import { Switch } from './Switch'
 import * as ogs from './ogs'
 import { Sheet } from './Sheet'
@@ -24,6 +25,8 @@ import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
 import { loadSgf, MAX_SGF, readResult, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import { DECORS, type Decor } from './board3d/decors'
+import { STONE_SETS, type StoneSet } from './board3d/stoneSets'
+import { ambiances, autoDecor } from './board3d/auto'
 import { isMac, isMobile, shortcut } from './platform'
 import { useFullscreen, useWindowTheme } from './window'
 import { getVersion, onBackButtonPress } from '@tauri-apps/api/app'
@@ -64,13 +67,16 @@ const BOT_VISITS = 60, TERRITORY_VISITS = 150, FINAL_VISITS = 300
 const BOT_ATTEMPTS = 3 // a failed query (engine restarting on another net, crash) is retried after 1 s, then 2 s
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const random = rng(Date.now())
+/** A gallery tile's picture (public/assets/gallery, see scripts/gallery-thumbs.md); a missing one shows the tile's placeholder. */
+const thumb = (kind: 'decor' | 'stones', id: string) => `${import.meta.env.BASE_URL}assets/gallery/${kind}-${id}.webp`
+const moods = ambiances() // the couples whose décor and stones both exist
 
 type Renderer = '3d' | '2d'
 const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
 const AUTOPLAY = [0.5, 1, 2, 4] as const // seconds per move
 interface Settings {
   lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; botResign: boolean; delay: boolean; territory: boolean
-  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor
+  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor | 'auto'; stones: StoneSet
   langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number; autoplay: typeof AUTOPLAY[number]
   handicap: number; clock: ClockSetting
   style: 'level' | 'era'; era: number; mentor: boolean // a Master of an era instead of the AI level; the mentor (v0.5 B)
@@ -79,7 +85,7 @@ const SETTINGS_KEY = 'baduk.settings'
 function loadSettings(): Settings {
   const d: Settings = {
     lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, botResign: true, delay: true, territory: false,
-    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', langChosen: false, panelHidden: false,
+    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', langChosen: false, panelHidden: false,
     autoUpdate: true, updateChecked: 0, autoplay: 1, handicap: 0, clock: 'off', style: 'level', era: 1850, mentor: false,
   }
   let j: Partial<Settings> = {}
@@ -91,7 +97,8 @@ function loadSettings(): Settings {
     ogsSpeed: (['blitz', 'rapid', 'live', 'correspondence'] as const).includes(s.ogsSpeed) ? s.ogsSpeed : 'rapid', myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
-    decor: DECORS.includes(s.decor) ? s.decor : 'atelier', panelHidden: s.panelHidden === true, ...updateSettings(j),
+    decor: s.decor === 'auto' || (DECORS as readonly unknown[]).includes(s.decor) ? s.decor : 'atelier',
+    stones: (STONE_SETS as readonly unknown[]).includes(s.stones) ? s.stones : 'japonaise', panelHidden: s.panelHidden === true, ...updateSettings(j),
     autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
     handicap: Number.isInteger(s.handicap) && s.handicap >= 2 && s.handicap <= 9 ? s.handicap : 0,
     clock: typeof s.clock === 'string' && Object.hasOwn(CLOCKS, s.clock) ? s.clock : 'off',
@@ -150,7 +157,7 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, inert
     return () => { live = false; ro?.disconnect(); v?.destroy(); view.current = three.current = null; shift(0) }
   }, [mode, view])
   useEffect(() => { view.current?.update(state); if (import.meta.env.DEV) Object.assign(window, { __badukState: state }) })
-  useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => three.current?.setOptions(options), [options.camera, options.time, options.highContrast, options.decor, options.stones]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => three.current?.setThinking(thinking), [thinking])
   // a fresh canvas per renderer: one canvas can't hold both a 2D and a WebGL context
   return <div className="board-wrap" ref={wrap} inert={inert}><canvas key={mode} ref={canvas} data-r={mode} aria-label={t.boardLabel(state.signMap.length)} />{children}</div>
@@ -235,10 +242,6 @@ export function App() {
   const [session2d, setSession2d] = useState(false) // 2D after a WebGL context loss, for this session only
   const renderer: Renderer = session2d || isMobile ? '2d' : settings.renderer // phones: 2D only until v1.1
   const panelHidden = settings.panelHidden && !isMobile // phones: the card is the only place for the game's controls
-  // the card's skin follows the scene's backdrop; set before paint, and crossfaded only once the first frame is shown
-  const skin = cardSkin(renderer, settings.camera, settings.decor)
-  useLayoutEffect(() => { document.documentElement.dataset.skin = skin }, [skin])
-  useWindowTheme(skin)
   const [fullscreen, setFullscreen] = useFullscreen()
   useEffect(() => { requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '' })) }, [])
   // counting phase after two passes: which stones are dead (suggested by KataGo, toggled by the player)
@@ -342,6 +345,15 @@ export function App() {
   const [panel, setPanel] = useState<Panel | null>(null)
   /** A trainer's setOpen: opening it replaces any other; closing it closes only itself. */
   const panelOpen = (name: Panel) => (o: boolean) => setPanel(p => (o ? name : p === name ? null : p))
+  // "Auto" décor: resolved at launch, at each new game and when a classic opens, never during a game
+  const [autoGame, setAutoGame] = useState(() => autoDecor(new Date()))
+  const inClassic = panel === 'classics'
+  const autoClassic = useMemo(() => autoDecor(new Date(), undefined, { classic: true }), [inClassic])
+  const decor: Decor = settings.decor !== 'auto' ? settings.decor : inClassic ? autoClassic : autoGame
+  // the card's skin follows the scene's backdrop; set before paint, and crossfaded only once the first frame is shown
+  const skin = cardSkin(renderer, settings.camera, decor)
+  useLayoutEffect(() => { document.documentElement.dataset.skin = skin }, [skin])
+  useWindowTheme(skin)
   // Autoplay: the line being played, one move per settings.autoplay seconds, dropped like the bot's moves
   const [auto, setAuto] = useState<Game | null>(null)
   const [held, setHeld] = useState(false) // A held: free analysis of the shown position
@@ -546,6 +558,7 @@ export function App() {
     if (o.ritual && !canPlayAI) return // never a two-player 9×9 in its place (the network state not known yet)
     abandon()
     if (!(await canLeave())) return
+    setAutoGame(autoDecor(new Date()))
     const from = o.from && { setup: o.from.info.setup, firstSign: o.from.info.firstSign }
     if (o.from) { size = o.from.info.size; o.handicap = 0; ed.close() }
     resize(size)
@@ -1082,7 +1095,7 @@ export function App() {
               v: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
               r: () => view.current?.resetCamera?.(),
             }),
-            ...(renderer === '3d' && settings.decor !== 'lanterne' && { // lighting has no effect at night
+            ...(renderer === '3d' && decor !== 'lanterne' && { // lighting has no effect at night
               l: () => set('light', LIGHTS[(LIGHTS.indexOf(settings.light) + 1) % LIGHTS.length]),
             }),
           } as Record<string, () => void>)[k]
@@ -1282,7 +1295,7 @@ export function App() {
         <Goban
           view={view}
           mode={renderer}
-          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor: settings.decor, stones: 'japonaise' }}
+          options={{ camera: settings.camera, time: settings.light, highContrast: settings.highContrast, decor, stones: settings.stones }}
           thinking={thinking}
           // while the engine starts (OpenCL tuning loads the GPU) a slow verdict is not the hardware's: this session only
           onFallback={r => { if (r === 'context-lost' || (r === 'slow' && (engineBusy || reading))) setSession2d(true); else set('renderer', '2d'); setNote(d => d.fellBack) }}
@@ -1525,12 +1538,26 @@ export function App() {
                 </div>
                 <div className="field">
                   <span>{t.decor}</span>
-                  <Seg label={t.decor} value={settings.decor} options={DECORS.map(d => [d, t.decors[d], t.decorHints[d]])} set={v => set('decor', v)} />
+                  <Gallery label={t.decor} value={settings.decor} set={v => set('decor', v)}
+                    options={[['auto', t.decorAuto, t.decorAutoHint, thumb('decor', autoGame)], ...DECORS.map(d => [d, t.decors[d], t.decorHints[d], thumb('decor', d)] as const)]} />
                 </div>
+              </>}
+              <div className="field">
+                <span>{t.stonesLabel}</span>
+                <Gallery label={t.stonesLabel} value={settings.stones} set={v => set('stones', v)}
+                  options={STONE_SETS.map(s => [s, t.stoneSets[s], t.stoneHints[s], thumb('stones', s)])} />
+              </div>
+              {renderer === '3d' && <>
+                {moods.length > 0 && <div className="field">
+                  <span>{t.ambiancesLabel}</span>
+                  <Gallery label={t.ambiancesLabel} value={moods.find(a => a.decor === settings.decor && a.stones === settings.stones)?.id ?? null}
+                    set={id => { const a = moods.find(m => m.id === id)!; set('decor', a.decor); set('stones', a.stones) }}
+                    options={moods.map(a => [a.id, t.ambiances[a.id], t.ambianceHints[a.id], thumb('decor', a.decor)])} />
+                </div>}
                 <div className="field">
                   <span>{t.light} <kbd>L</kbd></span>
                   <Seg label={t.light} value={settings.light} options={LIGHTS.map(l => [l, t.lights[l], l === 'auto' ? t.lightAutoHint : undefined])} set={v => set('light', v)}
-                    disabled={settings.decor === 'lanterne'} title={settings.decor === 'lanterne' ? t.noEffectAtNight : undefined} />
+                    disabled={decor === 'lanterne'} title={decor === 'lanterne' ? t.noEffectAtNight : undefined} />
                 </div>
                 <Switch label={t.highContrast} on={settings.highContrast} toggle={() => set('highContrast', !settings.highContrast)} />
               </>}
