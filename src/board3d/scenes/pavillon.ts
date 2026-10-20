@@ -5,7 +5,6 @@
 import * as THREE from 'three'
 import type { Scene } from '.'
 import { particles, PARTICLES, skyDome, type ParticleLook } from '../fx'
-import { BT } from '../logic'
 
 const TILE: [number, number] = [1600, 800] // mm: the table's figure repeats every 1.6 m along the grain, 0.8 m across
 
@@ -130,13 +129,13 @@ vec3 sky(vec3 d) {
   return texture2D(uMap, vec2(fract(a / 6.28318 + 0.5), asin(clamp(d.y, -1.0, 1.0)) / 3.14159 + 0.5)).rgb * uGain;
 }`
 /** Two lacquered columns either side of the view and the low rail between them, beyond the table's faded edge. */
-function pavilion(own: Own) {
+function pavilion(own: Own, Y: number) {
   const g = new THREE.Group(), lac = mat({ color: 0x6e2619, roughness: 0.32, clearcoat: 0.7 }), wood = mat({ color: 0x2e1c12, roughness: 0.5 })
   own.push(lac, wood)
   // past the table's far edge (the table is 3.2 m: its edge at 1.6 m), standing on the pavilion's floor below it
-  for (const x of [-780, 780]) mesh(g, new THREE.CylinderGeometry(80, 84, 3000, 32).translate(x, -BT - 300 + 1500, -1780), lac, own, false)
-  mesh(g, new THREE.BoxGeometry(1560, 24, 40).translate(0, 8, -1800), lac, own, false) // the bench's back rail
-  for (let i = -3; i <= 3; i++) mesh(g, new THREE.BoxGeometry(18, 400, 18).translate(i * 230, -180, -1800), wood, own, false)
+  for (const x of [-780, 780]) mesh(g, new THREE.CylinderGeometry(80, 84, 3000, 32).translate(x, Y - 300 + 1500, -1780), lac, own, false)
+  mesh(g, new THREE.BoxGeometry(1560, 24, 40).translate(0, Y + 68, -1800), lac, own, false) // the bench's back rail
+  for (let i = -3; i <= 3; i++) mesh(g, new THREE.BoxGeometry(18, 400, 18).translate(i * 230, Y - 120, -1800), wood, own, false)
   return g
 }
 
@@ -159,13 +158,13 @@ export const make = (w: Wood = WOOD) => (): Scene => {
       ctx.setGround({ map: t, roughness: w.rough, tint: 1 })
       // at the frame's edges, clear of the board and the bowls: the inkstone and the brush rest near the left corner,
       // the censer by the far right corner (its smoke rises away from the board as the camera sees it)
-      const th = things(own), y = -BT
+      const th = things(own), y = ctx.board.groundY
       th.ink.position.set(-BW / 2 - 135, y, BD / 2 + 30); th.ink.rotation.y = 0.18
       // the rest runs along the board's edge; the brush lies across it, its hair in a valley (local x = -5, 17 mm up), its end on the table
       th.rest.position.set(-BW / 2 - 50, y, BD / 2 - 75); th.rest.rotation.y = Math.PI / 2
       th.brush.position.set(-BW / 2 - 50 - 172, y + 4, BD / 2 - 70); th.brush.rotation.z = Math.atan2(17, 172)
       th.cen.position.set(BW / 2 + 120, y, -BD / 2 + 55)
-      for (const o of [th.ink, th.rest, th.brush, th.cen, pavilion(own)]) ctx.root.add(o)
+      for (const o of [th.ink, th.rest, th.brush, th.cen, pavilion(own, y)]) ctx.root.add(o)
       if (ctx.fx === 2) { // the smoke thread, from the stick's glowing tip
         th.cen.updateMatrixWorld()
         const p = th.tip.clone().applyMatrix4(th.cen.matrixWorld)

@@ -35,7 +35,7 @@ export function only(kind: ParticleKind | 'all'): Scene {
       const kinds: ParticleKind[] = kind === 'all' ? ['snow'] : [kind]
       for (const k of kinds) {
         // far beyond the board (a garden past the veranda), and a few right over it that fade out 120 mm above the wood
-        parts.push(particles(k, [-1400, -60, -2200, 1400, 900, -700], ctx.fx === 2 ? 1500 : 0), particles(k, [-260, 40, -260, 260, 420, 260], ctx.fx === 2 ? 120 : 0, 120, 2))
+        parts.push(particles(k, [-1400, ctx.board.groundY, -2200, 1400, 900, -700], ctx.fx === 2 ? 1500 : 0), particles(k, [-260, 40, -260, 260, 420, 260], ctx.fx === 2 ? 120 : 0, 120, 2))
       }
       if (kind === 'smoke') parts.splice(0, parts.length, particles('smoke', [-330, 0, -120, -300, 360, -90], 60, 20, 3)) // an incense stick by the board
       for (const p of parts) ctx.root.add(p.mesh)

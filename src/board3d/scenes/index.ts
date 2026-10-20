@@ -15,8 +15,10 @@ export interface SceneCtx {
   base: string
   /** Quality's fx level when the scene is built: 2 = animated, 1 = still. Size particle counts with it. */
   fx: 1 | 2
-  /** The board top (mm), centred on the origin at y = 0. */
-  board: { BW: number; BD: number }
+  /** The board top (mm), centred on the origin at y = 0, and the ground's height (the table, or the floor under a legged
+   *  goban: gobans.ts groundY). Everything that rests on the table or the floor stands at groundY; the scene is rebuilt
+   *  when the goban's shape changes. */
+  board: { BW: number; BD: number; groundY: number }
   /** A light cookie on the shoji spot (the décor's Look.shoji share of the key, Contemplation); null = the shoji lattice. */
   setCookie(tex: THREE.Texture | null): void
   /**

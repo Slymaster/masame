@@ -8,6 +8,7 @@
 
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
@@ -19,9 +20,9 @@ import { paintMarks, type BoardState } from '../board/BoardView'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
 import type { StoneSet } from './stoneSets'
-import type { GobanShape, Wood } from './gobans'
+import { groundY, shapeOf, TABLE, KAYA, woodOf, type GobanShape, type ShapeData, type Wood, type WoodData } from './gobans'
 import { centreShift } from '../board/frame'
-import { ambientOn, dofShare, AMBIENT_FPS, bowlHeap, BT, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, seatHeight, settle, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Look, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
+import { ambientOn, dofShare, AMBIENT_FPS, bowlHeap, clampOrbit, dims, DROP_MS, dropPose, dropStones, FOV, Governor, gx, gz, HOME, hoshiStep, jitter, LOOKS, orbitEye, panBy, pickPoint, qualityLadder, seatHeight, settle, SLIDE_MM, stepOrbit, SX, SZ, TGT_Y, TOD, seasonTod, wheelIntent, zoomAt, type Ground, type Look, type Orbit, type Placed, type Quality, type Rest, type TimeName, type Tod, type WheelIntent, ZOOM_MM, skipPinchWheel } from './logic'
 import { StoneSound } from './sound3d'
 import { SCENES, type Scene, type SceneCtx, type SceneGround } from './scenes'
 import { disposeKit, ghostOf, markerGeo, pendingOf, seeded, stoneKit, stoneLayer, type StoneKit } from './stones'
@@ -80,6 +81,8 @@ const FLOOR_MARGIN = 0.8
 const FX = { relief: 0.45, wobble: 0.08, inkRough: 0.28, patina: 0.1, shojiBar: 0.15, shoji: -1, vignette: 0.22, dof: 0.012 }
 const SHOJI_MM = 4000, SHOJI_R = 1600 // the shoji light's distance and its cookie's half width there
 const KAYA_MM = [502, 424.5] // the kaya scan's physical size (along, across the grain), at 2K and 4K alike
+const KAYA_MEAN = [0.752, 0.47, 0.177] // the scan's mean linear colour (magick, 2K and 4K alike): a wood's contrast pivots on it
+const KAYA_TONE: [number, number, number] = [0.47, 0.442, 0.395]
 const easeIO = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const lerp = THREE.MathUtils.lerp
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
@@ -113,6 +116,8 @@ const DOF_SHADER = {
       gl_FragColor = acc / tot;
     }`,
 }
+/** woods/<id>.gl.ts: a wood's procedural pattern (GLSL defining woodColor and woodRough, see docs/adding-stones-and-scenes.md). */
+const WOOD_GL = Object.fromEntries(Object.entries(import.meta.glob<{ default: { glsl: string } }>('./woods/*.gl.ts', { eager: true })).map(([f, m]) => [f.slice(8, -6), m.default.glsl])) as Partial<Record<Wood, string>>
 const freeGround = (g: SceneGround) => { g.map.dispose(); g.bumpMap?.dispose() }
 const mkCanvas = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h })
 
@@ -135,7 +140,7 @@ function kelvin(K: number) {
 
 /* ---------- shaders ---------- */
 const GLSL_GRID = /* glsl */`
-uniform vec3 uInk; uniform float uLim, uStep, uFive, uHalf, uRelief, uWobble, uInkRough, uPatina;
+uniform vec3 uInk; uniform float uLim, uStep, uFive, uHalf, uRelief, uWobble, uInkRough, uPatina, uTop;
 varying vec3 vLoc;
 // ink coverage across a line; g: the slope of its lacquer dome (urushi stands proud of the wood), only where the line is
 // wide enough on screen to show it. a = the coordinate along the line: brush-drawn, its width wanders slowly.
@@ -150,7 +155,7 @@ float lineAA(float c, float a, float sp, float h, float lim, out float g) {
 float span(float c, float ext, float h) { float w = max(fwidth(c), 1e-4); return clamp((ext + h - abs(c)) / w + 0.5, 0.0, 1.0); }
 float gridInk(vec3 p, out vec2 g) {
   g = vec2(0.0);
-  if (p.y < ${(BT / 2 - 0.01).toFixed(2)}) return 0.0;
+  if (p.y < uTop) return 0.0;
   // odd N: lines sit on multiples of the spacing; even N would need a half offset (only 9/13/19 are played)
   float gx, gz;
   float lx = lineAA(p.x, p.z, ${SX.toFixed(2)}, uHalf, uLim, gx) * span(p.z, uLim * ${SZ.toFixed(2)}, uHalf);
@@ -174,6 +179,30 @@ function lathe(prof: number[][], seg: number) {
   const g = new THREE.LatheGeometry(prof.map(([x, y]) => new THREE.Vector2(x, y)), seg), uv = g.attributes.uv
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.8, uv.getY(i) * 0.35) // grain wraps around the bowl
   return g
+}
+
+/**
+ * A legged goban's four turned legs, in the board's object space (the block centred on y = 0), their tops in the block's
+ * underside, their feet on the ground. A carved leg's lobes swell the profile round its axis, most where it is widest.
+ * UVs: planar like the block's sides, the fibres running up the leg (a turned leg's grain is vertical).
+ */
+function legGeos(sh: ShapeData, BW: number, BD: number, U: number, V: number) {
+  const L = sh.legs!, k = L.ridges ?? 0, dep = L.depth ?? 0, seg = 48, np = L.profile.length, y0 = -sh.thickness / 2 - L.height
+  const rMax = Math.max(...L.profile.map(p => p[0])), n = new THREE.Vector3()
+  return [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz], leg) => {
+    const g = new THREE.LatheGeometry(L.profile.map(([r, h]) => new THREE.Vector2(r, h)), seg), P = g.attributes.position, uv = g.attributes.uv
+    if (k && dep) {
+      for (let i = 0; i < P.count; i++) {
+        const x = P.getX(i), z = P.getZ(i), r = Math.hypot(x, z), f = 1 + dep * Math.cos(k * Math.atan2(z, x)) * (r / rMax) ** 2
+        P.setXYZ(i, x * f, P.getY(i), z * f)
+      }
+      g.computeVertexNormals()
+      const N = g.attributes.normal // the lathe's first and last columns are the same seam: one normal for both
+      for (let j = 0; j < np; j++) { const b = seg * np + j; n.set(N.getX(j) + N.getX(b), N.getY(j) + N.getY(b), N.getZ(j) + N.getZ(b)).normalize(); N.setXYZ(j, n.x, n.y, n.z); N.setXYZ(b, n.x, n.y, n.z) }
+    }
+    for (let i = 0; i < P.count; i++) uv.setXY(i, 0.5 + (P.getY(i) + 37 * leg) / U, 0.5 + (P.getX(i) + 0.4 * P.getZ(i) + 53 * leg) / V)
+    return g.translate(sx * (BW / 2 - L.inset[0]), y0, sz * (BD / 2 - L.inset[1]))
+  })
 }
 
 /* ---------- procedural grounds (tile seamlessly) ---------- */
@@ -297,8 +326,12 @@ export class Board3D {
   private markers!: { 1: THREE.Mesh; [-1]: THREE.Mesh }
   private boardMat!: THREE.MeshPhysicalMaterial
   /** Pale golden kaya (the scan, barely graded): readability comes from the stones' contact shadow and rim, not dark wood. */
-  private woodTone = new THREE.Color(0.47, 0.442, 0.395)
-  private boardU = { uInk: { value: new THREE.Color(0x120c07) }, uLim: { value: 9 }, uStep: { value: 6 }, uFive: { value: 0 }, uHalf: { value: 0.5 }, uRelief: { value: 0 }, uWobble: { value: 0 }, uInkRough: { value: 0.45 }, uPatina: { value: 0 }, uWarm: { value: 0 } }
+  private woodTone = new THREE.Color(...KAYA_TONE)
+  private boardU = { uInk: { value: new THREE.Color(0x120c07) }, uLim: { value: 9 }, uStep: { value: 6 }, uFive: { value: 0 }, uHalf: { value: 0.5 }, uRelief: { value: 0 }, uWobble: { value: 0 }, uInkRough: { value: 0.45 }, uPatina: { value: 0 }, uWarm: { value: 0 },
+    uTop: { value: TABLE.thickness / 2 - 0.01 }, uFold: { value: 0 }, uGrade: { value: new THREE.Vector2(1, 1) }, uMean: { value: new THREE.Vector3() } }
+  /** The goban's shape and wood in use (gobans.ts): the board is rebuilt when either changes. */
+  private shape: ShapeData = TABLE
+  private wood: WoodData = KAYA; private woodId: Wood = 'kaya'
   private board: THREE.Mesh | null = null
   private labels: THREE.Mesh | null = null
   private marks: THREE.Mesh | null = null
@@ -308,6 +341,7 @@ export class Board3D {
   private bowls: THREE.Mesh[] = []
   private sets: { c: Sign; bowl: [number, number]; lid: [number, number]; heap: Rest[]; lidRest: Rest[] }[] = []
   private ground!: THREE.Group
+  private underK = 1.3 // the contact shadow's size on the ground, in board widths
   private shadowFloor = new THREE.ShadowMaterial({ color: 0x2a1606, opacity: 0.24 })
   private tableMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.72, transparent: true, depthWrite: false })
   private roomColor = new THREE.Color()
@@ -402,6 +436,7 @@ export class Board3D {
     canvas.style.transition = this.reducedMotion.matches ? '' : 'opacity .6s ease'
     this.setup()
     if (this.opts.stones !== 'japonaise') this.applyStones()
+    this.applyWood()
     this.bind()
     this.applyOptions()
     void this.boot(base)
@@ -417,6 +452,9 @@ export class Board3D {
     else if (prev.highContrast !== this.opts.highContrast) this.applyOptions()
     if (prev.decor !== this.opts.decor) void this.switchDecor()
     if (prev.stones !== this.opts.stones) void this.transition(() => this.applyStones())
+    // a new shape moves the ground: the décor's scene is rebuilt on it, board and scene swapped under one crossfade
+    if (shapeOf(prev.goban) !== shapeOf(this.opts.goban)) { if (this.ready) void this.switchDecor(true); else if (this.N) this.buildBoard() }
+    if (woodOf(prev.wood) !== woodOf(this.opts.wood)) void this.transition(() => this.applyWood())
     if (prev.patina !== this.opts.patina) { this.patinaU.value = this.opts.patina ?? 0; this.invalidate() }
   }
   get options(): Readonly<Board3DOptions> { return this.opts }
@@ -626,23 +664,42 @@ export class Board3D {
     })
     this.boardMat.onBeforeCompile = sh => {
       Object.assign(sh.uniforms, this.boardU)
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLoc;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLoc = position;')
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n#ifdef WOOD_WARM\nuniform float uWarm;\n#endif\n' + GLSL_GRID)
-        .replace('#include <map_fragment>', '#include <map_fragment>\nvec2 inkG; float ink = gridInk(vLoc, inkG);\ndiffuseColor.rgb = mix(diffuseColor.rgb, uInk, ink);')
+      // a wood's grading (WOOD_GRADE), its own pattern (WOOD_GL, woods/<id>.gl.ts) and a folding board's seam (GOBAN_FOLD)
+      // are compiled in only when used: the table board in kaya keeps v0.5's shader
+      const gl = this.woodGL()
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLoc;\n#ifdef WOOD_GL\nvarying vec3 vObjN;\n#endif')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLoc = position;\n#ifdef WOOD_GL\nvObjN = normal;\n#endif')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n#ifdef WOOD_WARM\nuniform float uWarm;\n#endif\n' + GLSL_GRID +
+        '\n#ifdef WOOD_GRADE\nuniform vec2 uGrade; uniform vec3 uMean;\n#endif\n#ifdef GOBAN_FOLD\nuniform float uFold;\n#endif\n#ifdef WOOD_GL\nvarying vec3 vObjN;\n' + (gl ?? '') + '\n#endif\n')
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          #ifdef WOOD_GRADE
+          { vec3 c = diffuseColor.rgb; c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, uGrade.y); diffuseColor.rgb = max(uMean + (c - uMean) * uGrade.x, 0.0); }
+          #endif
+          #ifdef WOOD_GL
+          diffuseColor.rgb = woodColor(diffuseColor.rgb, vLoc, vObjN);
+          #endif
+          #ifdef GOBAN_FOLD
+          { float w = max(fwidth(vLoc.z), 1e-4); diffuseColor.rgb *= 1.0 - 0.8 * clamp((uFold - abs(vLoc.z)) / w + 0.5, 0.0, 1.0); }
+          #endif
+          vec2 inkG; float ink = gridInk(vLoc, inkG);
+          diffuseColor.rgb = mix(diffuseColor.rgb, uInk, ink);`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           #ifdef USE_ROUGHNESSMAP
           { float d = length((vRoughnessMapUv - 0.5) * vec2(${KAYA_MM[0]}, ${KAYA_MM[1]})); roughnessFactor *= 1.0 - uPatina * (1.0 - smoothstep(80.0, 220.0, d)); }
+          #endif
+          #ifdef WOOD_GL
+          roughnessFactor = woodRough(roughnessFactor, vLoc, vObjN);
           #endif
           roughnessFactor = mix(roughnessFactor, uInkRough, ink);`)
         // Look.woodWarm: the wood's sky light keeps its strength but loses the cold sky's colour (sides lit by it alone read as
         // kaya); compiled in only for those décors, so the others' shader is untouched
         .replace('#include <lights_fragment_maps>', '#include <lights_fragment_maps>\n#ifdef WOOD_WARM\niblIrradiance = mix(iblIrradiance, vec3(dot(iblIrradiance, vec3(0.2126, 0.7152, 0.0722))), uWarm);\n#endif')
         // the dome tilts both the wood's normal and the clear coat's (the board is only translated: object xz = world xz)
-        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nvec3 inkN = mat3(viewMatrix) * vec3(inkG.x, 0.0, inkG.y);\nif (uRelief > 0.0) normal = normalize(normal - inkN);')
+        // the seam's two eased edges: each half's surface falls towards it (top, sides and bottom alike)
+        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nvec3 inkN = mat3(viewMatrix) * vec3(inkG.x, 0.0, inkG.y);\nif (uRelief > 0.0) normal = normalize(normal - inkN);\n#ifdef GOBAN_FOLD\nnormal = normalize(normal - mat3(viewMatrix) * vec3(0.0, 0.0, 0.7 * sign(vLoc.z) * (1.0 - smoothstep(uFold, uFold + 0.7, abs(vLoc.z)))));\n#endif')
         .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\n#ifdef USE_CLEARCOAT\nif (uRelief > 0.0) clearcoatNormal = normalize(clearcoatNormal - inkN);\n#endif')
     }
-    this.boardMat.customProgramCacheKey = () => 'kaya'
+    this.boardMat.customProgramCacheKey = () => (this.woodGL() ? `wood-${this.woodId}` : 'kaya')
 
     // go-ke (Contemplation only): bowls with inverted lids; prisoners collect on the capturer's lid
     this.decor.visible = false
@@ -937,7 +994,7 @@ export class Board3D {
     const job = ++this.decorJob, d = this.opts.decor
     const [env, sc] = await Promise.all([this.envFor(LOOKS[d].sky).then(t => t.texture), this.loadScene(d)])
     if (job !== this.decorJob || this.dead || (d === this.decorOn && !force)) { sc?.s.dispose(); return }
-    await this.transition(() => { this.applyDecor(d, env); this.mountScene(sc) })
+    await this.transition(() => { if (this.N && shapeOf(this.opts.goban) !== this.shape) this.buildBoard(); this.applyDecor(d, env); this.mountScene(sc) })
   }
 
   /** Builds the décor's scene off-screen (null: none, or fx 0); a failing scene leaves the décor without it. */
@@ -947,7 +1004,7 @@ export class Board3D {
     try {
       const s = make ? make() : (await f!()).default(), rec: Mounted = { s, g: new THREE.Group(), cookie: null, ground: null, lampColor: null, lampPose: null, env: null }
       const ctx: SceneCtx = {
-        root: rec.g, renderer: this.renderer, key: this.key, base: this.base, fx: fx as 1 | 2, board: { BW: this.D.BW, BD: this.D.BD },
+        root: rec.g, renderer: this.renderer, key: this.key, base: this.base, fx: fx as 1 | 2, board: { BW: this.D.BW, BD: this.D.BD, groundY: groundY(shapeOf(this.opts.goban)) },
         setCookie: t => { rec.cookie = t; if (this.sceneOn === rec) this.shoji.map = t ?? this.shojiTex },
         setGround: g => { const old = rec.ground; rec.ground = g; if (this.sceneOn === rec) this.applyGround(); if (old && old !== g) freeGround(old) },
         lamp: this.lamp,
@@ -1146,9 +1203,37 @@ export class Board3D {
       this.stones.set(p, s)
       if (p >= 0) settle(s, this.stones, N, gx(N, s.x), gz(N, s.y))
     }
-    this.sound.tone = k.spec.snd
+    this.applyTone()
     if (this.N) this.buildBowls()
     this.buildLabels()
+  }
+
+  /** The stones' voice: the set's, scaled by the wood's knock. */
+  private applyTone() {
+    const s = this.kit.spec.snd, w = this.wood.snd
+    this.sound.tone = w ? { ...s, rate: s.rate * (w.rate ?? 1), lowpass: s.lowpass * (w.lowpass ?? 1), gain: s.gain * (w.gain ?? 1) } : s
+  }
+
+  private woodGL() { return WOOD_GL[this.woodId] }
+
+  /** The board's wood (opts.wood, gobans.ts WoodData): the scan's grading, its finish, its own pattern and its knock.
+   *  Called under transition(), so a new program compiles while the last frame is still shown. */
+  private applyWood() {
+    const id = woodOf(this.opts.wood) === KAYA ? 'kaya' : this.opts.wood!, w = woodOf(id), old = this.wood
+    if (w === old) return
+    const gl0 = this.woodGL()
+    this.wood = w; this.woodId = id
+    this.woodTone.setRGB(...(w.tint ?? KAYA_TONE))
+    Object.assign(this.boardMat, { roughness: w.roughness ?? 1, clearcoat: w.clearcoat ?? 0.18, clearcoatRoughness: w.clearcoatRoughness ?? 0.4 })
+    const grade = (w.contrast ?? 1) !== 1 || (w.saturation ?? 1) !== 1, defs = this.boardMat.defines ??= {}
+    this.boardU.uGrade.value.set(w.contrast ?? 1, w.saturation ?? 1)
+    if ('WOOD_GRADE' in defs !== grade) { if (grade) defs.WOOD_GRADE = ''; else delete defs.WOOD_GRADE }
+    if ('WOOD_GL' in defs !== !!this.woodGL()) { if (this.woodGL()) defs.WOOD_GL = ''; else delete defs.WOOD_GL }
+    if (gl0 !== this.woodGL() || grade !== ((old.contrast ?? 1) !== 1 || (old.saturation ?? 1) !== 1)) this.boardMat.needsUpdate = true
+    this.applyTone()
+    const g0 = old.grain, g1 = w.grain
+    if (this.N && ((g0?.scale ?? 1) !== (g1?.scale ?? 1) || (g0?.rotate ?? 0) !== (g1?.rotate ?? 0))) this.buildBoard() // the grain is in the board's UVs
+    this.invalidate()
   }
 
   /* ---------- board, labels, bowls ---------- */
@@ -1157,24 +1242,35 @@ export class Board3D {
     this.applyPendingQuality() // a new board is a scene change
     const { BW, BD, N } = this.D
     if (this.board) { this.scene.remove(this.board); this.board.geometry.dispose() }
-    const geo = new RoundedBoxGeometry(BW, BT, BD, 4, 2.2)
-    // planar UVs at the scan's real density; the grain runs along the board's depth (player to player)
-    const P = geo.attributes.position, Nn = geo.attributes.normal, uv = geo.attributes.uv
-    const [U, V] = KAYA_MM
+    const sh = this.shape = shapeOf(this.opts.goban), T = sh.thickness, Y = groundY(sh)
+    const box = new RoundedBoxGeometry(BW, T, BD, 4, sh.round ?? 2.2)
+    // planar UVs at the scan's real density (a wood may scale and turn its figure); the grain runs along the board's
+    // depth (player to player)
+    const P = box.attributes.position, Nn = box.attributes.normal, uv = box.attributes.uv
+    const gs = this.wood.grain?.scale ?? 1, ga = this.wood.grain?.rotate ?? 0, U = KAYA_MM[0] * gs, V = KAYA_MM[1] * gs, ca = Math.cos(ga), sa = Math.sin(ga)
     for (let i = 0; i < P.count; i++) {
       const x = P.getX(i), y = P.getY(i), z = P.getZ(i), nx = Math.abs(Nn.getX(i)), ny = Math.abs(Nn.getY(i))
-      if (ny > 0.6) uv.setXY(i, 0.5 + z / U, 0.5 + x / V)                // top: fibres along z
+      if (ny > 0.6) uv.setXY(i, 0.5 + (z * ca + x * sa) / U, 0.5 + (x * ca - z * sa) / V) // top: fibres along z
       else if (nx > 0.6) uv.setXY(i, 0.5 + z / U, 0.5 + (y + 80) / V)     // long sides: fibres continue
       else uv.setXY(i, 0.5 + (y * 3) / U, 0.5 + x / V)                    // ends: end grain reads as fine vertical lines
     }
+    const geo = sh.legs ? mergeGeometries([box, ...legGeos(sh, BW, BD, U, V)]) : box
+    if (geo !== box) box.dispose()
     this.board = new THREE.Mesh(geo, this.boardMat)
-    this.board.position.y = -BT / 2; this.board.castShadow = true; this.board.receiveShadow = true
+    this.board.position.y = -T / 2; this.board.castShadow = true; this.board.receiveShadow = true
     this.scene.add(this.board)
+    this.boardU.uTop.value = T / 2 - 0.01
     this.boardU.uLim.value = (N - 1) / 2
     this.boardU.uStep.value = hoshiStep(N)
     this.boardU.uFive.value = N < 19 ? 1 : 0
-    // shadow frustum covers board + bowls
-    const ext = BW / 2 + 260
+    this.boardU.uFold.value = (sh.fold?.gap ?? 0) / 2
+    const defs = this.boardMat.defines!
+    if ('GOBAN_FOLD' in defs !== !!sh.fold) { if (sh.fold) defs.GOBAN_FOLD = ''; else delete defs.GOBAN_FOLD; this.boardMat.needsUpdate = true }
+    // the contact shadow on the ground: a legged block stands clear of it, its shadow softer and closer to its footprint
+    const under = this.ground.getObjectByName('under') as THREE.Mesh
+    ;(under.material as THREE.MeshBasicMaterial).opacity = sh.legs ? 0.32 : 0.5; this.underK = sh.legs ? 1.12 : 1.3
+    // shadow frustum covers board + bowls (lower on the floor under a legged goban: the frustum widens with the drop)
+    const ext = BW / 2 + 260 + Math.max(0, -Y - TABLE.thickness)
     Object.assign(this.key.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, near: 600, far: 2800 })
     this.key.shadow.camera.updateProjectionMatrix()
     this.buildLabels()
@@ -1228,7 +1324,7 @@ export class Board3D {
   private buildBowls() {
     for (const b of this.bowls) { this.decor.remove(b); b.geometry.dispose() }
     this.bowls = []
-    const { BW, BD } = this.D, bx = BW / 2 + 112, seg = this.q.bowlSegments
+    const { BW, BD } = this.D, bx = BW / 2 + 112, seg = this.q.bowlSegments, Y = groundY(this.shape) // on the ground: the table, or the floor beside a legged goban
     // the player sits at +z: Black's bowl to the right, White's across the board
     // the stones at rest are dropped once, in order, onto the bowl's fill and the lid's dish: nothing interpenetrates
     const lidY = (d: number) => d < 31 ? 5 + d / 31 : 6 + (d - 31) * 7 / 19
@@ -1251,7 +1347,7 @@ export class Board3D {
     const bowl = lathe(BOWL_PROFILE, seg), lid = lathe(LID_PROFILE, seg)
     for (const S of this.sets) {
       const b = new THREE.Mesh(bowl, this.bowlMat), l = new THREE.Mesh(lid, this.bowlMat)
-      b.position.set(S.bowl[0], -BT, S.bowl[1]); l.position.set(S.lid[0], -BT, S.lid[1])
+      b.position.set(S.bowl[0], Y, S.bowl[1]); l.position.set(S.lid[0], Y, S.lid[1])
       for (const m of [b, l]) { m.castShadow = m.receiveShadow = true; this.decor.add(m); this.bowls.push(m) }
     }
     this.decorKey = ''
@@ -1266,18 +1362,18 @@ export class Board3D {
   }
 
   private updateDecor() {
-    const nb = this.prisoners(1), nw = this.prisoners(-1), key = `${nb}|${nw}|${this.N}|${this.coords}|${this.q.bowlSegments}`
+    const nb = this.prisoners(1), nw = this.prisoners(-1), key = `${nb}|${nw}|${this.N}|${this.coords}|${this.q.bowlSegments}|${groundY(this.shape)}`
     if (key === this.decorKey) return
     this.decorKey = key
     let ib = 0, iw = 0
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), q2 = new THREE.Quaternion(), v = new THREE.Vector3(), ax = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1)
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), q2 = new THREE.Quaternion(), v = new THREE.Vector3(), ax = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), Y = groundY(this.shape)
     const add = (c: Sign, p: Rest, ox: number, oz: number, k: number) => {
       const L = c === 1 ? this.decorB : this.decorW, i = c === 1 ? ib++ : iw++
       if (i >= 120) return
       const h = ((Math.sin((k + 1) * 12.9898 + c * 78.233) * 43758.5453) % 1 + 1) % 1
       // spin, then dip towards p.dir (axis = up × dir)
       q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, h * 6.283).premultiply(q2.setFromAxisAngle(ax.set(Math.sin(p.dir), 0, -Math.cos(p.dir)), p.tilt))
-      m.compose(v.set(ox + p.x, -BT + p.y, oz + p.z), q, one)
+      m.compose(v.set(ox + p.x, Y + p.y, oz + p.z), q, one)
       L.setMatrixAt(i, m); (L.geometry.attributes.aSeed.array as Float32Array)[i] = h
     }
     for (const S of this.sets) {
@@ -1468,7 +1564,7 @@ export class Board3D {
     }
     this.fr = { ...b }; offset(); this.placeCameras(); this.placePersp(HOME); cam.updateMatrixWorld()
     let l = Infinity, r = -Infinity // the goban's extent on screen (not the bowls)
-    for (const x of [-BW / 2, BW / 2]) for (const y of [0, -BT]) for (const z of [-BD / 2, BD / 2]) {
+    for (const x of [-BW / 2, BW / 2]) for (const y of [0, -this.shape.thickness]) for (const z of [-BD / 2, BD / 2]) {
       const px = ((v.set(x, y, z).project(cam).x + 1) / 2) * this.W
       l = Math.min(l, px); r = Math.max(r, px)
     }
@@ -1559,9 +1655,9 @@ export class Board3D {
     // Study on the linen: the floor rises so the board's shadow keeps the key's true direction yet never reaches the frame edge
     // (a frame narrower than the board, m ≤ 0, keeps the default floor)
     const { BW, BD } = this.D, mx = this.ortho.right - BW / 2, mz = this.ortho.top - BD / 2, m = Math.min(mx, mz), raise = linen && m > 0
-    const fh = !raise ? BT : Math.min(BT, FLOOR_MARGIN * Math.tan(el) * Math.min(mx / Math.abs(Math.cos(az)), mz / Math.abs(Math.sin(az))))
+    const depth = -groundY(this.shape), fh = !raise ? depth : Math.min(depth, FLOOR_MARGIN * Math.tan(el) * Math.min(mx / Math.abs(Math.cos(az)), mz / Math.abs(Math.sin(az))))
     this.ground.position.y = -fh
-    this.ground.getObjectByName('under')!.scale.set(raise ? BW + 1.6 * m : BW * 1.3, 1, raise ? BD + 1.6 * m : BD * 1.3)
+    this.ground.getObjectByName('under')!.scale.set(raise ? BW + 1.6 * m : BW * this.underK, 1, raise ? BD + 1.6 * m : BD * this.underK)
     // softer, lighter shadows in the room (a window, not a flash)
     for (const l of [this.key, this.lamp, this.shoji]) { l.shadow.radius = lerp(5, 9, c) * L.soft; l.shadow.intensity = lerp(CAST_STUDY, CAST_ROOM, c) * L.shade }
     this.shoji.shadow.radius *= this.key.shadow.camera.right / (2 * SHOJI_R) // radius is in texels: the same penumbra as the key's in mm
@@ -1571,6 +1667,7 @@ export class Board3D {
     for (const m of [K.white, K.whiteDim]) { const b = m.userData.coat; m.clearcoat = lerp(lerp(b * 0.56, b, c), b * 0.2, hc); m.envMapIntensity = lerp(0.75, 1, c) }
     for (const m of [K.black, K.blackDim]) { const b = m.userData.coat; m.clearcoat = lerp(lerp(b * 0.6, b, c), b * 0.08 / 0.3, hc); m.envMapIntensity = lerp(0.6, 1, c) }
     this.boardMat.color.copy(this.woodTone).multiplyScalar(lerp(1, 0.88, hc))
+    this.boardU.uMean.value.set(this.boardMat.color.r * KAYA_MEAN[0], this.boardMat.color.g * KAYA_MEAN[1], this.boardMat.color.b * KAYA_MEAN[2])
     this.boardMat.normalScale.setScalar(lerp(0.6, 0.25, hc))
     this.boardU.uHalf.value = this.noGrid ? 0 : lerp(0.5, 0.62, hc)
     this.boardU.uRelief.value = this.fx.relief * c; this.boardU.uWobble.value = this.fx.wobble * c

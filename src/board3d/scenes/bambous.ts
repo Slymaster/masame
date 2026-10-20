@@ -4,7 +4,6 @@
 import * as THREE from 'three'
 import type { Scene } from '.'
 import { blurCanvas, cookie, particles } from '../fx'
-import { BT } from '../logic'
 
 /** The leaf canopy's character (variants A/B/C were rendered from these). */
 export interface Canopy {
@@ -169,7 +168,7 @@ export function make(c: Canopy = CANOPY) {
         const lgeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0.5, 0, 0)
         const fallen: [number, number, number, number][] = [[-BW / 2 - 70, BD / 2 + 75, 0.5, 150], [BW / 2 + 95, -BD / 2 - 55, 2.6, 135], [BW / 2 - 40, BD / 2 + 110, -0.3, 120]]
         const leaves = new THREE.InstancedMesh(lgeo, lm, fallen.length), m4 = new THREE.Matrix4(), qq = new THREE.Quaternion()
-        fallen.forEach(([x, z, a, L], i) => leaves.setMatrixAt(i, m4.compose(new THREE.Vector3(x, -BT + 0.4, z), qq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), a), new THREE.Vector3(L, 1, L * 0.17))))
+        fallen.forEach(([x, z, a, L], i) => leaves.setMatrixAt(i, m4.compose(new THREE.Vector3(x, ctx.board.groundY + 0.4, z), qq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), a), new THREE.Vector3(L, 1, L * 0.17))))
         leaves.receiveShadow = true; ctx.root.add(leaves); own.push(leaves, lt, lm, lgeo) // the instanced mesh frees its own instance buffers
         // green culms past the veranda's edge, in the camera's reach (its far plane is ~2.5 m behind the board)
         const ct = new THREE.CanvasTexture(culmMap()); ct.colorSpace = THREE.SRGBColorSpace; ct.wrapS = ct.wrapT = THREE.RepeatWrapping; ct.repeat.set(1, 20)
