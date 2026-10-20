@@ -75,7 +75,7 @@ A listed id without both files is **pending**: `isReadySet(id)` is false, `ready
 
    **`SceneCtx`**:
    - `root`: add everything here. It shows only in Contemplation at fx ≥ 1.
-   - `renderer`, `key` (the window light), `base` (the asset folder), `board: { BW, BD }` (mm, the top at y = 0).
+   - `renderer`, `key` (the window light), `base` (the asset folder), `board: { BW, BD, groundY }` (mm, the top at y = 0; `groundY` is the table or floor everything rests on, see "A goban shape").
    - `fx`: `1 | 2`, the quality level when the scene is built. Make no particles at 1. The scene is rebuilt when the level changes.
    - `setCookie(tex | null)`: a light cookie on the shoji spot (needs `Look.shoji > 0`).
    - `setGround({ map, bumpMap?, roughness?, tint? } | null)`: the scene's own table surface, with the same fade and shadows as a Look's ground, in both cameras. Board3D frees these textures with the scene; don't dispose them yourself.
@@ -94,6 +94,64 @@ A listed id without both files is **pending**: `isReadySet(id)` is false, `ready
 4. **Text**: `t.decors` / `t.decorHints`, plus the thumbnail.
 
 A listed id without `looks/<id>.ts` is **pending**: `isReadyDecor(id)` is false, `readyDecors()` leaves it out, and `LOOKS[id]` is the Atelier's.
+
+## A goban shape
+
+1. **List it**: `'<id>',` in `GOBAN_SHAPES` (`gobans.ts`).
+2. **Data, no three.js**: `gobans/<id>.ts` default-exports a `ShapeData` (mm). The playing surface is always the board top at y = 0, sized by `dims()`; a shape only says what lies under it.
+
+   ```ts
+   import type { ShapeData } from '../gobans'
+   export default {
+     thickness: 151,                   // the block
+     round: 1.6,                       // edge rounding (the table board's 2.2)
+     legs: {                           // optional: four turned legs standing on the ground
+       height: 100,
+       profile: [[0, 0], [24, 0], …],  // [radius, height] from the floor up to the block
+       inset: [64, 68],                // each leg's axis from the block's sides (across, along)
+       ridges: 6, depth: 0.06,         // optional lobes round the leg (a gardenia fruit), relief as a share of the radius
+     },
+     fold: { gap: 0.35 },              // optional: a folding board's seam across the middle (z = 0)
+   } satisfies ShapeData
+   ```
+
+   The ground is at `groundY(shape) = -(thickness + legs.height)`: the table, or the floor under a legged goban. Board3D puts the bowls, their lids, the prisoners, the shadow catcher, the contact shadow under the board and the décor's table or floor there, and widens the shadow camera for the drop. The legs are merged into the board's mesh (one draw call, the board's material); a seam (`fold`) is drawn in the board's shader (`GOBAN_FOLD`), only for that shape. The seated camera does not move: it frames the board top, as before.
+3. **Scenes**: everything a décor rests on the table or the floor uses `ctx.board.groundY` (never a fixed height); the scene is rebuilt when the shape changes, under the same crossfade as the board. Things placed relative to the board top (motes over it, petals beside it) keep their heights.
+
+`view.setOptions({ goban: '<id>' })` in the demo page. A listed id without its file is pending: the table board.
+
+## A wood
+
+1. **List it**: `'<id>',` in `WOODS` (`gobans.ts`).
+2. **Data, no three.js**: `woods/<id>.ts` default-exports a `WoodData`: a grading of the kaya scan (the 2D board and the app read this file). Every field is optional; kaya is `{}`.
+
+   ```ts
+   import type { WoodData } from '../gobans'
+   export default {
+     tint: [0.47, 0.442, 0.395],        // linear multipliers on the scan (kaya's)
+     contrast: 1, saturation: 1,        // the grain's contrast around the wood's mean, its colour saturation (1 = the scan's)
+     grain: { scale: 1, rotate: 0 },    // figure width (2 = twice as wide) and its turn on the top (rad)
+     roughness: 1,                      // multiplier on the scan's roughness
+     clearcoat: 0.18, clearcoatRoughness: 0.4,
+     snd: { rate: 1, lowpass: 1, gain: 1 },             // the stone-on-board knock, multiplied into the set's voice (3D and 2D)
+     skin2d: { light: [224, 180, 110], dark: [176, 120, 58] }, // the 2D board's grain colours (sRGB); BoardView.setWood(id)
+   } satisfies WoodData
+   ```
+
+   Contrast or saturation other than 1 compiles the grading in (`WOOD_GRADE`); kaya's shader is untouched.
+3. **A pattern of its own (optional)**: `woods/<id>.gl.ts` default-exports `{ glsl }`, read by Board3D only. It defines two functions, compiled in under `WOOD_GL` with the program key `wood-<id>`:
+
+   ```ts
+   export default { glsl: /* glsl */`
+     // c: the graded scan colour (linear); p: the board's object-space position (mm, the block centred on y = 0, the top at
+     // y = thickness / 2, x across, z from player to player); n: the object-space normal (top: y > 0.6)
+     vec3 woodColor(vec3 c, vec3 p, vec3 n) { return c; }
+     float woodRough(float r, vec3 p, vec3 n) { return r; }` }
+   ```
+
+   Bamboo strips, for example: `woodColor` returns strips along `p.z` with a node every so often, ignoring most of the scan. The ink grid, the patina and the seam are applied after it.
+
+`view.setOptions({ wood: '<id>' })` in the demo page. The bowls (mulberry) and the Atelier's walnut table keep their own look whatever the wood.
 
 ## Effects (`fx.ts`, Contemplation only)
 
