@@ -215,6 +215,7 @@ describe('décors', () => {
     expect(LOOKS.lanterne.tod).not.toBeNull() // night: the time of day doesn't apply
     expect(LOOKS.lanterne.key).toBe(0)
     for (const d of ['atelier', 'lanterne', 'clair'] as const) expect(LOOKS[d].shoji).toBe(0) // of the first four, the lattice is the Japanese room's (new décors may light their own cookie)
+    expect(LOOKS.washitsu.shoji).toBeGreaterThan(0)
     expect(LOOKS.washitsu.shoji).toBeLessThan(0.5) // the panes carry most of the window's light
   })
 })
