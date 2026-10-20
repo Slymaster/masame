@@ -123,9 +123,10 @@ describe('pending ids', () => {
   // An id listed in DECORS / STONE_SETS before its files exist is pending: it falls back, it never crashes.
   // The final pass asserts both lists are empty.
   const decors = DECORS.filter(d => !isReadyDecor(d)), sets = STONE_SETS.filter(s => !isReadySet(s))
-  it('lists the pending décors and stone sets', () => {
-    console.info('pending décors:', decors.join(', ') || 'none', '| pending stone sets:', sets.join(', ') || 'none')
-    expect(isReadyDecor('atelier') && isReadySet('japonaise')).toBe(true)
+  it('has every listed décor and stone set landed, materials included (v0.6 ships them all)', () => {
+    expect(decors).toEqual([])
+    expect(sets).toEqual([])
+    for (const s of STONE_SETS) if (s !== 'japonaise') expect(STONES[s]).not.toBe(STONES.japonaise)
   })
   it('shows a pending décor as the Atelier and plays a pending set as the Japanese one', () => {
     for (const d of decors) expect(LOOKS[d]).toBe(LOOKS.atelier)
