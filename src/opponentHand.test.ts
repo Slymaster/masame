@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Board3D } from './board3d/Board3D'
 import type { OpponentHand } from './board3d/hand'
-import { handMove, handTiming, LATE, MIN_K } from './opponentHand'
+import { handMove, handTiming, handWanted, LATE, MIN_K } from './opponentHand'
 
 describe('handTiming', () => {
   it('starts the gesture at its natural pace so its handoff lands at the end of the natural delay', () => {
@@ -49,5 +49,17 @@ describe('handMove', () => {
       await vi.advanceTimersByTimeAsync(5000)
       expect(h.stop).not.toHaveBeenCalled()
     } finally { vi.useRealTimers() }
+  })
+})
+
+describe('handWanted', () => {
+  const on = { opponentHand: true, mobile: false, renderer: '3d', camera: 'contemplation', delay: true, opponent: 'ai', color: 'b', reducedMotion: false }
+  it('fetches the hand when it could play: the option on, 3D Contemplation on a desktop, thinking time, against the AI', () => {
+    expect(handWanted(on)).toBe(true)
+    expect(handWanted({ ...on, color: 'r' })).toBe(true) // a random colour may give the AI White
+  })
+  it('not when any of them is missing', () => {
+    for (const off of [{ opponentHand: false }, { mobile: true }, { renderer: '2d' }, { camera: 'study' }, { delay: false }, { opponent: 'human' }, { opponent: 'ogs' }, { color: 'w' }, { reducedMotion: true }])
+      expect(handWanted({ ...on, ...off }), JSON.stringify(off)).toBe(false)
   })
 })

@@ -10,7 +10,7 @@ import { Game, type GameNode, type Move, type Sign, type Vertex } from './game'
 import { analyze, call, candidates, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
 import { handInstalled, installHand } from './handAsset'
-import { handMove, loadHand } from './opponentHand'
+import { handMove, handWanted, loadHand } from './opponentHand'
 import type { OpponentHand } from './board3d/hand'
 import { notify } from './notify'
 import { OgsSection } from './OgsSection'
@@ -87,10 +87,10 @@ interface Settings {
   style: 'level' | 'era'; era: number; mentor: boolean // a Master of an era instead of the AI level; the mentor (v0.5 B)
 }
 const SETTINGS_KEY = 'baduk.settings'
-function loadSettings(): Settings {
+export function loadSettings(): Settings {
   const d: Settings = {
     lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, botResign: true, delay: true, territory: false,
-    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', ambientSound: false, depthOfField: true, opponentHand: false, goban: 'table', wood: 'kaya', langChosen: false, panelHidden: false,
+    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', ambientSound: false, depthOfField: true, opponentHand: true, goban: 'table', wood: 'kaya', langChosen: false, panelHidden: false,
     autoUpdate: true, updateChecked: 0, autoplay: 1, handicap: 0, clock: 'off', style: 'level', era: 1850, mentor: false,
   }
   let j: Partial<Settings> = {}
@@ -104,7 +104,7 @@ function loadSettings(): Settings {
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: s.decor === 'auto' || (readyDecors() as readonly unknown[]).includes(s.decor) ? s.decor : 'atelier', // a décor not shipped yet: the default
     stones: (readySets() as readonly unknown[]).includes(s.stones) ? s.stones : 'japonaise', // a set still to earn is kept and shown as the default (stonesOn)
-    ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false, opponentHand: s.opponentHand === true,
+    ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false, opponentHand: s.opponentHand !== false, // on unless switched off, also for settings saved before the option
     goban: (readyShapes() as readonly unknown[]).includes(s.goban) ? s.goban : 'table', wood: (readyWoods() as readonly unknown[]).includes(s.wood) ? s.wood : 'kaya', panelHidden: s.panelHidden === true, ...updateSettings(j),
     autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
     handicap: Number.isInteger(s.handicap) && s.handicap >= 2 && s.handicap <= 9 ? s.handicap : 0,
@@ -310,8 +310,9 @@ export function App() {
     return () => clearTimeout(id)
   }, [settings.opponent, canPlayAI])
 
-  // The opponent's hand: fetched once when the option is on (desktop Workshop); turning it off keeps the file.
-  const [hand, setHand] = useState<{ s: 'idle' | 'downloading' | 'ready' } | { s: 'error'; err: Msg }>({ s: 'idle' })
+  // The opponent's hand (desktop, on by default): fetched once, the first time it could play (handWanted) or when the
+  // player turns the option on in the Workshop; turning it off keeps the file. 'absent': checked, not on disk.
+  const [hand, setHand] = useState<{ s: 'idle' | 'absent' | 'downloading' | 'ready' } | { s: 'error'; err: Msg }>({ s: 'idle' })
   const handFailed = useCallback((e: unknown) => { // the line shows the localized message only; the detail goes to the console
     console.error('hand', e)
     const code = (e as { code?: unknown })?.code
@@ -323,8 +324,12 @@ export function App() {
   }, [handFailed])
   useEffect(() => {
     if (!settings.opponentHand || isMobile) return
-    handInstalled().then(ok => ok ? setHand({ s: 'ready' }) : getHand(), getHand)
-  }, [settings.opponentHand, getHand])
+    const checked = (ok: boolean) => setHand(h => h.s === 'idle' ? { s: ok ? 'ready' : 'absent' } : h) // a download already started wins
+    handInstalled().then(checked, () => checked(false))
+  }, [settings.opponentHand])
+  // The automatic download leaves 'absent' for good, so it is tried once per session; Retry and the next launch try again.
+  const handNeeded = handWanted({ ...settings, mobile: isMobile, renderer, reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches })
+  useEffect(() => { if (handNeeded && hand.s === 'absent') getHand() }, [handNeeded, hand.s, getHand])
   // hand.ts and the model: loaded once the option is on with the 3D board; the bot's moves use it in Contemplation (see botTurn)
   const handRef = useRef<OpponentHand | null>(null)
   const handReady = settings.opponentHand && hand.s === 'ready' && renderer === '3d'
@@ -1639,8 +1644,11 @@ export function App() {
                 <Switch label={t.highContrast} on={settings.highContrast} toggle={() => set('highContrast', !settings.highContrast)} />
                 <Switch label={t.depthOfField} title={t.depthOfFieldHint} on={settings.depthOfField} toggle={() => set('depthOfField', !settings.depthOfField)} />
                 <Switch label={t.ambientSound} title={t.ambientSoundHint} on={settings.ambientSound} toggle={() => set('ambientSound', !settings.ambientSound)} />
-                <Switch label={t.opponentHand} title={t.opponentHandHint} on={settings.opponentHand} toggle={() => set('opponentHand', !settings.opponentHand)} />
-                {settings.opponentHand && hand.s !== 'idle' && <p className={`engine${hand.s === 'error' ? ' err' : ''}`} aria-live="polite">
+                <Switch label={t.opponentHand} title={t.opponentHandHint} on={settings.opponentHand} toggle={() => { // switched on by hand: fetch now, whatever the view
+                  if (!settings.opponentHand && hand.s !== 'ready' && hand.s !== 'downloading') getHand()
+                  set('opponentHand', !settings.opponentHand)
+                }} />
+                {settings.opponentHand && hand.s !== 'idle' && hand.s !== 'absent' && <p className={`engine${hand.s === 'error' ? ' err' : ''}`} aria-live="polite">
                   {hand.s === 'error' ? t.handFailed(hand.err(t)) : hand.s === 'downloading' ? t.handDownloading : t.handReady}
                   {hand.s === 'error' && <> · <button className="link" onClick={getHand}>{t.retry}</button></>}</p>}
               </>}

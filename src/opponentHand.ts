@@ -15,6 +15,12 @@ export function handTiming(wait: number, handoffMs: number) {
   return { start: Math.max(0, wait - lead), land: Math.max(wait, lead), k }
 }
 
+/** Whether the hand could play now, so the model may be fetched without asking: the option on, a desktop with the 3D
+ *  board in Contemplation, thinking time on, against the AI, the AI possibly White (the hand plays White only), motion
+ *  allowed. Anywhere else nobody would see it. */
+export const handWanted = (o: { opponentHand: boolean; mobile: boolean; renderer: string; camera: string; delay: boolean; opponent: string; color: string; reducedMotion: boolean }) =>
+  o.opponentHand && !o.mobile && o.renderer === '3d' && o.camera === 'contemplation' && o.delay && o.opponent === 'ai' && o.color !== 'w' && !o.reducedMotion
+
 let loading: Promise<OpponentHand> | null = null
 /** hand.ts (a lazy chunk) and the verified model, built once; a failure is forgotten so a retry loads again. */
 export function loadHand() {

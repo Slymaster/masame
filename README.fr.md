@@ -116,7 +116,7 @@ Le goban occupe la fenêtre ; à côté, une seule carte flottante porte la par
 
 - **Les saisons dans la lumière.** En Auto, la lumière suit l'heure et la date : une heure dorée plus longue en été, une lumière basse et froide en hiver, et le reflet de la neige dans le Washitsu de décembre à février.
 - **Décor auto, ambiance sonore, profondeur de champ.** Le décor peut suivre la saison et l'heure ; une ambiance sonore discrète (feuilles, vent, pluie) et une profondeur de champ d'objectif quand tu lèves les yeux sont là si tu les veux.
-- **La main de l'adversaire.** Une option de l'Atelier : en vue Contemplation, la main de ton adversaire prend une pierre dans son bol et la pose. Le modèle est téléchargé une fois depuis GitHub quand tu l'actives ; il ne fait pas partie de l'app.
+- **La main de l'adversaire.** En vue Contemplation, contre l'IA, la main de ton adversaire prend une pierre dans son bol et la pose. Activée par défaut, elle se désactive dans l'Atelier. Le modèle ne fait pas partie de l'app : il est téléchargé une fois depuis GitHub, la première fois qu'il sert.
 - **Deux langues.** Entièrement en français et en anglais ; suit la langue du système et se change dans l'app.
 - **Un mode léger 2D.** Un goban Canvas, utilisé automatiquement quand le rendu 3D n'est pas disponible.
 
@@ -180,7 +180,7 @@ OGS n'autorise aucune aide d'un moteur pendant une partie : tant qu'une partie 
 - Aucune télémétrie, aucune mesure d'audience, aucun compte Masame.
 - Les requêtes réseau vont à katagotraining.org (le catalogue des réseaux et leur téléchargement) et à GitHub pour les mises à jour (github.com et ses serveurs de fichiers). Si tu te connectes à OGS, Masame se connecte à online-go.com dès son démarrage, donc tu apparais en ligne là-bas tant qu'il est ouvert. Pour proposer les pierres mortes quand la proposition d'OGS échoue, il peut envoyer la position finale à ai.online-go.com (le compteur d'OGS). Regarder des parties sans compte passe par une connexion OGS anonyme.
 - Au plus une fois par jour, Masame demande à GitHub si une nouvelle version existe (tu peux le désactiver dans les Réglages). Une mise à jour n'est téléchargée que si tu cliques sur Installer, et elle est vérifiée avec la clé de signature de Masame avant d'être installée.
-- Si tu actives la main de l'adversaire dans l'Atelier, Masame télécharge une fois ce modèle 3D depuis GitHub (raw.githubusercontent.com) et vérifie son SHA-256 avant de s'en servir. Rien n'est envoyé.
+- La main de l'adversaire est activée par défaut : la première fois qu'elle sert (une partie contre l'IA en vue Contemplation, avec le goban 3D et le temps de réflexion), Masame télécharge une fois ce modèle 3D depuis GitHub (raw.githubusercontent.com) et vérifie son SHA-256 avant de s'en servir. Rien n'est envoyé. Désactive-la dans l'Atelier et il n'est jamais téléchargé.
 - Tes parties restent sur ta machine. La bibliothèque est un dossier dans le dossier de données de l'app (`games/`, à côté de `models/`), et rien de ce qu'il contient n'est envoyé nulle part. Les fichiers SGF que tu exportes sont enregistrés là où tu le choisis.
 - La politique de confidentialité complète, pour l'ordinateur et les téléphones : [PRIVACY.md](PRIVACY.md).
 

@@ -127,7 +127,7 @@ export const en = {
   ambientSound: 'Ambient sound', ambientSoundHint: 'Leaves, wind or rain, very quietly',
   depthOfField: 'Depth of field', depthOfFieldHint: 'Softens what lies beyond the board',
   opponentHand: 'Opponent’s hand',
-  opponentHandHint: 'In the Contemplation view, your opponent’s hand takes a stone from the bowl and places it. Downloaded once from GitHub (about 0.5 MB).',
+  opponentHandHint: 'In the Contemplation view, against the AI, your opponent’s hand takes a stone from the bowl and places it. Downloaded once from GitHub (about 0.5 MB), the first time it is needed.',
   handDownloading: 'Downloading the hand from GitHub…', handReady: 'The hand is ready. It plays in the Contemplation view, when thinking time is on.',
   handFailed: (why: string) => `Couldn’t get the hand: ${why}`,
   stoneLocked: (how: string) => `To earn: ${how}`,
