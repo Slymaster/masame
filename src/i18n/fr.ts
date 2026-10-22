@@ -266,6 +266,7 @@ export const fr: Dict = {
     miss: (s: number, v: string) => `${color(s)} ne punit pas l’erreur de ${color(-s)} : il fallait ${v}.`,
     blunder: (s: number, v: string) => `${color(s)} perd beaucoup ici : il fallait ${v}.`,
   },
+  catDecided: (v: string) => `La partie est déjà jouée : KataGo préférait ${v}.`, // Excellent/Good losing points in a decided game
   passWord: 'passer', // KataGo's move inside a sentence
   catHead: (mv: number, cat: string, loss: number) => `Coup ${mv} · ${cat}${Math.round(loss * 10) ? ` · −${pts(loss)}` : ''}`,
   report: 'Bilan de la partie', accuracy: 'Précision', accuracyOf: (a: number | null) => (a === null ? '—' : `${f.num(Math.round(a * 10) / 10)} %`),

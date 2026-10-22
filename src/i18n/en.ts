@@ -265,6 +265,7 @@ export const en = {
     miss: (s: number, v: string) => `${color(s)} doesn’t punish ${color(-s)}’s mistake: ${v} was the move.`,
     blunder: (s: number, v: string) => `${color(s)} loses a lot here: ${v} was the move.`,
   },
+  catDecided: (v: string) => `The game is already decided: KataGo preferred ${v}.`, // Excellent/Good losing points in a decided game
   passWord: 'passing', // KataGo's move inside a sentence
   catHead: (mv: number, cat: string, loss: number) => `Move ${mv} · ${cat}${Math.round(loss * 10) ? ` · −${pts(loss)}` : ''}`,
   report: 'Game report', accuracy: 'Accuracy', accuracyOf: (a: number | null) => (a === null ? '—' : `${f.num(Math.round(a * 10) / 10)}%`),

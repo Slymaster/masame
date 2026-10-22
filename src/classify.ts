@@ -31,6 +31,7 @@ export interface Judged {
 }
 
 // chess.com's bands on ΔEP
+export const BEST_PTS = 1 // two 100-visit searches of one position differ by about a point: under it, a true tie
 export const BEST = 0.005, EXCELLENT = 0.02, GOOD = 0.05, INACCURACY = 0.1, MISTAKE = 0.2
 export const MISS_GIFT = 0.15, MISS_LOSS = 0.1, MISS_SLACK = 0.02
 export const GREAT_GAP = 0.1, GREAT_PRIOR = 0.8
@@ -122,6 +123,13 @@ function epAt(game: Game, pos: (Pos | undefined)[], levels: Levels) {
   }
 }
 
+/** The points lost worth showing in a caption: never on a top label, on Excellent/Good only from a point. */
+export const shownLoss = (j: Judged): number =>
+  ['inaccuracy', 'mistake', 'miss', 'blunder'].includes(j.cat) || (['excellent', 'good'].includes(j.cat) && j.loss >= BEST_PTS) ? j.loss : 0
+/** An Excellent/Good move that lost real points only because the game was already won or lost. */
+export const decidedLoss = (j: Judged): boolean =>
+  (j.cat === 'excellent' || j.cat === 'good') && j.loss >= 1.5 && (j.ep >= 0.95 || j.ep + j.dEP <= 0.05)
+
 export function classify(game: Game, pos: (Pos | undefined)[], facts: (Facts | undefined)[], levels: Levels, end: number): (Judged | null)[] {
   const ok = judgeable(game, end), E = epAt(game, pos, levels), out: (Judged | null)[] = game.moves.map(() => null)
   const R = epAt(game, pos, { black: ACC_LEVEL, white: ACC_LEVEL })
@@ -146,7 +154,7 @@ export function classify(game: Game, pos: (Pos | undefined)[], facts: (Facts | u
       && E(s, i, p.lead) <= BRILLIANT_BEFORE && epAfter >= BRILLIANT_AFTER && c.prior <= BRILLIANT_PRIOR
     const alts = p.cands.filter(x => x !== c) // every listed one: a starved alternative after a deep read is evidence too
     const gap = alts.length ? epAfter - Math.max(...alts.map(x => E(s, i, x.lead))) : 0
-    const isBest = isTop || dEP < BEST
+    const isBest = isTop || (dEP < BEST && loss < BEST_PTS) // a decided game saturates EP: a big loss there is not Best
     const gift = prev >= 0 && game.moves[prev].sign !== s && out[prev]!.dEP >= MISS_GIFT
     if (f?.book && dEP <= GOOD) j.cat = 'book' // a corner joseki can still be a whole-board error
     else if (brilliant) j.cat = 'brilliant'

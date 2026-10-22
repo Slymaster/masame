@@ -8,6 +8,8 @@ import { playClack, playTap } from './sound'
 import { gx, gz, jitter, settle, type Placed } from '../board3d/logic'
 import { postcardCanvas, signatureFonts, toPng } from '../postcard'
 import { tap } from './frame'
+import type { Cat } from '../classify'
+import { CAT_COLORS, CAT_SYMBOLS } from '../cats'
 import { drawBlurred } from './canvasBlur'
 import { woodOf, type Wood, type WoodData } from '../board3d/gobans'
 import { STONE_DATA, type Mark2D, type Mark2DParams, type Skin2D, type StoneSet } from '../board3d/stoneSets'
@@ -31,8 +33,8 @@ export interface BoardState {
   pending?: { v: Vertex; sign: Sign } | null
   /** Grid rectangle [x0, y0, x1, y1] outlined by a soft frame (a tsumego's area); the whole board stays clear. */
   frame?: [number, number, number, number] | null
-  /** CSS colour of the last move's category: the last-move ring takes it; unset keeps the plain ring. */
-  lastTint?: string | null
+  /** The last move's category (a reviewed game): its seal rides at the stone's upper right, beside the plain ring. */
+  lastCat?: Cat | null
 }
 /** best / ok / mistake: lettered markers; black / white: a ghost stone of that colour numbered `label` (a suggested line). */
 export interface Mark { v: Vertex; label: string; tone: 'best' | 'ok' | 'mistake' | 'black' | 'white' }
@@ -357,19 +359,27 @@ function mark(c: CanvasRenderingContext2D, kind: Mark2D, r: number, R: () => num
   }
 }
 
-function lastRing(c: CanvasRenderingContext2D, g: Geom, [cx, cy]: [number, number], col: Sign, tint?: string | null) {
-  const ink = col === 1 ? 'rgba(238,230,214,0.92)' : 'rgba(26,26,29,0.85)'
-  if (!tint) {
-    c.strokeStyle = ink; c.lineWidth = Math.max(1.2, g.r * 0.085)
-    c.beginPath(); c.arc(cx, cy, g.r * 0.4, 0, TAU); c.stroke()
-    return
-  }
-  // a pigment sinks into slate (red, olive): on a black stone it rides on the plain ring, widened into a hairline either
-  // side; on shell every pigment already stands out, alone it stays lighter
-  const w = Math.max(1.6, g.r * 0.13)
-  c.beginPath(); c.arc(cx, cy, g.r * 0.44, 0, TAU)
-  if (col === 1) { c.strokeStyle = ink; c.lineWidth = w + 2 * Math.max(0.7, g.r * 0.045); c.stroke() }
-  c.strokeStyle = tint; c.lineWidth = w; c.stroke()
+function lastRing(c: CanvasRenderingContext2D, g: Geom, [cx, cy]: [number, number], col: Sign) {
+  c.strokeStyle = col === 1 ? 'rgba(238,230,214,0.92)' : 'rgba(26,26,29,0.85)'
+  c.lineWidth = Math.max(1.2, g.r * 0.085)
+  c.beginPath(); c.arc(cx, cy, g.r * 0.4, 0, TAU); c.stroke()
+}
+
+/** A category's seal (CatIcon's 'seal' look, Washi pigment: it sits on wood and stone, not on the card) of radius R, on a
+ *  paper rim with a soft drop shadow so it reads over slate, shell and kaya alike. Also the 3D badge's texture. */
+export function drawBadge(c: CanvasRenderingContext2D, cat: Cat, cx: number, cy: number, R: number) {
+  const s = CAT_SYMBOLS[cat], k = R / 11.5, paper = '#F9F4EB'
+  c.save()
+  c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = R * 0.35; c.shadowOffsetY = R * 0.12
+  c.beginPath(); c.arc(cx, cy, R + Math.max(1, R * 0.16), 0, TAU); c.fillStyle = paper; c.fill()
+  c.shadowColor = 'transparent'
+  c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.fillStyle = CAT_COLORS[cat][0]; c.fill()
+  c.translate(cx - 12 * k, cy - 12 * k); c.scale(k, k)
+  const p = new Path2D(s.d)
+  c.strokeStyle = c.fillStyle = paper; c.lineWidth = s.w ?? 2.3; c.lineCap = 'round'; c.lineJoin = 'round'
+  if (s.fill) c.fill(p)
+  c.stroke(p)
+  c.restore()
 }
 
 /** A suggested move's number, in the ink opposite its ghost stone; sized on the cell so a phone's 19×19 still reads it. */
@@ -709,7 +719,12 @@ export class BoardView {
       c.globalAlpha = 1 - sstep(0.45, 1, wk); stoneShadow(c, g, ...p, 1); stone(c, g, w.x, w.y, w.c, 1, p, sk); c.globalAlpha = 1
     } else this.shook = null
     const l = s.last
-    if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) lastRing(c, g, this.at(l[0], l[1]), s.signMap[l[1]][l[0]], s.lastTint)
+    if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) {
+      const [x, y] = this.at(l[0], l[1]), d = g.cell * 0.36
+      lastRing(c, g, [x, y], s.signMap[l[1]][l[0]])
+      // ≥ 7 px radius: a phone's 19×19 (cell ≈ 18 px) still reads the symbol; it only grazes the neighbours' edges there
+      if (s.lastCat) drawBadge(c, s.lastCat, x + d, y - d, Math.max(7, g.cell * 0.26))
+    }
     if (s.pending) { c.globalAlpha = 0.5; stone(c, g, s.pending.v[0], s.pending.v[1], s.pending.sign, 1, undefined, sk); c.globalAlpha = 1 }
     const h = this.hover
     if (h && s.interactive && !s.signMap[h[1]]?.[h[0]]) {

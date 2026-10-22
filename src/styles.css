@@ -138,8 +138,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .track i { position: absolute; top: 20px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--muted); pointer-events: none }
 .vars { display: flex; justify-content: center; gap: 14px; margin: 0 }
 .cmt { margin: 2px 0 0; max-height: 6.5em; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.45; color: var(--muted) }
-/* wide enough for "move 888 / 888" (87 px): a step never resizes the track, whose width groups the review's ticks */
-.mv { flex: none; min-width: 6.2em; text-align: right; font-family: var(--f-title); font-style: italic; font-size: 15px; color: var(--muted); text-transform: lowercase; white-space: nowrap; font-variant-numeric: tabular-nums }
+.mv { flex: none; min-width: 4.6em; text-align: right; font-family: var(--f-title); font-style: italic; font-size: 15px; color: var(--muted); text-transform: lowercase; white-space: nowrap; font-variant-numeric: tabular-nums }
 
 /* action bar: icon over label, hairlines between */
 .acts { flex: none; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 0 -14px; border-top: 1px solid var(--rule) }
@@ -469,12 +468,19 @@ body[data-drop]::after {
 .rv-row:disabled { cursor: default }
 .rv-row:disabled > :is(span, svg) { opacity: .55 }
 .rv-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px }
-/* the timeline's notable moves: glyphs over the track, on the ticks' scale */
-.track.ticked { padding-top: 18px }
+/* the timeline's notable moves: a band of notches under the range (forks dot it), the shown move's glyph over it, on the
+   ticks' scale */
+.track.ticked { padding: 18px 0 2px }
 .track.ticked i { top: 38px }
-.tick { position: absolute; top: 0; width: 16px; height: 16px; margin-left: -8px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; display: grid; place-items: center; transition: transform .2s }
-.tick:hover, .tick[aria-current] { transform: scale(1.25); z-index: 1 }
-.tick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
+.band { position: absolute; left: 6px; right: 6px; top: 38px; height: 5px; padding: 0; border: 0; border-radius: 2.5px; background: var(--well); cursor: pointer }
+.band::after { content: ""; position: absolute; inset: -2px 0 -8px } /* a reachable target that leaves the thumb its own */
+.band:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.band b { --c: var(--cw); position: absolute; top: 0; width: 3px; height: 100%; margin-left: -1.5px; background: var(--c) }
+html[data-skin="laque"] .band b { --c: var(--cl) }
+.band b[aria-current] { top: -2px; width: 4px; height: 9px; margin-left: -2px; border-radius: 1px }
+/* wide enough for "move 888 / 888" (87 px): a step never moves the notches under the finger */
+.track.ticked ~ .mv { min-width: 6.2em }
+.tick { position: absolute; top: 0; width: 16px; height: 16px; margin-left: -8px; display: grid; place-items: center; transform: scale(1.25); pointer-events: none }
 /* the caption's verdict: glyph, the move and its category in its colour, then why */
 .board-wrap > .note .cat-line svg { vertical-align: -3px; margin-right: 2px }
 .board-wrap > .note .cat-line b { font-weight: 600 }
@@ -656,9 +662,8 @@ section > .seg + .ogs-input { display: block; width: 100% }
   .tl input { height: 44px }
   .track i { top: 30px }
   .track.ticked { padding-top: 22px }
-  .track.ticked i { top: 52px }
-  .tick { width: 22px; height: 22px; margin-left: -11px }
-  .tick::after { content: ""; position: absolute; inset: -11px } /* a 44 px target; ticks closer than that are one mark (Timeline) */
+  .track.ticked i, .band { top: 52px }
+  .band { pointer-events: none } /* too thin for a finger: the report's rows jump to each category's moves */
   .rv-row { min-height: 44px }
   .stepper .step button { width: 44px; height: 44px }
   .row, .seg button, .game-row, .jrow { min-height: 44px }

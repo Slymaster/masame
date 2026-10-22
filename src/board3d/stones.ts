@@ -72,9 +72,9 @@ export function stoneGeo(R: number, shape: StoneShape) {
   return g
 }
 
-/** The last-move ring (inner, outer radius in mm), lying on the stone's dome. */
-export function markerGeo(prof: (r: number) => number, r0 = 1.75, r1 = 2.35) {
-  const g = new THREE.RingGeometry(r0, r1, 40, 1).rotateX(-Math.PI / 2), P = g.attributes.position
+/** The last-move ring, lying on the stone's dome. */
+export function markerGeo(prof: (r: number) => number) {
+  const g = new THREE.RingGeometry(1.75, 2.35, 40, 1).rotateX(-Math.PI / 2), P = g.attributes.position
   for (let i = 0; i < P.count; i++) P.setY(i, prof(Math.hypot(P.getX(i), P.getZ(i))) + 0.04)
   g.computeVertexNormals()
   return g

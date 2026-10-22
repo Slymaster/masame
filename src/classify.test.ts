@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Game, type Move, type Sign, type Vertex } from './game'
-import { accuracy, classify, deepCandidates, ep, parseRank, sacrificed, sigma, tally, type Cand, type Facts, type Judged, type Pos } from './classify'
+import { accuracy, classify, decidedLoss, deepCandidates, ep, parseRank, sacrificed, shownLoss, sigma, tally, type Cand, type Facts, type Judged, type Pos } from './classify'
 
 /** Alternating moves from Black; null = pass. */
 const record = (vs: (Vertex | null)[]): Move[] => vs.map((vertex, i) => ({ sign: (i % 2 ? -1 : 1) as Sign, vertex }))
@@ -118,6 +118,30 @@ describe('classify bands', () => {
     const g = game([[0, 0]]), pos = [P(0, [cand(OTHER, 0), cand([0, 0], -2)])]
     expect(classify(g, pos, [], PRO, 1)[0]!.cat).toBe('inaccuracy') // σ 11: −2 pts costs 0.077
     expect(classify(g, pos, [], { black: -19, white: 10 }, 1)[0]!.cat).toBe('good') // σ 23: 0.037
+  })
+})
+
+describe('best needs a tie in points too', () => {
+  // a decided game: Black far ahead, EP saturated, so even 3.9 points cost < 0.005 EP
+  const at = (loss: number) => classify(game([[0, 0]]), [P(60, [cand(OTHER, 60), cand([0, 0], 60 - loss)])], [], PRO, 1)[0]!
+  it('under a point stays best, from a point it falls through to the bands', () => {
+    expect(at(0.99)).toMatchObject({ cat: 'best', best: OTHER })
+    expect(at(1).cat).toBe('excellent')
+    const j = at(3.9)
+    expect(j.dEP).toBeLessThan(0.005)
+    expect(j.cat).toBe('excellent')
+  })
+  it('captions show points only where they mean something; a decided game says so', () => {
+    const j = at(3.9)
+    expect(shownLoss(j)).toBeCloseTo(3.9)
+    expect(shownLoss({ ...j, loss: 0.9 })).toBe(0)
+    for (const cat of ['brilliant', 'great', 'best', 'book'] as const) expect(shownLoss({ ...j, cat })).toBe(0)
+    expect(shownLoss({ ...j, cat: 'inaccuracy', loss: 0.4 })).toBeCloseTo(0.4)
+    expect(decidedLoss(j)).toBe(true)
+    expect(decidedLoss(at(1.4))).toBe(false)
+    expect(decidedLoss({ ...j, ep: 0.94, dEP: 0.02 })).toBe(false)
+    expect(decidedLoss({ ...j, ep: 0.03, dEP: 0.02 })).toBe(true) // the best move was lost too
+    expect(decidedLoss({ ...j, cat: 'inaccuracy' })).toBe(false)
   })
 })
 

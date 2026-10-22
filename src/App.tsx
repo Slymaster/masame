@@ -34,7 +34,7 @@ import { useFullscreen, useWindowTheme } from './window'
 import { getVersion, onBackButtonPress } from '@tauri-apps/api/app'
 import { checkDue, updateSettings, type UpdateInfo } from './update'
 import { fromOf, gradeTry, leadsOf, lessonBoard, levelsOf, momentAt, readGame, REPLY, reviewEnd, verdict, type Moment, type Step } from './review'
-import { accuracy, CATS, classify, NOTABLE, parseRank, tally, type Cat, type Judged, type Levels, type Pos } from './classify'
+import { accuracy, CATS, classify, decidedLoss, NOTABLE, parseRank, shownLoss, tally, type Cat, type Judged, type Levels, type Pos } from './classify'
 import { catColor } from './cats'
 import { CatIcon } from './CatIcon'
 import { bookMoves, loadBook } from './book'
@@ -1225,7 +1225,7 @@ export function App() {
     goTo((i >= 0 ? i : j.findIndex(x => x?.cat === c)) + 1)
   }
   const ticks = browsing && judgedAll ? judgedAll.flatMap((j, i) => (j && NOTABLE.includes(j.cat)
-    ? [{ at: i + 1, cat: j.cat, label: t.catHead(game.moveNumber(i) + 1, t.cats[j.cat], j.loss) }] : [])) : undefined
+    ? [{ at: i + 1, cat: j.cat, label: t.catHead(game.moveNumber(i) + 1, t.cats[j.cat], shownLoss(j)) }] : [])) : undefined
   const board = shown.board, toPlay = shown.toPlay, last = shown.lastMove
   const shownOwn = settings.territory && own?.game === game && !ongoing ? own : null
   const ghost = mt.stopped && !tr.open && last?.vertex ? { v: last.vertex, sign: last.sign } : null // the stopped move, in half-tone
@@ -1236,11 +1236,12 @@ export function App() {
   const p = m ? -m.sign : 0, s = m?.sign ?? 0
   const graded = m && review?.step === 'try' && review.gap !== null ? verdict(m, review.gap) : null
   // the report's caption: the shown move's category, what it cost, why (KataGo's move named)
-  const jmHead = jm && t.catHead(game.moveNumber(judgedAt) + 1, t.cats[jm.cat], jm.loss)
+  const jmHead = jm && t.catHead(game.moveNumber(judgedAt) + 1, t.cats[jm.cat], shownLoss(jm))
   // KataGo's move named in the sentence; a Best that is not KataGo's own move names the move it preferred (a pass: "passer")
-  const jmWhy = jm && t.catWhy[jm.cat](played!.sign, jm.cat === 'best'
+  const jmV = jm && (v => (v ? gtp(v, size) : t.passWord))(jm.best ?? jm.pv[0] ?? null)
+  const jmWhy = jm && (decidedLoss(jm) ? t.catDecided(jmV!) : t.catWhy[jm.cat](played!.sign, jm.cat === 'best'
     ? jm.best ? gtp(jm.best, size) : jm.pv.length && !jm.pv[0] && played!.vertex ? t.passWord : ''
-    : (v => (v ? gtp(v, size) : t.passWord))(jm.best ?? jm.pv[0] ?? null))
+    : jmV!))
   const catLine = jm && `${jmHead}. ${jmWhy}`
   const lessonLine = !review ? null
     : reading ? t.reading
@@ -1433,7 +1434,7 @@ export function App() {
             counting: final ? { dead: countingNow!.dead, territory: final.territory }
               : removal ? { dead: ogs.deadOf(board.signMap, removal.removed), territory: board.signMap.map(r => r.map(() => 0 as Sign)) } : null, // OGS scores
             captures: { black: board.getCaptures(1), white: board.getCaptures(-1) }, // the 3D lids: prisoners taken by each
-            lastTint: jm && catColor(jm.cat, 'washi'), // the deep pigment: the ring sits on the stone, not on the card's skin
+            lastCat: jm?.cat,
             // KataGo's line from the position before the judged move, in numbered ghost stones; the played move crossed
             ...(pvMarks && { signMap: game.boards[judgedAt].signMap, last: null, marks: pvMarks }),
             ...tr.board,
