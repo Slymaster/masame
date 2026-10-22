@@ -18,7 +18,7 @@
 
 ### What stays on your device
 
-Your games library, your settings, your learning progress (exercises, decks, streak, rank) the downloaded networks and the opponent's hand, if you turned it on, are stored in the app's own folder on your device. Nothing in it is sent anywhere. SGF files you export go where you choose. Deleting the app deletes them.
+Your games library, your settings, your learning progress (exercises, decks, streak, rank), the downloaded networks and the opponent's hand, if you turned it on, are stored in the app's own folder on your device. Nothing in it is sent anywhere. SGF files you export go where you choose. Deleting the app deletes them.
 
 ### Backups
 
@@ -58,7 +58,7 @@ Questions or concerns: open an issue at [github.com/Slymaster/masame/issues](htt
 
 ### Ce qui reste sur ton appareil
 
-Ta bibliothèque de parties, tes réglages, ta progression (exercices, decks, série de jours, rang) les réseaux téléchargés et la main de l'adversaire, si tu l'as activée, sont rangés dans le dossier de l'app sur ton appareil. Rien n'en sort. Les fichiers SGF que tu exportes vont où tu le décides. Supprimer l'app les supprime.
+Ta bibliothèque de parties, tes réglages, ta progression (exercices, decks, série de jours, rang), les réseaux téléchargés et la main de l'adversaire, si tu l'as activée, sont rangés dans le dossier de l'app sur ton appareil. Rien n'en sort. Les fichiers SGF que tu exportes vont où tu le décides. Supprimer l'app les supprime.
 
 ### Sauvegardes
 

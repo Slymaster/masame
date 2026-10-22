@@ -1,4 +1,5 @@
-# Prototype asset: the opponent's right hand (src/board3d/hand/hand-mh.glb), made with MakeHuman's MPFB in Blender.
+# The opponent's right hand (downloads/hand/hand-v1.glb, fetched by the app, never bundled), made with MakeHuman's MPFB in Blender.
+# hand-v1.glb is pinned by released apps (src-tauri/src/hand.rs): write a new hand to hand-v2.glb, never over v1.
 # Headless, in an isolated Blender profile (the user's own Blender settings and add-ons stay untouched):
 #   export BLENDER_USER_RESOURCES=$PWD/vendor/makehuman/blender-profile
 #   /Applications/Blender.app/Contents/MacOS/Blender --command extension install-file -r user_default -e vendor/makehuman/mpfb/add-on-mpfb-v2.0.18.zip
@@ -6,14 +7,14 @@
 # The first run loads the CC0 asset packs (makehuman_system_assets, hands01) from vendor/makehuman/ (or $MAKEHUMAN_VENDOR)
 # with MPFB's own loader.
 # Output: a skinned hand + wrist + a short forearm (hidden by the kimono sleeve), joints kept, the skin baked to its own UVs.
-# The glTF frame matches the WebXR hand hand.ts was written for: metres, wrist at the origin, fingers −y, palm normal −x, thumb side −z.
+# The glTF frame hand.ts expects (that of the WebXR hand it was first written for): metres, wrist at the origin, fingers −y, palm normal −x, thumb side −z.
 import os
 import bmesh
 import bpy
 from mathutils import Matrix
 
 here = os.path.dirname(os.path.abspath(__file__))
-DST = os.path.join(here, '..', 'src', 'board3d', 'hand', 'hand-mh.glb')
+DST = os.environ.get('HAND_OUT', os.path.join(here, '..', 'downloads', 'hand', 'hand-v2.glb'))  # never over hand-v1.glb
 TEX = int(os.environ.get('HAND_TEX', '1024'))  # atlas size
 SUBDIV = int(os.environ.get('HAND_SUBDIV', '1'))
 CUT = 0.11  # m of forearm kept behind the wrist joint (the sleeve and its juban hide everything past ~0.03)

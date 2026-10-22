@@ -45,6 +45,30 @@ export interface Board3DOptions {
   goban?: GobanShape; wood?: Wood
 }
 export type FallbackReason = 'webgl2' | 'context-lost' | 'slow'
+
+/** A hand that plays the opponent's stones (hand.ts), plugged in with Board3D.setHand. */
+export interface HandPlug {
+  /** Added to the scene while plugged in; shown only where the plug says (it reads ctx.camE). */
+  readonly root: THREE.Object3D
+  /** Each frame, before the stones are placed; true keeps frames coming. */
+  tick(now: number): boolean
+}
+/** What Board3D tells a hand, read live (like SceneCtx for a décor's scene). Units mm, the board top's centre at the origin. */
+export interface HandCtx {
+  /** 0 in Study, 1 in Contemplation, between during the crossfade. */
+  readonly camE: number
+  /** The stone set in use (its geometry and materials are Board3D's: don't dispose them). */
+  readonly kit: StoneKit
+  /** A player's bowl: its centre on the ground (y = the ground: the table, or the floor beside a legged goban) and its heap's top. */
+  bowl(c: Sign): { x: number; y: number; z: number; top: number }
+  /** Where the next stone played at v will come to rest (girdle centre), with its seed and spin; captures not counted. */
+  restSpot(v: Vertex): { x: number; y: number; z: number; seed: number; rotY: number }
+  /** The board's own stone at v: when its drop started (performance.now ms), null while there is none to draw. */
+  dropT0(v: Vertex): number | null
+  /** The window's light and the lamp (Lanterne, a scene's andon): read them, don't change them. */
+  readonly key: THREE.DirectionalLight
+  readonly lamp: THREE.SpotLight
+}
 export interface Board3DInit {
   /** The app should switch to the 2D BoardView (WebGL2 missing, context lost, or still too slow at the lowest quality). */
   onFallback?: (reason: FallbackReason) => void
@@ -561,6 +585,7 @@ export class Board3D {
     this.cleanup()
     this.sound.destroy()
     this.sceneOn?.s.dispose(); this.sceneOn?.env?.dispose()
+    this.setHand(null) // the hand outlives this view: keep its meshes out of the disposal below
     if (!this.renderer) return
     this.scene.traverse(o => {
       const m = o as THREE.Mesh
@@ -1681,13 +1706,41 @@ export class Board3D {
     this.sceneRoot.visible = fxOn
     this.scene.background = bd ? this.scene.environment : null
     if (bd) { this.scene.backgroundBlurriness = bd.blur; this.scene.backgroundIntensity = bd.intensity; this.scene.backgroundRotation.y = this.scene.environmentRotation.y }
-    if (this.propTick?.(now)) busy = true
+    if (this.hand?.tick(now)) busy = true
     if (this.updateStones(now)) busy = true
     return busy
   }
 
+  private hand: HandPlug | null = null
+  /** The opponent's hand: its root joins the scene and it ticks each frame; null takes it out. Returns what it may read. */
+  setHand(plug: HandPlug | null): HandCtx {
+    this.hand?.root.removeFromParent()
+    this.hand = plug
+    if (plug && !this.dead) this.scene.add(plug.root)
+    this.invalidate()
+    return this.handCtx
+  }
+  private readonly handCtx: HandCtx = (() => {
+    const self = this
+    return {
+      get camE() { return self.camE },
+      get kit() { return self.kit },
+      key: this.key, lamp: this.lamp,
+      bowl(c: Sign) {
+        const S = self.sets.find(s => s.c === c)!, Y = groundY(self.shape)
+        return { x: S.bowl[0], y: Y, z: S.bowl[1], top: Y + Math.max(...S.heap.map(p => p.y)) }
+      },
+      restSpot(v: Vertex) {
+        const N = self.N, [x, y] = v, j = jitter(N, x, y, self.moveNo + 1)
+        const s = { p: y * N + x, x, y, jx: j.jx, jz: j.jz, tx: j.jx, tz: j.jz }
+        settle(s as Stone, self.stones, N, gx(N, x), gz(N, y))
+        return { x: s.tx, y: self.kit.spec.shBot, z: s.tz, seed: j.seed, rotY: j.rotY }
+      },
+      dropT0(v: Vertex) { return self.stones.get(v[1] * self.N + v[0])?.t0 ?? null },
+    }
+  })()
+
   private camOverride: THREE.PerspectiveCamera | null = null // debug close-up
-  private propTick: ((now: number) => boolean) | null = null // debug.prop(): a prototype's per-frame hook
   private render(cam: THREE.Camera = this.camOverride ?? this.activeCam()) {
     ;(this.composer.passes[0] as RenderPass).camera = cam
     this.postFor(cam)
@@ -1800,31 +1853,6 @@ export class Board3D {
       look(o: Partial<Look>) { Object.assign(LOOKS[self.decorOn ?? self.opts.decor], o); self.extrasOn(); self.invalidate(); return { ...LOOKS[self.decorOn ?? self.opts.decor] } },
       /** The ambient animation: running now, its clock (s). */
       get ambient() { return { on: self.ambient(false), t: self.ambT, scene: !!self.sceneOn } },
-      /** Prototype seam (the opponent's hand): adds obj to the scene, tick(now) runs each frame before the stones are
-       *  placed (true: keep rendering); null removes it. */
-      prop(obj: THREE.Object3D | null, tick?: (now: number) => boolean) {
-        const old = self.scene.getObjectByName('debug-prop'); if (old) self.scene.remove(old)
-        if (obj) { obj.name = 'debug-prop'; self.scene.add(obj) }
-        self.propTick = obj && tick ? tick : null; self.invalidate()
-      },
-      /** The stone set in use (geometry, materials, sizes) and the lamp (Lanterne, a scene's andon). */
-      get kit() { return self.kit },
-      get lamp() { return self.lamp },
-      get camE() { return self.camE },
-      /** Poses the mounted scene's lamp; returns the pose it had (pass it back to restore). */
-      lampPose(pose: Mounted['lampPose']) { const s = self.sceneOn, old = s?.lampPose ?? null; if (s) { s.lampPose = pose; self.invalidate() } return old },
-      /** A player's bowl: its centre on the ground (x, y, z) and its heap's top (y, mm). */
-      bowl(c: Sign) {
-        const S = self.sets.find(s => s.c === c)!, Y = groundY(self.shape)
-        return { x: S.bowl[0], y: Y, z: S.bowl[1], top: Y + Math.max(...S.heap.map(p => p.y)) }
-      },
-      /** Where the next stone played at v would come to rest (girdle centre), its seed and spin; captures not counted. */
-      restSpot(v: Vertex) {
-        const N = self.N, [x, y] = v, j = jitter(N, x, y, self.moveNo + 1)
-        const s = { p: y * N + x, x, y, jx: j.jx, jz: j.jz, tx: j.jx, tz: j.jz }
-        settle(s as Stone, self.stones, N, gx(N, x), gz(N, y))
-        return { x: s.tx, y: self.kit.spec.shBot, z: s.tz, seed: j.seed, rotY: j.rotY }
-      },
       /** The move counter jitter() is seeded with (captures replay one move with the same jitter). */
       get moveNo() { return self.moveNo }, set moveNo(n: number) { self.moveNo = n },
       /** Restarts the stone at v's drop at t0 (performance.now() time). */

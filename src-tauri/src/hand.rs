@@ -9,10 +9,10 @@ use tokio::io::AsyncWriteExt;
 
 use crate::failure::{Failure, Res};
 
-// Stand-in (the dev prototype's right-smooth.glb): the final MakeHuman hand replaces the file, then these three are re-pinned.
+// Released apps pin this file: it is never modified. A new hand ships as hand-v2.glb with its own pins.
 const HAND_URL: &str = "https://raw.githubusercontent.com/Slymaster/masame/main/downloads/hand/hand-v1.glb";
-const HAND_SIZE: u64 = 474_712;
-const HAND_SHA256: &str = "8df4780e9f148c451a99f318c4e4ee511e448efc89e2110eff265ad2c2596079";
+const HAND_SIZE: u64 = 529_740;
+const HAND_SHA256: &str = "07b0e19ca7b264bcfa504131b38ff82ef1cd05a7984cf0157784604ce705de96";
 const FILE: &str = "hand-v1.glb";
 const PART: &str = "hand-v1.glb.part";
 
@@ -64,7 +64,10 @@ async fn fetch(c: &reqwest::Client, url: &str, part: &Path, size: u64, sha256: &
     // 200 only: the shared client follows no redirect, so a 3xx (or a 206) lands here.
     if r.status() != reqwest::StatusCode::OK { return Err(Failure::with("hand_http", r.status())) }
     if r.content_length().is_some_and(|n| n > size) { return Err(Failure::new("too_large")) }
-    let mut f = tokio::fs::File::create(part).await.map_err(write)?;
+    // A stale `.part` (file or symlink) is unlinked, never followed; create_new (O_CREAT|O_EXCL) then refuses anything
+    // planted since, a symlink included, so the bytes only ever go into a fresh file of our own.
+    let _ = tokio::fs::remove_file(part).await;
+    let mut f = tokio::fs::OpenOptions::new().write(true).create_new(true).open(part).await.map_err(write)?;
     let (mut h, mut have) = (Sha256::new(), 0u64);
     while let Some(chunk) = r.chunk().await.map_err(net)? {
         have += chunk.len() as u64;
@@ -85,7 +88,8 @@ async fn install(c: &reqwest::Client, url: &str, dir: &Path, size: u64, sha256: 
     std::fs::create_dir_all(dir).map_err(|e| Failure::with("hand_dir", e))?;
     let part = dir.join(PART);
     let r = match fetch(c, url, &part, size, sha256).await {
-        Ok(()) => std::fs::rename(&part, dir.join(FILE)).map_err(|e| Failure::with("write_failed", e)), // same folder: atomic
+        // Same folder: atomic. A symlink at the destination is replaced itself, never written through.
+        Ok(()) => std::fs::rename(&part, dir.join(FILE)).map_err(|e| Failure::with("write_failed", e)),
         Err(e) => Err(e),
     };
     if r.is_err() { let _ = std::fs::remove_file(&part); }
@@ -188,6 +192,59 @@ mod tests {
         assert_eq!(install(&local(), &gone, &d, BODY.len() as u64, &sha(BODY)).await.unwrap_err().code, "hand_http");
         assert!(!d.join(PART).exists() && !d.join(FILE).exists());
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Two outside targets: an existing file that must stay untouched, and a missing path that must not appear.
+    #[cfg(unix)]
+    fn outside(name: &str) -> (PathBuf, PathBuf) {
+        let o = tmp(&format!("{name}-outside"));
+        std::fs::create_dir_all(&o).unwrap();
+        std::fs::write(o.join("victim"), "keep me").unwrap();
+        (o.join("victim"), o.join("absent"))
+    }
+
+    #[cfg(unix)]
+    fn installed_cleanly(d: &Path, victim: &Path, absent: &Path) {
+        let m = std::fs::symlink_metadata(d.join(FILE)).unwrap();
+        assert!(m.file_type().is_file(), "a regular file, not a link");
+        assert_eq!(read(d, BODY.len() as u64, &sha(BODY)).unwrap(), BODY);
+        assert!(!d.join(PART).exists() && std::fs::symlink_metadata(d.join(PART)).is_err());
+        assert_eq!(std::fs::read(victim).unwrap(), b"keep me");
+        assert!(std::fs::symlink_metadata(absent).is_err());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlink_at_the_part_path_is_not_followed() {
+        let (victim, absent) = outside("part");
+        for target in [&victim, &absent] {
+            let d = tmp("partlink");
+            std::fs::create_dir_all(&d).unwrap();
+            std::os::unix::fs::symlink(target, d.join(PART)).unwrap();
+            let url = serve(reply(&format!("200 OK\r\nContent-Length: {}", BODY.len()), BODY));
+            install(&local(), &url, &d, BODY.len() as u64, &sha(BODY)).await.unwrap();
+            installed_cleanly(&d, &victim, &absent);
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+        std::fs::remove_dir_all(victim.parent().unwrap()).unwrap();
+    }
+
+    /// The link itself is replaced by the verified file; its target is never written. A dangling link survives `read`
+    /// (no metadata), so it reaches the rename itself.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlink_at_the_final_path_is_replaced_not_followed() {
+        let (victim, absent) = outside("final");
+        for target in [&victim, &absent] {
+            let d = tmp("finallink");
+            std::fs::create_dir_all(&d).unwrap();
+            std::os::unix::fs::symlink(target, d.join(FILE)).unwrap();
+            let url = serve(reply(&format!("200 OK\r\nContent-Length: {}", BODY.len()), BODY));
+            install(&local(), &url, &d, BODY.len() as u64, &sha(BODY)).await.unwrap();
+            installed_cleanly(&d, &victim, &absent);
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+        std::fs::remove_dir_all(victim.parent().unwrap()).unwrap();
     }
 
     #[test]

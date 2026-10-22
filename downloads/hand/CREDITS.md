@@ -6,8 +6,25 @@ on in the Workshop.
 It is not bundled with Masame. The desktop app downloads it once from this folder
 (`https://raw.githubusercontent.com/Slymaster/masame/main/downloads/hand/hand-v1.glb`) when the option is turned on,
 checks its size and SHA-256 against the values pinned in `src-tauri/src/hand.rs`, and keeps it in the app's data folder
-(`hand/`). Changing this file means re-pinning those values, or the app refuses it.
+(`hand/`).
 
-For now it is a stand-in: `src/board3d/hand/right-smooth.glb`, the right hand of the "generic-hand" profile of
-`@webxr-input-profiles/assets` 1.0.20 ([immersive-web/webxr-input-profiles](https://github.com/immersive-web/webxr-input-profiles)),
-subdivided once in Blender. Licence: MIT. The final hand (MakeHuman) will replace it.
+**The file name is versioned and the file is never modified.** Released apps pin v1's size and hash, so a changed
+`hand-v1.glb` would be refused by every copy of Masame already installed. A future hand is a new file, `hand-v2.glb`,
+with its own pins in a new release.
+
+## The model
+
+The right hand, wrist and the end of the forearm of a MakeHuman character (a young adult East Asian man), skinned on
+MakeHuman's `game_engine` rig, the skin baked onto the hand's own UVs (1024² JPEG). Made headless in Blender 5.2 by
+`scripts/hand-makehuman.py` with MPFB 2.0.18, the MakeHuman extension for Blender.
+
+- MakeHuman base mesh, macro targets and `game_engine` rig and weights: CC0 (MakeHuman's assets, as shipped with MPFB)
+- Skin `young_asian_male` (texture `young_lightskinned_male_diffuse3.png`): `makehuman_system_assets` pack, CC0
+- Hand targets `mindfront_hand_fingers_correction`, `mindfront_hand_thenar_eminence`, `mindfront_hand_hypothenar`
+  (Mindfront) and `jujube_knobby_knuckles` (jujube): `hands01` pack, CC0
+- Tool: [MPFB](https://extensions.blender.org/add-ons/mpfb/) 2.0.18, GPL-3.0. It only made the model: no MPFB code is
+  shipped, and MakeHuman states that what it outputs from its CC0 assets is CC0.
+- Project: [MakeHuman](https://static.makehumancommunity.org/)
+
+To regenerate it, see the header of `scripts/hand-makehuman.py` (an isolated Blender profile, MPFB installed from its
+zip, the two CC0 packs loaded with MPFB's own loader). It writes `hand-v2.glb` by default, never over v1.

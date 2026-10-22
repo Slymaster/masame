@@ -127,8 +127,8 @@ export const en = {
   ambientSound: 'Ambient sound', ambientSoundHint: 'Leaves, wind or rain, very quietly',
   depthOfField: 'Depth of field', depthOfFieldHint: 'Softens what lies beyond the board',
   opponentHand: 'Opponent’s hand',
-  opponentHandHint: 'In the Contemplation view, your opponent’s hand takes a stone from the bowl and places it. Downloaded once from GitHub (about 3 MB).',
-  handDownloading: 'Downloading the hand from GitHub…', handReady: 'The hand is ready. It plays in the Contemplation view.',
+  opponentHandHint: 'In the Contemplation view, your opponent’s hand takes a stone from the bowl and places it. Downloaded once from GitHub (about 0.5 MB).',
+  handDownloading: 'Downloading the hand from GitHub…', handReady: 'The hand is ready. It plays in the Contemplation view, when thinking time is on.',
   handFailed: (why: string) => `Couldn’t get the hand: ${why}`,
   stoneLocked: (how: string) => `To earn: ${how}`,
   unlocks: { games10: '10 finished games', streak7: '7 days in a row', review: 'a game reviewed', tsumego: 'a tsumego solved' },
@@ -599,6 +599,7 @@ export const en = {
     hand_http: 'GitHub refused the download.',
     hand_dir: 'Can’t access the app’s data folder.',
     hand_missing: 'The hand isn’t downloaded.',
+    hand_bad: 'The hand’s model can’t be read.',
   },
 }
 

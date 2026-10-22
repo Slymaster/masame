@@ -127,8 +127,8 @@ export const fr: Dict = {
   ambientSound: 'Ambiance sonore', ambientSoundHint: 'Feuilles, vent ou pluie, tout bas',
   depthOfField: 'Profondeur de champ', depthOfFieldHint: 'Adoucit ce qui est au-delà du goban',
   opponentHand: 'Main de l’adversaire',
-  opponentHandHint: 'En vue Contemplation, la main de ton adversaire prend une pierre dans son bol et la pose. Téléchargée une fois depuis GitHub (environ 3 Mo).',
-  handDownloading: 'Téléchargement de la main depuis GitHub…', handReady: 'La main est prête. Elle joue en vue Contemplation.',
+  opponentHandHint: 'En vue Contemplation, la main de ton adversaire prend une pierre dans son bol et la pose. Téléchargée une fois depuis GitHub (environ 0,5 Mo).',
+  handDownloading: 'Téléchargement de la main depuis GitHub…', handReady: 'La main est prête. Elle joue en vue Contemplation, quand le temps de réflexion est activé.',
   handFailed: (why: string) => `Impossible de récupérer la main : ${why}`,
   stoneLocked: (how: string) => `À gagner : ${how}`,
   unlocks: { games10: '10 parties terminées', streak7: '7 jours de suite', review: 'une partie revue', tsumego: 'un tsumego réussi' },
@@ -599,5 +599,6 @@ export const fr: Dict = {
     hand_http: 'GitHub a refusé le téléchargement.',
     hand_dir: 'Impossible d’accéder au dossier de l’application.',
     hand_missing: 'La main n’est pas téléchargée.',
+    hand_bad: 'Le modèle de la main est illisible.',
   },
 }

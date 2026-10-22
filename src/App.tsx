@@ -10,6 +10,8 @@ import { Game, type GameNode, type Move, type Sign, type Vertex } from './game'
 import { analyze, call, candidates, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
 import { handInstalled, installHand } from './handAsset'
+import { handMove, loadHand } from './opponentHand'
+import type { OpponentHand } from './board3d/hand'
 import { notify } from './notify'
 import { OgsSection } from './OgsSection'
 import { Clock } from './Clock'
@@ -310,14 +312,29 @@ export function App() {
 
   // The opponent's hand: fetched once when the option is on (desktop Workshop); turning it off keeps the file.
   const [hand, setHand] = useState<{ s: 'idle' | 'downloading' | 'ready' } | { s: 'error'; err: Msg }>({ s: 'idle' })
+  const handFailed = useCallback((e: unknown) => { // the line shows the localized message only; the detail goes to the console
+    console.error('hand', e)
+    const code = (e as { code?: unknown })?.code
+    setHand({ s: 'error', err: d => failureText({ code: typeof code === 'string' ? code : 'hand_bad' }, d) })
+  }, [])
   const getHand = useCallback(() => {
     setHand({ s: 'downloading' })
-    installHand().then(() => setHand({ s: 'ready' }), e => setHand({ s: 'error', err: d => failureText(e, d) }))
-  }, [])
+    installHand().then(() => setHand({ s: 'ready' }), handFailed)
+  }, [handFailed])
   useEffect(() => {
     if (!settings.opponentHand || isMobile) return
     handInstalled().then(ok => ok ? setHand({ s: 'ready' }) : getHand(), getHand)
   }, [settings.opponentHand, getHand])
+  // hand.ts and the model: loaded once the option is on with the 3D board; the bot's moves use it in Contemplation (see botTurn)
+  const handRef = useRef<OpponentHand | null>(null)
+  const handReady = settings.opponentHand && hand.s === 'ready' && renderer === '3d'
+  useEffect(() => { if (handReady) loadHand().then(h => { handRef.current = h }, handFailed) }, [handReady, handFailed])
+  const handOn = handReady && settings.camera === 'contemplation'
+  const handOnRef = useRef(handOn)
+  handOnRef.current = handOn
+  useEffect(() => { if (!handOn) handRef.current?.stop() }, [handOn]) // Study or the option off: put away at once (a pending move then lands on time)
+  /** The hand may play the bot's next move: the option ready, Contemplation, motion allowed, a Board3D mounted. */
+  const handPlays = () => handOnRef.current && !!view.current && 'setHand' in view.current && !matchMedia('(prefers-reduced-motion: reduce)').matches
 
   // Updates: a silent check at launch (at most daily, unless turned off), a manual one, install on click only.
   const [version, setVersion] = useState('')
@@ -904,16 +921,20 @@ export function App() {
       }, random)
       if (m.kind === 'resign') return finish(d => d.resigns(bot.sign), false, resignResult(-bot.sign as Sign))
       const wait = settings.delay ? m.delay - (performance.now() - t0) : 0
-      if (wait > 0) await new Promise(r => setTimeout(r, wait))
-      if (!live) return
       const v: Vertex | null = m.kind === 'play' ? [m.index % n, Math.floor(m.index / n)] : null
+      // the opponent's hand plays White's stones from the bowl across the board (Black's sits by the player); the stone
+      // lands when it would have without it, or a little later on a quick move. Thinking time off: the player chose speed.
+      const h = handRef.current
+      if (v && h && bot.sign === -1 && settings.delay && handPlays() && game.isLegal(v)) await handMove(h, view.current as Board3D, v, wait, () => live && handPlays())
+      else if (wait > 0) await new Promise(r => setTimeout(r, wait))
+      if (!live) return
       if (game.play(v) !== 'ok') game.play(null) // shortcut: an illegal sample (superko corner case) becomes a pass
       winrates.current.set(game.lastMove!, botWinrate)
       if (v && game.lastMove?.vertex) view.current?.drop(v, bot.sign)
       else view.current?.pass?.(bot.sign)
       setDirty(true); changed()
     }).catch(e => live && setBotError(d => d.botFailed(failureText(e, d)))).finally(() => live && setThinking(false))
-    return () => { live = false; setThinking(false) }
+    return () => { live = false; setThinking(false); if (handRef.current?.pending) handRef.current.stop() } // a move still in his fingers is dropped
   }, [botTurn, ver, game, botRetry]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Two passes: counting. KataGo's ownership suggests the dead stones (without an engine, none are suggested);

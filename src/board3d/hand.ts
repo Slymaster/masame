@@ -1,21 +1,18 @@
-// PROTOTYPE (dev page only, imported by demo.ts alone): the AI opponent's right hand, in a dark silk sleeve, takes a
-// stone from his bowl and places it. The seated camera never shows his face, so he is a hand, a sleeve and, as an option,
-// the shadow of his body (an invisible stand-in that only the lamp's shadow pass sees).
-// Hand: MakeHuman (CC0, made with MPFB by scripts/hand-makehuman.py), or for comparison the WebXR Input Profiles
-// "generic-hand" (MIT, smoothed by scripts/hand-smooth.py); see hand/CREDITS.md. Units mm, y up, board top ≈ 0, he sits at −z.
+// The AI opponent's right hand (Workshop option, a lazy chunk): in a dark silk sleeve, it takes a stone from his bowl and
+// places it. The seated camera never shows his face, so he is a hand, a sleeve and, as an option, the shadow of his body
+// (an invisible stand-in that only the lamp's shadow pass sees). The model is not bundled: the app downloads
+// downloads/hand/hand-v1.glb (MakeHuman, CC0, see downloads/hand/CREDITS.md) and passes its bytes to load().
+// Board3D.setHand plugs it in. Units mm, y up, board top ≈ 0, he sits at −z.
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import type { Vertex } from '@sabaki/go-board'
-import type { Board3D } from './Board3D'
+import type { Board3D, HandCtx, HandPlug } from './Board3D'
 import { DROP_MS, dropPose } from './logic'
-import { stoneLayer } from './stones'
-import mhUrl from './hand/hand-mh.glb?url'
-import webxrUrl from './hand/right-smooth.glb?url'
+import { stoneLayer, type StoneKit } from './stones'
 
 export type V3 = [number, number, number]
 /** Upper arm and forearm (shoulder → elbow → wrist), mm; the arm never straightens past this share of its length. */
 export const L1 = 300, L2 = 255, REACH = 0.92
-const LEAN_MAX = 350
 
 const v3 = (a: V3) => new THREE.Vector3(...a)
 const arr = (v: THREE.Vector3): V3 => [v.x, v.y, v.z]
@@ -32,19 +29,25 @@ export function solveArm(S: V3, T: V3, l1: number, l2: number, pole: V3) {
   return { elbow: arr(elbow), wrist: arr(wrist), capped: dist > r + 1e-6 }
 }
 
-/** The torso leans about the hips toward T, just enough (≤ LEAN_MAX mm at the shoulder) for the arm to reach it. */
-export function lean(hip: V3, S0: V3, T: V3, cap: number) {
-  const h = v3(hip), u = v3(S0).sub(h), len = u.length(), q = new THREE.Quaternion()
-  const to = v3(T).sub(h), axis = new THREE.Vector3().crossVectors(u, to)
-  if (axis.lengthSq() < 1e-6) return { shoulder: S0, q }
-  axis.normalize()
-  let ang = 0
-  for (let k = 0; k < 4; k++) { // the shoulder also drops as it leans: settle the angle in a few steps
-    const S = u.clone().applyAxisAngle(axis, ang).add(h), need = S.distanceTo(v3(T)) - cap + 10
-    ang = Math.min(Math.max(0, ang + Math.asin(Math.min(1, Math.max(-1, need / len)))), 2 * Math.asin(LEAN_MAX / 2 / len)) // the shoulder's chord ≤ LEAN_MAX
-  }
-  q.setFromAxisAngle(axis, ang)
-  return { shoulder: arr(u.applyQuaternion(q).add(h)), q }
+/** Where he sits in seiza across a board BD deep, the ground at G: his hips, and his right shoulder upright. */
+export const seat = (G: number, BD: number) => ({ hip: [0, G + 200, -BD / 2 - 360] as V3, S0: [-190, G + 720, -BD / 2 - 360] as V3 })
+
+/** How far the torso may bow about the hips (°): a seiza bow goes near level, the hips staying on the heels. */
+const LEAN = 68
+
+/** His torso for a wrist target T, seated at hip with the shoulder at S0: upright when the arm reaches T, else bowed
+ *  toward it, just enough for the arm (≤ REACH) to get there; the farther, the more the shoulder goes forward and down. */
+export function reach(hip: V3, S0: V3, T: V3) {
+  const cap = REACH * (L1 + L2) - 2, h = v3(hip), u = v3(S0).sub(h), t = v3(T)
+  const f = new THREE.Vector3(t.x - h.x, 0, t.z - h.z).normalize(), axis = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), f).normalize()
+  const at = (s: number) => { const q = new THREE.Quaternion().setFromAxisAngle(axis, THREE.MathUtils.degToRad(LEAN) * s); return { shoulder: arr(u.clone().applyQuaternion(q).add(h)), q } }
+  const far = (s: number) => v3(at(s).shoulder).distanceTo(t) - cap
+  if (far(0) <= 0) return at(0)
+  // the least bow that reaches (the distance falls as he bows, until the shoulder passes over T); a target beyond even
+  // the deepest bow: the arm stops short (solveArm caps it)
+  let lo = 0, hi = 1
+  for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; if (far(m) > 0) lo = m; else hi = m }
+  return at(hi)
 }
 
 /* ---------- fingers ---------- */
@@ -58,20 +61,10 @@ export const mhName = (n: string) => {
   const k: Record<string, string> = f === 'thumb' ? { metacarpal: '01', 'phalanx-proximal': '02', 'phalanx-distal': '03', tip: 'tip' } : { 'phalanx-proximal': '01', 'phalanx-intermediate': '02', 'phalanx-distal': '03', tip: 'tip' }
   return `${f}_${k[joint]}_r`
 }
-export type HandModel = 'mh' | 'webxr'
 /** Degrees. Fingers: [MCP flex, PIP flex, DIP flex, spread (+ toward the pinky)]; thumb: [CMC flex, CMC abduction, MCP flex, IP flex]. */
 type Pose = Record<Finger, [number, number, number, number]>
 type Poses = Record<'rest' | 'reach' | 'grip' | 'press' | 'release', Pose>
-/** The WebXR hand's poses (its rest pose is flat), kept for the before/after comparison. */
-const POSES_WEBXR: Poses = {
-  rest: { thumb: [10, 10, 10, 10], 'index-finger': [18, 22, 10, 0], 'middle-finger': [22, 28, 12, 0], 'ring-finger': [28, 34, 14, 0], 'pinky-finger': [32, 38, 15, 0] },
-  reach: { thumb: [15, 15, 12, 10], 'index-finger': [6, 8, 4, 5], 'middle-finger': [4, 6, 3, -3], 'ring-finger': [35, 50, 25, 0], 'pinky-finger': [42, 58, 28, 0] },
-  grip: { thumb: [25, 5, 20, 15], 'index-finger': [16, 6, 0, 1], 'middle-finger': [0, 6, 38, -1], 'ring-finger': [70, 90, 50, 0], 'pinky-finger': [78, 95, 55, 0] },
-  press: { thumb: [25, 5, 20, 15], 'index-finger': [16, 6, 0, 1], 'middle-finger': [0, 6, 48, -1], 'ring-finger': [70, 90, 50, 0], 'pinky-finger': [78, 95, 55, 0] },
-  release: { thumb: [20, 10, 15, 12], 'index-finger': [40, 45, 20, 1], 'middle-finger': [0, 4, 30, -1], 'ring-finger': [62, 80, 44, 0], 'pinky-finger': [70, 86, 48, 0] },
-}
-const HOLD_WEBXR = { along: 1.7, up: 8, side: 9 }
-/** The MakeHuman hand's poses, counted from flat, parallel fingers (see `zero`). */
+/** The hand's poses, counted from flat, parallel fingers (see `zero`). */
 export const POSES: Poses = {
   rest: { thumb: [10, 10, 10, 10], 'index-finger': [18, 22, 10, 0], 'middle-finger': [22, 28, 12, 0], 'ring-finger': [28, 34, 14, 0], 'pinky-finger': [32, 38, 15, 0] },
   reach: { thumb: [15, 15, 12, 10], 'index-finger': [6, 8, 4, 5], 'middle-finger': [4, 6, 3, -3], 'ring-finger': [35, 50, 25, 0], 'pinky-finger': [42, 58, 28, 0] },
@@ -128,6 +121,8 @@ function tube(g: THREE.BufferGeometry, A: THREE.Vector3, B: THREE.Vector3, r: (t
 const mj = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (10 - 15 * t + 6 * t * t) } // minimum jerk
 interface Key { t: number; p: THREE.Vector3; q: THREE.Quaternion; pose: Pose; arc?: number }
 /** ms: the moments the demo and the captures refer to. */
+/** ms the fingers keep the stone past the handoff waiting for the board's own (a move dropped at the last moment). */
+const HOLD_MS = 300
 export const T = { reach: 0, bowl: 600, pick: 760, lift: 900, over: 1600, aim: 1720, hand: 1940, held: 1940 + DROP_MS + 110, out: 2240, gone: 2900 }
 
 /** Where the stone sits: along the index's last phalanx (share of it: > 1 is past the tip, so the stone sticks out in
@@ -140,52 +135,52 @@ export const ORI: Record<'lap' | 'bowl' | 'pick' | 'lift' | 'over' | 'aim' | 'ha
 }
 
 export type Variant = 'A' | 'B'
-/** The MakeHuman skin's multiplier on its baked map (the map is a daylight albedo), and its surface. */
+/** The skin's multiplier on its baked map (the map is a daylight albedo) by daylight, and under an andon alone: the
+ *  andon's ~2000 K light would make it orange, so it leans to green and blue there (still warm). See tone(). */
 export const MH_TINT: [number, number, number] = [0.74, 0.67, 0.69]
+export const ANDON_TINT: [number, number, number] = [0.66, 0.8, 0.88] // blue barely matters under an andon; more would turn mauve under a mixed light
 export const MH_SKIN = { roughness: 0.5, specular: 0.5, sheen: 0.5 }
+const SHEEN_DAY: [number, number, number] = [0.9, 0.55, 0.5], SHEEN_ANDON: [number, number, number] = [0.7, 0.66, 0.66]
+const _tint = new THREE.Color()
 
-export class OpponentHand {
+export class OpponentHand implements HandPlug {
   readonly root = new THREE.Group()
+  /** ms from play() to the handoff, when the stone leaves the fingers and the board's own drop takes over. */
+  readonly handoffMs = T.hand
   private hand = new THREE.Group() // the hand's frame: oriented, then placed so the stone point lands on the target
   private gl = new THREE.Group() // the glTF, metres → mm
   private joints = new Map<string, { o: THREE.Object3D; rest: THREE.Quaternion; flex: THREE.Vector3; side: THREE.Vector3; zero: [number, number] }>()
-  private stone: THREE.InstancedMesh
+  private stone: THREE.InstancedMesh | null = null; private stoneKit: StoneKit | null = null // the carried stone, from the set in use
   private indexTip: THREE.Object3D
-  private arm: { lower: THREE.Object3D; wrist: THREE.Object3D; q: THREE.Quaternion; p: THREE.Vector3; wq: THREE.Quaternion } | null = null // MakeHuman: the forearm bone
+  private arm: { lower: THREE.Object3D; wrist: THREE.Object3D; q: THREE.Quaternion; p: THREE.Vector3; wq: THREE.Quaternion } // the forearm bone
   private upper = tubeGeo(); private fore = tubeGeo(); private juban = tubeGeo()
   private body = new THREE.Group(); private torso = new THREE.Group()
   private keys: Key[] = []
   private spot = { x: 0, y: 0, z: 0, seed: 0, rotY: 0 }
   private hip = new THREE.Vector3(); private S0 = new THREE.Vector3()
   private start = -1; private fixed = -1 // play: the gesture's start (performance.now time); at(): the frozen ms
-  private picked = false; private handed = false
+  private picked = false; private handedAt = -1; private landedAt = -1; private v: Vertex = [0, 0]; private k = 1
   private onHandoff: (() => void) | null = null; private done: (() => void) | null = null
-  // skin under a ~2400 K andon: a cool, low-chroma albedo so it reads as skin, not orange plastic; the sheen is the soft edge
-  readonly skin = new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(0.5, 0.36, 0.31), roughness: 0.58, specularIntensity: 0.55, sheen: 0.35, sheenColor: new THREE.Color(0.85, 0.6, 0.62), sheenRoughness: 0.55, vertexColors: true })
+  private view: Board3D | null = null; private ctx: HandCtx | null = null
+  private skin: THREE.MeshPhysicalMaterial
   // montsuki silk: a very dark charcoal with a hint of blue, a strong sheen so the folds read under the andon
   readonly silk = new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(0.045, 0.048, 0.062), roughness: 0.42, sheen: 1, sheenColor: new THREE.Color(0.72, 0.74, 0.82), sheenRoughness: 0.28, side: THREE.DoubleSide })
   // the under-kimono (juban): a warm off-white edge inside the cuff, framing the wrist
   readonly cotton = new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(0.6, 0.56, 0.48), roughness: 0.65, sheen: 0.5, sheenColor: new THREE.Color(0.9, 0.88, 0.82), sheenRoughness: 0.5, side: THREE.DoubleSide })
   variant: Variant = 'A'
-  private P: Poses; private H: typeof HOLD
 
-  private constructor(private view: Board3D, gltf: THREE.Group, readonly model: HandModel) {
-    this.P = model === 'mh' ? POSES : POSES_WEBXR; this.H = model === 'mh' ? HOLD : HOLD_WEBXR
+  private constructor(gltf: THREE.Group) {
     this.gl.scale.setScalar(1000); this.gl.add(gltf); this.hand.add(this.gl); this.root.add(this.hand)
     this.gl.updateMatrixWorld(true)
     let mesh: THREE.SkinnedMesh | null = null
     gltf.traverse(o => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) mesh = o as THREE.SkinnedMesh })
     if (!mesh) throw new Error('hand: no skinned mesh')
     const m = mesh as THREE.SkinnedMesh
-    const byName = (n: string) => { const k = model === 'mh' ? mhName(n) : n; return m.skeleton.bones.find(b => b.name === k) ?? gltf.getObjectByName(k)! }
-    if (model === 'webxr') { // WebXR poses every joint in world space: chain them (attach keeps world transforms, so the bind matrices hold)
-      const chains = [['wrist', 'thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip'],
-        ...FINGERS.map(f => ['wrist', `${f}-metacarpal`, `${f}-phalanx-proximal`, `${f}-phalanx-intermediate`, `${f}-phalanx-distal`, `${f}-tip`])]
-      for (const c of chains) for (let i = 1; i < c.length; i++) byName(c[i - 1]).attach(byName(c[i]))
-    }
-    this.gl.updateMatrixWorld(true)
+    const bone = (k: string) => { const b = m.skeleton.bones.find(b => b.name === k) ?? gltf.getObjectByName(k); if (!b) throw new Error(`hand: no bone ${k}`); return b }
+    const byName = (n: string) => bone(mhName(n))
     this.indexTip = byName('index-finger-tip')
-    if (model === 'mh') { const lower = m.skeleton.bones.find(b => b.name === 'lowerarm_r')!, wrist = byName('wrist'); this.arm = { lower, wrist, q: lower.quaternion.clone(), p: lower.position.clone(), wq: wrist.quaternion.clone() } }
+    const lower = bone('lowerarm_r'), wrist = byName('wrist')
+    this.arm = { lower, wrist, q: lower.quaternion.clone(), p: lower.position.clone(), wq: wrist.quaternion.clone() }
     // axes in the hand frame (= gl space before posing): palm normal −x; each finger's flexion axis = its direction × palm normal
     const inv = this.gl.matrixWorld.clone().invert(), at = (n: string) => byName(n).getWorldPosition(new THREE.Vector3()).applyMatrix4(inv)
     const P = new THREE.Vector3(-1, 0, 0)
@@ -200,66 +195,50 @@ export class OpponentHand {
     const PH = ['phalanx-proximal', 'phalanx-intermediate', 'phalanx-distal', 'tip']
     for (const f of FINGERS) for (const j of PH.slice(0, 3)) mk(`${f}-${j}`, `${f}-phalanx-proximal`, `${f}-tip`)
     // MakeHuman's rest pose is curled and fanned: poses count from flat, parallel fingers (degrees toward the palm, toward the pinky)
-    if (model === 'mh') for (const f of FINGERS) {
+    for (const f of FINGERS) {
       let prev = 0
       for (let i = 0; i < 3; i++) {
         const d = at(`${f}-${PH[i + 1]}`).sub(at(`${f}-${PH[i]}`)), a = THREE.MathUtils.radToDeg(Math.atan2(-d.x, -d.y))
         this.joints.get(`${f}-${PH[i]}`)!.zero = [a - prev, i ? 0 : THREE.MathUtils.radToDeg(Math.atan2(d.z, -d.y))]; prev = a
       }
     }
-    if (model === 'webxr') { this.paintSkin(m, at); m.material = this.skin } else m.material = this.mhSkin((m.material as THREE.MeshStandardMaterial).map)
-    m.castShadow = m.receiveShadow = true; m.frustumCulled = false
+    m.material = this.skin = this.mhSkin((m.material as THREE.MeshStandardMaterial).map)
+    // casts, but takes no shadow: under a daylight key his own sleeve would bury the hand in its shadow
+    m.castShadow = true; m.receiveShadow = false; m.frustumCulled = false
     // the sleeve
     for (const g of [this.upper, this.fore, this.juban]) { const s = new THREE.Mesh(g, g === this.juban ? this.cotton : this.silk); s.castShadow = s.receiveShadow = true; s.frustumCulled = false; this.root.add(s) }
-    // the carried stone: the set's own white stone
-    const kit = view.debug.kit
-    this.stone = stoneLayer(kit.geoW, kit.white, 1); this.stone.count = 1; this.stone.setMatrixAt(0, new THREE.Matrix4())
-    this.root.add(this.stone)
     this.buildBody()
     this.root.visible = false
   }
 
-  /** The bundled MakeHuman hand, the WebXR one (before/after comparisons), or a MakeHuman .glb's bytes (a downloaded file). */
-  static async load(view: Board3D, model: HandModel | ArrayBuffer = 'mh') {
-    const loader = new GLTFLoader()
-    const g = model instanceof ArrayBuffer ? await loader.parseAsync(model, '') : await loader.loadAsync(model === 'webxr' ? webxrUrl : mhUrl)
-    return new OpponentHand(view, g.scene, model === 'webxr' ? 'webxr' : 'mh')
+  /** The hand from a .glb's bytes (the downloaded downloads/hand/hand-v1.glb). */
+  static async load(glb: ArrayBuffer) {
+    // the skin decodes through an <img>: the app's CSP allows blob: images, not blob: fetches (ImageBitmapLoader)
+    const loader = new GLTFLoader().register(p => { p.textureLoader = new THREE.TextureLoader(p.options.manager); return { name: 'masame_img' } })
+    return new OpponentHand((await loader.parseAsync(glb, '')).scene)
   }
 
-  /** The MakeHuman hand's skin: its baked colour map (young_asian_male), toned for the andon, a sheen for the soft edge. */
+  /** The skin: its baked colour map (young_asian_male), toned for the andon, a sheen for the soft edge. */
   private mhSkin(map: THREE.Texture | null) {
-    return new THREE.MeshPhysicalMaterial({ map, color: new THREE.Color().setRGB(...MH_TINT), roughness: MH_SKIN.roughness, specularIntensity: MH_SKIN.specular, sheen: MH_SKIN.sheen, sheenColor: new THREE.Color(0.9, 0.55, 0.5), sheenRoughness: 0.5 })
+    return new THREE.MeshPhysicalMaterial({ map, color: new THREE.Color().setRGB(...MH_TINT), roughness: MH_SKIN.roughness, specularIntensity: MH_SKIN.specular, sheen: MH_SKIN.sheen, sheenColor: new THREE.Color(...SHEEN_DAY), sheenRoughness: 0.5 })
   }
 
-  /** Skin colour by vertex (the GLB has no texture): creases darker (concavity), fingertips and knuckles a little
-   *  redder, the nails a paler, pinker patch on the back of each fingertip. */
-  private paintSkin(m: THREE.SkinnedMesh, at: (n: string) => THREE.Vector3) {
-    const g = m.geometry, pos = g.attributes.position as THREE.BufferAttribute, nor = g.attributes.normal as THREE.BufferAttribute, n = pos.count
-    const col = new Float32Array(n * 3).fill(1), w = new THREE.Matrix4().copy(this.gl.matrixWorld).invert().multiply(m.matrixWorld)
-    const P = Array.from({ length: n }, (_, i) => new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(w))
-    // concavity: how far the neighbours' centre sits out along the normal, relative to the edge length
-    const sum = P.map(() => new THREE.Vector3()), cnt = new Uint16Array(n), idx = g.index!.array
-    for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { const i = idx[t + e], j = idx[t + (e + 1) % 3]; sum[i].add(P[j]); cnt[i]++; sum[j].add(P[i]); cnt[j]++ }
-    const nv = new THREE.Vector3(), nm = new THREE.Matrix3().getNormalMatrix(w)
-    const tips = ['thumb', ...FINGERS].map(f => [at(`${f}-tip`), at(f === 'thumb' ? 'thumb-phalanx-distal' : `${f}-phalanx-distal`)] as const)
-    const knuckles = FINGERS.flatMap(f => [at(`${f}-phalanx-proximal`), at(`${f}-phalanx-intermediate`)])
-    for (let i = 0; i < n; i++) {
-      const c = sum[i].divideScalar(cnt[i] || 1).sub(P[i]), e = Math.max(c.length(), 1e-6)
-      nv.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize()
-      const cav = THREE.MathUtils.clamp(nv.dot(c) / e * 2.2, 0, 1) // > 0: a crease
-      let r = 1 - 0.45 * cav, gg = 1 - 0.5 * cav, b = 1 - 0.5 * cav
-      for (const [tip, dist] of tips) {
-        const ax = tip.clone().sub(dist), t = P[i].clone().sub(dist).dot(ax) / ax.lengthSq()
-        if (t < 0.2 || t > 1.1) continue
-        const cc = dist.clone().addScaledVector(ax, t), off = P[i].clone().sub(cc), dorsal = off.x / (off.length() || 1) // +x: the back of the hand
-        const nail = THREE.MathUtils.smoothstep(dorsal, 0.4, 0.8) * THREE.MathUtils.smoothstep(t, 0.45, 0.62)
-        const pad = THREE.MathUtils.smoothstep(-dorsal, -0.2, 0.6) * THREE.MathUtils.smoothstep(t, 0.3, 0.9)
-        r *= 1 + 0.18 * nail + 0.05 * pad; gg *= 1 + 0.12 * nail - 0.06 * pad; b *= 1 + 0.2 * nail - 0.05 * pad
-      }
-      for (const k of knuckles) { const d = P[i].distanceTo(k), kk = Math.max(0, 1 - d / 14) * Math.max(0, (P[i].x - k.x) / 8); r *= 1 + 0.04 * kk; gg *= 1 - 0.06 * kk; b *= 1 - 0.06 * kk }
-      col[i * 3] = r; col[i * 3 + 1] = gg; col[i * 3 + 2] = b
-    }
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3))
+  /** The skin's tint, from the lamp's share of the light on the board (its illuminance there against the key's). */
+  private tone(ctx: HandCtx) {
+    const L = ctx.lamp, e = L.visible ? L.intensity / Math.max(1, L.position.distanceToSquared(L.target.position)) : 0
+    const sum = e + (ctx.key.visible ? ctx.key.intensity : 0), k = sum > 0 ? e / sum : 0
+    this.skin.color.setRGB(...MH_TINT).lerp(_tint.setRGB(...ANDON_TINT), k)
+    this.skin.sheenColor.setRGB(...SHEEN_DAY).lerp(_tint.setRGB(...SHEEN_ANDON), k)
+  }
+
+  /** The carried stone: the set's own white stone, remade when the set changes (Board3D frees the old kit). */
+  private stoneFor(kit: StoneKit) {
+    if (this.stoneKit === kit && this.stone) return this.stone
+    if (this.stone) { this.stone.removeFromParent(); this.stone.geometry.dispose() }
+    const st = this.stone = stoneLayer(kit.geoW, kit.white, 1); this.stoneKit = kit
+    st.count = 1; st.setMatrixAt(0, new THREE.Matrix4()); st.visible = false
+    this.root.add(st)
+    return st
   }
 
   /** A coarse body in seiza, invisible to the camera (no colour, no depth): only the lamp's shadow pass draws it. */
@@ -281,9 +260,9 @@ export class OpponentHand {
 
   /** Builds the keyframes for a move at v: from his lap, to the bowl, over the board, onto the stone's rest spot, away. */
   private plan(v: Vertex) {
-    const dbg = this.view.debug, bowl = dbg.bowl(-1), sp = this.spot = dbg.restSpot(v), G = bowl.y
-    const BD = Math.abs(bowl.z) / 0.3
-    this.hip.set(0, G + 200, -BD / 2 - 360); this.S0.set(-190, G + 720, this.hip.z)
+    const ctx = this.ctx!, bowl = ctx.bowl(-1), sp = this.spot = ctx.restSpot(v), G = bowl.y
+    const st = seat(G, Math.abs(bowl.z) / 0.3)
+    this.hip.set(...st.hip); this.S0.set(...st.S0)
     // hand orientation: fingers along `dir` (heading toward the target from his side), pitched down, palm down, rolled
     const ori = (to: THREE.Vector3, pitch: number, roll = 0, yaw = 0) => {
       const h = new THREE.Vector3(to.x - this.S0.x, 0, to.z - this.S0.z).normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw)
@@ -294,7 +273,7 @@ export class OpponentHand {
     }
     const d = THREE.MathUtils.degToRad, R = new THREE.Vector3(sp.x, sp.y, sp.z), B = new THREE.Vector3(bowl.x + 8, bowl.top, bowl.z + 6)
     const lap = new THREE.Vector3(-170, G + 260, this.hip.z + 210)
-    const P = this.P, O = (k: keyof typeof ORI, to: THREE.Vector3) => ori(to, d(ORI[k][0]), d(ORI[k][1]), d(ORI[k][2]))
+    const P = POSES, O = (k: keyof typeof ORI, to: THREE.Vector3) => ori(to, d(ORI[k][0]), d(ORI[k][1]), d(ORI[k][2]))
     const lapTo = lap.clone().add(new THREE.Vector3(0, 0, 300)), up = (p: THREE.Vector3, x: number, y: number, z: number) => p.clone().add(new THREE.Vector3(x, y, z))
     this.keys = [
       { t: T.reach, p: lap, q: O('lap', lapTo), pose: P.rest },
@@ -313,7 +292,8 @@ export class OpponentHand {
 
   private _q = new THREE.Quaternion(); private _p = new THREE.Vector3()
   /** Poses everything for the gesture at ms. */
-  private pose(ms: number) {
+  private pose(ms: number, held = false) {
+    this.tone(this.ctx!)
     const K = this.keys
     let i = 0
     while (i < K.length - 2 && ms >= K[i + 1].t) i++
@@ -324,24 +304,24 @@ export class OpponentHand {
     if (ms >= T.hand && ms < T.hand + DROP_MS) p.y = this.spot.y + dropPose(ms - T.hand).y
     const q = this._q.slerpQuaternions(a.q, b.q, s), pose = blendPose(a.pose, b.pose, s)
     // placed by where the grip would hold the stone, whatever the fingers do (the index slides out, the hand stays)
-    this.fingers(this.P.grip)
+    this.fingers(POSES.grip)
     this.hand.position.set(0, 0, 0); this.hand.quaternion.copy(q); this.root.updateMatrixWorld(true)
     const hold = this.holdPoint(), off = p.clone().sub(hold.p)
     this.fingers(pose)
     this.hand.position.add(off); this.root.updateMatrixWorld(true)
     // the stone: in the fingers (tilted with them), flattening to the board's own stone for the handoff
-    const carried = ms >= T.pick && ms < T.hand
-    this.stone.visible = carried
+    const carried = ms >= T.pick && (ms < T.hand || held), st = this.stoneFor(this.ctx!.kit)
+    st.visible = carried
     if (carried) {
       const fl = mj((ms - T.aim) / (T.hand - T.aim)), flat = new THREE.Quaternion().setFromAxisAngle(THREE.Object3D.DEFAULT_UP, this.spot.rotY)
-      this.stone.position.copy(p); this.stone.quaternion.copy(hold.q).slerp(flat, ms >= T.aim ? fl : 0)
-      ;(this.stone.geometry.attributes.aSeed.array as Float32Array)[0] = this.spot.seed; this.stone.geometry.attributes.aSeed.needsUpdate = true
+      st.position.copy(p); st.quaternion.copy(hold.q).slerp(flat, ms >= T.aim ? fl : 0)
+      ;(st.geometry.attributes.aSeed.array as Float32Array)[0] = this.spot.seed; st.geometry.attributes.aSeed.needsUpdate = true
     }
-    // arm: the torso leans just enough, then the two-bone solve from the shoulder to the wrist
+    // arm: the torso bows just enough, then the two-bone solve from the shoulder to the wrist
     const wrist = this.joints.get('thumb-metacarpal')!.o.parent!.getWorldPosition(new THREE.Vector3())
-    const lw = lean(arr(this.hip), arr(this.S0), arr(wrist), REACH * (L1 + L2))
+    const lw = reach(arr(this.hip), arr(this.S0), arr(wrist))
     const ik = solveArm(lw.shoulder, arr(wrist), L1, L2, [-1, -0.7, -0.2])
-    if (ik.capped) { const dw = v3(ik.wrist).sub(wrist); this.hand.position.add(dw); this.stone.position.add(dw); this.root.updateMatrixWorld(true) } // out of reach: the hand follows the arm
+    if (ik.capped) { const dw = v3(ik.wrist).sub(wrist); this.hand.position.add(dw); st.position.add(dw); this.root.updateMatrixWorld(true) } // out of reach: the hand follows the arm
     const S = v3(lw.shoulder), E = v3(ik.elbow), W = v3(ik.wrist), fd = W.clone().sub(E).normalize()
     tube(this.upper, S.clone().addScaledVector(E.clone().sub(S).normalize(), -40), E.clone().addScaledVector(E.clone().sub(S).normalize(), 30), t => 62 - 10 * t, t => 20 * Math.sin(Math.PI * t), 1.3)
     tube(this.fore, E.clone().addScaledVector(fd, -45), W.clone().addScaledVector(fd, 4), t => 46 + 6 * t + 8 * t ** 6, t => 18 * Math.sin(Math.PI * Math.min(1, t * 1.1)) ** 0.7, 4.1)
@@ -385,34 +365,57 @@ export class OpponentHand {
     const a = j.o.getWorldPosition(new THREE.Vector3()), b = tip.getWorldPosition(new THREE.Vector3()), ax = b.clone().sub(a).normalize()
     const flex = j.flex.clone().transformDirection(j.o.matrixWorld), n = new THREE.Vector3().crossVectors(ax, flex).normalize() // the nail's side
     const side = new THREE.Vector3(0, 0, 1).applyQuaternion(this.hand.quaternion) // gl +z: toward the pinky
-    return { p: a.clone().lerp(b, this.H.along).addScaledVector(n, this.H.up).addScaledVector(side, this.H.side), q: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n) }
+    return { p: a.clone().lerp(b, HOLD.along).addScaledVector(n, HOLD.up).addScaledVector(side, HOLD.side), q: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n) }
   }
 
-  /** Real time: the gesture for a move at v; onHandoff() (drop + state update) runs in the frame the stone leaves the fingers. */
-  play(v: Vertex, onHandoff: () => void) {
-    this.plan(v); this.fixed = -1; this.start = -1; this.picked = this.handed = false; this.onHandoff = onHandoff
-    this.root.visible = true
-    this.view.debug.prop(this.root, now => this.tick(now))
+  /** Real time: the gesture for a move at v on view; onHandoff() (drop + state update) runs when the stone reaches the
+   *  handoff, and the fingers keep it until the board draws its own. k < 1 plays the way to the handoff faster (k of its
+   *  natural time); the press and the way back keep their pace. Resolves when the hand is back in his lap, or at stop(). */
+  play(view: Board3D, v: Vertex, onHandoff: () => void, k = 1) {
+    this.stop()
+    this.plug(view); this.plan(v); this.v = v; this.k = k; this.start = this.handedAt = this.landedAt = -1; this.picked = false; this.onHandoff = onHandoff
     return new Promise<void>(r => { this.done = r })
   }
 
   /** Frozen at ms (deterministic captures): the board's stone is the caller's business. */
-  at(v: Vertex, ms: number) {
-    this.plan(v); this.fixed = ms; this.root.visible = true
-    this.view.debug.prop(this.root, now => this.tick(now))
+  at(view: Board3D, v: Vertex, ms: number) {
+    this.stop()
+    this.plug(view); this.plan(v); this.fixed = ms
     this.pose(ms)
   }
 
-  stop() { this.fixed = -1; this.start = -1; this.root.visible = false; this.view.debug.prop(null); this.done?.(); this.done = null }
+  /** Puts the hand away at once (nothing more is handed off) and unplugs it. */
+  stop() {
+    this.fixed = -1; this.start = -1; this.root.visible = false; this.onHandoff = null
+    this.view?.setHand(null); this.view = this.ctx = null
+    this.done?.(); this.done = null
+  }
 
-  private tick(now: number) {
-    if (this.fixed >= 0) { this.root.visible = this.view.debug.camE > 0; return false }
+  /** Between play() and the handoff: the move is still in his fingers. */
+  get pending() { return !!this.onHandoff }
+
+  private plug(view: Board3D) { this.view = view; this.ctx = view.setHand(this); this.root.visible = true }
+
+  tick(now: number) {
+    const ctx = this.ctx
+    if (!ctx) return false
+    if (this.fixed >= 0) { this.root.visible = ctx.camE > 0; return false }
     if (this.start < 0) this.start = now
-    const ms = now - this.start
-    this.pose(Math.min(ms, T.gone))
-    this.root.visible = this.view.debug.camE > 0
-    if (ms >= T.pick && !this.picked) { this.picked = true; this.view.pass(-1) } // a soft tap from the bowl
-    if (ms >= T.hand && !this.handed) { this.handed = true; this.onHandoff?.() }
+    const el = now - this.start
+    let ms = el / this.k, held = false
+    if (ms >= T.hand) {
+      if (this.handedAt < 0) { this.handedAt = now; const h = this.onHandoff; this.onHandoff = null; h?.() }
+      // the press follows the board's own drop: the stone stays in his fingers until the board draws it (React updates
+      // it a frame or two after the handoff), or HOLD_MS if the move never comes
+      const d = ctx.dropT0(this.v)
+      if (d !== null && this.landedAt < 0) this.landedAt = d // latched: an undo just after must not put it back in his fingers
+      const t0 = this.landedAt >= 0 ? this.landedAt : now - this.handedAt > HOLD_MS ? this.handedAt + HOLD_MS : null
+      held = t0 === null
+      ms = T.hand + (held ? 0 : Math.max(0, now - t0!))
+    }
+    this.pose(Math.min(ms, T.gone), held)
+    this.root.visible = ctx.camE > 0
+    if (ms >= T.pick && !this.picked) { this.picked = true; this.view?.pass(-1) } // a soft tap from the bowl
     if (ms >= T.gone) { this.stop(); return false }
     return true
   }

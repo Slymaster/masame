@@ -6,7 +6,8 @@ import GoBoard, { type Sign, type Vertex } from '@sabaki/go-board'
 import { Board3D, type Board3DOptions, type Board3DState } from './Board3D'
 import { DECORS } from './decors'
 import { arm, run, selftestOn } from './selftest'
-import type { HandModel, OpponentHand, Variant } from './hand'
+import type { OpponentHand, Variant } from './hand'
+import handUrl from '../../downloads/hand/hand-v1.glb?url' // dev page only: the app downloads it instead
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const SETUP: Vertex[] = [[15, 3], [3, 15], [15, 16], [3, 3], [2, 5], [2, 9], [5, 16], [5, 15], [6, 15], [4, 15], [6, 16], [16, 2], [15, 2], [16, 3], [16, 4], [17, 4], [17, 5], [15, 1], [14, 1], [16, 1], [9, 3], [16, 13], [16, 10], [9, 16]]
@@ -60,7 +61,7 @@ function aiMove() {
       }
       view.setThinking(false)
       // prototype: the opponent's hand plays it (Contemplation only: the seated view is where he sits across)
-      if (handMode !== 'off' && view.options.camera === 'contemplation') void getHand().then(h => { h.variant = handMode as Variant; return h.play(v, commit) })
+      if (handMode !== 'off' && view.options.camera === 'contemplation') void getHand().then(h => { h.variant = handMode as Variant; return h.play(view, v, commit) })
       else commit()
       return
     }
@@ -71,8 +72,7 @@ function aiMove() {
 /* ---------- prototype: the opponent's hand (hand.ts, loaded on first use) ---------- */
 let handMode: 'off' | Variant = 'off'
 let handP: Promise<OpponentHand> | null = null
-let handModel: HandModel = new URLSearchParams(location.search).get('handModel') === 'webxr' ? 'webxr' : 'mh' // before/after comparisons
-const getHand = () => (handP ??= import('./hand').then(m => m.OpponentHand.load(view, handModel)))
+const getHand = () => (handP ??= Promise.all([import('./hand'), fetch(handUrl).then(r => r.arrayBuffer())]).then(([m, b]) => m.OpponentHand.load(b)))
 /** Deterministic captures: at(v, ms) poses the gesture and the board at ms and returns the canvas as an image. */
 let handBase: { len: number; last: Vertex | null; toPlay: Sign; moveNo: number } | null = null
 const handCtl = {
@@ -81,7 +81,7 @@ const handCtl = {
     h.variant = handMode === 'off' ? 'A' : handMode
     if (handBase) { history.length = handBase.len; last = handBase.last; toPlay = handBase.toPlay; render(); view.debug.moveNo = handBase.moveNo }
     else handBase = { len: history.length, last, toPlay, moveNo: view.debug.moveNo }
-    h.at(v, ms)
+    h.at(view, v, ms)
     const now = performance.now()
     if (ms >= T.hand) {
       history.push(board().makeMove(-1, v)); last = v; toPlay = 1
@@ -97,11 +97,9 @@ const handCtl = {
   },
   async play(v: Vertex) {
     const h = await getHand(); h.variant = handMode === 'off' ? 'A' : handMode
-    await h.play(v, () => { history.push(board().makeMove(-1, v)); last = v; toPlay = 1; view.drop(v, -1); render() })
+    await h.play(view, v, () => { history.push(board().makeMove(-1, v)); last = v; toPlay = 1; view.drop(v, -1); render() })
   },
   get(): Promise<OpponentHand> { return getHand() },
-  /** Switches the hand's model ('mh' or the WebXR 'webxr', for before/after comparisons). */
-  async model(m: HandModel) { if (handP) (await handP).stop(); handModel = m; handP = null; return getHand() },
 }
 Object.assign(window, { hand: handCtl })
 
