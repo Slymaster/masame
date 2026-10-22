@@ -197,7 +197,6 @@ describe('great and brilliant', () => {
   it('great: the only good move, deep, not obvious', () => {
     const j = great()
     expect(j.cat).toBe('great')
-    expect(j.gap).toBeCloseTo(0.11)
     expect(great({}, { lead: leadFor(0.41) }).cat).toBe('best')
     expect(great({ deep: undefined }).cat).toBe('best')
     expect(great({}, {}, 0.8).cat).toBe('great')

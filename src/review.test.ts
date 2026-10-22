@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Levels, Pos } from './classify'
+import { judgeable, type Levels, type Pos } from './classify'
 import { Game, type Move, type Sign, type Vertex } from './game'
 import type { Analysis } from './katago'
 import { loadSgf } from './sgf'
-import { DEEP, GREAT_DEEP, gradeTry, leadsOf, lessonBoard, levelsOf, MAX_DEEP, MIN_LOSS, momentAt, ownershipOf, phaseLosses, phaseOf, pickMoments, readGame, reviewEnd, scanQuery, shift, toPos, verdict, type Moment } from './review'
+import { DEEP, GREAT_DEEP, gradeTry, leadsOf, losses, lessonBoard, levelsOf, MAX_DEEP, MIN_LOSS, momentAt, ownershipOf, phaseLosses, phaseOf, pickMoments, readGame, reviewEnd, scanQuery, shift, toPos, verdict, type Moment } from './review'
 
 // the classifier is tested on its own (classify.test.ts): here its two pipeline calls are stand-ins each test steers
 const cl = vi.hoisted(() => ({ deep: (() => []) as (...a: unknown[]) => number[], sac: (() => 0) as (...a: unknown[]) => number }))
-vi.mock('./classify', () => ({
-  deepCandidates: (...a: unknown[]) => cl.deep(...a), sacrificed: (...a: unknown[]) => cl.sac(...a),
+vi.mock('./classify', async orig => ({
+  judgeable: (await orig<typeof import('./classify')>()).judgeable,
+  deepCandidates: (...a: unknown[]) => cl.deep(...a).slice(0, a[5] as number), sacrificed: (...a: unknown[]) => cl.sac(...a),
   parseRank: (s?: string | null) => (s === '3k' ? -2 : s === '2d' ? 2 : null),
 }))
 beforeEach(() => { cl.deep = () => []; cl.sac = () => 0 })
@@ -54,6 +55,12 @@ describe('pickMoments', () => {
     expect(phaseLosses(leads, g.moves, -1, 9)).toEqual([0, 0, 0]) // so would White's game-ending pass
     expect(pickMoments([0, 0, 0, 0, 0, 0, 9], g.moves, 0, 3)).toEqual([]) // nor the second resumed move, White's F4
     expect(phaseLosses([0, 0, 0, 0, 0, 0, 9], g.moves, -1, 9)).toEqual([0, 0, 0])
+  })
+  it('counts the moves classify judges, on random records of moves, passes and pseudo-moves', () => {
+    for (let n = 0; n < 2000; n++) {
+      const moves = record(Array.from({ length: 10 }, () => (Math.random() < 0.4 ? null : [0, 0]))).map(m => (Math.random() < 0.15 ? { ...m, setup: true as const } : m))
+      expect(losses(Array(11).fill(0), moves, 0).map(([i]) => i)).toEqual(judgeable(moves).flatMap((x, i) => (x ? [i] : [])))
+    }
   })
 })
 

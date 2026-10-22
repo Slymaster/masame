@@ -418,6 +418,12 @@ export function paintMarks(c: CanvasRenderingContext2D, px: (i: number) => numbe
     if (tone === 'mistake') {
       c.fillStyle = 'rgba(246,240,229,0.7)'; c.fill()
       c.lineWidth = Math.max(1, r * 0.12); c.strokeStyle = '#6E5F4D'; c.stroke(); c.fillStyle = '#6E5F4D'
+      if (label === '×') { // the played move under KataGo's line: drawn bold, a font's × is a hairline at this size
+        const d = r * 0.5
+        c.save(); c.lineWidth = r * 0.28; c.lineCap = 'round'; c.strokeStyle = '#8A2F22'
+        c.beginPath(); c.moveTo(x - d, y - d); c.lineTo(x + d, y + d); c.moveTo(x + d, y - d); c.lineTo(x - d, y + d); c.stroke(); c.restore()
+        continue
+      }
     } else { c.fillStyle = tone === 'best' ? '#8A2F22' : '#6E5F4D'; c.fill(); c.fillStyle = '#F6F0E5' }
     c.fillText(label, x, y + r * 0.08)
   }

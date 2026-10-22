@@ -59,7 +59,6 @@ CONTEXT.forEach((c, i) => { const [x, y] = point(c); context[y][x] = i % 2 ? -1 
 function corners(game: Game, db: JosekiDb, out: boolean[]) {
   const byKey = keysOf(db), roots = new Set(db.roots.map(r => r.node))
   for (const k of [0, 1, 2, 3]) { // 1 flips x, 2 flips y: the four corners
-    const inv = k // flips are their own inverse
     let at: number | undefined, swap = 0, n = 0
     for (let i = 0; i < game.moves.length; i++) {
       const m = game.moves[i]
@@ -70,7 +69,7 @@ function corners(game: Game, db: JosekiDb, out: boolean[]) {
       const b = context.map(r => [...r]), signs = game.boards[i + 1].signMap
       let stones = 0
       for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-        const [gx, gy] = sym(inv, [x, y])
+        const [gx, gy] = sym(k, [x, y]) // flips are their own inverse
         if (REGION([x, y]) && signs[gy][gx]) { b[y][x] = signs[gy][gx] * swap; stones++ }
       }
       n++

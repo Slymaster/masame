@@ -273,7 +273,7 @@ export const fr: Dict = {
   reportHelp: 'Choisis un coup : les repères de la frise mènent aux plus marquants.',
   reportNext: (cat: string) => `Suivant : ${cat}`,
   pvShow: 'La ligne de KataGo', pvHide: 'Masquer la ligne',
-  retryMove: 'Réessayer', toReport: 'Retour au bilan', keyMoments: 'Moments clés',
+  retryMove: 'Réessayer', toReport: 'Retour au bilan', keyMoments: 'Moments clés', notableMoves: 'Coups notables',
   noMomentHere: 'KataGo ne trouve plus de leçon dans ce coup.',
   // analyse libre
   anFor: (s: number) => `Coups candidats pour ${color(s)}`, anReading: 'Lecture de la position…', anPass: 'Passer',

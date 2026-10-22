@@ -7,7 +7,7 @@ import { addReview, emptyDeck, recordKey, reviewKey } from './deck'
 import { PROFILES } from '../rank'
 
 // the classifier is tested on its own: here no move needs a deeper search, and no rank is known
-vi.mock('../classify', () => ({ parseRank: () => null, deepCandidates: () => [], sacrificed: () => 0 }))
+vi.mock('../classify', async orig => ({ judgeable: (await orig<typeof import('../classify')>()).judgeable, parseRank: () => null, deepCandidates: () => [], sacrificed: () => 0 }))
 // no opening book unless a test loads one
 const bk = vi.hoisted(() => ({ load: () => Promise.reject(new Error('no book')) as Promise<unknown> }))
 vi.mock('../book', () => ({ loadBook: () => bk.load(), bookMoves: (g: { moves: unknown[] }) => g.moves.map((_, i) => i < 2) }))

@@ -615,9 +615,7 @@ section > .seg + .ogs-input { display: block; width: 100% }
   .board-wrap > .note { left: 0; padding: 0 10px }
   /* the caption: what the player reads, 18 px at least, two lines at most (narrow-window type is for the desktop) */
   .board-wrap > .note > span { font-size: 18px; padding: 5px 16px 0 }
-  .board-wrap > .note .cat-line .why { display: none }
   .board-wrap > .note .cat-line svg { width: 18px; height: 18px }
-  .rv-why { display: block }
   .res .txt b { font-size: 18px }
   .card { z-index: auto; width: auto; flex: 0 1 auto; min-height: 0; max-height: none; align-self: stretch; margin: 0 8px; padding: 4px 14px 0 }
   .brand { display: contents }

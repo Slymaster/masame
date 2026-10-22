@@ -272,7 +272,7 @@ export const en = {
   reportHelp: 'Choose a move: the marks on the timeline lead to the telling ones.',
   reportNext: (cat: string) => `Next: ${cat}`,
   pvShow: 'KataGo’s line', pvHide: 'Hide the line',
-  retryMove: 'Retry', toReport: 'Back to the report', keyMoments: 'Key moments',
+  retryMove: 'Retry', toReport: 'Back to the report', keyMoments: 'Key moments', notableMoves: 'Notable moves',
   noMomentHere: 'KataGo no longer finds a lesson in this move.',
   // free analysis
   anFor: (s: number) => `Candidate moves for ${color(s)}`, anReading: 'Reading the position…', anPass: 'Pass',

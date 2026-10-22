@@ -1,7 +1,7 @@
 // Game review: find the moves that cost the most points, then teach each one as try → punishment → better move.
 // Pure helpers plus readGame, which drives the engine through an injected `ask` (tested with a fake one).
 
-import { deepCandidates, parseRank, sacrificed, type Facts, type Levels, type Pos } from './classify'
+import { deepCandidates, judgeable, parseRank, sacrificed, type Facts, type Levels, type Pos } from './classify'
 import type { Game, Move, Sign, Vertex } from './game'
 import type { Analysis } from './katago'
 
@@ -51,11 +51,8 @@ const lossOf = (leads: (number | undefined)[], moves: Move[], i: number) => move
  * not the game-ending pass nor anything after it (a game resumed after a dispute): the same rule as classify's.
  */
 export function losses(leads: (number | undefined)[], moves: Move[], side: Sign | 0): [number, number][] {
-  const real = moves.map((m, i) => (m.setup ? -1 : i)).filter(i => i >= 0) // pseudo-moves are no one's mistake
-  // the game-ending pass (the second in a row): nothing from it on counts, a game resumed after a dispute included
-  const over = real.findIndex((i, k) => k > 0 && !moves[i].vertex && !moves[real[k - 1]].vertex)
-  return real.filter((i, k) => (over < 0 || k < over)
-    && leads[i] !== undefined && leads[i + 1] !== undefined && (side === 0 || moves[i].sign === side))
+  const ok = judgeable(moves)
+  return moves.map((_, i) => i).filter(i => ok[i] && leads[i] !== undefined && leads[i + 1] !== undefined && (side === 0 || moves[i].sign === side))
     .map(i => [i, lossOf(leads, moves, i)])
 }
 
@@ -184,7 +181,7 @@ export async function readGame(game: Game, side: Sign | 0, pos: (Pos | undefined
   const facts: Facts[] = saved ?? game.moves.slice(0, end).map((_, i) => ({ sac: sacOf(game, pos, i), book: !!extra.book?.[i] }))
   if (!live()) return { moments: [], facts }
   // Great and Brilliant need a surer reading: both positions around each candidate again, deeper (kept across runs)
-  for (const i of saved ? [] : deepCandidates(game, pos, facts, extra.levels, end, MAX_DEEP).slice(0, MAX_DEEP)) {
+  for (const i of saved ? [] : deepCandidates(game, pos, facts, extra.levels, end, MAX_DEEP)) {
     if (!live()) break
     const again = [...new Set([i, i + 1].map(real))].filter(k => !pos[k]?.deep)
     const got = await settled(again.map(k => ask(k, GREAT_DEEP)))

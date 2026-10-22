@@ -49,15 +49,11 @@ describe('the opening book', () => {
     expect(bookMoves(loadSgf('(;GM[1]SZ[19];C[x];B[pd];W[dp];B[pp];W[dd])'), db)).toEqual([false, true, true, true, true])
     expect(bookMoves(loadSgf('(;GM[1]SZ[19];B[pd];W[dp];C[x];B[pp];W[dd])'), db)).toEqual([true, true, false, true, true])
   })
-  it('reports how long the classics stay in the book', () => {
+  it('keeps the classics in the book for their first plies', () => {
     const games = index.map(c => loadSgf(files[`../public/assets/classics/${c.file}`]))
     const plies = games.map(g => { const b = bookMoves(g, db); return b.indexOf(false) < 0 ? b.length : b.indexOf(false) })
-    const corner = games.map(g => count(bookMoves(g, both)) - count(bookMoves(g, db)))
-    console.log('corner moves at:', games.map(g => bookMoves(g, both).flatMap((x, i) => x ? [i + 1] : []).join(',')).join(' | '))
-    console.log('classics in fuseki book (plies):', plies.join(' '), '| extra corner joseki moves:', corner.join(' '))
     expect(plies.length).toBe(21)
     expect(plies.some(n => n > 0)).toBe(true)
-    expect(corner.every(n => n >= 0)).toBe(true)
   })
 })
 

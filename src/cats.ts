@@ -1,9 +1,6 @@
 import type { Cat } from './classify'
 
 export type Skin = 'washi' | 'laque'
-export type CatStyle = 'seal' | 'hanko' | 'enso'
-// The owner picks the look here: 'seal' (A · sceau rond), 'hanko' (B), 'enso' (C).
-export const CAT_STYLE: CatStyle = 'seal'
 
 // Japanese pigments. Washi: deep tones, ≥ 4.5:1 against paper (#F9F4EB, the seal's symbol) and the sheet (#F1EADD);
 // Laque: light tones, ≥ 4.5:1 against the lacquer sheet (#1B1612, also the seal's symbol there).

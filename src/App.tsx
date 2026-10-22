@@ -886,12 +886,13 @@ export function App() {
   const toReport = () => openMoment(-1, 'try')
   /** Retry on a judged move: its lesson, from the moments or from a deep check of that move alone. */
   const retryAt = (i: number) => {
-    const ms = review!.moments!, k = ms.findIndex(x => x.at === i), g = game
+    const ms = review!.moments!, k = ms.findIndex(x => x.at === i), g = game, id = reviewId.current
     if (k >= 0) return openMoment(k, 'try')
     setThinking(true)
     const run = scanRun.current.catch(() => {}).then(() => momentAt(g, i, (at, q) => analyze(g.branch(at), q as Record<string, unknown>), 0.5)) // a calibrated label may cost under 2 points
     scanRun.current = run
     run.then(x => {
+      if (reviewId.current !== id) return // Esc and another review (or side) since: not this one's moment
       if (!x) return setNote(d => d.noMomentHere)
       const next = [...ms, x].sort((a, b) => a.at - b.at)
       openMoment(next.indexOf(x), 'try', next)
@@ -1004,7 +1005,7 @@ export function App() {
       ex.add(game, ms, leadsOf(pos), mine || side)
       if (!saved) noteReview(reviewId.current, pos, ms, facts, { key: reviewKey(game), side }).catch(console.error)
       if (!canPlayAI || !side || side !== mine) ar.reviewed(game, library.idOf(game)) // else once the rank is read too
-      setReview(x => x && { ...x, moments: ms, judged })
+      setReview(x => x && { ...x, judged })
       openMoment(-1, 'try', ms) // the report first; the moments stay one click away
     }, e => live && setReview(x => x && { ...x, error: e }))
     return () => { live = false }
@@ -1181,7 +1182,7 @@ export function App() {
             ' ': e.target instanceof HTMLButtonElement ? undefined : toggleAuto,
             home: () => goTo(0), end: () => goTo(shown.moves.length),
             ...(fullscreen && !isMac && { escape: () => setFullscreen(false) }), // after a sheet's Esc and before a review's
-            ...(review && { escape: review.branch && review.judged ? toReport : leaveReview }), // a lesson goes back to the report first
+            ...(review && { escape: review.branch ? toReport : leaveReview }), // a lesson goes back to the report first
             j: jt.toggle, e: ex.toggle, d: openLearn, b: () => door('games'),
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
             t: ongoing ? undefined : () => set('territory', !settings.territory), h: togglePanel,
@@ -1245,11 +1246,10 @@ export function App() {
   const catLine = jm && `${jmHead}. ${jmWhy}`
   const lessonLine = !review ? null
     : reading ? t.reading
-    : browsing ? catLine || t.reportHelp
-    : !m ? t.noMoments(review.side)
+    : browsing || !m ? catLine || t.reportHelp
     : review.step === 'try' ? graded === 'found' ? t.found : graded === 'short' ? t.shortOf(review.gap!) : graded ? t.missed(s, review.gap!) : t.tryAsk(p, game.moveNumber(m.at) + 1)
-    : review.step === 'punish' ? t.punishLine(p, (v => (v ? gtp(v, size) : t.passWord))(m.punish[0]), s, m.loss)
-    : t.betterLine(s, (v => (v ? gtp(v, size) : t.passWord))(m.better[0]), m.loss)
+    : review.step === 'punish' ? t.punishLine(p, gtp(m.punish[0]!, size), s, m.loss)
+    : t.betterLine(s, gtp(m.better[0]!, size), m.loss)
   const lastMoment = !!review?.moments && review.k === review.moments.length - 1
   // [action id, label, action]: the id tells refocus whether the same action is still offered
   type Link = [string, string, () => void]
@@ -1529,11 +1529,11 @@ export function App() {
                         </button></li>)}
                       </ul>
                     </div>
-                    {review.moments!.length > 0 && <div className="field">
+                    {review.moments!.length > 0 ? <div className="field">
                       <span>{t.keyMoments}</span>
                       <Seg label={t.keyMoments} value={-1} options={review.moments!.map((_, i) => [i, String(i + 1)])} set={k => openMoment(k, 'try')} />
-                    </div>}
-                  </> : !m ? <p className="estimate">{t.noMoments(review.side)}</p> : <>
+                    </div> : <p className="estimate">{t.noMoments(review.side)}</p>}
+                  </> : m && <>
                     <p className="state">{t.moment(review.k + 1, review.moments!.length, game.moveNumber(m.at) + 1, m.loss)}</p>
                     {review.moments!.length > 1 && (
                       <Seg label={t.moments} value={review.k} options={review.moments!.map((_, i) => [i, String(i + 1)])} set={k => openMoment(k, 'try')} />
@@ -1579,8 +1579,8 @@ export function App() {
             </div>
             <div className="acts">
               {tr.acts ?? (review ? <>
-                {review.branch && review.judged && <button className="act" onClick={toReport} title="Esc"><Icon name="review" />{t.toReport}</button>}
-                <button className="act" onClick={leaveReview} title={review.branch && review.judged ? undefined : 'Esc'}><Icon name="arrow-back-up" />{t.backToGame}</button>
+                {review.branch && <button className="act" onClick={toReport} title="Esc"><Icon name="review" />{t.toReport}</button>}
+                <button className="act" onClick={leaveReview} title={review.branch ? undefined : 'Esc'}><Icon name="arrow-back-up" />{t.backToGame}</button>
               </> : <>
                 {(final || removal) && !result
                   ? <button className="act accent" onClick={removal ? () => send(() => ogs.acceptRemoved(removal.id, removal.removed)) : validate}><Icon name="hand-stop" />{t.validate}</button>

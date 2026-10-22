@@ -3,9 +3,4 @@
 html[data-skin="laque"] .cat { --c: var(--cl); --on: #1B1612 }
 .cat-sym { stroke: currentColor; stroke-linecap: round; stroke-linejoin: round }
 .cat-fill { fill: var(--c) }
-.cat-frame { fill: none; stroke: var(--c); stroke-width: 1.7 }
 .cat-seal { color: var(--on) }
-.cat-hanko, .cat-enso { color: var(--c) }
-.cat-hanko .cat-frame { fill: color-mix(in srgb, var(--c) 9%, transparent) }
-/* ensō: a brushed ring left open, its two ends rounded like a lifted brush */
-.cat-enso .cat-frame { stroke-width: 2.1; stroke-linecap: round; stroke-dasharray: 54 10.1 }

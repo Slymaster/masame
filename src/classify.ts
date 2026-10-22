@@ -1,8 +1,8 @@
 // Move classification after a review, after chess.com: expected points (a win chance at the mover's level) lost by each move.
-// Pure: the scan's positions (Pos) and per-move facts come from review.ts; see .claude/coups-spec.md.
+// Pure: the scan's positions (Pos) and per-move facts come from review.ts.
 
 import type { SignMap } from '@sabaki/go-board'
-import type { Game, Sign, Vertex } from './game'
+import type { Game, Move, Sign, Vertex } from './game'
 
 export type Cat = 'brilliant' | 'great' | 'best' | 'excellent' | 'good' | 'book' | 'inaccuracy' | 'mistake' | 'miss' | 'blunder'
 export const CATS: Cat[] = ['brilliant', 'great', 'best', 'excellent', 'good', 'book', 'inaccuracy', 'mistake', 'miss', 'blunder']
@@ -25,7 +25,6 @@ export interface Judged {
   ep: number // mover's EP after the move
   best: Vertex | null // KataGo's preferred move when it differs from the played one
   pv: (Vertex | null)[] // KataGo's line from this position
-  gap?: number // Great: EP gap to the best alternative
   acc: number // the move's accuracy (Lichess), on the reference scale
   w: number // Black's Win% after the move, on the reference scale
 }
@@ -93,12 +92,11 @@ export function sacrificed(before: SignMap, after: SignMap, ownBefore: number[],
 
 const same = (a: Vertex | null, b: Vertex | null | undefined) => a === b || (!!a && !!b && a[0] === b[0] && a[1] === b[1])
 
-/** Moves that can be judged (mirrors losses() in review.ts): real moves until both players have passed. */
-function judgeable(game: Game, end: number): boolean[] {
-  const ok = game.moves.map(() => false)
+/** Moves that can be judged (also losses() in review.ts): real moves until both players have passed. */
+export function judgeable(moves: Move[]): boolean[] {
+  const ok = moves.map(() => false)
   let passes = 0
-  for (let i = 0; i < Math.min(end, game.moves.length); i++) {
-    const m = game.moves[i]
+  for (const [i, m] of moves.entries()) {
     if (m.setup) continue
     // the pass that ends the game, and anything after two passes, is no one's choice
     if (passes >= 2 || (passes === 1 && !m.vertex)) { passes = 2; continue }
@@ -131,7 +129,7 @@ export const decidedLoss = (j: Judged): boolean =>
   (j.cat === 'excellent' || j.cat === 'good') && j.loss >= 1.5 && (j.ep >= 0.95 || j.ep + j.dEP <= 0.05)
 
 export function classify(game: Game, pos: (Pos | undefined)[], facts: (Facts | undefined)[], levels: Levels, end: number): (Judged | null)[] {
-  const ok = judgeable(game, end), E = epAt(game, pos, levels), out: (Judged | null)[] = game.moves.map(() => null)
+  const ok = judgeable(game.moves.slice(0, end)), E = epAt(game, pos, levels), out: (Judged | null)[] = game.moves.map(() => null)
   const R = epAt(game, pos, { black: ACC_LEVEL, white: ACC_LEVEL })
   let prev = -1 // the previous judged move
   game.moves.forEach((m, i) => {
@@ -158,7 +156,7 @@ export function classify(game: Game, pos: (Pos | undefined)[], facts: (Facts | u
     const gift = prev >= 0 && game.moves[prev].sign !== s && out[prev]!.dEP >= MISS_GIFT
     if (f?.book && dEP <= GOOD) j.cat = 'book' // a corner joseki can still be a whole-board error
     else if (brilliant) j.cat = 'brilliant'
-    else if (isBest && p.deep && c && alts.length && gap >= GREAT_GAP && c.prior <= GREAT_PRIOR) { j.cat = 'great'; j.gap = gap }
+    else if (isBest && p.deep && c && alts.length && gap >= GREAT_GAP && c.prior <= GREAT_PRIOR) j.cat = 'great'
     else if (isBest) j.cat = 'best'
     else if (gift && dEP >= MISS_LOSS && epAfter >= E(s, prev, pos[prev]!.lead) - MISS_SLACK) j.cat = 'miss'
     else j.cat = dEP <= EXCELLENT ? 'excellent' : dEP <= GOOD ? 'good' : dEP <= INACCURACY ? 'inaccuracy' : dEP <= MISTAKE ? 'mistake' : 'blunder'
@@ -170,7 +168,7 @@ export function classify(game: Game, pos: (Pos | undefined)[], facts: (Facts | u
 
 /** Moves worth a deeper search before Great/Brilliant can be awarded (played = top move and a big gap or a sacrifice). */
 export function deepCandidates(game: Game, pos: (Pos | undefined)[], facts: (Facts | undefined)[], levels: Levels, end: number, max = 10): number[] {
-  const ok = judgeable(game, end), E = epAt(game, pos, levels), found: [number, number][] = []
+  const ok = judgeable(game.moves.slice(0, end)), E = epAt(game, pos, levels), found: [number, number][] = []
   game.moves.forEach((m, i) => {
     const p = pos[i], [a, b] = p?.cands ?? []
     if (!ok[i] || !a) return

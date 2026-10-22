@@ -38,7 +38,7 @@ export function Timeline({ g, floor, go, auto, toggleAuto, live, relocate, ticks
       <span className={`track${ticks?.length ? ' ticked' : ''}`}>
         <input type="range" min={floor} max={total} value={g.cursor} onChange={e => go(+e.target.value)} aria-label={t.history}
           aria-valuetext={t.move(g.moveNumber())} style={{ '--n': total - floor } as React.CSSProperties} />
-        {!!ticks?.length && <button className="band" onClick={band} aria-label={t.keyMoments} title={t.keyMoments}
+        {!!ticks?.length && <button className="band" onClick={band} aria-label={t.notableMoves} title={t.notableMoves}
           onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); step(e.key === 'ArrowLeft' ? -1 : 1) } }}>
           {notches.map(k => <b key={k.at} aria-current={k === cur || undefined}
             style={{ left: `calc(100% * ${(k.at - floor) / (total - floor)})`, '--cw': CAT_COLORS[k.cat][0], '--cl': CAT_COLORS[k.cat][1] } as React.CSSProperties} />)}
