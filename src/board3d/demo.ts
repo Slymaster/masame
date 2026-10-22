@@ -6,6 +6,8 @@ import GoBoard, { type Sign, type Vertex } from '@sabaki/go-board'
 import { Board3D, type Board3DOptions, type Board3DState } from './Board3D'
 import { DECORS } from './decors'
 import { arm, run, selftestOn } from './selftest'
+import type { OpponentHand, Variant } from './hand'
+import handUrl from '../../downloads/hand/hand-v1.glb?url' // dev page only: the app downloads it instead
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const SETUP: Vertex[] = [[15, 3], [3, 15], [15, 16], [3, 3], [2, 5], [2, 9], [5, 16], [5, 15], [6, 15], [4, 15], [6, 16], [16, 2], [15, 2], [16, 3], [16, 4], [17, 4], [17, 5], [15, 1], [14, 1], [16, 1], [9, 3], [16, 13], [16, 10], [9, 16]]
@@ -44,21 +46,62 @@ let thinking = false
 function aiMove() {
   thinking = true; view.setThinking(true); render()
   setTimeout(() => {
-    thinking = false; view.setThinking(false)
     const b = board(), empty: Vertex[] = []
     b.signMap.forEach((r, y) => r.forEach((c, x) => { if (!c) empty.push([x, y]) }))
     for (let i = 0; i < 40 && empty.length; i++) {
       const v = empty.splice(Math.floor(Math.random() * empty.length), 1)[0]
-      try {
-        history.push(b.makeMove(-1, v, { preventSuicide: true, preventOverwrite: true, preventKo: true }))
-        last = v; toPlay = 1
+      let nb: GoBoard
+      try { nb = b.makeMove(-1, v, { preventSuicide: true, preventOverwrite: true, preventKo: true }) } catch { continue }
+      const commit = () => {
+        thinking = false
+        if (board() !== b) { render(); return } // undone or reset during the hand's gesture: this move is stale
+        history.push(nb); last = v; toPlay = 1
         view.drop(v, -1) // like App.tsx: drop() first, then the state update
-        break
-      } catch { /* try another */ }
+        render()
+      }
+      view.setThinking(false)
+      // prototype: the opponent's hand plays it (Contemplation only: the seated view is where he sits across)
+      if (handMode !== 'off' && view.options.camera === 'contemplation') void getHand().then(h => { h.variant = handMode as Variant; return h.play(view, v, commit) })
+      else commit()
+      return
     }
-    render()
+    thinking = false; view.setThinking(false); render()
   }, 1600 + Math.random() * 1500)
 }
+
+/* ---------- prototype: the opponent's hand (hand.ts, loaded on first use) ---------- */
+let handMode: 'off' | Variant = 'off'
+let handP: Promise<OpponentHand> | null = null
+const getHand = () => (handP ??= Promise.all([import('./hand'), fetch(handUrl).then(r => r.arrayBuffer())]).then(([m, b]) => m.OpponentHand.load(b)))
+/** Deterministic captures: at(v, ms) poses the gesture and the board at ms and returns the canvas as an image. */
+let handBase: { len: number; last: Vertex | null; toPlay: Sign; moveNo: number } | null = null
+const handCtl = {
+  async at(v: Vertex, ms: number, type = 'image/png', quality = 0.95) {
+    const h = await getHand(), { T } = await import('./hand')
+    h.variant = handMode === 'off' ? 'A' : handMode
+    if (handBase) { history.length = handBase.len; last = handBase.last; toPlay = handBase.toPlay; render(); view.debug.moveNo = handBase.moveNo }
+    else handBase = { len: history.length, last, toPlay, moveNo: view.debug.moveNo }
+    h.at(view, v, ms)
+    const now = performance.now()
+    if (ms >= T.hand) {
+      history.push(board().makeMove(-1, v)); last = v; toPlay = 1
+      view.drop(v, -1); render(); view.debug.dropT0(v, now - (ms - T.hand))
+    }
+    view.debug.drawAt(now)
+    return $<HTMLCanvasElement>('c').toDataURL(type, quality)
+  },
+  /** Back to the position before at() and the hand put away. */
+  async end() {
+    const h = await getHand(); h.stop()
+    if (handBase) { history.length = handBase.len; last = handBase.last; toPlay = handBase.toPlay; render(); view.debug.moveNo = handBase.moveNo; handBase = null }
+  },
+  async play(v: Vertex) {
+    const h = await getHand(); h.variant = handMode === 'off' ? 'A' : handMode
+    await h.play(view, v, () => { history.push(board().makeMove(-1, v)); last = v; toPlay = 1; view.drop(v, -1); render() })
+  },
+  get(): Promise<OpponentHand> { return getHand() },
+}
+Object.assign(window, { hand: handCtl })
 
 function state(): Board3DState {
   const b = board(), ombre = $<HTMLInputElement>('ombre').checked, counting = $<HTMLInputElement>('counting').checked
@@ -87,7 +130,7 @@ if (selftestOn) arm(view, $<HTMLCanvasElement>('c'), ro)
 
 function render() {
   view.update(state())
-  for (const [g, v] of [['size', String(N)], ['camera', view.options.camera], ['time', view.options.time], ['decor', view.options.decor]] as const)
+  for (const [g, v] of [['size', String(N)], ['camera', view.options.camera], ['time', view.options.time], ['decor', view.options.decor], ['hand', handMode]] as const)
     for (const b of $(g).querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === v))
   const b = board()
   $('info').textContent = `${toPlay === 1 ? 'Black' : 'White'} to play${thinking ? ' (thinking…)' : ''}\ncaptures B ${b.getCaptures(1)} · W ${b.getCaptures(-1)}\nquality ${JSON.stringify(view.debug.quality)}`
@@ -110,6 +153,11 @@ const dec = Object.assign(document.createElement('div'), { className: 'seg', id:
 dec.innerHTML = DECORS.map(d => `<button data-v="${d}">${d}</button>`).join('')
 $('time').after(dec)
 dec.addEventListener('click', e => { const v = (e.target as HTMLElement).dataset.v; if (v) { view.setOptions({ decor: v as Board3DOptions['decor'] }); render() } })
+// prototype: the opponent's hand plays the AI's moves in Contemplation
+const hm = Object.assign(document.createElement('div'), { className: 'seg', id: 'hand' })
+hm.innerHTML = `<span style="width:100%">Main de l'adversaire :</span><button data-v="off">off</button><button data-v="A">main seule</button><button data-v="B">main + ombre</button>`
+$('ai').closest('label')!.after(hm)
+hm.addEventListener('click', e => { const v = (e.target as HTMLElement).dataset.v; if (v) { handMode = v as typeof handMode; if (v !== 'off') void getHand(); render() } })
 $('hc').addEventListener('change', e => view.setOptions({ highContrast: (e.target as HTMLInputElement).checked }))
 for (const id of ['ombre', 'counting', 'coords', 'sound']) $(id).addEventListener('change', render)
 $('ai').addEventListener('change', () => { if ($<HTMLInputElement>('ai').checked && toPlay === -1) aiMove() })

@@ -19,7 +19,6 @@ const BASE: &str = "https://online-go.com";
 const CLIENT_ID: &str = "Zcn8DN7Jg5uCKB184btHYhvUllN6cxnU6enuDdOJ"; // Masame's public OAuth client id on OGS (not a secret)
 const PORT: u16 = 0; // 0 = any free port (RFC 8252 §7.3); 47321 if OGS wants the exact registered URI
 const FILE: &str = "ogs.json";
-const SERVICE: &str = "com.sylvainrey.masame"; // keychain item: the bundle identifier, account "ogs"
 const ACCOUNT: &str = "ogs";
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 const HEAD_TIMEOUT: Duration = Duration::from_secs(5);
@@ -154,13 +153,18 @@ trait Store: Send + Sync {
 
 /// The OS keychain: macOS Keychain, Windows Credential Manager, the Secret Service on Linux.
 // Blocking calls on a tokio worker: a macOS access prompt holds the OGS token mutex until it is answered.
-struct Keychain;
+struct Keychain(String); // the app identifier
+
+/// The keychain item (service, account): the running app's identifier, so a build with another identifier (a test
+/// profile) never reaches the real token. Production's is "com.sylvainrey.masame", the old hard-coded service: no migration.
+fn keychain_item(identifier: &str) -> (&str, &'static str) { (identifier, ACCOUNT) }
 
 impl Keychain {
-    fn entry() -> Result<keyring::Entry, String> {
+    fn entry(&self) -> Result<keyring::Entry, String> {
         // keyring has no Android store, only an in-memory mock that would accept a token and lose it.
         if cfg!(target_os = "android") { return Err("keychain_unavailable".into()) }
-        keyring::Entry::new(SERVICE, ACCOUNT).map_err(Self::code)
+        let (service, account) = keychain_item(&self.0);
+        keyring::Entry::new(service, account).map_err(Self::code)
     }
     // The variant only: BadEncoding carries the stored bytes.
     fn code(e: keyring::Error) -> String {
@@ -170,11 +174,11 @@ impl Keychain {
 
 impl Store for Keychain {
     fn get(&self) -> Result<Option<String>, String> {
-        match Self::entry()?.get_password() { Ok(s) => Ok(Some(s)), Err(keyring::Error::NoEntry) => Ok(None), Err(e) => Err(Self::code(e)) }
+        match self.entry()?.get_password() { Ok(s) => Ok(Some(s)), Err(keyring::Error::NoEntry) => Ok(None), Err(e) => Err(Self::code(e)) }
     }
-    fn set(&self, json: &str) -> Result<(), String> { Self::entry()?.set_password(json).map_err(Self::code) }
+    fn set(&self, json: &str) -> Result<(), String> { self.entry()?.set_password(json).map_err(Self::code) }
     fn delete(&self) -> Result<(), String> {
-        match Self::entry()?.delete_credential() { Ok(()) | Err(keyring::Error::NoEntry) => Ok(()), Err(e) => Err(Self::code(e)) }
+        match self.entry()?.delete_credential() { Ok(()) | Err(keyring::Error::NoEntry) => Ok(()), Err(e) => Err(Self::code(e)) }
     }
 }
 
@@ -219,7 +223,10 @@ impl Store for TokenFile {
 struct Vault { keychain: Box<dyn Store>, file: TokenFile }
 
 impl Vault {
-    fn new(dir: &Path) -> Self { Self { keychain: Box::new(Keychain), file: TokenFile(dir.into()) } }
+    fn new(dir: &Path, identifier: &str) -> Self { Self { keychain: Box::new(Keychain(identifier.into())), file: TokenFile(dir.into()) } }
+
+    /// The running app's own vault: its data dir and its identifier.
+    fn of(app: &AppHandle) -> Res<Self> { Ok(Self::new(&crate::data_dir(app)?, &app.config().identifier)) }
 
     /// Into the keychain; the file goes only once the keychain gives back exactly the same text.
     fn to_keychain(&self, json: &str) -> Result<(), String> {
@@ -321,7 +328,7 @@ pub async fn ogs_login(app: AppHandle, s: State<'_, crate::App>) -> Res<()> {
     if cfg!(mobile) { return Err(Failure::new("ogs_unavailable")) }
     let (tx, rx) = oneshot::channel::<()>();
     drop(s.ogs.cancel.lock().unwrap().replace(tx));
-    let v = Vault::new(&crate::data_dir(&app)?);
+    let v = Vault::of(&app)?;
     tokio::select! {
         r = async { let _port = s.ogs.running.lock().await; login(&s.http, BASE, &v, &s.ogs.tokens, |url| crate::open_url(&app, url)).await } => r,
         _ = rx => Err(Failure::new("ogs_cancelled")),
@@ -332,11 +339,11 @@ pub async fn ogs_login(app: AppHandle, s: State<'_, crate::App>) -> Res<()> {
 pub fn ogs_login_cancel(s: State<'_, crate::App>) { drop(s.ogs.cancel.lock().unwrap().take()) }
 
 #[tauri::command]
-pub async fn ogs_token(app: AppHandle, s: State<'_, crate::App>) -> Res<String> { token(&s.http, BASE, &Vault::new(&crate::data_dir(&app)?), &s.ogs.tokens).await }
+pub async fn ogs_token(app: AppHandle, s: State<'_, crate::App>) -> Res<String> { token(&s.http, BASE, &Vault::of(&app)?, &s.ogs.tokens).await }
 
 #[tauri::command]
 pub async fn ogs_logout(app: AppHandle, s: State<'_, crate::App>) -> Res<()> {
-    logout(&s.http, BASE, &Vault::new(&crate::data_dir(&app)?), &s.ogs.tokens).await;
+    logout(&s.http, BASE, &Vault::of(&app)?, &s.ogs.tokens).await;
     Ok(())
 }
 
@@ -389,6 +396,16 @@ mod tests {
     fn vault(name: &str) -> Vault { with(name, Fake::default()) }
     fn on_disk(v: &Vault) -> bool { v.file.0.join(FILE).exists() }
     fn json(access: &str, refresh: &str) -> String { serde_json::to_string(&Tokens { access: access.into(), refresh: refresh.into(), expires_at: now() + 3600 }).unwrap() }
+
+    #[test]
+    fn keychain_item_follows_the_identifier() {
+        // Production keeps the item every released version wrote: no migration.
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["identifier"], "com.sylvainrey.masame");
+        assert_eq!(keychain_item("com.sylvainrey.masame"), ("com.sylvainrey.masame", "ogs"));
+        // A test profile gets its own item, never the owner's.
+        assert_eq!(keychain_item("com.sylvainrey.masame.handtest"), ("com.sylvainrey.masame.handtest", "ogs"));
+    }
 
     /// Local token endpoint: answers each request with the next reply (the last one repeats) and records the requests.
     fn endpoint<B: AsRef<[u8]> + Send + 'static>(replies: Vec<(&'static str, B)>) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {

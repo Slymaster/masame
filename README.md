@@ -116,6 +116,7 @@ The board takes the window; beside it, one floating card holds the game. Its hea
 
 - **Seasons in the light.** In Auto, the light follows the hour and the date: a longer golden hour in summer, low cold light in winter, and the glare of snow in the Washitsu from December to February.
 - **Auto décor, ambient sound, depth of field.** The décor can follow the season and the hour; a quiet ambient sound (leaves, wind, rain) and a lens-like depth of field when you lift your eyes are there if you want them.
+- **The opponent's hand.** In the Contemplation view, against the AI, your opponent's hand takes a stone from the bowl and places it. On by default, it can be turned off in the Workshop. The model isn't part of the app: it is downloaded once from GitHub, the first time it is needed.
 - **Two languages.** Entirely in French and English, following the system language, switchable in the app.
 - **A 2D light mode.** A Canvas board, used automatically when the 3D renderer is unavailable.
 
@@ -179,6 +180,7 @@ OGS doesn't allow engine help during a game, so while an OGS game is going on, L
 - No telemetry, no analytics, no Masame account.
 - Network requests go to katagotraining.org (the network catalogue and the network downloads) and to GitHub for updates (github.com and its file servers). If you sign in to OGS, Masame connects to online-go.com as soon as it starts, so you appear online there while it's open. To propose dead stones when OGS's own proposal fails, it may send the final position to ai.online-go.com (OGS's scorer). Watching games without an account uses an anonymous OGS connection.
 - At most once a day, Masame asks GitHub whether a new version exists (you can turn this off in Settings). An update is downloaded only when you click Install, and is checked against Masame's signing key before it is installed.
+- The opponent's hand is on by default: the first time it is needed (a game against the AI in the Contemplation view, with the 3D board and thinking time on), Masame downloads that 3D model once from GitHub (raw.githubusercontent.com) and checks its SHA-256 before using it. Nothing is sent. Turn it off in the Workshop and it is never downloaded.
 - Your games stay on your machine. The library is a folder in the app's data folder (`games/`, next to `models/`), and nothing in it is sent anywhere. SGF files you export are saved where you choose.
 - The full privacy policy, for the desktop and the phones: [PRIVACY.md](PRIVACY.md).
 
