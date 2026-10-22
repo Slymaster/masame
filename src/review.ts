@@ -1,6 +1,7 @@
 // Game review: find the moves that cost the most points, then teach each one as try → punishment → better move.
 // Pure helpers plus readGame, which drives the engine through an injected `ask` (tested with a fake one).
 
+import { deepCandidates, judgeable, parseRank, sacrificed, type Facts, type Levels, type Pos } from './classify'
 import type { Game, Move, Sign, Vertex } from './game'
 import type { Analysis } from './katago'
 
@@ -19,8 +20,11 @@ export const MIN_LOSS = 2, MAX_MOMENTS = 3, FOUND = 1
 export const SHIFT_MIN = 0.5
 const DEEP_TIME = 3
 // maxTime bounds each search on any hardware: two workers over the whole game take about a minute
-export const scanQuery = (positions: number) => ({ maxVisits: 100, overrideSettings: { maxTime: Math.max(0.25, 120 / positions) } })
+export const scanQuery = (positions: number) => ({ maxVisits: 100, includeOwnership: true, analysisPVLen: 7, overrideSettings: { maxTime: Math.max(0.25, 120 / positions) } })
 export const DEEP = { maxVisits: 400, includeOwnership: true, analysisPVLen: 7, overrideSettings: { maxTime: DEEP_TIME } }
+/** The deeper search that confirms a Great or Brilliant candidate (positions before and after the move). */
+export const GREAT_DEEP = { maxVisits: 400, includeOwnership: true, analysisPVLen: 7, overrideSettings: { maxTime: 1.5 } }
+export const MAX_DEEP = 10
 export const REPLY = { maxVisits: 200, overrideSettings: { maxTime: 1.5 } }
 
 /**
@@ -44,14 +48,11 @@ const lossOf = (leads: (number | undefined)[], moves: Move[], i: number) => move
 
 /**
  * [index, points lost] for every real move by `side` (0 = both) whose two leads are known, until both players have passed:
- * not the game-ending pass, nor a move after two passes (a game resumed after a dispute), whose position is over.
+ * not the game-ending pass nor anything after it (a game resumed after a dispute): the same rule as classify's.
  */
 export function losses(leads: (number | undefined)[], moves: Move[], side: Sign | 0): [number, number][] {
-  const real = moves.map((m, i) => (m.setup ? -1 : i)).filter(i => i >= 0) // pseudo-moves are no one's mistake
-  const passed = (k: number) => k >= 0 && !moves[real[k]].vertex
-  return real.filter((i, k) =>
-    leads[i] !== undefined && leads[i + 1] !== undefined && (side === 0 || moves[i].sign === side)
-    && !(passed(k - 1) && (!moves[i].vertex || passed(k - 2))))
+  const ok = judgeable(moves)
+  return moves.map((_, i) => i).filter(i => ok[i] && leads[i] !== undefined && leads[i + 1] !== undefined && (side === 0 || moves[i].sign === side))
     .map(i => [i, lossOf(leads, moves, i)])
 }
 
@@ -112,40 +113,89 @@ async function settled<T>(ps: Promise<T>[]): Promise<T[]> {
   return r.map(x => (x as PromiseFulfilledResult<T>).value)
 }
 
+// ownership maps stay in memory only (361 numbers a position: too big for the sidecar), tied to their Pos
+const owns = new WeakMap<Pos, number[]>()
+export const ownershipOf = (p: Pos | undefined) => (p ? owns.get(p) : undefined)
+/** A scan result as the classifier needs it: root lead, board uncertainty, KataGo's first 6 candidates, its line. */
+export function toPos(a: Analysis, deep = false): Pos {
+  // no ownership (never with includeOwnership): the position counts as wide open, the softest judgment
+  const p: Pos = { lead: a.scoreLead, u: a.ownership ? a.ownership.reduce((s, x) => s + 1 - Math.abs(x), 0) / a.ownership.length : 1,
+    cands: a.moves.slice(0, 6).map(m => ({ v: m.v, lead: m.scoreLead, visits: m.visits, prior: m.prior ?? 0 })), pv: a.pv.slice(0, 7), ...deep && { deep: true as const } }
+  if (a.ownership) owns.set(p, a.ownership)
+  return p
+}
+export const leadsOf = (pos: (Pos | undefined)[]) => pos.map(p => p?.lead)
+
+/** Levels for the classifier: the SGF ranks (BR/WR), else `fallback` (the player's own rank), else 5k. */
+export function levelsOf(game: Game, fallback?: string): Levels {
+  const d = game.root.data, def = parseRank(fallback) ?? -4
+  return { black: parseRank(d.BR?.[0]) ?? def, white: parseRank(d.WR?.[0]) ?? def }
+}
+
+/** Own stones given up by move i, from the ownerships of the positions around it (0 when either is unknown). */
+function sacOf(game: Game, pos: (Pos | undefined)[], i: number): number {
+  const m = game.moves[i], a = ownershipOf(pos[i]), b = ownershipOf(pos[i + 1])
+  return m.setup || !m.vertex || !a || !b ? 0 : sacrificed(game.boards[i].signMap, game.boards[i + 1].signMap, a, b, m.sign)
+}
+
+/** The deep check of one move (a moment, or Retry on any move): null when it costs under `min` points or the engine has no line. */
+export async function momentAt(game: Game, at: number, ask: (at: number, query: object) => Promise<Analysis>, min = MIN_LOSS): Promise<Moment | null> {
+  const [before, after] = await settled([ask(at, DEEP), ask(at + 1, DEEP)])
+  const sign = game.moves[at].sign, loss = sign * (before.scoreLead - after.scoreLead)
+  // a 'better move' equal to the mistake would contradict itself (search noise between the two checks)
+  return loss >= min && before.pv[0] && after.pv[0] && !same(before.pv[0], game.moves[at].vertex)
+    ? { at, sign, loss, lead: after.scoreLead, punish: after.pv, better: before.pv, ...shift(before.ownership, after.ownership) } : null
+}
+
 /**
- * Scans every position (2 queries in flight, results cached in `leads`), then confirms the worst candidates with
+ * Scans every position (2 queries in flight, results cached in `pos`), then confirms the worst candidates with
  * deeper searches until MAX_MOMENTS are kept. Moments come back in game order. Settles only once none of its
  * queries is in flight, so a caller can start the next run after it without exceeding 2.
  */
-export async function readGame(game: Game, side: Sign | 0, leads: (number | undefined)[],
-  ask: (at: number, query: object) => Promise<Analysis>, live: () => boolean, progress: (pct: number) => void): Promise<Moment[]> {
+export async function readGame(game: Game, side: Sign | 0, pos: (Pos | undefined)[],
+  ask: (at: number, query: object) => Promise<Analysis>, live: () => boolean, progress: (pct: number) => void,
+  extra: { levels: Levels; book?: boolean[]; facts?: Facts[] }): Promise<{ moments: Moment[]; facts: Facts[] }> {
   const end = reviewEnd(game), n = end + 1
-  const scan = scanQuery(n), step = scan.overrideSettings.maxTime / 2
-  // the position after a pseudo-move is the one before it: not asked, its lead copied after the scan
-  const todo = Array.from({ length: n }, (_, i) => i).filter(i => leads[i] === undefined && !game.moves[i - 1]?.setup)
-  // progress in seconds of budget: each scan query is worth half its maxTime (two run at once), each deep pair DEEP_TIME
-  const total = n * step + MAX_MOMENTS * DEEP_TIME
+  const scan = scanQuery(n), step = scan.overrideSettings.maxTime / 2, deepStep = GREAT_DEEP.overrideSettings.maxTime
+  // the position after a pseudo-move is the one before it: not asked, copied after the scan. A position without its
+  // ownership in memory (restored from the sidecar) is read again, or its sacrifices would come back 0; unless the saved
+  // facts come along (extra.facts): then the positions are trusted as they are and only the moments are read
+  const saved = extra.facts
+  const todo = Array.from({ length: n }, (_, i) => i).filter(i => (saved ? !pos[i] : !ownershipOf(pos[i])) && !game.moves[i - 1]?.setup)
+  // progress in seconds of budget: each scan query is worth half its maxTime (two run at once), each deep pair its maxTime
+  const total = n * step + MAX_DEEP * deepStep + MAX_MOMENTS * DEEP_TIME
   let done = (n - todo.length) * step
   const tick = (s: number) => { done += s; progress(Math.min(99, Math.floor(done / total * 100))) }
   progress(Math.min(99, Math.floor(done / total * 100)))
   const worker = async () => {
     let i: number | undefined
     while (live() && (i = todo.shift()) !== undefined) {
-      try { leads[i] = (await ask(i, scan)).scoreLead } catch (e) { todo.length = 0; throw e }
+      try { pos[i] = toPos(await ask(i, scan)) } catch (e) { todo.length = 0; throw e }
       tick(step)
     }
   }
   await settled([worker(), worker()])
-  for (let i = 1; i < n; i++) if (game.moves[i - 1].setup) leads[i] ??= leads[i - 1]
-  const moments: Moment[] = []
-  for (const at of pickMoments(leads, game.moves.slice(0, end), side, game.info.size)) {
-    if (!live() || moments.length >= MAX_MOMENTS) break
-    const [before, after] = await settled([ask(at, DEEP), ask(at + 1, DEEP)])
-    tick(DEEP_TIME)
-    const sign = game.moves[at].sign, loss = sign * (before.scoreLead - after.scoreLead)
-    // a 'better move' equal to the mistake would contradict itself (search noise between the two checks)
-    if (loss >= MIN_LOSS && before.pv[0] && after.pv[0] && !same(before.pv[0], game.moves[at].vertex))
-      moments.push({ at, sign, loss, lead: after.scoreLead, punish: after.pv, better: before.pv, ...shift(before.ownership, after.ownership) })
+  const copy = () => { for (let i = 1; i < n; i++) if (game.moves[i - 1].setup) pos[i] = pos[i - 1] }
+  const real = (k: number) => { while (k > 0 && game.moves[k - 1].setup) k--; return k } // the position a copy comes from
+  copy()
+  const facts: Facts[] = saved ?? game.moves.slice(0, end).map((_, i) => ({ sac: sacOf(game, pos, i), book: !!extra.book?.[i] }))
+  if (!live()) return { moments: [], facts }
+  // Great and Brilliant need a surer reading: both positions around each candidate again, deeper (kept across runs)
+  for (const i of saved ? [] : deepCandidates(game, pos, facts, extra.levels, end, MAX_DEEP)) {
+    if (!live()) break
+    const again = [...new Set([i, i + 1].map(real))].filter(k => !pos[k]?.deep)
+    const got = await settled(again.map(k => ask(k, GREAT_DEEP)))
+    again.forEach((k, j) => { pos[k] = toPos(got[j], true) })
+    copy()
+    facts[i].sac = sacOf(game, pos, i)
+    tick(deepStep)
   }
-  return moments.sort((a, b) => a.at - b.at)
+  const moments: Moment[] = []
+  for (const at of pickMoments(leadsOf(pos), game.moves.slice(0, end), side, game.info.size)) {
+    if (!live() || moments.length >= MAX_MOMENTS) break
+    const m = await momentAt(game, at, ask)
+    tick(DEEP_TIME)
+    if (m) moments.push(m)
+  }
+  return { moments: moments.sort((a, b) => a.at - b.at), facts }
 }

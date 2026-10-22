@@ -16,7 +16,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import type { Sign, Vertex } from '@sabaki/go-board'
-import { paintMarks, type BoardState } from '../board/BoardView'
+import { drawBadge, paintMarks, type BoardState } from '../board/BoardView'
+import type { Cat } from '../classify'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
 import type { StoneSet } from './stoneSets'
@@ -351,6 +352,9 @@ export class Board3D {
   private tremMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
   private shook: { v: Vertex; c: Sign; t0: number } | null = null
   private markers!: { 1: THREE.Mesh; [-1]: THREE.Mesh }
+  /** The last move's category seal (state.lastCat), facing the camera over the stone's upper right; one texture per category. */
+  private badge = new THREE.Sprite(new THREE.SpriteMaterial({ depthTest: false, toneMapped: false }))
+  private badgeTex = new Map<Cat, THREE.CanvasTexture>()
   private boardMat!: THREE.MeshPhysicalMaterial
   /** Pale golden kaya (the scan, barely graded): readability comes from the stones' contact shadow and rim, not dark wood. */
   private woodTone = new THREE.Color(...KAYA_TONE)
@@ -538,6 +542,14 @@ export class Board3D {
       this.buildBoard()
     }
     this.state = state
+    const cat = state.lastCat
+    if (cat && !this.badgeTex.has(cat)) {
+      const cv = Object.assign(document.createElement('canvas'), { width: 128, height: 128 })
+      drawBadge(cv.getContext('2d')!, cat, 64, 62, 50)
+      const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace
+      this.badgeTex.set(cat, tx)
+    }
+    if (cat && this.badge.material.map !== this.badgeTex.get(cat)) { this.badge.material.map = this.badgeTex.get(cat)!; this.badge.material.needsUpdate = true }
     this.reconcile(state)
     this.buildMarks()
     const own = state.ownership?.length === N * N ? state.ownership : null
@@ -592,7 +604,7 @@ export class Board3D {
       m.geometry?.dispose()
       for (const mat of ([] as THREE.Material[]).concat(m.material ?? [])) mat.dispose()
     })
-    for (const t of Object.values(this.maps ?? {})) t.dispose()
+    for (const t of [...Object.values(this.maps ?? {}), ...this.badgeTex.values()]) t.dispose()
     for (const g of Object.values(this.grounds)) { g.map.dispose(); g.bump?.dispose() }
     this.tableMat.alphaMap?.dispose()
     this.owTex.dispose(); this.shojiTex.dispose()
@@ -665,6 +677,7 @@ export class Board3D {
     const mm = (c: number) => new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
     this.markers = { 1: new THREE.Mesh(markerGeo(this.kit.geoB.userData.prof), mm(0xe9dcc4)), [-1]: new THREE.Mesh(markerGeo(this.kit.geoW.userData.prof), mm(0x2a201a)) }
     for (const m of Object.values(this.markers)) { m.matrixAutoUpdate = false; m.visible = false; scene.add(m) }
+    this.badge.visible = false; this.badge.renderOrder = 10; scene.add(this.badge)
 
     // the table. Study: shadows only (the app's linen shows through). Contemplation: a dark wooden table fading into a
     // warm dark room (the canvas clears to the room colour), lit by the window
@@ -1476,7 +1489,7 @@ export class Board3D {
     let busy = false, nb = 0, nw = 0, db = 0, dw = 0, na = 0
     const s0 = this.state, N = this.N, own = this.own, counting = s0?.counting, last = s0?.last, SH = this.kit.spec.shBot, TOP = SH + this.kit.spec.shTop
     const lastP = last ? last[1] * N + last[0] : -1
-    this.markers[1].visible = this.markers[-1].visible = false
+    this.markers[1].visible = this.markers[-1].visible = this.badge.visible = false
     const put = (s: Stone, y: number, aoA: number, aoS: number, dim: boolean, sx: number, sz: number) => {
       const { _m, _q, _v, _s } = this
       _m.compose(_v.set(sx, SH + y, sz), _q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, s.rotY), _s.setScalar(1))
@@ -1486,6 +1499,7 @@ export class Board3D {
       L.setMatrixAt(i, _m); (L.geometry.attributes.aSeed.array as Float32Array)[i] = s.seed
       if (s.p === lastP && this.stones.get(lastP) === s && s.landed && !dim) {
         const mk = this.markers[s.c as 1 | -1]; mk.matrix.copy(_m); mk.visible = true
+        if (s0?.lastCat) { this.badge.visible = true; this.badge.position.set(sx + 0.72 * s.R, TOP + y + 0.2 * s.R, sz - 0.72 * s.R); this.badge.scale.setScalar(1.25 * s.R) }
       }
       if (aoA > 0 && na < 420) {
         const q = s.R * 2 * AO_K * aoS, black = s.c === 1

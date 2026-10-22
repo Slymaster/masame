@@ -8,6 +8,8 @@ import { playClack, playTap } from './sound'
 import { gx, gz, jitter, settle, type Placed } from '../board3d/logic'
 import { postcardCanvas, signatureFonts, toPng } from '../postcard'
 import { tap } from './frame'
+import type { Cat } from '../classify'
+import { CAT_COLORS, CAT_SYMBOLS } from '../cats'
 import { drawBlurred } from './canvasBlur'
 import { woodOf, type Wood, type WoodData } from '../board3d/gobans'
 import { STONE_DATA, type Mark2D, type Mark2DParams, type Skin2D, type StoneSet } from '../board3d/stoneSets'
@@ -31,8 +33,11 @@ export interface BoardState {
   pending?: { v: Vertex; sign: Sign } | null
   /** Grid rectangle [x0, y0, x1, y1] outlined by a soft frame (a tsumego's area); the whole board stays clear. */
   frame?: [number, number, number, number] | null
+  /** The last move's category (a reviewed game): its seal rides at the stone's upper right, beside the plain ring. */
+  lastCat?: Cat | null
 }
-export interface Mark { v: Vertex; label: string; tone: 'best' | 'ok' | 'mistake' }
+/** best / ok / mistake: lettered markers; black / white: a ghost stone of that colour numbered `label` (a suggested line). */
+export interface Mark { v: Vertex; label: string; tone: 'best' | 'ok' | 'mistake' | 'black' | 'white' }
 
 interface Geom { N: number; bx: number; by: number; bw: number; cell: number; P: number[]; r: number; font: number; labelOff: number }
 
@@ -360,9 +365,35 @@ function lastRing(c: CanvasRenderingContext2D, g: Geom, [cx, cy]: [number, numbe
   c.beginPath(); c.arc(cx, cy, g.r * 0.4, 0, TAU); c.stroke()
 }
 
+/** A category's seal (CatIcon's 'seal' look, Washi pigment: it sits on wood and stone, not on the card) of radius R, on a
+ *  paper rim with a soft drop shadow so it reads over slate, shell and kaya alike. Also the 3D badge's texture. */
+export function drawBadge(c: CanvasRenderingContext2D, cat: Cat, cx: number, cy: number, R: number) {
+  const s = CAT_SYMBOLS[cat], k = R / 11.5, paper = '#F9F4EB'
+  c.save()
+  c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = R * 0.35; c.shadowOffsetY = R * 0.12
+  c.beginPath(); c.arc(cx, cy, R + Math.max(1, R * 0.16), 0, TAU); c.fillStyle = paper; c.fill()
+  c.shadowColor = 'transparent'
+  c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.fillStyle = CAT_COLORS[cat][0]; c.fill()
+  c.translate(cx - 12 * k, cy - 12 * k); c.scale(k, k)
+  const p = new Path2D(s.d)
+  c.strokeStyle = c.fillStyle = paper; c.lineWidth = s.w ?? 2.3; c.lineCap = 'round'; c.lineJoin = 'round'
+  if (s.fill) c.fill(p)
+  c.stroke(p)
+  c.restore()
+}
+
+/** A suggested move's number, in the ink opposite its ghost stone; sized on the cell so a phone's 19×19 still reads it. */
+function ghostNumber(c: CanvasRenderingContext2D, x: number, y: number, cell: number, label: string, tone: 'black' | 'white') {
+  const f = cell * (label.length > 1 ? 0.46 : 0.56)
+  c.font = `600 ${f.toFixed(1)}px ${LABEL_FONT}`
+  c.fillStyle = tone === 'black' ? '#F6F0E5' : '#1E1A16'
+  c.fillText(label, x, y + f * 0.07)
+}
+
 /** Veil and markers, also drawn into the 3D board's overlay texture: px / py map grid indices to canvas units. */
 export function paintMarks(c: CanvasRenderingContext2D, px: (i: number) => number, py: (i: number) => number, cell: number,
-  marks: Mark[] | null | undefined, focus: BoardState['focus'], w: number, h: number, veil = 0.24, frame: BoardState['frame'] = null, frameAlpha = 0.55) {
+  marks: Mark[] | null | undefined, focus: BoardState['focus'], w: number, h: number, veil = 0.24, frame: BoardState['frame'] = null, frameAlpha = 0.55,
+  ghostDiscs = true) {
   if (frame) {
     const m = cell * 0.5, x0 = px(frame[0]) - m, y0 = py(frame[1]) - m
     c.lineWidth = cell * 0.09; c.strokeStyle = `rgba(138,47,34,${frameAlpha})`
@@ -373,17 +404,37 @@ export function paintMarks(c: CanvasRenderingContext2D, px: (i: number) => numbe
     c.fillStyle = `rgba(246,240,229,${veil})`
     c.beginPath(); c.rect(0, 0, w, h); c.rect(x0, y0, px(focus[2]) + m - x0, py(focus[3]) + m - y0); c.fill('evenodd')
   }
-  const r = cell * 0.34
-  c.font = `600 ${(r * 1.15).toFixed(1)}px ${LABEL_FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle'
+  const r = cell * 0.34, font = `600 ${(r * 1.15).toFixed(1)}px ${LABEL_FONT}`
+  c.textAlign = 'center'; c.textBaseline = 'middle'
   for (const { v, label, tone } of marks ?? []) {
     const x = px(v[0]), y = py(v[1])
+    if (tone === 'black' || tone === 'white') {
+      if (ghostDiscs) ghostDisc(c, x, y, cell * 0.47, tone)
+      ghostNumber(c, x, y, cell, label, tone)
+      continue
+    }
+    c.font = font
     c.beginPath(); c.arc(x, y, r, 0, TAU)
     if (tone === 'mistake') {
       c.fillStyle = 'rgba(246,240,229,0.7)'; c.fill()
       c.lineWidth = Math.max(1, r * 0.12); c.strokeStyle = '#6E5F4D'; c.stroke(); c.fillStyle = '#6E5F4D'
+      if (label === '×') { // the played move under KataGo's line: drawn bold, a font's × is a hairline at this size
+        const d = r * 0.5
+        c.save(); c.lineWidth = r * 0.28; c.lineCap = 'round'; c.strokeStyle = '#8A2F22'
+        c.beginPath(); c.moveTo(x - d, y - d); c.lineTo(x + d, y + d); c.moveTo(x + d, y - d); c.lineTo(x - d, y + d); c.stroke(); c.restore()
+        continue
+      }
     } else { c.fillStyle = tone === 'best' ? '#8A2F22' : '#6E5F4D'; c.fill(); c.fillStyle = '#F6F0E5' }
     c.fillText(label, x, y + r * 0.08)
   }
+}
+
+/** The 3D board's ghost stone, painted flat into its marks texture: a translucent stone lit from the upper left. */
+function ghostDisc(c: CanvasRenderingContext2D, x: number, y: number, r: number, tone: 'black' | 'white') {
+  const g = c.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.05, x, y, r)
+  if (tone === 'black') { g.addColorStop(0, 'rgba(78,78,86,0.88)'); g.addColorStop(0.6, 'rgba(26,26,31,0.88)'); g.addColorStop(1, 'rgba(8,8,10,0.9)') }
+  else { g.addColorStop(0, 'rgba(255,254,250,0.78)'); g.addColorStop(0.7, 'rgba(238,232,220,0.78)'); g.addColorStop(1, 'rgba(190,180,162,0.82)') }
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill()
 }
 
 /* ---------- view ---------- */
@@ -661,7 +712,12 @@ export class BoardView {
     c.setTransform(dpr, 0, 0, dpr, 0, 0)
     if (own) deadHint(c, g, own, s.signMap, this.at)
     if (s.counting) countMarks(c, g, s.signMap, s.counting, this.at)
-    if (s.focus || s.frame || s.marks?.length) paintMarks(c, i => g.P[i], i => g.P[i], g.cell, s.marks, s.focus, S, S, undefined, s.frame)
+    if (s.focus || s.frame || s.marks?.length) {
+      c.globalAlpha = 0.55 // the suggested line's stones, half-toned like the pending one; their numbers stay solid
+      for (const m of s.marks ?? []) if (m.tone === 'black' || m.tone === 'white') stone(c, g, m.v[0], m.v[1], m.tone === 'black' ? 1 : -1, 1, undefined, sk)
+      c.globalAlpha = 1
+      paintMarks(c, i => g.P[i], i => g.P[i], g.cell, s.marks, s.focus, S, S, undefined, s.frame, undefined, false)
+    }
     if (a) { const ap = this.at(a.x, a.y); stoneShadow(c, g, ...ap, t); stone(c, g, a.x, a.y, a.c, t, ap, sk) }
     const w = this.shook, wk = w ? (now - w.start) / SHAKE_MS : 1
     if (w && wk < 1 && !s.signMap[w.y]?.[w.x]) {
@@ -669,7 +725,12 @@ export class BoardView {
       c.globalAlpha = 1 - sstep(0.45, 1, wk); stoneShadow(c, g, ...p, 1); stone(c, g, w.x, w.y, w.c, 1, p, sk); c.globalAlpha = 1
     } else this.shook = null
     const l = s.last
-    if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) lastRing(c, g, this.at(l[0], l[1]), s.signMap[l[1]][l[0]])
+    if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) {
+      const [x, y] = this.at(l[0], l[1]), d = g.cell * 0.36
+      lastRing(c, g, [x, y], s.signMap[l[1]][l[0]])
+      // ≥ 7 px radius: a phone's 19×19 (cell ≈ 18 px) still reads the symbol; it only grazes the neighbours' edges there
+      if (s.lastCat) drawBadge(c, s.lastCat, x + d, y - d, Math.max(7, g.cell * 0.26))
+    }
     if (s.pending) { c.globalAlpha = 0.5; stone(c, g, s.pending.v[0], s.pending.v[1], s.pending.sign, 1, undefined, sk); c.globalAlpha = 1 }
     const h = this.hover
     if (h && s.interactive && !s.signMap[h[1]]?.[h[0]]) {

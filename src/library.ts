@@ -1,6 +1,7 @@
 // The library: every game played or opened lives on this machine, as an SGF file per game plus one index, in the app
 // data dir's games/ folder (Rust: src-tauri/src/library.rs). Outside the app every call rejects, and Mes parties says so.
 // One store for the whole UI (Mes parties, Apprendre, Progrès), loaded once; every write goes through one queue, in order.
+import type { Facts, Pos } from './classify'
 import type { Game, Sign } from './game'
 import { hash64 } from './joseki/sym'
 import { call } from './katago'
@@ -22,13 +23,17 @@ export interface Entry {
   era?: number // against a Master of an era (B1)
   mentor?: { stops: number } // played with the mentor on (B2): a lesson, never a rank reading
   rankRead?: Reading // the player's rank read in their moves
+  classic?: true // kept from Les Classiques: judged at pro level for both sides
   review?: { moments: number } // reviewed (automatically or by hand): its leads and moments are in the 'review' sidecar
   memory?: { recalled: number; total: number; helps: number } // replayed from memory (C2), the best run
   counted?: number // positions of this game counted so far (C1)
   added?: number // a file: when it entered the library (the monthly letter counts it then, not at its SGF date)
 }
-/** The 'review' sidecar (<id>.review.json): the scan's leads per move (Black's lead, null where unread) and the moments. */
-export interface ReviewSidecar { leads: (number | null)[]; moments: Moment[] }
+/** The 'review' sidecar (<id>.review.json): the scan's leads per move (Black's lead, null where unread) and the moments;
+ * v2 adds what the move classifier needs: a Pos per position and Facts per move (ownership maps are never stored), the
+ * line read (reviewKey: a variation or an undone line is another record) and the side the moments were picked for. */
+export interface ReviewSidecar { leads: (number | null)[]; moments: Moment[]; v?: 2; pos?: Pos[]; facts?: Facts[]; key?: string; side?: Sign | 0 }
+export interface ReviewData { key: string; side: Sign | 0; pos: Pos[]; facts: Facts[]; moments: Moment[] }
 /** current.json: the unfinished local game to restore at launch (A1). */
 export interface Current {
   id: string; cursor: number
@@ -45,6 +50,24 @@ const listAll = () => call<Entry[]>('library_list') // newest first; a corrupt e
 export const read = (id: string) => call<string>('library_read', { id })
 export const sidecar = <T>(id: string, name: string) => call<T | null>('library_sidecar_read', { id, name })
 export const current = () => call<Current | null>('library_current_read')
+
+const num = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
+/** A reviewed game's classification data, so it reopens without a scan; null for a v1 sidecar (leads only), none, or a
+ * damaged one (anything off the board of `size`, or moments outside the positions read). */
+export async function reviewData(id: string, size: number): Promise<ReviewData | null> {
+  const r = await sidecar<ReviewSidecar>(id, 'review')
+  const vert = (v: unknown) => v === null || Array.isArray(v) && v.length === 2 && v.every(c => Number.isInteger(c) && c >= 0 && c < size)
+  const line = (l: unknown) => Array.isArray(l) && l.every(vert), map = (m: unknown) => m === null || Array.isArray(m) && m.every(num)
+  const isPos = (p: Pos) => !!p && num(p.lead) && num(p.u) && line(p.pv) && Array.isArray(p.cands)
+    && p.cands.every(c => !!c && vert(c.v) && num(c.lead) && num(c.visits) && num(c.prior))
+  const isFacts = (f: Facts) => !!f && num(f.sac) && typeof f.book === 'boolean'
+  const n = Array.isArray(r?.facts) ? r.facts.length : -1
+  const isMoment = (m: Moment) => !!m && Number.isInteger(m.at) && m.at >= 0 && m.at < n && (m.sign === 1 || m.sign === -1) && num(m.loss) && num(m.lead)
+    && line(m.punish) && line(m.better) && !!m.punish[0] && !!m.better[0] && map(m.lost) && map(m.kept) // a real moment opens both lines with a stone
+  return r?.v === 2 && typeof r.key === 'string' && (r.side === 1 || r.side === -1 || r.side === 0) && Array.isArray(r.pos) && r.pos.length === n + 1
+    && r.pos.every(isPos) && r.facts!.every(isFacts) && Array.isArray(r.moments) && r.moments.every(isMoment)
+    ? { key: r.key, side: r.side, pos: r.pos, facts: r.facts!, moments: r.moments } : null
+}
 
 // ---------- one queue for every write ----------
 let queue: Promise<unknown> = Promise.resolve()
@@ -65,6 +88,8 @@ export function remove(id: string): Promise<void> {
   change(id, null)
   return queued(() => call<void>('library_delete', { id }))
 }
+/** The stored SGF, read after the writes queued before it (a game just kept or saved). */
+export const readQueued = (id: string) => queued(() => read(id))
 export const setSidecar = (id: string, name: string, json: unknown) => queued(() => call<void>('library_sidecar_write', { id, name, json }))
 export const setCurrent = (c: Current | null) => queued(() => call<void>('library_current_write', { json: c }))
 

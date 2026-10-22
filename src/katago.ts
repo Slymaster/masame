@@ -52,7 +52,7 @@ export interface Analysis {
   pv: (Vertex | null)[] // [0] is the best move itself
   ownership: number[] | null // row-major from the top-left, +1 = Black
   humanPolicy: number[] | null // row-major + pass, -1 = illegal
-  moves: { v: Vertex | null; scoreLead: number; visits: number }[] // the candidates, in KataGo's order
+  moves: { v: Vertex | null; scoreLead: number; visits: number; prior?: number }[] // the candidates, in KataGo's order (prior: policy; parseAnalysis always sets it, 0 when absent)
 }
 
 const nums = (v: unknown, len: number): number[] | null =>
@@ -60,7 +60,7 @@ const nums = (v: unknown, len: number): number[] | null =>
 
 /** Engine output is untrusted: keep only well-formed fields of the expected sizes. */
 export function parseAnalysis(raw: unknown, n: number): Analysis {
-  const r = raw as { rootInfo?: { winrate?: unknown; scoreLead?: unknown }; moveInfos?: { move?: unknown; order?: unknown; pv?: unknown; scoreLead?: unknown; visits?: unknown }[]; ownership?: unknown; humanPolicy?: unknown }
+  const r = raw as { rootInfo?: { winrate?: unknown; scoreLead?: unknown }; moveInfos?: { move?: unknown; order?: unknown; pv?: unknown; scoreLead?: unknown; visits?: unknown; prior?: unknown }[]; ownership?: unknown; humanPolicy?: unknown }
   const { winrate, scoreLead } = r?.rootInfo ?? {}
   if (typeof winrate !== 'number' || typeof scoreLead !== 'number') throw new LocalizedError(d => d.badAnswer)
   const top = Array.isArray(r.moveInfos) ? r.moveInfos.find(m => m?.order === 0) : undefined
@@ -74,10 +74,10 @@ export function parseAnalysis(raw: unknown, n: number): Analysis {
     winrate, scoreLead, topMove: typeof top?.move === 'string' ? top.move.toLowerCase() === 'pass' ? 'pass' : top.move : '', pv,
     ownership: nums(r.ownership, n * n), humanPolicy: nums(r.humanPolicy, n * n + 1),
     moves: (Array.isArray(r.moveInfos) ? r.moveInfos : []).flatMap(m => {
-      const v = vertex(m?.move, n), { order, scoreLead, visits } = m ?? {}
+      const v = vertex(m?.move, n), { order, scoreLead, visits, prior } = m ?? {}
       return v !== undefined && typeof order === 'number' && Number.isFinite(scoreLead) && Number.isFinite(visits) && (visits as number) > 0
-        ? [{ order, v, scoreLead: scoreLead as number, visits: visits as number }] : []
-    }).sort((a, b) => a.order - b.order).map(({ v, scoreLead, visits }) => ({ v, scoreLead, visits })),
+        ? [{ order, v, scoreLead: scoreLead as number, visits: visits as number, prior: Number.isFinite(prior) ? Math.min(1, Math.max(0, prior as number)) : 0 }] : []
+    }).sort((a, b) => a.order - b.order).map(({ v, scoreLead, visits, prior }) => ({ v, scoreLead, visits, prior })),
   }
 }
 

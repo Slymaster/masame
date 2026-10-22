@@ -256,6 +256,29 @@ export const fr: Dict = {
   betterLine: (s: number, v: string, loss: number) => `Mieux : ${color(s)} ${v}, qui garde ces ${pts(loss)}.`,
   betterHelp: '→ suit la ligne. Compare sa lumière avec celle de la punition. Joue où tu veux pour explorer : chaque coup reçoit une réponse. ↑ ↓ compare tes essais.',
   nextMoment: 'Moment suivant',
+  // classification des coups (d’après chess.com) : s le joueur, v le coup de KataGo
+  cats: { brilliant: 'Brillant', great: 'Très bon coup', best: 'Meilleur coup', excellent: 'Excellent', good: 'Bon', book: 'Théorique', inaccuracy: 'Imprécision', mistake: 'Erreur', miss: 'Occasion manquée', blunder: 'Gaffe' },
+  catWhy: {
+    brilliant: () => 'Un sacrifice juste, et difficile à voir.',
+    great: (s: number) => `Le seul bon coup : tout autre coûtait cher à ${color(s)}.`,
+    best: (_s: number, v: string) => (v ? `KataGo préférait ${v}, mais l’écart est négligeable.` : 'C’est le coup de KataGo.'),
+    excellent: (_s: number, v: string) => `Presque aussi bon : KataGo préférait ${v}.`,
+    good: (_s: number, v: string) => `Un bon coup, mais KataGo préférait ${v}.`,
+    book: () => 'Un coup de fuseki classique, joué par les forts joueurs.',
+    inaccuracy: (_s: number, v: string) => `Un peu lent : KataGo préférait ${v}.`,
+    mistake: (s: number, v: string) => `${color(s)} perd des points : il fallait ${v}.`,
+    miss: (s: number, v: string) => `${color(s)} ne punit pas l’erreur de ${color(-s)} : il fallait ${v}.`,
+    blunder: (s: number, v: string) => `${color(s)} perd beaucoup ici : il fallait ${v}.`,
+  },
+  catDecided: (v: string) => `La partie est déjà jouée : KataGo préférait ${v}.`, // Excellent/Good losing points in a decided game
+  passWord: 'passer', // KataGo's move inside a sentence
+  catHead: (mv: number, cat: string, loss: number) => `Coup ${mv} · ${cat}${Math.round(loss * 10) ? ` · −${pts(loss)}` : ''}`,
+  report: 'Bilan de la partie', accuracy: 'Précision', accuracyOf: (a: number | null) => (a === null ? '—' : `${f.num(Math.round(a * 10) / 10)} %`),
+  reportHelp: 'Choisis un coup : les repères de la frise mènent aux plus marquants.',
+  reportNext: (cat: string) => `Suivant : ${cat}`,
+  pvShow: 'La ligne de KataGo', pvHide: 'Masquer la ligne',
+  retryMove: 'Réessayer', toReport: 'Retour au bilan', keyMoments: 'Moments clés', notableMoves: 'Coups notables',
+  noMomentHere: 'KataGo ne trouve plus de leçon dans ce coup.',
   // analyse libre
   anFor: (s: number) => `Coups candidats pour ${color(s)}`, anReading: 'Lecture de la position…', anPass: 'Passer',
   anNeedsNet: 'Les coups candidats demandent un réseau d’analyse.', anFailed: (m: string) => `La position n’a pas pu être lue. ${m}`,
@@ -388,7 +411,7 @@ export const fr: Dict = {
   clLoading: 'Chargement des parties', clNew: 'pas encore jouée',
   clBest: (found: number, total: number) => `record ${f.num(found)} / ${f.num(total)}`,
   clBestLine: (found: number, total: number) => `Ton record : ${f.plural(found, 'coup retrouvé', 'coups retrouvés')} sur ${f.num(total)}.`,
-  clSide: 'Ton camp', clStart: 'Début', clBegin: 'Commencer', clProgress: 'Avancée dans la partie',
+  clSide: 'Ton camp', clStart: 'Début', clBegin: 'Commencer', clReview: 'Revoir avec KataGo', clProgress: 'Avancée dans la partie',
   clYouPlay: (name: string, s: number) => `Tu joues ${name}, ${color(s)}. Choisis le début, puis Commencer.`,
   clAsk: (n: number, name: string) => `Coup ${n} : où ${name} a-t-il joué ?`,
   clTheirs: (name: string) => `${name} joue.`,

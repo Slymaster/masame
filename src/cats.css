@@ -1,0 +1,6 @@
+/* Move-category glyphs (CatIcon). --cw/--cl: the category's Washi/Laque pigment, set inline from cats.ts. */
+.cat { --c: var(--cw); --on: #F9F4EB; flex: none; vertical-align: middle; overflow: visible }
+html[data-skin="laque"] .cat { --c: var(--cl); --on: #1B1612 }
+.cat-sym { stroke: currentColor; stroke-linecap: round; stroke-linejoin: round }
+.cat-fill { fill: var(--c) }
+.cat-seal { color: var(--on) }

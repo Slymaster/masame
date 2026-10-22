@@ -160,7 +160,7 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
   box-shadow: 0 4px 14px var(--shadow), 0 0 0 1px var(--rule); font-size: 18.5px; line-height: 1.25; color: var(--ink); text-wrap: balance;
   /* two lines at most: overflow clips at the padding box, and the bottom room is a border, so a third line never peeks in;
      the full text is in the title */
-  max-height: calc(2.5em + 12px); overflow: hidden;
+  max-height: calc(2.5em + 12px); overflow: clip; /* clip, not hidden: focusing a touch link (12px of padding) must not scroll it */
   pointer-events: auto; animation: fade .3s ease-out;
 }
 .board-wrap > .note .link { font: inherit; color: var(--accent); text-decoration-color: currentColor; white-space: nowrap; margin-left: .45em }
@@ -446,6 +446,46 @@ body[data-drop]::after {
 /* ---------- your rank, read in your moves ---------- */
 .rv-rank { display: flex; flex-direction: column; gap: 2px }
 .rv-rank .estimate { color: var(--ink) }
+
+/* ---------- the game report: accuracy, then one row per category (glyph · name · Black · White); a row goes to its next move ---------- */
+.rv-report .phases li { padding: 0; font-size: 15px }
+.rv-report .phases li > * { flex: none }
+.rv-report :is(.rv-head, .rv-acc) { padding: 6px 0 }
+.rv-report .rv-head { font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); border-bottom-color: var(--rule-2) }
+.rv-report .rv-head > span { flex: 1 }
+.rv-report :is(.rv-head, .rv-acc, .rv-row) > b { width: 52px; text-align: right; font-variant-numeric: tabular-nums }
+.rv-report .rv-head > b { font-weight: 600; letter-spacing: .08em }
+.rv-why { display: none } /* phones: the caption's why, which would make it a third line */
+.rv-report .rv-acc > span { flex: 1; font-family: var(--f-title); font-style: italic; font-size: 20px }
+.rv-report .rv-acc > b { font: italic 500 22px/1.2 var(--f-title); color: var(--ink) }
+.rv-row { flex: 1 !important; display: flex; align-items: center; gap: 10px; width: calc(100% + 12px); margin: 0 -6px; padding: 4px 6px; border: 0; border-radius: 6px;
+  background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: background .25s }
+.rv-row > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.rv-row > b { font-weight: 500 }
+.rv-row > b.z { color: var(--muted); font-weight: 400 }
+.rv-row:hover:not(:disabled) { background: var(--hover) }
+.rv-row[aria-current] { background: var(--well) }
+.rv-row:disabled { cursor: default }
+.rv-row:disabled > :is(span, svg) { opacity: .55 }
+.rv-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px }
+/* the timeline's notable moves: a band of notches under the range (forks dot it), the shown move's glyph over it, on the
+   ticks' scale */
+.track.ticked { padding: 18px 0 2px }
+.track.ticked i { top: 38px }
+.band { position: absolute; left: 6px; right: 6px; top: 38px; height: 5px; padding: 0; border: 0; border-radius: 2.5px; background: var(--well); cursor: pointer }
+.band::after { content: ""; position: absolute; inset: -2px 0 -8px } /* a reachable target that leaves the thumb its own */
+.band:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.band b { --c: var(--cw); position: absolute; top: 0; width: 3px; height: 100%; margin-left: -1.5px; background: var(--c) }
+html[data-skin="laque"] .band b { --c: var(--cl) }
+.band b[aria-current] { top: -2px; width: 4px; height: 9px; margin-left: -2px; border-radius: 1px }
+/* wide enough for "move 888 / 888" (87 px): a step never moves the notches under the finger */
+.track.ticked ~ .mv { min-width: 6.2em }
+.tick { position: absolute; top: 0; width: 16px; height: 16px; margin-left: -8px; display: grid; place-items: center; transform: scale(1.25); pointer-events: none }
+/* the caption's verdict: glyph, the move and its category in its colour, then why */
+.board-wrap > .note .cat-line svg { vertical-align: -3px; margin-right: 2px }
+.board-wrap > .note .cat-line b { font-weight: 600 }
+/* narrow desktop windows: the why goes to the card, as on phones, so the line and Retry links keep their second line */
+@media (max-width: 1000px) { .board-wrap > .note .cat-line .why { display: none } .rv-why { display: block } }
 .ex .rc-now { stroke: var(--card) }
 
 /* ---------- the four doors and their sheets (Apprendre, Mes parties, Partager) ---------- */
@@ -575,6 +615,7 @@ section > .seg + .ogs-input { display: block; width: 100% }
   .board-wrap > .note { left: 0; padding: 0 10px }
   /* the caption: what the player reads, 18 px at least, two lines at most (narrow-window type is for the desktop) */
   .board-wrap > .note > span { font-size: 18px; padding: 5px 16px 0 }
+  .board-wrap > .note .cat-line svg { width: 18px; height: 18px }
   .res .txt b { font-size: 18px }
   .card { z-index: auto; width: auto; flex: 0 1 auto; min-height: 0; max-height: none; align-self: stretch; margin: 0 8px; padding: 4px 14px 0 }
   .brand { display: contents }
@@ -618,6 +659,10 @@ section > .seg + .ogs-input { display: block; width: 100% }
   .icon.sm svg, .chev svg { width: 22px; height: 22px }
   .tl input { height: 44px }
   .track i { top: 30px }
+  .track.ticked { padding-top: 22px }
+  .track.ticked i, .band { top: 52px }
+  .band { pointer-events: none } /* too thin for a finger: the report's rows jump to each category's moves */
+  .rv-row { min-height: 44px }
   .stepper .step button { width: 44px; height: 44px }
   .row, .seg button, .game-row, .jrow { min-height: 44px }
   .btn { min-height: 44px }
