@@ -420,7 +420,7 @@ export function App() {
     scanRun, add: (...x) => ex.add(...x),
     done: (k, ms, r, j) => { // a job is always the player's own game
       const ai = r && keepRank(k, r, !j.noAdjust)
-      noteReview(j.id, j.pos, ms, j.facts).then(() => { if (r && !j.noRank) return noteRank(j.id, r) }).catch(console.error)
+      noteReview(j.id, j.pos, ms, j.facts, { key: k, side: j.side }).then(() => { if (r && !j.noRank) return noteRank(j.id, r) }).catch(console.error)
       if (ai) setNextAi(ai) // the next game's level, whichever game the line shows
       if (!result || recordKey(game) !== k) return
       setNote(short(d => d.autoDone(ms.length, r ? rankName(r.all) : undefined))) // replaces a stale note (saved…): the card says one at a time
@@ -629,7 +629,11 @@ export function App() {
       const g = loadSgf(text)
       if (!asked && !(await canLeave())) return
       const e = from.entry, again = e && resumable(e)
-      if (e) library.bind(g, e.id)
+      if (e) {
+        library.bind(g, e.id)
+        // the classifier reads each side's level in BR/WR: an older bot game kept the ranks only in its entry
+        for (const [k, sd] of [['BR', e.black], ['WR', e.white]] as const) if (!g.root.data[k]?.[0] && sd.rank) g.root.data[k] = [sd.rank]
+      }
       start(again ? local(g, e) : g, again ? again.bot : null); if (SIZES.includes(g.info.size)) resize(g.info.size)
       if (from.ogsId !== undefined) { keepOgs(g, ogsSide(g), from.ogsId); ar.enqueue(g, ogsSide(g), { id: library.idOf(g) }) } // an ended OGS game of mine
     } catch (e) {
@@ -811,6 +815,10 @@ export function App() {
   const finish = (text: Msg, botWon: boolean | null, re: string) => {
     game.promote() // the decided line is the record's main line, which RE describes
     game.info.result = re
+    if (bot) { // the record keeps each side's level for the classifier, also once reopened (bot gone)
+      const d = game.root.data, b = bot.era ? MASTER_RANK : bot.rank
+      d.BR = [bot.sign === 1 ? b : settings.myRank]; d.WR = [bot.sign === 1 ? settings.myRank : b]
+    }
     setResult(game, { msg: text, re })
     if (bot) ar.enqueue(game, -bot.sign as Sign, { ...lessonFlags(bot), id: library.idOf(game) })
     if (bot?.ritual) td.played()
@@ -855,8 +863,9 @@ export function App() {
   const classics = useRef(new WeakSet<Game>()) // classics opened as the shown game: judged at pro level for both sides
   /** Each side's level for the classification: the bot's and yours, OGS's ranks, else the SGF's (unknown: yours). */
   const levelsFor = (): Levels => {
-    if (classics.current.has(game)) return { black: 10, white: 10 }
-    const rank = (c: Sign) => bot ? c === bot.sign ? bot.era ? MASTER_RANK : bot.rank : settings.myRank : online?.players[c === 1 ? 'black' : 'white'].rank
+    if (classics.current.has(game) || shownEntry?.classic) return { black: 10, white: 10 }
+    const me = bot ? -bot.sign : shownEntry?.source === 'ai' ? shownEntry.me : 0 // a bot game reopened: the player's side at their level now
+    const rank = (c: Sign) => bot && c === bot.sign ? bot.era ? MASTER_RANK : bot.rank : c === me ? settings.myRank : online?.players[c === 1 ? 'black' : 'white'].rank
     const sgf = levelsOf(game, settings.myRank)
     return { black: parseRank(rank(1)) ?? sgf.black, white: parseRank(rank(-1)) ?? sgf.white }
   }
@@ -865,7 +874,7 @@ export function App() {
     if (scan.current?.last !== last) scan.current = { last, pos: ar.posOf(game) } // a background review's positions, if any
     setReview({ side, pct: 0, error: null, moments: null, k: -1, step: 'try', branch: null, ask: null, gap: null, explored: false, judged: null, levels: levelsFor(), pv: false })
     // a reviewed game enters the library (a local or OGS game of mine is in it already)
-    reviewId.current = (online ? library.keep(game, 'ogs', online.me, { ogsId: online.id }) : library.keep(game, 'file', side)).catch(e => { console.error('library', e); return undefined })
+    reviewId.current = (online ? library.keep(game, 'ogs', online.me, { ogsId: online.id }) : library.keep(game, 'file', side, classics.current.has(game) ? { classic: true } : {})).catch(e => { console.error('library', e); return undefined })
     changed()
   }
   const openMoment = (k: number, step: Step, moments = review!.moments!) => {
@@ -976,22 +985,24 @@ export function App() {
     if (!reading || !review || !scan.current) return
     let live = true
     const pos = scan.current.pos, { side, levels } = review, end = reviewEnd(game), id = library.idOf(game)
+    const ask = (at: number, q: object) => analyze(game.branch(at), q as Record<string, unknown>)
     const run = scanRun.current.catch(() => {}).then(async () => {
-      // a game reviewed before (by hand or in the background) reopens from its sidecar, without the engine
-      const saved = id ? await library.reviewData(id).catch(() => null) : null
-      if (saved && saved.pos.length > end) {
+      // a game reviewed before (by hand or in the background) reopens from its sidecar, without the scan: only the line it read
+      const saved = id ? await library.reviewData(id, game.info.size).catch(() => null) : null
+      if (saved && saved.key === recordKey(game) && saved.pos.length === end + 1) {
         saved.pos.forEach((p, i) => { pos[i] ??= p })
-        return { moments: saved.moments.filter(m => !side || m.sign === side), facts: saved.facts, saved: true }
+        if (saved.side === side) return { moments: saved.moments, facts: saved.facts, saved: true }
+        // another side: its own moments from the saved positions (deep checks only); the sidecar keeps the first side's
+        return { ...await readGame(game, side, pos, ask, () => live, pct => live && setReview(x => x && { ...x, pct }), { levels, facts: saved.facts }), saved: true }
       }
       const book = await loadBook().then(db => bookMoves(game, db), () => undefined) // no book: no Book moves
-      return { ...await readGame(game, side, pos, (at, q) => analyze(game.branch(at), q as Record<string, unknown>), () => live,
-        pct => live && setReview(x => x && { ...x, pct }), { levels, book }), saved: false }
+      return { ...await readGame(game, side, pos, ask, () => live, pct => live && setReview(x => x && { ...x, pct }), { levels, book }), saved: false }
     }).then(r => ({ ...r, judged: classify(game, pos, r.facts, levels, end) }))
     scanRun.current = run
     run.then(({ moments: ms, facts, saved, judged }) => {
       if (!live) return
       ex.add(game, ms, leadsOf(pos), mine || side)
-      if (!saved) noteReview(reviewId.current, pos, ms, facts).catch(console.error)
+      if (!saved) noteReview(reviewId.current, pos, ms, facts, { key: recordKey(game), side }).catch(console.error)
       if (!canPlayAI || !side || side !== mine) ar.reviewed(game, library.idOf(game)) // else once the rank is read too
       setReview(x => x && { ...x, moments: ms, judged })
       openMoment(-1, 'try', ms) // the report first; the moments stay one click away
@@ -1197,10 +1208,18 @@ export function App() {
   }, [])
 
   const { size, komi, playerBlack, playerWhite } = game.info
-  const played = jm && game.moves[judgedAt], pv0 = jm?.pv[0]
-  const pvMarks = jm && review?.pv ? [
-    ...played!.vertex && !(pv0 && pv0[0] === played!.vertex[0] && pv0[1] === played!.vertex[1]) ? [{ v: played!.vertex, label: '×', tone: 'mistake' as const }] : [],
-    ...jm.pv.flatMap((v, k) => (v ? [{ v, label: String(k + 1), tone: (k % 2 ? -played!.sign : played!.sign) === 1 ? 'black' as const : 'white' as const }] : []))] : null
+  const played = jm && game.moves[judgedAt]
+  // KataGo's line, cut at its first move on an occupied or repeated point (a capture or ko replay would hide a real stone);
+  // the played move crossed unless the kept line already numbers it. Off while A is held: the live position's candidates win.
+  const pvMarks = jm && review?.pv && !an ? (() => {
+    const sm = game.boards[judgedAt].signMap, seen = new Set<string>(), marks: { v: Vertex; label: string; tone: 'black' | 'white' }[] = []
+    for (const [k, v] of jm.pv.entries()) {
+      if (!v) continue
+      if (sm[v[1]][v[0]] || seen.has(`${v}`)) break
+      seen.add(`${v}`); marks.push({ v, label: String(k + 1), tone: (k % 2 ? -played!.sign : played!.sign) === 1 ? 'black' : 'white' })
+    }
+    return played!.vertex && !seen.has(`${played!.vertex}`) ? [{ v: played!.vertex, label: '×', tone: 'mistake' as const }, ...marks] : marks
+  })() : null
   const nextOf = (c: Cat) => { // the report's rows: the next move of that category, from the shown one (then from the start)
     const j = review!.judged!, i = j.findIndex((x, i) => i >= game.cursor && x?.cat === c)
     goTo((i >= 0 ? i : j.findIndex(x => x?.cat === c)) + 1)
@@ -1218,7 +1237,10 @@ export function App() {
   const graded = m && review?.step === 'try' && review.gap !== null ? verdict(m, review.gap) : null
   // the report's caption: the shown move's category, what it cost, why (KataGo's move named)
   const jmHead = jm && t.catHead(game.moveNumber(judgedAt) + 1, t.cats[jm.cat], jm.loss)
-  const jmWhy = jm && t.catWhy[jm.cat](game.moves[judgedAt].sign, (v => (v ? gtp(v, size) : t.anPass))(jm.best ?? jm.pv[0] ?? null))
+  // KataGo's move named in the sentence; a Best that is not KataGo's own move names the move it preferred (a pass: "passer")
+  const jmWhy = jm && t.catWhy[jm.cat](played!.sign, jm.cat === 'best'
+    ? jm.best ? gtp(jm.best, size) : jm.pv.length && !jm.pv[0] && played!.vertex ? t.passWord : ''
+    : (v => (v ? gtp(v, size) : t.passWord))(jm.best ?? jm.pv[0] ?? null))
   const catLine = jm && `${jmHead}. ${jmWhy}`
   const lessonLine = !review ? null
     : reading ? t.reading
@@ -1411,7 +1433,7 @@ export function App() {
             counting: final ? { dead: countingNow!.dead, territory: final.territory }
               : removal ? { dead: ogs.deadOf(board.signMap, removal.removed), territory: board.signMap.map(r => r.map(() => 0 as Sign)) } : null, // OGS scores
             captures: { black: board.getCaptures(1), white: board.getCaptures(-1) }, // the 3D lids: prisoners taken by each
-            lastTint: jm && catColor(jm.cat, skin),
+            lastTint: jm && catColor(jm.cat, 'washi'), // the deep pigment: the ring sits on the stone, not on the card's skin
             // KataGo's line from the position before the judged move, in numbered ghost stones; the played move crossed
             ...(pvMarks && { signMap: game.boards[judgedAt].signMap, last: null, marks: pvMarks }),
             ...tr.board,

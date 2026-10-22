@@ -48,14 +48,14 @@ const lossOf = (leads: (number | undefined)[], moves: Move[], i: number) => move
 
 /**
  * [index, points lost] for every real move by `side` (0 = both) whose two leads are known, until both players have passed:
- * not the game-ending pass, nor a move after two passes (a game resumed after a dispute), whose position is over.
+ * not the game-ending pass nor anything after it (a game resumed after a dispute): the same rule as classify's.
  */
 export function losses(leads: (number | undefined)[], moves: Move[], side: Sign | 0): [number, number][] {
   const real = moves.map((m, i) => (m.setup ? -1 : i)).filter(i => i >= 0) // pseudo-moves are no one's mistake
-  const passed = (k: number) => k >= 0 && !moves[real[k]].vertex
-  return real.filter((i, k) =>
-    leads[i] !== undefined && leads[i + 1] !== undefined && (side === 0 || moves[i].sign === side)
-    && !(passed(k - 1) && (!moves[i].vertex || passed(k - 2))))
+  // the game-ending pass (the second in a row): nothing from it on counts, a game resumed after a dispute included
+  const over = real.findIndex((i, k) => k > 0 && !moves[i].vertex && !moves[real[k - 1]].vertex)
+  return real.filter((i, k) => (over < 0 || k < over)
+    && leads[i] !== undefined && leads[i + 1] !== undefined && (side === 0 || moves[i].sign === side))
     .map(i => [i, lossOf(leads, moves, i)])
 }
 
@@ -157,11 +157,14 @@ export async function momentAt(game: Game, at: number, ask: (at: number, query: 
  */
 export async function readGame(game: Game, side: Sign | 0, pos: (Pos | undefined)[],
   ask: (at: number, query: object) => Promise<Analysis>, live: () => boolean, progress: (pct: number) => void,
-  extra: { levels: Levels; book?: boolean[] }): Promise<{ moments: Moment[]; facts: Facts[] }> {
+  extra: { levels: Levels; book?: boolean[]; facts?: Facts[] }): Promise<{ moments: Moment[]; facts: Facts[] }> {
   const end = reviewEnd(game), n = end + 1
   const scan = scanQuery(n), step = scan.overrideSettings.maxTime / 2, deepStep = GREAT_DEEP.overrideSettings.maxTime
-  // the position after a pseudo-move is the one before it: not asked, copied after the scan
-  const todo = Array.from({ length: n }, (_, i) => i).filter(i => pos[i] === undefined && !game.moves[i - 1]?.setup)
+  // the position after a pseudo-move is the one before it: not asked, copied after the scan. A position without its
+  // ownership in memory (restored from the sidecar) is read again, or its sacrifices would come back 0; unless the saved
+  // facts come along (extra.facts): then the positions are trusted as they are and only the moments are read
+  const saved = extra.facts
+  const todo = Array.from({ length: n }, (_, i) => i).filter(i => (saved ? !pos[i] : !ownershipOf(pos[i])) && !game.moves[i - 1]?.setup)
   // progress in seconds of budget: each scan query is worth half its maxTime (two run at once), each deep pair its maxTime
   const total = n * step + MAX_DEEP * deepStep + MAX_MOMENTS * DEEP_TIME
   let done = (n - todo.length) * step
@@ -178,10 +181,10 @@ export async function readGame(game: Game, side: Sign | 0, pos: (Pos | undefined
   const copy = () => { for (let i = 1; i < n; i++) if (game.moves[i - 1].setup) pos[i] = pos[i - 1] }
   const real = (k: number) => { while (k > 0 && game.moves[k - 1].setup) k--; return k } // the position a copy comes from
   copy()
-  const facts: Facts[] = game.moves.slice(0, end).map((_, i) => ({ sac: sacOf(game, pos, i), book: !!extra.book?.[i] }))
+  const facts: Facts[] = saved ?? game.moves.slice(0, end).map((_, i) => ({ sac: sacOf(game, pos, i), book: !!extra.book?.[i] }))
   if (!live()) return { moments: [], facts }
   // Great and Brilliant need a surer reading: both positions around each candidate again, deeper (kept across runs)
-  for (const i of deepCandidates(game, pos, facts, extra.levels, end, MAX_DEEP).slice(0, MAX_DEEP)) {
+  for (const i of saved ? [] : deepCandidates(game, pos, facts, extra.levels, end, MAX_DEEP).slice(0, MAX_DEEP)) {
     if (!live()) break
     const again = [...new Set([i, i + 1].map(real))].filter(k => !pos[k]?.deep)
     const got = await settled(again.map(k => ask(k, GREAT_DEEP)))

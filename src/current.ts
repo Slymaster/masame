@@ -148,12 +148,12 @@ export function useCurrentGame(s: Shown, ver: number, onRestore: (r: Awaited<Ret
 }
 
 /** A review (automatic or by hand) read: its positions, facts and moments in the 'review' sidecar (v2, leads kept for the
- * older readers), the entry marked reviewed. */
-export async function noteReview(id: string | undefined | Promise<string | undefined>, pos: (Pos | undefined)[], moments: Moment[], facts: Facts[]) {
+ * older readers), tied to the line read (`key`: recordKey) and the side the moments were picked for; the entry marked reviewed. */
+export async function noteReview(id: string | undefined | Promise<string | undefined>, pos: (Pos | undefined)[], moments: Moment[], facts: Facts[], of: { key: string; side: Sign | 0 }) {
   const k = await id
   if (!k) return
   // a position never read (a review stopped short) is stored as null, and makes reviewData ignore the sidecar
-  await library.setSidecar(k, 'review', { leads: pos.map(p => p?.lead ?? null), moments, v: 2, pos: pos as Pos[], facts } satisfies library.ReviewSidecar)
+  await library.setSidecar(k, 'review', { leads: pos.map(p => p?.lead ?? null), moments, v: 2, pos: pos as Pos[], facts, ...of } satisfies library.ReviewSidecar)
   await library.patch(k, { review: { moments: moments.length } })
 }
 /** The player's rank read in a kept game, once stored; never for a game played with the mentor (a lesson). */

@@ -54,6 +54,15 @@ describe('parseRank', () => {
     expect(parseRank(undefined)).toBeNull()
     expect(parseRank('?')).toBeNull()
   })
+  it('reads CJK ranks and titles', () => {
+    expect(parseRank('5段')).toBe(5)
+    expect(parseRank('P9段')).toBe(10)
+    expect(parseRank('5级')).toBe(-4)
+    expect(parseRank('3단')).toBe(3)
+    expect(parseRank('初段')).toBe(1)
+    expect(parseRank('本因坊')).toBe(10)
+    expect(parseRank('名人')).toBe(10)
+  })
 })
 
 describe('classify bands', () => {
@@ -155,7 +164,8 @@ describe('great and brilliant', () => {
     expect(great({}, { lead: leadFor(0.41) }).cat).toBe('best')
     expect(great({ deep: undefined }).cat).toBe('best')
     expect(great({}, {}, 0.6).cat).toBe('best')
-    expect(great({}, { visits: 29 }).cat).toBe('best') // no alternative read well enough
+    expect(great({}, { visits: 29 }).cat).toBe('great') // a starved alternative far behind is evidence too
+    expect(great({}, { lead: leadFor(0.41), visits: 5 }).cat).toBe('best') // a close one blocks it, however few its visits
   })
   const bril = (sac: number, o: { before?: number; after?: number; prior?: number; deep?: true; book?: boolean; level?: number } = {}) => {
     const after = leadFor(o.after ?? 0.5), before = leadFor(o.before ?? 0.5)
@@ -223,6 +233,12 @@ describe('deepCandidates', () => {
     expect(deepCandidates(g, pos, facts, PRO, 5)).toEqual([1, 0, 3])
     expect(deepCandidates(g, pos, facts, PRO, 5, 2)).toEqual([1, 0])
     expect(deepCandidates(g, pos, [], PRO, 5)).toEqual([1, 0])
+  })
+  it('puts moves that can still be Great or Brilliant first, keeping the others after', () => {
+    const vs = row(3), g = game(vs)
+    const pos = vs.map((v, i) => P(0, [cand(v, 0, { prior: [0.9, 0.4, 0.95][i] }), cand(OTHER, leadFor([0.2, 0.43, 0.3][i], g.moves[i].sign))])).concat(P(0))
+    expect(deepCandidates(g, pos, [], PRO, 3)).toEqual([1, 0, 2])
+    expect(deepCandidates(g, pos, [], PRO, 3, 1)).toEqual([1])
   })
 })
 

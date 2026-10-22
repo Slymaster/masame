@@ -1,5 +1,6 @@
 // Automatic review: every finished game whose player is known is read in the background, and its key moments join
 // the exercises. Pure: the queue (persisted like the deck) and one run of a job, which drives readGame through `ask`.
+import { bookMoves, loadBook } from '../book'
 import type { Facts, Pos } from '../classify'
 import type { Game, Sign } from '../game'
 import type { Analysis } from '../katago'
@@ -70,7 +71,8 @@ export async function runJob(a: Auto, j: Job, ask: (g: Game, q: object) => Promi
   let got = a.read.get(j.k), r: Reading | null = null
   try {
     if (!got) {
-      got = await readGame(game, j.side, pos, (at, q) => ask(game.branch(at), q), live, progress, { levels: levelsOf(game, myRank) })
+      const book = await loadBook().then(db => bookMoves(game, db), () => undefined) // as the foreground does; no book: no Book moves
+      got = await readGame(game, j.side, pos, (at, q) => ask(game.branch(at), q), live, progress, { levels: levelsOf(game, myRank), book })
       if (!live()) return 'paused'
       add(game, got.moments, leadsOf(pos), j.side); a.read.set(j.k, got)
     }

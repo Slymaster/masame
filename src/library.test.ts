@@ -203,21 +203,29 @@ describe('the review sidecar', () => {
 
   it('writes v2 (positions, facts, moments, leads for older readers) and reads it back; fits the 2 MB cap', async () => {
     const cur = await import('./current')
-    await cur.noteReview('g', pos, moments, facts)
+    await cur.noteReview('g', pos, moments, facts, { key: 'line', side: 1 })
     const side = files.get('g.review') as import('./library').ReviewSidecar
     expect([side.v, side.leads.length, side.leads[7]]).toEqual([2, 301, pos[7].lead])
-    expect(await lib.reviewData('g')).toEqual({ pos, facts, moments })
+    expect(await lib.reviewData('g', 19)).toEqual({ key: 'line', side: 1, pos, facts, moments })
     expect(lib.get()?.[0].review).toEqual({ moments: 3 })
     expect(JSON.stringify(side).length).toBeLessThan(2 * 1024 * 1024 / 4) // measured: 204 kB
   })
   it('reads no classification data from a v1 sidecar, none, or a damaged one; v1 leads stay for Count and Mining', async () => {
     files.set('g.review', { leads: [0.5, null, -1], moments: [] })
-    expect(await lib.reviewData('g')).toBeNull()
+    expect(await lib.reviewData('g', 19)).toBeNull()
     expect((await lib.sidecar<import('./library').ReviewSidecar>('g', 'review'))?.leads).toEqual([0.5, null, -1])
-    expect(await lib.reviewData('none')).toBeNull()
-    for (const bad of [{ pos: [null] }, { pos: [{ ...pos[0], lead: 'x' }] }, { pos: [{ ...pos[0], cands: [{ v: [99, 0], lead: 0, visits: 1, prior: 0 }] }] }, { facts: [{ sac: 0 }] }, { moments: null }]) {
-      files.set('g.review', { leads: [], moments: [], v: 2, pos: [pos[0]], facts: [facts[0]], ...bad })
-      expect(await lib.reviewData('g')).toBeNull()
+    expect(await lib.reviewData('none', 19)).toBeNull()
+    const ok = { leads: [], moments: [moments[0]], v: 2, key: 'line', side: 0, pos: pos.slice(0, 12), facts: facts.slice(0, 11) }
+    files.set('g.review', ok)
+    expect(await lib.reviewData('g', 19)).not.toBeNull()
+    for (const bad of [{ pos: [null] }, { pos: [{ ...pos[0], lead: 'x' }] }, { pos: [{ ...pos[0], cands: [{ v: [99, 0], lead: 0, visits: 1, prior: 0 }] }] }, { facts: [{ sac: 0 }] }, { moments: null },
+      // moments that would crash the review (exerciseOf reads game.moves[at]), a sidecar of no known line or side, a short scan
+      { moments: [null] }, { moments: ['x'] }, { moments: [{ ...moments[0], at: 9999 }] }, { moments: [{ ...moments[0], at: 11 }] }, { moments: [{ ...moments[0], sign: 0 }] },
+      { moments: [{ ...moments[0], punish: [[3, 25]] }] }, { moments: [{ ...moments[0], lost: [NaN] }] }, { key: undefined }, { side: 2 }, { pos: pos.slice(0, 11) }]) {
+      files.set('g.review', { ...ok, ...bad })
+      expect(await lib.reviewData('g', 19)).toBeNull()
     }
+    files.set('g.review', ok) // fine on 19×19, off a 9×9 board (candidates up to [15, 13])
+    expect(await lib.reviewData('g', 9)).toBeNull()
   })
 })

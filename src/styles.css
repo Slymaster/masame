@@ -477,6 +477,8 @@ body[data-drop]::after {
 /* the caption's verdict: glyph, the move and its category in its colour, then why */
 .board-wrap > .note .cat-line svg { vertical-align: -3px; margin-right: 2px }
 .board-wrap > .note .cat-line b { font-weight: 600 }
+/* narrow desktop windows: the why goes to the card, as on phones, so the line and Retry links keep their second line */
+@media (max-width: 1000px) { .board-wrap > .note .cat-line .why { display: none } .rv-why { display: block } }
 .ex .rc-now { stroke: var(--card) }
 
 /* ---------- the four doors and their sheets (Apprendre, Mes parties, Partager) ---------- */

@@ -8,6 +8,9 @@ import { PROFILES } from '../rank'
 
 // the classifier is tested on its own: here no move needs a deeper search, and no rank is known
 vi.mock('../classify', () => ({ parseRank: () => null, deepCandidates: () => [], sacrificed: () => 0 }))
+// no opening book unless a test loads one
+const bk = vi.hoisted(() => ({ load: () => Promise.reject(new Error('no book')) as Promise<unknown> }))
+vi.mock('../book', () => ({ loadBook: () => bk.load(), bookMoves: (g: { moves: unknown[] }) => g.moves.map((_, i) => i < 2) }))
 
 const mem = (init: Record<string, string> = {}) => {
   const m = new Map(Object.entries(init))
@@ -89,7 +92,7 @@ describe('a background run', () => {
     // the human policy favours the played move under rank_5k
     const p = (q as { overrideSettings?: { humanSLProfile?: string } }).overrideSettings?.humanSLProfile
     const humanPolicy = p && Array.from({ length: 82 }, () => (p === 'rank_5k' ? 0.5 : 0.1))
-    return { scoreLead: leadAt(g.moves.length), pv: [[8, 8], [7, 7]], ownership: null, humanPolicy, moves: [] } as unknown as Analysis
+    return { scoreLead: leadAt(g.moves.length), pv: [[8, 8], [7, 7]], ownership: [0], humanPolicy, moves: [] } as unknown as Analysis
   }
   const setup = (n = 12) => {
     const a = newAuto([]); a.queue = enqueue(a, game(n), 1, 0)
@@ -104,6 +107,12 @@ describe('a background run', () => {
     expect(added.length).toBe(1)
     expect(added[0][3]).toBe(1)
     expect([a.queue, a.reviewed.has(j.k), enqueue(a, game(12), 1, 9)]).toEqual([[], true, []])
+  })
+  it('gives readGame the opening book like the foreground, none when it fails to load', async () => {
+    const run = async () => { const { a, j, add } = setup(), ms = await runJob(a, j, fake([]), () => true, () => {}, add); return typeof ms === 'object' ? ms.facts.map(f => f.book) : ms }
+    expect((await run()).slice(0, 3)).toEqual([false, false, false])
+    bk.load = () => Promise.resolve({})
+    try { expect((await run()).slice(0, 3)).toEqual([true, true, false]) } finally { bk.load = () => Promise.reject(new Error('no book')) }
   })
   it('keeps an interrupted job and resumes from the cached positions', async () => {
     const { a, j, added, add } = setup(), asked: number[] = []

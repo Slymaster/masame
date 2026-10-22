@@ -23,14 +23,17 @@ export interface Entry {
   era?: number // against a Master of an era (B1)
   mentor?: { stops: number } // played with the mentor on (B2): a lesson, never a rank reading
   rankRead?: Reading // the player's rank read in their moves
+  classic?: true // kept from Les Classiques: judged at pro level for both sides
   review?: { moments: number } // reviewed (automatically or by hand): its leads and moments are in the 'review' sidecar
   memory?: { recalled: number; total: number; helps: number } // replayed from memory (C2), the best run
   counted?: number // positions of this game counted so far (C1)
   added?: number // a file: when it entered the library (the monthly letter counts it then, not at its SGF date)
 }
 /** The 'review' sidecar (<id>.review.json): the scan's leads per move (Black's lead, null where unread) and the moments;
- * v2 adds what the move classifier needs: a Pos per position and Facts per move (ownership maps are never stored). */
-export interface ReviewSidecar { leads: (number | null)[]; moments: Moment[]; v?: 2; pos?: Pos[]; facts?: Facts[] }
+ * v2 adds what the move classifier needs: a Pos per position and Facts per move (ownership maps are never stored), the
+ * line read (recordKey: a variation or an undone line is another record) and the side the moments were picked for. */
+export interface ReviewSidecar { leads: (number | null)[]; moments: Moment[]; v?: 2; pos?: Pos[]; facts?: Facts[]; key?: string; side?: Sign | 0 }
+export interface ReviewData { key: string; side: Sign | 0; pos: Pos[]; facts: Facts[]; moments: Moment[] }
 /** current.json: the unfinished local game to restore at launch (A1). */
 export interface Current {
   id: string; cursor: number
@@ -49,15 +52,21 @@ export const sidecar = <T>(id: string, name: string) => call<T | null>('library_
 export const current = () => call<Current | null>('library_current_read')
 
 const num = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
-const vert = (v: unknown) => v === null || Array.isArray(v) && v.length === 2 && v.every(c => Number.isInteger(c) && c >= 0 && c < 25)
-const isPos = (p: Pos) => !!p && num(p.lead) && num(p.u) && Array.isArray(p.pv) && p.pv.every(vert) && Array.isArray(p.cands)
-  && p.cands.every(c => !!c && vert(c.v) && num(c.lead) && num(c.visits) && num(c.prior))
-const isFacts = (f: Facts) => !!f && num(f.sac) && typeof f.book === 'boolean'
-/** A reviewed game's classification data, so it reopens without a scan; null for a v1 sidecar (leads only), none, or a damaged one. */
-export async function reviewData(id: string): Promise<{ pos: Pos[]; facts: Facts[]; moments: Moment[] } | null> {
+/** A reviewed game's classification data, so it reopens without a scan; null for a v1 sidecar (leads only), none, or a
+ * damaged one (anything off the board of `size`, or moments outside the positions read). */
+export async function reviewData(id: string, size: number): Promise<ReviewData | null> {
   const r = await sidecar<ReviewSidecar>(id, 'review')
-  return r?.v === 2 && Array.isArray(r.pos) && r.pos.every(isPos) && Array.isArray(r.facts) && r.facts.every(isFacts) && Array.isArray(r.moments)
-    ? { pos: r.pos, facts: r.facts, moments: r.moments } : null
+  const vert = (v: unknown) => v === null || Array.isArray(v) && v.length === 2 && v.every(c => Number.isInteger(c) && c >= 0 && c < size)
+  const line = (l: unknown) => Array.isArray(l) && l.every(vert), map = (m: unknown) => m === null || Array.isArray(m) && m.every(num)
+  const isPos = (p: Pos) => !!p && num(p.lead) && num(p.u) && line(p.pv) && Array.isArray(p.cands)
+    && p.cands.every(c => !!c && vert(c.v) && num(c.lead) && num(c.visits) && num(c.prior))
+  const isFacts = (f: Facts) => !!f && num(f.sac) && typeof f.book === 'boolean'
+  const n = Array.isArray(r?.facts) ? r.facts.length : -1
+  const isMoment = (m: Moment) => !!m && Number.isInteger(m.at) && m.at >= 0 && m.at < n && (m.sign === 1 || m.sign === -1) && num(m.loss) && num(m.lead)
+    && line(m.punish) && line(m.better) && map(m.lost) && map(m.kept)
+  return r?.v === 2 && typeof r.key === 'string' && (r.side === 1 || r.side === -1 || r.side === 0) && Array.isArray(r.pos) && r.pos.length === n + 1
+    && r.pos.every(isPos) && r.facts!.every(isFacts) && Array.isArray(r.moments) && r.moments.every(isMoment)
+    ? { key: r.key, side: r.side, pos: r.pos, facts: r.facts!, moments: r.moments } : null
 }
 
 // ---------- one queue for every write ----------

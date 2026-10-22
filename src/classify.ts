@@ -44,15 +44,17 @@ export const SIGMA_ANCHORS: { level: number; s0: number; min: number }[] = [
 ]
 
 const PRO = 10
-const TITLE = /meijin|honin|kisei|j[uū]dan|tengen|[oō]za|gosei|kisung|myeongin|kuksu|mingren|qisheng/i
+const TITLE = /meijin|honin|kisei|j[uū]dan|tengen|[oō]za|gosei|kisung|myeongin|kuksu|mingren|qisheng|名人|本因坊|棋聖|棋圣|天元|十段|王座|碁聖|国手|國手/i
 
 export function parseRank(s: string | undefined | null): number | null {
   if (!s) return null
-  const m = /(\d+)\s*(k|kyu|d|dan|p)/i.exec(s)
+  const m = /(\d+)\s*(k|kyu|d|dan|p|段|단|级|級|급)/i.exec(s)
   if (m) {
     const n = +m[1], u = m[2].toLowerCase()
-    return u === 'p' || /pro/i.test(s) ? PRO : u[0] === 'k' ? 1 - n : n
+    // Fox writes pros as P9段
+    return u === 'p' || /pro|(^|[^a-z])p\d/i.test(s) ? PRO : /^(k|级|級|급)/.test(u) ? 1 - n : n
   }
+  if (/初段/.test(s)) return 1
   return TITLE.test(s) || /\bpro\b/i.test(s) ? PRO : null
 }
 
@@ -128,7 +130,7 @@ export function classify(game: Game, pos: (Pos | undefined)[], facts: (Facts | u
     // shortcut: Facts has no "played stone given up" flag, so a weak mover's single sacrificed stone is assumed to be it
     const brilliant = p.deep && c && dEP <= EXCELLENT && (sac >= BRILLIANT_SAC || (sac >= WEAK_SAC && lvl <= WEAK_LEVEL))
       && E(s, i, p.lead) <= BRILLIANT_BEFORE && epAfter >= BRILLIANT_AFTER && c.prior <= BRILLIANT_PRIOR
-    const alts = p.cands.filter(x => x !== c && x.visits >= MIN_VISITS)
+    const alts = p.cands.filter(x => x !== c) // every listed one: a starved alternative after a deep read is evidence too
     const gap = alts.length ? epAfter - Math.max(...alts.map(x => E(s, i, x.lead))) : 0
     const isBest = isTop || dEP < BEST
     const gift = prev >= 0 && game.moves[prev].sign !== s && out[prev]!.dEP >= MISS_GIFT
@@ -151,7 +153,10 @@ export function deepCandidates(game: Game, pos: (Pos | undefined)[], facts: (Fac
     const p = pos[i], [a, b] = p?.cands ?? []
     if (!ok[i] || !a || !same(a.v, m.vertex)) return
     const gap = b ? E(m.sign, i, a.lead) - E(m.sign, i, b.lead) : 0
-    if (gap >= DEEP_GAP || (facts[i]?.sac ?? 0) >= 1) found.push([i, gap])
+    const sac = facts[i]?.sac ?? 0
+    // moves that can still become Great/Brilliant (the deep read keeps the scan's prior) first; gaps are in [−1, 1]
+    const eligible = a.prior <= GREAT_PRIOR || (sac >= 1 && a.prior <= BRILLIANT_PRIOR)
+    if (gap >= DEEP_GAP || sac >= 1) found.push([i, gap + (eligible ? 2 : 0)])
   })
   return found.sort((x, y) => y[1] - x[1]).slice(0, max).map(([i]) => i)
 }

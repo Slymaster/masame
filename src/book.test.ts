@@ -45,6 +45,10 @@ describe('the opening book', () => {
     const p = bookMoves(game('pd tt dp pp'), db)
     expect(p).toEqual([true, false, false, false])
   })
+  it('skips empty and comment-only nodes: the book goes on, counting real moves only', () => {
+    expect(bookMoves(loadSgf('(;GM[1]SZ[19];C[x];B[pd];W[dp];B[pp];W[dd])'), db)).toEqual([false, true, true, true, true])
+    expect(bookMoves(loadSgf('(;GM[1]SZ[19];B[pd];W[dp];C[x];B[pp];W[dd])'), db)).toEqual([true, true, false, true, true])
+  })
   it('reports how long the classics stay in the book', () => {
     const games = index.map(c => loadSgf(files[`../public/assets/classics/${c.file}`]))
     const plies = games.map(g => { const b = bookMoves(g, db); return b.indexOf(false) < 0 ? b.length : b.indexOf(false) })
@@ -76,6 +80,10 @@ describe('corner joseki', () => {
     // Black takes a lower corner first, so White plays the stored line's first stone
     const g = Game.fromRecord({ size: 19 }, [{ sign: 1, vertex: [3, 15] }, ...shown(line.moves, { k: 0, swap: true }, [])])
     expect(bookMoves(g, both).slice(1)).toEqual(line.moves.map(() => true))
+  })
+  it('goes on past an empty node', () => {
+    const g = Game.fromRecord({ size: 19 }, [...shown(line.moves.slice(0, 2), { k: 0, swap: false }, []), { sign: -1, vertex: null, setup: true }, ...shown(line.moves, { k: 0, swap: false }, []).slice(2)])
+    expect(bookMoves(g, both)).toEqual([true, true, false, ...line.moves.slice(2).map(() => true)])
   })
   it('stops for good when the corner holds a stone the tree lacks', () => {
     // a stray Black stone on the 2-2 point of that corner before the line starts

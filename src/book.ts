@@ -17,18 +17,19 @@ const indexes = new WeakMap<FusekiDb, Map<string, number>>()
 
 /**
  * Per move index: true while every move so far is a book move. Only an even 19×19 game from the empty board, Black
- * first, qualifies; a pass, a setup node or one move off the tree ends the book for the rest of the game.
+ * first, qualifies; a pass, a setup node placing stones or one move off the tree ends the book for the rest of the game.
  */
 export function bookMoves(game: Game, db: FusekiDb): boolean[] {
   const out = game.moves.map(() => false)
   const b0 = game.boards[0]
-  if (game.info.size !== 19 || game.moves[0]?.sign !== 1 || b0.signMap.some(row => row.some(s => s))) return out
+  if (game.info.size !== 19 || game.moves.find(m => !m.setup)?.sign !== 1 || b0.signMap.some(row => row.some(s => s))) return out
   const byKey = keysOf(db)
-  let at: number | undefined // node before move i (undefined before the first move: the roots)
+  let at: number | undefined, ply = 0 // node before move i (undefined before the first move: the roots); real moves so far
   for (let i = 0; i < game.moves.length; i++) {
     const m = game.moves[i], b = game.boards[i + 1]
+    if (m.setup && b === game.boards[i]) continue // an empty or comment-only node: same position
     if (m.setup || !m.vertex || !b) break
-    const next = byKey.get(positionKey(b.signMap, i + 1, ALL))
+    const next = byKey.get(positionKey(b.signMap, ++ply, ALL))
     if (next === undefined) break
     // the child may be reached by a symmetric twin of the played move: same position, same loss
     const ok = at === undefined ? db.roots.some(r => r.node === next) : db.nodes[at].e.some(e => e[1] === next && e[2] <= MAX_LOSS)
@@ -62,6 +63,7 @@ function corners(game: Game, db: JosekiDb, out: boolean[]) {
     let at: number | undefined, swap = 0, n = 0
     for (let i = 0; i < game.moves.length; i++) {
       const m = game.moves[i]
+      if (m.setup && game.boards[i + 1] === game.boards[i]) continue // an empty or comment-only node
       if (m.setup || !m.vertex) break
       if (!REGION(sym(k, m.vertex))) continue
       if (n === 0) swap = m.sign === 1 ? -1 : 1 // the tree's root stone is White

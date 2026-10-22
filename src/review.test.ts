@@ -52,6 +52,8 @@ describe('pickMoments', () => {
     expect(pickMoments(leads, g.moves, 0, 3)).toEqual([])
     expect(phaseLosses(leads, g.moves, 1, 9)).toEqual([0, 0, 0]) // Black's E5 would lose 10
     expect(phaseLosses(leads, g.moves, -1, 9)).toEqual([0, 0, 0]) // so would White's game-ending pass
+    expect(pickMoments([0, 0, 0, 0, 0, 0, 9], g.moves, 0, 3)).toEqual([]) // nor the second resumed move, White's F4
+    expect(phaseLosses([0, 0, 0, 0, 0, 0, 9], g.moves, -1, 9)).toEqual([0, 0, 0])
   })
 })
 
@@ -210,11 +212,20 @@ describe('readGame', () => {
     expect((await read(game, 1, [], fakeEngine(leads).ask)).moments.map(m => m.at)).toEqual([2, 14, 20])
   })
   it('does not ask again for cached positions', async () => {
-    const cache: (Pos | undefined)[] = leads.slice(0, 20).map(lead => ({ lead, u: 0.5, cands: [], pv: [] }))
+    const cache: (Pos | undefined)[] = leads.slice(0, 20).map(lead => toPos({ winrate: 0.5, scoreLead: lead, topMove: '', pv: [], ownership: [0, 0], humanPolicy: null, moves: [] }))
     const e = fakeEngine(leads)
     await read(game, 0, cache, e.ask)
     expect(scansOf(e.calls).map(c => c.at)).toEqual([20, 21, 22])
     expect(leadsOf(cache)).toEqual(leads)
+  })
+  it('reads again positions restored from the sidecar (no ownership in memory), so their sacrifices come back', async () => {
+    cl.sac = (...a) => (a[4] === -1 ? 2 : 0)
+    const pos: (Pos | undefined)[] = []
+    await read(game, 0, pos, fakeEngine(leads).ask)
+    const restored: (Pos | undefined)[] = JSON.parse(JSON.stringify(pos)), e = fakeEngine(leads)
+    const { facts } = await read(game, 0, restored, e.ask)
+    expect(scansOf(e.calls).map(c => c.at)).toEqual(Array.from({ length: 23 }, (_, i) => i))
+    expect(facts[1].sac).toBe(2)
   })
   it('rejects on the first error and starts nothing after it', async () => {
     const e = fakeEngine(leads, { failAt: 3 })
@@ -268,6 +279,16 @@ describe('readGame', () => {
     await read(game, 0, pos, e.ask)
     expect(e.calls.filter(c => c.query === GREAT_DEEP).map(c => c.at)).toEqual([19, 20]) // 17 and 18 already deep
     expect(scansOf(e.calls)).toEqual([])
+  })
+  it('with saved facts, trusts sidecar positions as they are and asks only the moments’ deep checks', async () => {
+    cl.deep = () => [1, 2]
+    const pos: (Pos | undefined)[] = []
+    await read(game, 0, pos, fakeEngine(leads).ask)
+    const restored: (Pos | undefined)[] = JSON.parse(JSON.stringify(pos)), e = fakeEngine(leads)
+    const facts = game.moves.map(() => ({ sac: 7, book: false }))
+    const got = await readGame(game, 1, restored, e.ask, () => true, () => {}, { levels: LV, facts })
+    expect(e.calls.every(c => c.query === DEEP)).toBe(true)
+    expect([got.facts, got.moments.map(m => m.at)]).toEqual([facts, [2, 14, 20]])
   })
   it('asks the position a pseudo-move copies, not the copy', async () => {
     const g = loadSgf('(;SZ[9];B[aa];W[ii];C[x];B[ba];W[hi])') // index 2 is a pseudo-move: position 3 = position 2
