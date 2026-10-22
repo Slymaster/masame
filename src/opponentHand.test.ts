@@ -54,7 +54,7 @@ describe('handMove', () => {
 
 describe('handWanted', () => {
   const on = { opponentHand: true, mobile: false, renderer: '3d', camera: 'contemplation', delay: true, opponent: 'ai', color: 'b', reducedMotion: false }
-  it('fetches the hand when it could play: the option on, 3D Contemplation on a desktop, thinking time, against the AI', () => {
+  it('loads the hand when it could play: the option on, 3D Contemplation on a desktop, thinking time, against the AI', () => {
     expect(handWanted(on)).toBe(true)
     expect(handWanted({ ...on, color: 'r' })).toBe(true) // a random colour may give the AI White
   })

@@ -1,7 +1,7 @@
 // The AI opponent's right hand (Workshop option, a lazy chunk): in a dark silk sleeve, it takes a stone from his bowl and
 // places it. The seated camera never shows his face, so he is a hand, a sleeve and, as an option, the shadow of his body
-// (an invisible stand-in that only the lamp's shadow pass sees). The model is not bundled: the app downloads
-// downloads/hand/hand-v1.glb (MakeHuman, CC0, see downloads/hand/CREDITS.md) and passes its bytes to load().
+// (an invisible stand-in that only the lamp's shadow pass sees). The model is built into the desktop app:
+// src-tauri/assets/hand/hand-v1.glb (MakeHuman, CC0, see src-tauri/assets/hand/CREDITS.md), its bytes passed to load().
 // Board3D.setHand plugs it in. Units mm, y up, board top ≈ 0, he sits at −z.
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -211,7 +211,7 @@ export class OpponentHand implements HandPlug {
     this.root.visible = false
   }
 
-  /** The hand from a .glb's bytes (the downloaded downloads/hand/hand-v1.glb). */
+  /** The hand from a .glb's bytes (src-tauri/assets/hand/hand-v1.glb). */
   static async load(glb: ArrayBuffer) {
     // the skin decodes through an <img>: the app's CSP allows blob: images, not blob: fetches (ImageBitmapLoader)
     const loader = new GLTFLoader().register(p => { p.textureLoader = new THREE.TextureLoader(p.options.manager); return { name: 'masame_img' } })
