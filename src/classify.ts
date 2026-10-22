@@ -26,33 +26,41 @@ export interface Judged {
   best: Vertex | null // KataGo's preferred move when it differs from the played one
   pv: (Vertex | null)[] // KataGo's line from this position
   gap?: number // Great: EP gap to the best alternative
+  acc: number // the move's accuracy (Lichess), on the reference scale
+  w: number // Black's Win% after the move, on the reference scale
 }
 
 // chess.com's bands on ΔEP
 export const BEST = 0.005, EXCELLENT = 0.02, GOOD = 0.05, INACCURACY = 0.1, MISTAKE = 0.2
-export const MISS_GIFT = 0.1, MISS_LOSS = 0.05, MISS_SLACK = 0.02
-export const GREAT_GAP = 0.1, GREAT_PRIOR = 0.5
-export const BRILLIANT_SAC = 2, WEAK_SAC = 1, WEAK_LEVEL = -14 /* 15k */, BRILLIANT_BEFORE = 0.9, BRILLIANT_AFTER = 0.35, BRILLIANT_PRIOR = 0.2
+export const MISS_GIFT = 0.15, MISS_LOSS = 0.1, MISS_SLACK = 0.02
+export const GREAT_GAP = 0.1, GREAT_PRIOR = 0.8
+export const BRILLIANT_SAC = 2, WEAK_LEVEL = -14 /* 15k */, BRILLIANT_BEFORE = 0.9, BRILLIANT_AFTER = 0.35, BRILLIANT_PRIOR = 0.3
+export const SAC_OPEN_U = 0.35 // one given-up stone is enough while the board is still open (not an endgame throw-in)
 export const DEEP_GAP = 0.06
 export const MIN_VISITS = 30
 export const OWN_BEFORE = -0.3, OWN_AFTER = -0.6
 export const MIN_ACCURACY_MOVES = 5
-/** Provisional σ anchors (points) from the EGF formula; the calibrate agent replaces this table. level: 1k = 0, 1d = 1, pro = 10. */
+/** σ anchors (points), fitted on KataGo's humanScoreStdev, then scaled per level for severity (.claude/research/coups/report.md §3). level: 1k = 0, 1d = 1, pro = 10. */
 export const SIGMA_ANCHORS: { level: number; s0: number; min: number }[] = [
-  { level: -19, s0: 94, min: 8 }, { level: -9, s0: 64, min: 6 }, { level: -4, s0: 49, min: 4 },
-  { level: 1, s0: 34, min: 2.5 }, { level: 5, s0: 23, min: 1.5 }, { level: 10, s0: 15, min: 1 },
+  { level: -19, s0: 23, min: 6 }, { level: -9, s0: 18, min: 5 }, { level: -4, s0: 16.5, min: 4 },
+  { level: 1, s0: 14, min: 3 }, { level: 5, s0: 12.5, min: 2.5 }, { level: 10, s0: 11, min: 2 },
 ]
+/** Accuracy is read on one scale for every player (1d) so it stays comparable across levels; categories stay at the mover's level. */
+export const ACC_LEVEL = 1
 
 const PRO = 10
 const TITLE = /meijin|honin|kisei|j[uū]dan|tengen|[oō]za|gosei|kisung|myeongin|kuksu|mingren|qisheng|名人|本因坊|棋聖|棋圣|天元|十段|王座|碁聖|国手|國手/i
 
+const KANJI = '一二三四五六七八九'
+
 export function parseRank(s: string | undefined | null): number | null {
   if (!s) return null
+  s = s.replace(/[一二三四五六七八九](?=\s*[段级級])/g, c => String(KANJI.indexOf(c) + 1)) // 九段; 十段 stays a title
   const m = /(\d+)\s*(k|kyu|d|dan|p|段|단|级|級|급)/i.exec(s)
   if (m) {
     const n = +m[1], u = m[2].toLowerCase()
-    // Fox writes pros as P9段
-    return u === 'p' || /pro|(^|[^a-z])p\d/i.test(s) ? PRO : /^(k|级|級|급)/.test(u) ? 1 - n : n
+    // Fox writes pros as P9段, China 职业九段
+    return u === 'p' || /pro|职业|職業/i.test(s) || /p\s*$/i.test(s.slice(0, m.index)) ? PRO : /^(k|级|級|급)/.test(u) ? 1 - n : n
   }
   if (/初段/.test(s)) return 1
   return TITLE.test(s) || /\bpro\b/i.test(s) ? PRO : null
@@ -99,6 +107,10 @@ function judgeable(game: Game, end: number): boolean[] {
   return ok
 }
 
+// shortcut: Facts has no "played stone given up" flag, so a single sacrificed stone is assumed to be it (open board or weak mover);
+// a Facts.sacPlayed flag from review.ts would keep out a tenuki that drops a weak stone elsewhere
+const sacOk = (sac: number, u: number, lvl: number) => sac >= BRILLIANT_SAC || (sac >= 1 && (u >= SAC_OPEN_U || lvl <= WEAK_LEVEL))
+
 /** EP for the side `s` from a Black lead at position `at`, the handicap baseline taken away. */
 function epAt(game: Game, pos: (Pos | undefined)[], levels: Levels) {
   const first = pos.find(p => p), handi = game.info.setup.black.length + game.info.setup.white.length > 0
@@ -112,6 +124,7 @@ function epAt(game: Game, pos: (Pos | undefined)[], levels: Levels) {
 
 export function classify(game: Game, pos: (Pos | undefined)[], facts: (Facts | undefined)[], levels: Levels, end: number): (Judged | null)[] {
   const ok = judgeable(game, end), E = epAt(game, pos, levels), out: (Judged | null)[] = game.moves.map(() => null)
+  const R = epAt(game, pos, { black: ACC_LEVEL, white: ACC_LEVEL })
   let prev = -1 // the previous judged move
   game.moves.forEach((m, i) => {
     const p = pos[i]
@@ -125,10 +138,11 @@ export function classify(game: Game, pos: (Pos | undefined)[], facts: (Facts | u
     else return
     const epBest = E(s, i, best), epAfter = E(s, i, played)
     const dEP = isTop ? 0 : Math.max(0, epBest - epAfter), loss = isTop ? 0 : Math.max(0, s * (best - played))
-    const f = facts[i], j: Judged = { cat: 'blunder', loss, dEP, ep: epAfter, best: top && !isTop ? top.v : null, pv: p.pv }
-    const lvl = s === 1 ? levels.black : levels.white, sac = f?.sac ?? 0
-    // shortcut: Facts has no "played stone given up" flag, so a weak mover's single sacrificed stone is assumed to be it
-    const brilliant = p.deep && c && dEP <= EXCELLENT && (sac >= BRILLIANT_SAC || (sac >= WEAK_SAC && lvl <= WEAK_LEVEL))
+    const rAfter = R(s, i, played), rdEP = isTop ? 0 : Math.max(0, R(s, i, best) - rAfter)
+    const acc = Math.min(100, Math.max(0, 103.1668 * Math.exp(-0.04354 * 100 * rdEP) - 3.1669))
+    const f = facts[i], j: Judged = { cat: 'blunder', loss, dEP, ep: epAfter, best: top && !isTop ? top.v : null, pv: p.pv, acc, w: 100 * (s === 1 ? rAfter : 1 - rAfter) }
+    const lvl = s === 1 ? levels.black : levels.white
+    const brilliant = p.deep && c && dEP <= EXCELLENT && sacOk(f?.sac ?? 0, p.u, lvl)
       && E(s, i, p.lead) <= BRILLIANT_BEFORE && epAfter >= BRILLIANT_AFTER && c.prior <= BRILLIANT_PRIOR
     const alts = p.cands.filter(x => x !== c) // every listed one: a starved alternative after a deep read is evidence too
     const gap = alts.length ? epAfter - Math.max(...alts.map(x => E(s, i, x.lead))) : 0
@@ -151,28 +165,31 @@ export function deepCandidates(game: Game, pos: (Pos | undefined)[], facts: (Fac
   const ok = judgeable(game, end), E = epAt(game, pos, levels), found: [number, number][] = []
   game.moves.forEach((m, i) => {
     const p = pos[i], [a, b] = p?.cands ?? []
-    if (!ok[i] || !a || !same(a.v, m.vertex)) return
+    if (!ok[i] || !a) return
+    const sac = facts[i]?.sac ?? 0, sacs = sacOk(sac, p!.u, m.sign === 1 ? levels.black : levels.white)
+    const c = p!.cands.find(x => same(x.v, m.vertex))
+    // a sacrifice the scan put within EXCELLENT of its top move gets a deep read too, first: scan noise often costs it the top spot
+    if (c && c !== a && sacs && c.prior <= BRILLIANT_PRIOR && E(m.sign, i, a.lead) - E(m.sign, i, c.lead) <= EXCELLENT) { found.push([i, 3]); return }
+    if (c !== a) return
     const gap = b ? E(m.sign, i, a.lead) - E(m.sign, i, b.lead) : 0
-    const sac = facts[i]?.sac ?? 0
-    // moves that can still become Great/Brilliant (the deep read keeps the scan's prior) first; gaps are in [−1, 1]
-    const eligible = a.prior <= GREAT_PRIOR || (sac >= 1 && a.prior <= BRILLIANT_PRIOR)
+    // moves that can still become Great/Brilliant (the deep read keeps the scan's prior) next; gaps are in [−1, 1]
+    const eligible = a.prior <= GREAT_PRIOR || (sacs && a.prior <= BRILLIANT_PRIOR)
     if (gap >= DEEP_GAP || sac >= 1) found.push([i, gap + (eligible ? 2 : 0)])
   })
   return found.sort((x, y) => y[1] - x[1]).slice(0, max).map(([i]) => i)
 }
 
-/** Lichess's game accuracy on Win% = 100·EP: mean of the volatility-weighted and harmonic means; book moves excluded. */
+/** Lichess's game accuracy on the reference Win% (ACC_LEVEL): mean of the volatility-weighted and harmonic means; book moves excluded. */
 export function accuracy(judged: (Judged | null)[], game: Game, sign: Sign): number | null {
   const all = judged.flatMap((j, i) => (j ? [{ j, s: game.moves[i].sign }] : []))
   const mine = all.flatMap((x, k) => (x.s === sign && x.j.cat !== 'book' ? [k] : []))
   if (mine.length < MIN_ACCURACY_MOVES) return null
   // Black's Win% after each judged move; the first windows repeat the first full one (Lichess pads the same way)
-  const win = all.map(x => 100 * (x.s === 1 ? x.j.ep : 1 - x.j.ep)), w = Math.min(win.length, Math.max(2, Math.min(8, Math.round(win.length / 10))))
+  const win = all.map(x => x.j.w), w = Math.min(win.length, Math.max(2, Math.min(8, Math.round(win.length / 10))))
   const sd = (xs: number[]) => { const m = xs.reduce((a, b) => a + b, 0) / xs.length; return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length) }
   const weight = (k: number) => Math.min(12, Math.max(0.5, sd(win.slice(Math.max(0, k - w + 1), Math.max(0, k - w + 1) + w))))
-  const acc = (k: number) => Math.min(100, Math.max(0, 103.1668 * Math.exp(-0.04354 * 100 * all[k].j.dEP) - 3.1669))
   let sw = 0, swa = 0, inv = 0
-  for (const k of mine) { const a = acc(k), wt = weight(k); sw += wt; swa += wt * a; inv += 1 / Math.max(1, a) }
+  for (const k of mine) { const a = all[k].j.acc, wt = weight(k); sw += wt; swa += wt * a; inv += 1 / Math.max(1, a) }
   return (swa / sw + mine.length / inv) / 2
 }
 

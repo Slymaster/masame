@@ -6,9 +6,9 @@ import { accuracy, classify, deepCandidates, ep, parseRank, sacrificed, sigma, t
 const record = (vs: (Vertex | null)[]): Move[] => vs.map((vertex, i) => ({ sign: (i % 2 ? -1 : 1) as Sign, vertex }))
 const row = (n: number): Vertex[] => Array.from({ length: n }, (_, i) => [i % 9, Math.floor(i / 9)] as Vertex)
 const game = (vs: (Vertex | null)[], info = {}) => Game.fromRecord({ size: 9, ...info }, record(vs))
-const PRO = { black: 10, white: 10 } // σ = 15 at u = 1
-const S = 15
-/** Black's lead that gives the mover (sign s) this EP at σ = 15, no handicap. */
+const PRO = { black: 10, white: 10 } // σ = 11 at u = 1
+const S = 11
+/** Black's lead that gives the mover (sign s) this EP at σ = 11, no handicap. */
 const leadFor = (p: number, s: Sign = 1) => s * S / 1.702 * Math.log(p / (1 - p))
 const cand = (v: Vertex | null, lead: number, o: Partial<Cand> = {}): Cand => ({ v, lead, visits: 100, prior: 0.1, ...o })
 const P = (lead: number, cands: Cand[] = [], o: Partial<Pos> = {}): Pos => ({ lead, u: 1, cands, pv: [], ...o })
@@ -27,14 +27,15 @@ describe('ep and sigma', () => {
     expect(ep(leadFor(0.8), S)).toBeCloseTo(0.8)
   })
   it('interpolates σ0 and σmin, clamps outside the table', () => {
-    expect(sigma(10, 1)).toBe(15)
-    expect(sigma(20, 1)).toBe(15)
-    expect(sigma(-30, 1)).toBe(94)
-    expect(sigma(-14, 1)).toBe(79) // halfway between 20k and 10k
-    expect(sigma(1, 0.25)).toBe(17)
-    expect(sigma(-4, 0)).toBe(4) // settled board: σmin
-    expect(sigma(-40, 0)).toBe(8)
-    expect(sigma(3, 0)).toBe(2) // σmin interpolated between 1d and 5d
+    expect([-19, -9, -4, 1, 5, 10].map(l => sigma(l, 1))).toEqual([23, 18, 16.5, 14, 12.5, 11])
+    expect([-19, -9, -4, 1, 5, 10].map(l => sigma(l, 0))).toEqual([6, 5, 4, 3, 2.5, 2])
+    expect(sigma(20, 1)).toBe(11)
+    expect(sigma(-30, 1)).toBe(23)
+    expect(sigma(-14, 1)).toBe(20.5) // halfway between 20k and 10k
+    expect(sigma(1, 0.25)).toBe(7)
+    expect(sigma(-40, 0)).toBe(6)
+    expect(sigma(3, 0)).toBe(2.75) // σmin interpolated between 1d and 5d
+    expect(sigma(10, 0.01)).toBe(2) // settled board: σmin
   })
 })
 
@@ -62,6 +63,17 @@ describe('parseRank', () => {
     expect(parseRank('初段')).toBe(1)
     expect(parseRank('本因坊')).toBe(10)
     expect(parseRank('名人')).toBe(10)
+    expect(parseRank('九段')).toBe(9)
+    expect(parseRank('二段')).toBe(2)
+    expect(parseRank('五級')).toBe(-4)
+    expect(parseRank('十段')).toBe(10) // the title
+    expect(parseRank('职业九段')).toBe(10)
+  })
+  it('reads pro only from a p next to the rank', () => {
+    expect(parseRank('abc p1 3d')).toBe(3)
+    expect(parseRank('9p')).toBe(10)
+    expect(parseRank('3 pro')).toBe(10)
+    expect(parseRank('p 9段')).toBe(10)
   })
 })
 
@@ -103,9 +115,9 @@ describe('classify bands', () => {
     expect(classify(g, [P(0, [cand(OTHER, 0)])], [], PRO, 1)[0]).toBeNull()
   })
   it('uses the mover’s level', () => {
-    const g = game([[0, 0]]), pos = [P(0, [cand(OTHER, 0), cand([0, 0], -10)])]
-    expect(classify(g, pos, [], PRO, 1)[0]!.cat).toBe('blunder')
-    expect(classify(g, pos, [], { black: -19, white: 10 }, 1)[0]!.cat).toBe('good') // σ 94: −10 pts costs 0.045
+    const g = game([[0, 0]]), pos = [P(0, [cand(OTHER, 0), cand([0, 0], -2)])]
+    expect(classify(g, pos, [], PRO, 1)[0]!.cat).toBe('inaccuracy') // σ 11: −2 pts costs 0.077
+    expect(classify(g, pos, [], { black: -19, white: 10 }, 1)[0]!.cat).toBe('good') // σ 23: 0.037
   })
 })
 
@@ -136,20 +148,21 @@ describe('miss', () => {
   it('is a miss when the mover still ends no worse than before the gift (−0.02)', () => {
     expect(run(0.8)[1]!.cat).toBe('blunder') // White lost 0.3
     expect(run(0.49)[2]!.cat).toBe('miss')
-    expect(run(0.74)[2]!.cat).toBe('miss') // lost 0.06
+    expect(run(0.69)[2]!.cat).toBe('miss') // lost 0.11
   })
-  it('else the normal band, and not under 0.05 lost', () => {
+  it('else the normal band, and not under 0.10 lost', () => {
     expect(run(0.47)[2]!.cat).toBe('blunder')
+    expect(run(0.71)[2]!.cat).toBe('inaccuracy') // lost 0.09
     expect(run(0.76)[2]!.cat).toBe('good')
   })
-  it('needs an opponent error of ≥ 0.10', () => {
-    const j = classify(g, [
+  it('needs an opponent error of ≥ 0.15', () => {
+    const at = (gift: number) => classify(g, [
       P(0, [cand([0, 0], 0)]),
-      P(0, [cand(OTHER, 0), cand([1, 1], leadFor(0.59))]),
-      P(leadFor(0.59), [cand(OTHER, leadFor(0.59)), cand([2, 2], leadFor(0.5))]),
+      P(0, [cand(OTHER, 0), cand([1, 1], leadFor(0.5 + gift))]),
+      P(leadFor(0.5 + gift), [cand(OTHER, leadFor(0.5 + gift)), cand([2, 2], leadFor(0.5 + gift - 0.12))]),
     ], [], PRO, 3)
-    expect(j[1]!.cat).toBe('inaccuracy')
-    expect(j[2]!.cat).toBe('inaccuracy')
+    expect(at(0.14).map(j => j?.cat)).toEqual(['best', 'mistake', 'mistake'])
+    expect(at(0.16).map(j => j?.cat)).toEqual(['best', 'mistake', 'miss'])
   })
 })
 
@@ -163,25 +176,31 @@ describe('great and brilliant', () => {
     expect(j.gap).toBeCloseTo(0.11)
     expect(great({}, { lead: leadFor(0.41) }).cat).toBe('best')
     expect(great({ deep: undefined }).cat).toBe('best')
-    expect(great({}, {}, 0.6).cat).toBe('best')
+    expect(great({}, {}, 0.8).cat).toBe('great')
+    expect(great({}, {}, 0.81).cat).toBe('best')
     expect(great({}, { visits: 29 }).cat).toBe('great') // a starved alternative far behind is evidence too
     expect(great({}, { lead: leadFor(0.41), visits: 5 }).cat).toBe('best') // a close one blocks it, however few its visits
   })
-  const bril = (sac: number, o: { before?: number; after?: number; prior?: number; deep?: true; book?: boolean; level?: number } = {}) => {
+  const bril = (sac: number, o: { before?: number; after?: number; prior?: number; deep?: true; book?: boolean; level?: number; u?: number } = {}) => {
     const after = leadFor(o.after ?? 0.5), before = leadFor(o.before ?? 0.5)
-    const pos = [P(before, [cand(A, after, { prior: o.prior ?? 0.1 }), cand(OTHER, after - 1)], { deep: 'deep' in o ? o.deep : true })]
+    const pos = [P(before, [cand(A, after, { prior: o.prior ?? 0.1 }), cand(OTHER, after - 1)], { deep: 'deep' in o ? o.deep : true, u: o.u ?? 1 })]
     return classify(g, pos, [{ sac, book: !!o.book }], { black: o.level ?? 10, white: 5 }, 1)[0]!.cat
   }
   it('brilliant: a deep sacrifice, hard to find, not already winning, not bad after', () => {
     expect(bril(2)).toBe('brilliant')
-    expect(bril(1)).not.toBe('brilliant')
-    expect(bril(1, { level: -14 })).toBe('brilliant') // 15k: one stone is enough
-    expect(bril(1, { level: -13 })).not.toBe('brilliant')
+    expect(bril(1)).toBe('brilliant') // open board: one stone is enough
+    expect(bril(1, { u: 0.35 })).toBe('brilliant')
+    expect(bril(1, { u: 0.34 })).not.toBe('brilliant') // an endgame throw-in
+    expect(bril(2, { u: 0.34 })).toBe('brilliant')
+    expect(bril(1, { u: 0.34, level: -14 })).toBe('brilliant') // 15k: one stone is enough anywhere
+    expect(bril(1, { u: 0.34, level: -13 })).not.toBe('brilliant')
+    expect(bril(0)).not.toBe('brilliant')
     expect(bril(2, { before: 0.9, after: 0.9 })).toBe('brilliant')
     expect(bril(2, { before: 0.91, after: 0.91 })).not.toBe('brilliant')
-    expect(bril(2, { after: 0.35, before: 0.35 })).toBe('brilliant')
-    expect(bril(2, { after: 0.34, before: 0.34 })).not.toBe('brilliant')
-    expect(bril(2, { prior: 0.21 })).not.toBe('brilliant')
+    expect(bril(2, { after: 0.351, before: 0.351 })).toBe('brilliant')
+    expect(bril(2, { after: 0.349, before: 0.349 })).not.toBe('brilliant')
+    expect(bril(2, { prior: 0.3 })).toBe('brilliant')
+    expect(bril(2, { prior: 0.31 })).not.toBe('brilliant')
     expect(bril(2, { deep: undefined })).toBe('best')
   })
   it('brilliant also for an excellent move, not a good one', () => {
@@ -240,15 +259,34 @@ describe('deepCandidates', () => {
     expect(deepCandidates(g, pos, [], PRO, 3)).toEqual([1, 0, 2])
     expect(deepCandidates(g, pos, [], PRO, 3, 1)).toEqual([1])
   })
+  it('a sacrifice within EXCELLENT of the top move, hard to see, comes first', () => {
+    const vs = row(2), g = game(vs)
+    const at = (d: number, o: { prior?: number; sac?: number; u?: number } = {}) => {
+      const pos = [
+        P(0, [cand(vs[0], 0), cand(OTHER, leadFor(0.3))]), // top move with a big gap
+        P(0, [cand(OTHER, 0), cand(vs[1], leadFor(0.5 - d, -1), { prior: o.prior ?? 0.2 })], { u: o.u ?? 1 }),
+        P(0),
+      ]
+      return deepCandidates(g, pos, [{ sac: 0, book: false }, { sac: o.sac ?? 1, book: false }], PRO, 2)
+    }
+    expect(at(0.019)).toEqual([1, 0])
+    expect(at(0.021)).toEqual([0])
+    expect(at(0.019, { prior: 0.31 })).toEqual([0])
+    expect(at(0.019, { sac: 0 })).toEqual([0])
+    expect(at(0.005, { u: 0.34 })).toEqual([0]) // one stone in the endgame is no sacrifice
+    expect(at(0.005, { u: 0.34, sac: 2 })).toEqual([1, 0])
+  })
 })
 
 describe('accuracy and tally', () => {
   const g = game(row(12))
-  const J = (dEP: number, cat: Judged['cat'] = 'good', e = 0.5): Judged => ({ cat, loss: 0, dEP, ep: e, best: null, pv: [] })
+  const a = (d: number) => 103.1668 * Math.exp(-0.04354 * 100 * d) - 3.1669
+  // reference-scale fields as if the mover's level were ACC_LEVEL; w = Black's Win%
+  const J = (dEP: number, cat: Judged['cat'] = 'good', e = 0.5): Judged => ({ cat, loss: 0, dEP, ep: e, best: null, pv: [], acc: a(dEP), w: 100 * e })
   it('Lichess’s formula on a hand-computed game', () => {
     // all EP 0.5 → flat Win% series, every weight clamps to 0.5: weighted mean = plain mean
     const blk = [0, 0.1, 0, 0.2, 0], judged = g.moves.map((_, i) => (i % 2 ? J(0, 'best') : i < 10 ? J(blk[i / 2]) : J(0.5, 'book')))
-    const a = (d: number) => 103.1668 * Math.exp(-0.04354 * 100 * d) - 3.1669 // 99.9999, 63.58, 40.02: mean 80.72, harmonic 70.70
+    // 99.9999, 63.58, 40.02: mean 80.72, harmonic 70.70
     const mean = (3 * a(0) + a(0.1) + a(0.2)) / 5, harm = 5 / (3 / a(0) + 1 / a(0.1) + 1 / a(0.2))
     expect(accuracy(judged, g, 1)).toBeCloseTo((mean + harm) / 2, 6)
     expect(accuracy(judged, g, 1)).toBeCloseTo(75.71, 2)
@@ -266,6 +304,19 @@ describe('accuracy and tally', () => {
     expect(accuracy(g.moves.map((_, i) => (i === 0 ? J(0, 'book') : J(0))), g, 1)).toBeCloseTo(99.9999, 3)
     expect(accuracy(g.moves.map((_, i) => (i < 2 ? J(0, 'book') : J(0))), g, 1)).toBeCloseTo(99.9999, 3)
     expect(accuracy(g.moves.map((_, i) => (i < 4 ? J(0, 'book') : J(0))), g, 1)).toBeNull()
+  })
+  it('is read on one scale (1d) for every player while categories stay at the mover’s level', () => {
+    // a 15k Black gives 3 pts a move, a pro White 2.5: milder categories for Black, yet the lower accuracy
+    const pos = g.moves.map((m, i) => P(0, [cand(OTHER, 0), cand(m.vertex, -m.sign * (i % 2 ? 2.5 : 3))])).concat(P(0))
+    const judged = classify(g, pos, [], { black: -14, white: 10 }, 12)
+    expect(judged[0]!.dEP).toBeLessThan(judged[1]!.dEP)
+    expect(judged[0]!.acc).toBeCloseTo(a(0.5 - ep(-3, 14)))
+    expect(judged[1]!.w).toBeCloseTo(100 * ep(2.5, 14)) // Black's Win% after White's move
+    expect(accuracy(judged, g, 1)!).toBeLessThan(accuracy(judged, g, -1)!)
+    // swapping the levels changes the categories, not the accuracy
+    const swapped = classify(g, pos, [], { black: 10, white: -14 }, 12)
+    expect(swapped[0]!.cat).not.toBe(judged[0]!.cat)
+    expect(accuracy(swapped, g, 1)).toBeCloseTo(accuracy(judged, g, 1)!)
   })
   it('tally counts one side’s categories, every key present', () => {
     const judged = [J(0, 'best'), J(0, 'blunder'), J(0, 'best'), null, J(0, 'miss')]
