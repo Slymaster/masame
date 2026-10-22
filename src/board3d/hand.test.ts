@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lean, L1, L2, REACH, solveArm, type V3 } from './hand'
+import { lean, L1, L2, mhName, REACH, solveArm, type V3 } from './hand'
 
 const dist = (a: V3, b: V3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 
@@ -36,5 +36,14 @@ describe('lean', () => {
     expect(dist(shoulder, T)).toBeLessThanOrEqual(cap)
     expect(dist(shoulder, S0)).toBeLessThanOrEqual(350 + 1e-6)
     expect(dist(shoulder, hip)).toBeCloseTo(dist(S0, hip), 6) // it pivots at the hips
+  })
+})
+
+describe('mhName (WebXR joint → MakeHuman game_engine bone)', () => {
+  it('maps the wrist, the thumb and the fingers', () => {
+    expect(mhName('wrist')).toBe('hand_r')
+    expect(['metacarpal', 'phalanx-proximal', 'phalanx-distal', 'tip'].map(j => mhName(`thumb-${j}`))).toEqual(['thumb_01_r', 'thumb_02_r', 'thumb_03_r', 'thumb_tip_r'])
+    expect(['phalanx-proximal', 'phalanx-intermediate', 'phalanx-distal', 'tip'].map(j => mhName(`pinky-finger-${j}`))).toEqual(['pinky_01_r', 'pinky_02_r', 'pinky_03_r', 'pinky_tip_r'])
+    expect(mhName('index-finger-tip')).toBe('index_tip_r')
   })
 })

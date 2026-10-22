@@ -126,6 +126,10 @@ export const en = {
   ownLight: 'This decor has its own light',
   ambientSound: 'Ambient sound', ambientSoundHint: 'Leaves, wind or rain, very quietly',
   depthOfField: 'Depth of field', depthOfFieldHint: 'Softens what lies beyond the board',
+  opponentHand: 'Opponent’s hand',
+  opponentHandHint: 'In the Contemplation view, your opponent’s hand takes a stone from the bowl and places it. Downloaded once from GitHub (about 3 MB).',
+  handDownloading: 'Downloading the hand from GitHub…', handReady: 'The hand is ready. It plays in the Contemplation view.',
+  handFailed: (why: string) => `Couldn’t get the hand: ${why}`,
   stoneLocked: (how: string) => `To earn: ${how}`,
   unlocks: { games10: '10 finished games', streak7: '7 days in a row', review: 'a game reviewed', tsumego: 'a tsumego solved' },
   stonesEarned: (name: string) => `New stones: ${name}`,
@@ -591,6 +595,10 @@ export const en = {
     ogs_http: 'OGS answered with an error.',
     ogs_offline: 'Not connected to OGS.',
     ogs_refused: 'OGS refused this move.',
+    hand_network: 'Couldn’t reach GitHub. Check your connection.',
+    hand_http: 'GitHub refused the download.',
+    hand_dir: 'Can’t access the app’s data folder.',
+    hand_missing: 'The hand isn’t downloaded.',
   },
 }
 

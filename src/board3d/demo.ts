@@ -6,7 +6,7 @@ import GoBoard, { type Sign, type Vertex } from '@sabaki/go-board'
 import { Board3D, type Board3DOptions, type Board3DState } from './Board3D'
 import { DECORS } from './decors'
 import { arm, run, selftestOn } from './selftest'
-import type { OpponentHand, Variant } from './hand'
+import type { HandModel, OpponentHand, Variant } from './hand'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const SETUP: Vertex[] = [[15, 3], [3, 15], [15, 16], [3, 3], [2, 5], [2, 9], [5, 16], [5, 15], [6, 15], [4, 15], [6, 16], [16, 2], [15, 2], [16, 3], [16, 4], [17, 4], [17, 5], [15, 1], [14, 1], [16, 1], [9, 3], [16, 13], [16, 10], [9, 16]]
@@ -71,7 +71,8 @@ function aiMove() {
 /* ---------- prototype: the opponent's hand (hand.ts, loaded on first use) ---------- */
 let handMode: 'off' | Variant = 'off'
 let handP: Promise<OpponentHand> | null = null
-const getHand = () => (handP ??= import('./hand').then(m => m.OpponentHand.load(view)))
+let handModel: HandModel = new URLSearchParams(location.search).get('handModel') === 'webxr' ? 'webxr' : 'mh' // before/after comparisons
+const getHand = () => (handP ??= import('./hand').then(m => m.OpponentHand.load(view, handModel)))
 /** Deterministic captures: at(v, ms) poses the gesture and the board at ms and returns the canvas as an image. */
 let handBase: { len: number; last: Vertex | null; toPlay: Sign; moveNo: number } | null = null
 const handCtl = {
@@ -99,6 +100,8 @@ const handCtl = {
     await h.play(v, () => { history.push(board().makeMove(-1, v)); last = v; toPlay = 1; view.drop(v, -1); render() })
   },
   get(): Promise<OpponentHand> { return getHand() },
+  /** Switches the hand's model ('mh' or the WebXR 'webxr', for before/after comparisons). */
+  async model(m: HandModel) { if (handP) (await handP).stop(); handModel = m; handP = null; return getHand() },
 }
 Object.assign(window, { hand: handCtl })
 

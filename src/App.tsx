@@ -9,6 +9,7 @@ import { askFirst, confirmDiscard, openSgfFile, savePngFile, saveSgfFile } from 
 import { Game, type GameNode, type Move, type Sign, type Vertex } from './game'
 import { analyze, call, candidates, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
+import { handInstalled, installHand } from './handAsset'
 import { notify } from './notify'
 import { OgsSection } from './OgsSection'
 import { Clock } from './Clock'
@@ -78,7 +79,7 @@ const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
 const AUTOPLAY = [0.5, 1, 2, 4] as const // seconds per move
 interface Settings {
   lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; botResign: boolean; delay: boolean; territory: boolean
-  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor | 'auto'; stones: StoneSet; ambientSound: boolean; depthOfField: boolean; goban: GobanShape; wood: Wood
+  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor | 'auto'; stones: StoneSet; ambientSound: boolean; depthOfField: boolean; opponentHand: boolean; goban: GobanShape; wood: Wood
   langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number; autoplay: typeof AUTOPLAY[number]
   handicap: number; clock: ClockSetting
   style: 'level' | 'era'; era: number; mentor: boolean // a Master of an era instead of the AI level; the mentor (v0.5 B)
@@ -87,7 +88,7 @@ const SETTINGS_KEY = 'baduk.settings'
 function loadSettings(): Settings {
   const d: Settings = {
     lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, botResign: true, delay: true, territory: false,
-    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', ambientSound: false, depthOfField: true, goban: 'table', wood: 'kaya', langChosen: false, panelHidden: false,
+    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', ambientSound: false, depthOfField: true, opponentHand: false, goban: 'table', wood: 'kaya', langChosen: false, panelHidden: false,
     autoUpdate: true, updateChecked: 0, autoplay: 1, handicap: 0, clock: 'off', style: 'level', era: 1850, mentor: false,
   }
   let j: Partial<Settings> = {}
@@ -101,7 +102,7 @@ function loadSettings(): Settings {
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: s.decor === 'auto' || (readyDecors() as readonly unknown[]).includes(s.decor) ? s.decor : 'atelier', // a décor not shipped yet: the default
     stones: (readySets() as readonly unknown[]).includes(s.stones) ? s.stones : 'japonaise', // a set still to earn is kept and shown as the default (stonesOn)
-    ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false,
+    ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false, opponentHand: s.opponentHand === true,
     goban: (readyShapes() as readonly unknown[]).includes(s.goban) ? s.goban : 'table', wood: (readyWoods() as readonly unknown[]).includes(s.wood) ? s.wood : 'kaya', panelHidden: s.panelHidden === true, ...updateSettings(j),
     autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
     handicap: Number.isInteger(s.handicap) && s.handicap >= 2 && s.handicap <= 9 ? s.handicap : 0,
@@ -306,6 +307,17 @@ export function App() {
     const id = setTimeout(() => { earlyStart.current = true; call('engine_start').catch(() => {}) }, 5000) // errors arrive as engine-status
     return () => clearTimeout(id)
   }, [settings.opponent, canPlayAI])
+
+  // The opponent's hand: fetched once when the option is on (desktop Workshop); turning it off keeps the file.
+  const [hand, setHand] = useState<{ s: 'idle' | 'downloading' | 'ready' } | { s: 'error'; err: Msg }>({ s: 'idle' })
+  const getHand = useCallback(() => {
+    setHand({ s: 'downloading' })
+    installHand().then(() => setHand({ s: 'ready' }), e => setHand({ s: 'error', err: d => failureText(e, d) }))
+  }, [])
+  useEffect(() => {
+    if (!settings.opponentHand || isMobile) return
+    handInstalled().then(ok => ok ? setHand({ s: 'ready' }) : getHand(), getHand)
+  }, [settings.opponentHand, getHand])
 
   // Updates: a silent check at launch (at most daily, unless turned off), a manual one, install on click only.
   const [version, setVersion] = useState('')
@@ -1606,6 +1618,10 @@ export function App() {
                 <Switch label={t.highContrast} on={settings.highContrast} toggle={() => set('highContrast', !settings.highContrast)} />
                 <Switch label={t.depthOfField} title={t.depthOfFieldHint} on={settings.depthOfField} toggle={() => set('depthOfField', !settings.depthOfField)} />
                 <Switch label={t.ambientSound} title={t.ambientSoundHint} on={settings.ambientSound} toggle={() => set('ambientSound', !settings.ambientSound)} />
+                <Switch label={t.opponentHand} title={t.opponentHandHint} on={settings.opponentHand} toggle={() => set('opponentHand', !settings.opponentHand)} />
+                {settings.opponentHand && hand.s !== 'idle' && <p className={`engine${hand.s === 'error' ? ' err' : ''}`} aria-live="polite">
+                  {hand.s === 'error' ? t.handFailed(hand.err(t)) : hand.s === 'downloading' ? t.handDownloading : t.handReady}
+                  {hand.s === 'error' && <> · <button className="link" onClick={getHand}>{t.retry}</button></>}</p>}
               </>}
             </div>
           </section>}
