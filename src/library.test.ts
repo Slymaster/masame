@@ -182,3 +182,42 @@ describe('a game and its entry', () => {
     expect(lib.get()?.[0]).toMatchObject({ id: 'ogs-42', ogsId: 42, me: -1 })
   })
 })
+
+describe('the review sidecar', () => {
+  const files = new Map<string, unknown>()
+  beforeEach(() => {
+    files.clear()
+    host.answer = (cmd, args) => {
+      if (cmd === 'library_list') return [entry('g', 1)]
+      if (cmd === 'library_sidecar_write') files.set(`${args?.id}.${args?.name}`, JSON.parse(JSON.stringify(args?.json))) // as Rust stores it
+      if (cmd === 'library_sidecar_read') return files.get(`${args?.id}.${args?.name}`) ?? null
+    }
+  })
+  // a 300-move 19×19 game: 6 candidates and a 7-move line per position, 3 moments with both ownership maps
+  const pos = Array.from({ length: 301 }, (_, i) => ({ lead: -12.345678 + i / 7, u: 0.123456789, ...i % 9 === 0 && { deep: true as const },
+    cands: Array.from({ length: 6 }, (_, k) => ({ v: [k + 10, 18 - k] as [number, number], lead: 1.23456789 * k, visits: 100 - k, prior: 0.0123456789 })),
+    pv: Array.from({ length: 7 }, (_, k) => (k === 6 ? null : [k, k] as [number, number])) }))
+  const facts = Array.from({ length: 300 }, (_, i) => ({ sac: i % 50 ? 0 : 3, book: i < 8 }))
+  const map = Array.from({ length: 361 }, (_, i) => Math.sin(i))
+  const moments = [10, 100, 200].map(at => ({ at, sign: 1 as const, loss: 5.4321, lead: -3.21, punish: pos[0].pv, better: pos[1].pv, lost: map, kept: map }))
+
+  it('writes v2 (positions, facts, moments, leads for older readers) and reads it back; fits the 2 MB cap', async () => {
+    const cur = await import('./current')
+    await cur.noteReview('g', pos, moments, facts)
+    const side = files.get('g.review') as import('./library').ReviewSidecar
+    expect([side.v, side.leads.length, side.leads[7]]).toEqual([2, 301, pos[7].lead])
+    expect(await lib.reviewData('g')).toEqual({ pos, facts, moments })
+    expect(lib.get()?.[0].review).toEqual({ moments: 3 })
+    expect(JSON.stringify(side).length).toBeLessThan(2 * 1024 * 1024 / 4) // measured: 204 kB
+  })
+  it('reads no classification data from a v1 sidecar, none, or a damaged one; v1 leads stay for Count and Mining', async () => {
+    files.set('g.review', { leads: [0.5, null, -1], moments: [] })
+    expect(await lib.reviewData('g')).toBeNull()
+    expect((await lib.sidecar<import('./library').ReviewSidecar>('g', 'review'))?.leads).toEqual([0.5, null, -1])
+    expect(await lib.reviewData('none')).toBeNull()
+    for (const bad of [{ pos: [null] }, { pos: [{ ...pos[0], lead: 'x' }] }, { pos: [{ ...pos[0], cands: [{ v: [99, 0], lead: 0, visits: 1, prior: 0 }] }] }, { facts: [{ sac: 0 }] }, { moments: null }]) {
+      files.set('g.review', { leads: [], moments: [], v: 2, pos: [pos[0]], facts: [facts[0]], ...bad })
+      expect(await lib.reviewData('g')).toBeNull()
+    }
+  })
+})

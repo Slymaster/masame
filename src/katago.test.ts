@@ -57,12 +57,12 @@ describe('candidates', () => {
   // a real KataGo reply (b10, 200 visits) for Black to play after 8 opening moves
   const a = parseAnalysis(real, 19)
   it('reads the moveInfos in order, skipping malformed entries', () => {
-    expect(a.moves.slice(0, 2)).toEqual([{ v: [2, 16], scoreLead: expect.closeTo(-0.2, 1), visits: 67 }, { v: [5, 16], scoreLead: expect.closeTo(-0.28, 1), visits: 32 }])
+    expect(a.moves.slice(0, 2)).toEqual([{ v: [2, 16], scoreLead: expect.closeTo(-0.2, 1), visits: 67, prior: expect.closeTo(0.5414, 4) }, { v: [5, 16], scoreLead: expect.closeTo(-0.28, 1), visits: 32, prior: expect.closeTo(0.1626, 4) }])
     expect(a.moves).toHaveLength(13)
     const bad = parseAnalysis({ rootInfo: { winrate: 0.5, scoreLead: 0 }, moveInfos: [
-      { move: 'D4', order: 1, scoreLead: 1, visits: 5 }, { move: 'Z9', order: 0, scoreLead: 2, visits: 9 }, { move: 'Q16', order: 2, scoreLead: 'x', visits: 3 },
+      { move: 'D4', order: 1, scoreLead: 1, visits: 5, prior: 'x' }, { move: 'D5', order: 5, scoreLead: 1, visits: 5, prior: 7 }, { move: 'Z9', order: 0, scoreLead: 2, visits: 9 }, { move: 'Q16', order: 2, scoreLead: 'x', visits: 3 },
       { move: 'C3', order: 3, scoreLead: 1, visits: 0 }, { move: 'K10', scoreLead: 1, visits: 3 }, null, { move: 'pass', order: 4, scoreLead: NaN, visits: 2 }, 7] }, 19)
-    expect(bad.moves).toEqual([{ v: [3, 15], scoreLead: 1, visits: 5 }])
+    expect(bad.moves).toEqual([{ v: [3, 15], scoreLead: 1, visits: 5, prior: 0 }, { v: [3, 14], scoreLead: 1, visits: 5, prior: 1 }]) // a bad prior is 0, clamped to 0..1
     expect(parseAnalysis({ rootInfo: { winrate: 0.5, scoreLead: 0 }, moveInfos: 'x' }, 19).moves).toEqual([])
   })
   it('letters Black\'s moves with the points each loses, dropping rarely read ones', () => {

@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Game, type Sign, type Vertex } from '../game'
 import type { Analysis } from '../katago'
 import { loadSgf, saveSgf } from '../sgf'
-import { CAP, eligible, enqueue, leadsOf, ranksOf, loadQueue, MAX_FAILS, newAuto, nextJob, QUEUE_KEY, RETRY_MS, reviewed, runJob, saveQueue, type Job } from './autoReview'
+import { CAP, eligible, enqueue, posOf, ranksOf, loadQueue, MAX_FAILS, newAuto, nextJob, QUEUE_KEY, RETRY_MS, reviewed, runJob, saveQueue, type Job } from './autoReview'
 import { addReview, emptyDeck, recordKey } from './deck'
 import { PROFILES } from '../rank'
+
+// the classifier is tested on its own: here no move needs a deeper search, and no rank is known
+vi.mock('../classify', () => ({ parseRank: () => null, deepCandidates: () => [], sacrificed: () => 0 }))
 
 const mem = (init: Record<string, string> = {}) => {
   const m = new Map(Object.entries(init))
@@ -86,7 +89,7 @@ describe('a background run', () => {
     // the human policy favours the played move under rank_5k
     const p = (q as { overrideSettings?: { humanSLProfile?: string } }).overrideSettings?.humanSLProfile
     const humanPolicy = p && Array.from({ length: 82 }, () => (p === 'rank_5k' ? 0.5 : 0.1))
-    return { scoreLead: leadAt(g.moves.length), pv: [[8, 8], [7, 7]], ownership: null, humanPolicy } as unknown as Analysis
+    return { scoreLead: leadAt(g.moves.length), pv: [[8, 8], [7, 7]], ownership: null, humanPolicy, moves: [] } as unknown as Analysis
   }
   const setup = (n = 12) => {
     const a = newAuto([]); a.queue = enqueue(a, game(n), 1, 0)
@@ -97,20 +100,20 @@ describe('a background run', () => {
   it('adds the moments once and drops the job when complete', async () => {
     const { a, j, added, add } = setup(), asked: number[] = []
     const ms = await runJob(a, j, fake(asked), () => true, () => {}, add)
-    expect(Array.isArray(ms) && ms.map(m => m.at)).toEqual([4])
+    expect(typeof ms === 'object' && ms.moments.map(m => m.at)).toEqual([4])
     expect(added.length).toBe(1)
     expect(added[0][3]).toBe(1)
     expect([a.queue, a.reviewed.has(j.k), enqueue(a, game(12), 1, 9)]).toEqual([[], true, []])
   })
-  it('keeps an interrupted job and resumes from the cached leads', async () => {
+  it('keeps an interrupted job and resumes from the cached positions', async () => {
     const { a, j, added, add } = setup(), asked: number[] = []
     let n = 0
     expect(await runJob(a, j, fake(asked), () => n++ < 6, () => {}, add)).toBe('paused')
     expect([added.length, a.queue.length]).toEqual([0, 1])
-    const before = new Set(asked), known = leadsOf(a, j.k).filter(x => x !== undefined).length
+    const before = new Set(asked), known = posOf(a, j.k).filter(x => x !== undefined).length
     expect([known > 0, known < 13, known]).toEqual([true, true, before.size])
     asked.length = 0
-    expect(Array.isArray(await runJob(a, j, fake(asked), () => true, () => {}, add))).toBe(true)
+    expect(typeof await runJob(a, j, fake(asked), () => true, () => {}, add)).toBe('object')
     const scans = asked.slice(0, 13 - known)
     expect([new Set(scans).size, scans.some(x => before.has(x))]).toEqual([13 - known, false]) // only the positions not read before
     expect(added.length).toBe(1)
@@ -129,7 +132,7 @@ describe('a background run', () => {
   it('reads the rank after the moments, reports it, then drops the job', async () => {
     const { a, j, added, add } = setup(60), asked: number[] = [], got: unknown[] = [] // Black's 30 moves: MIN_GAME
     const ms = await runJob(a, j, fake(asked), () => true, () => {}, add, r => got.push(r))
-    expect(Array.isArray(ms)).toBe(true)
+    expect(typeof ms === 'object').toBe(true)
     expect(got).toEqual([{ all: 15, n: 30, phases: [null, null, null] }]) // all read as 5k; on 9×9 each phase has under MIN_PHASE
     expect(asked.length).toBe(61 + 2 + 30 * PROFILES.length) // the scan, one deep pair, the rank
     expect([added.length, a.queue, a.ranks.size, a.read.size]).toEqual([1, [], 0, 0])
@@ -141,7 +144,7 @@ describe('a background run', () => {
     const known = ranksOf(a, j.k).size
     expect(known).toBeGreaterThan(0)
     asked.length = 0
-    expect(Array.isArray(await runJob(a, j, fake(asked), () => true, () => {}, add, r => got.push(r)))).toBe(true)
+    expect(typeof await runJob(a, j, fake(asked), () => true, () => {}, add, r => got.push(r))).toBe('object')
     expect([asked.length, added.length, got.length, a.queue.length]).toEqual([30 * PROFILES.length - known, 1, 1, 0])
   })
   it('reads no rank for a mentor game, still adding its moments; the flags survive a relaunch', async () => {
@@ -151,7 +154,7 @@ describe('a background run', () => {
     const st = mem(); saveQueue(a.queue, st)
     expect(loadQueue(st)[0]).toEqual(j)
     const ms = await runJob(a, j, fake(asked), () => true, () => {}, (...x) => void added.push(x), r => got.push(r))
-    expect([Array.isArray(ms), added.length]).toEqual([true, 1])
+    expect([typeof ms === 'object', added.length]).toEqual([true, 1])
     expect(got).toEqual([null]) // reported without a reading: nothing to store
     expect(asked.length).toBe(61 + 2) // the scan and the deep pair, no rank query
   })

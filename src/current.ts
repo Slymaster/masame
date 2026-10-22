@@ -4,6 +4,7 @@
 // come here: they live on OGS (they enter the library at their end or when imported, see App).
 import { useEffect, useRef } from 'react'
 import { clampRank } from './bot'
+import type { Facts, Pos } from './classify'
 import type { Game, Sign } from './game'
 import { inTauri, on } from './katago'
 import * as library from './library'
@@ -146,11 +147,13 @@ export function useCurrentGame(s: Shown, ver: number, onRestore: (r: Awaited<Ret
   }, [])
 }
 
-/** A review (automatic or by hand) read: its leads and moments in the 'review' sidecar, the entry marked reviewed. */
-export async function noteReview(id: string | undefined | Promise<string | undefined>, leads: (number | undefined)[], moments: Moment[]) {
+/** A review (automatic or by hand) read: its positions, facts and moments in the 'review' sidecar (v2, leads kept for the
+ * older readers), the entry marked reviewed. */
+export async function noteReview(id: string | undefined | Promise<string | undefined>, pos: (Pos | undefined)[], moments: Moment[], facts: Facts[]) {
   const k = await id
   if (!k) return
-  await library.setSidecar(k, 'review', { leads: leads.map(x => x ?? null), moments } satisfies library.ReviewSidecar)
+  // a position never read (a review stopped short) is stored as null, and makes reviewData ignore the sidecar
+  await library.setSidecar(k, 'review', { leads: pos.map(p => p?.lead ?? null), moments, v: 2, pos: pos as Pos[], facts } satisfies library.ReviewSidecar)
   await library.patch(k, { review: { moments: moments.length } })
 }
 /** The player's rank read in a kept game, once stored; never for a game played with the mentor (a lesson). */

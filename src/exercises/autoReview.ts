@@ -1,9 +1,10 @@
 // Automatic review: every finished game whose player is known is read in the background, and its key moments join
 // the exercises. Pure: the queue (persisted like the deck) and one run of a job, which drives readGame through `ask`.
+import type { Facts, Pos } from '../classify'
 import type { Game, Sign } from '../game'
 import type { Analysis } from '../katago'
 import { readRank, type Reading } from '../rank'
-import { readGame, reviewEnd, type Moment } from '../review'
+import { leadsOf, levelsOf, readGame, reviewEnd, type Moment } from '../review'
 import { loadSgf, saveSgf } from '../sgf'
 import { recordKey } from './deck'
 
@@ -12,9 +13,9 @@ import { recordKey } from './deck'
  * noRank: a lesson (the mentor), whose rank is not read; noAdjust: its rank never moves the levels (a Master of an era). */
 export interface Job { k: string; sgf: string; side: Sign; t: number; id?: string; noRank?: true; noAdjust?: true }
 export type JobFlags = Pick<Job, 'id' | 'noRank' | 'noAdjust'>
-/** The session's memory: scan leads and rank probabilities per record key (shared with the foreground review), the moments
- * of jobs read but not yet ranked, failures per job, keys reviewed, and when the engine may be tried again after a failure (ms). */
-export interface Auto { queue: Job[]; leads: Map<string, (number | undefined)[]>; ranks: Map<string, Map<string, number>>; read: Map<string, Moment[]>
+/** The session's memory: scan positions and rank probabilities per record key (shared with the foreground review), the moments
+ * and facts of jobs read but not yet ranked, failures per job, keys reviewed, and when the engine may be tried again after a failure (ms). */
+export interface Auto { queue: Job[]; pos: Map<string, (Pos | undefined)[]>; ranks: Map<string, Map<string, number>>; read: Map<string, { moments: Moment[]; facts: Facts[] }>
   fails: Map<string, number>; reviewed: Set<string>; wait: number }
 export const QUEUE_KEY = 'masame.reviewQueue', CAP = 20, MIN_MOVES = 10, MAX_FAILS = 3, RETRY_MS = 60_000
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem'>
@@ -35,7 +36,7 @@ export function enqueue(a: Auto, game: Game, side: Sign | 0, now: number, flags:
 
 /** The oldest job that has not failed too often this session; none for RETRY_MS after a failure. */
 export const nextJob = (a: Auto, now: number) => (now < a.wait ? undefined : a.queue.find(j => (a.fails.get(j.k) ?? 0) < MAX_FAILS))
-export const newAuto = (queue: Job[]): Auto => ({ queue, leads: new Map(), ranks: new Map(), read: new Map(), fails: new Map(), reviewed: new Set(), wait: 0 })
+export const newAuto = (queue: Job[]): Auto => ({ queue, pos: new Map(), ranks: new Map(), read: new Map(), fails: new Map(), reviewed: new Set(), wait: 0 })
 
 /** The job of record `k` kept under library id `id` (either unknown: the record alone decides). */
 const sameJob = (j: Job, k: string, id?: string) => j.k === k && (!id || !j.id || j.id === id)
@@ -46,9 +47,9 @@ export function reviewed(a: Auto, k: string, id?: string) {
   if (!a.queue.some(j => j.k === k)) { a.read.delete(k); a.ranks.delete(k) }
 }
 
-export function leadsOf(a: Auto, k: string) {
-  let l = a.leads.get(k)
-  if (!l) a.leads.set(k, l = [])
+export function posOf(a: Auto, k: string) {
+  let l = a.pos.get(k)
+  if (!l) a.pos.set(k, l = [])
   return l
 }
 export function ranksOf(a: Auto, k: string) {
@@ -59,19 +60,19 @@ export function ranksOf(a: Auto, k: string) {
 
 /**
  * Reads a job until `live` turns false: its moments (added once), then, given `rank`, the player's rank (reported); once
- * complete the job is dropped. 'paused' when interrupted (the job stays; the cached leads, moments and probabilities let it
+ * complete the job is dropped. 'paused' when interrupted (the job stays; the cached positions, moments and probabilities let it
  * resume), 'failed' on an engine error (counted toward MAX_FAILS).
  */
 export async function runJob(a: Auto, j: Job, ask: (g: Game, q: object) => Promise<Analysis>, live: () => boolean,
   progress: (pct: number) => void, add: (g: Game, ms: Moment[], leads: (number | undefined)[], side: Sign) => void,
-  rank?: (r: Reading | null) => void): Promise<Moment[] | 'paused' | 'failed'> {
-  const game = loadSgf(j.sgf), leads = leadsOf(a, j.k)
-  let ms = a.read.get(j.k), r: Reading | null = null
+  rank?: (r: Reading | null) => void, myRank?: string): Promise<{ moments: Moment[]; facts: Facts[] } | 'paused' | 'failed'> {
+  const game = loadSgf(j.sgf), pos = posOf(a, j.k)
+  let got = a.read.get(j.k), r: Reading | null = null
   try {
-    if (!ms) {
-      ms = await readGame(game, j.side, leads, (at, q) => ask(game.branch(at), q), live, progress)
+    if (!got) {
+      got = await readGame(game, j.side, pos, (at, q) => ask(game.branch(at), q), live, progress, { levels: levelsOf(game, myRank) })
       if (!live()) return 'paused'
-      add(game, ms, leads, j.side); a.read.set(j.k, ms)
+      add(game, got.moments, leadsOf(pos), j.side); a.read.set(j.k, got)
     }
     if (rank && !j.noRank) { r = await readRank(game, j.side, ranksOf(a, j.k), ask, live); if (!live()) return 'paused' }
   } catch (e) {
@@ -81,7 +82,7 @@ export async function runJob(a: Auto, j: Job, ask: (g: Game, q: object) => Promi
   }
   rank?.(r)
   reviewed(a, j.k, j.id)
-  return ms
+  return got
 }
 
 const isJob = (j: unknown): j is Job => !!j && typeof j === 'object' && typeof (j as Job).k === 'string' && typeof (j as Job).sgf === 'string'

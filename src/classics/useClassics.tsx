@@ -43,13 +43,14 @@ export function dateText(d: string) {
 /** A game worth guessing: real moves to guess, on a board KataGo reads. */
 export const canGuess = (g: Game) => g.info.size <= 19 && g.moves.filter(m => !m.setup && m.vertex).length >= 10
 
-export function useClassics({ view, open, setOpen, blocked, canAnalyze, ask, setThinking, rank }: {
+export function useClassics({ view, open, setOpen, blocked, canAnalyze, ask, setThinking, rank, review }: {
   view: RefObject<{ drop(v: Vertex, c: Sign): void } | null>
   open: boolean; setOpen: (o: boolean) => void; blocked: boolean
   canAnalyze: boolean // an analysis network is active (KataGo grades each guess)
   ask: (g: Game, query: Record<string, unknown>) => Promise<Analysis> // App serialises the queries
   setThinking: (on: boolean) => void
   rank: string // the player's level: the human policy's profile for "a player of your rank"
+  review: (g: Game) => void // the classic opened as the shown game and reviewed (move classification at pro level)
 }) {
   const [list, setList] = useState<{ opener: HTMLElement | null } | null>(null)
   const [classics, setClassics] = useState<Classic[] | string | null>(null) // string: why they didn't load
@@ -233,7 +234,8 @@ export function useClassics({ view, open, setOpen, blocked, canAnalyze, ask, set
           <Seg label={t.clStart} value={run.from} options={STARTS.map(s => [s, t.move(s)])} set={from => setRun({ ...run, from, at: startOf(g, from) })} />
         </div>
         {best && <p className="say">{t.clBestLine(best.found, best.total)}</p>}
-        <div className="opts"><button className="btn accent" onClick={begin} disabled={!canAnalyze}>{t.clBegin}</button></div>
+        <div className="opts"><button className="btn accent" onClick={begin} disabled={!canAnalyze}>{t.clBegin}</button>
+          {run.classic && <button className="btn" onClick={() => review(loadSgf(saveSgf(g)))} disabled={!canAnalyze}>{t.clReview}</button>}</div>
       </> : <>
         <p className="say" aria-live="polite">{run.score.total > 0 && t.clScore(run.score.found, run.score.total)}</p>
         {avg !== null && <p className="say">{t.clAverage(avg)}</p>}

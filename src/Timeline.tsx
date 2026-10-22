@@ -1,12 +1,19 @@
+import { CatIcon } from './CatIcon'
+import type { Cat } from './classify'
 import type { Game } from './game'
 import { t } from './i18n'
 import { Icon } from './Icon'
 
-/** History of the shown line: autoplay, steps, the range with its forks, then the variation links and the node's comment. */
-export function Timeline({ g, floor, go, auto, toggleAuto, live, relocate }: {
+/**
+ * History of the shown line: autoplay, steps, the range with its forks (and a reviewed game's notable moves, `ticks`: the
+ * position after each, clickable), then the variation links and the node's comment.
+ */
+export function Timeline({ g, floor, go, auto, toggleAuto, live, relocate, ticks }: {
   g: Game; floor: number; go: (i: number) => void; auto: boolean; toggleAuto: () => void; live: boolean; relocate: (f: (g: Game) => void) => void
+  ticks?: { at: number; cat: Cat; label: string }[]
 }) {
   const total = g.moves.length, fork = g.fork, comment = g.nodes[g.cursor].data.C?.[0]
+  const at = (i: number) => `calc(6px + (100% - 12px) * ${(i - floor) / (total - floor)})` // on the ticks' scale
   const forks = g.nodes.flatMap((_, i) => (i > floor && g.nodes[i - 1].children.length > 1 ? [i] : []))
   return <>
     <div className="tl">
@@ -14,10 +21,12 @@ export function Timeline({ g, floor, go, auto, toggleAuto, live, relocate }: {
         <Icon name={auto ? 'pause' : 'play'} />
       </button>
       <button className="chev" onClick={() => go(g.cursor - 1)} disabled={g.cursor <= floor} aria-label={t.prev} title={`${t.prev} (←)`}><Icon name="chevron-left" /></button>
-      <span className="track">
+      <span className={`track${ticks?.length ? ' ticked' : ''}`}>
         <input type="range" min={floor} max={total} value={g.cursor} onChange={e => go(+e.target.value)} aria-label={t.history}
           aria-valuetext={t.move(g.moveNumber())} style={{ '--n': total - floor } as React.CSSProperties} />
-        {forks.map(i => <i key={i} aria-hidden="true" style={{ left: `calc(6px + (100% - 12px) * ${(i - floor) / (total - floor)})` }} />)}
+        {forks.map(i => <i key={i} aria-hidden="true" style={{ left: at(i) }} />)}
+        {ticks?.map(k => <button key={k.at} className="tick" data-cat={k.cat} aria-current={k.at === g.cursor || undefined} style={{ left: at(k.at) }}
+          onClick={() => go(k.at)} aria-label={k.label} title={k.label}><CatIcon cat={k.cat} size={16} /></button>)}
       </span>
       <button className="chev" onClick={() => go(g.cursor + 1)} disabled={g.cursor === total} aria-label={t.next} title={`${t.next} (→)`}><Icon name="chevron-right" /></button>
       <span className="mv">{t.moveOf(g.moveNumber(), g.moveNumber(total))}</span>

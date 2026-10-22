@@ -1,6 +1,7 @@
 // The library: every game played or opened lives on this machine, as an SGF file per game plus one index, in the app
 // data dir's games/ folder (Rust: src-tauri/src/library.rs). Outside the app every call rejects, and Mes parties says so.
 // One store for the whole UI (Mes parties, Apprendre, Progrès), loaded once; every write goes through one queue, in order.
+import type { Facts, Pos } from './classify'
 import type { Game, Sign } from './game'
 import { hash64 } from './joseki/sym'
 import { call } from './katago'
@@ -27,8 +28,9 @@ export interface Entry {
   counted?: number // positions of this game counted so far (C1)
   added?: number // a file: when it entered the library (the monthly letter counts it then, not at its SGF date)
 }
-/** The 'review' sidecar (<id>.review.json): the scan's leads per move (Black's lead, null where unread) and the moments. */
-export interface ReviewSidecar { leads: (number | null)[]; moments: Moment[] }
+/** The 'review' sidecar (<id>.review.json): the scan's leads per move (Black's lead, null where unread) and the moments;
+ * v2 adds what the move classifier needs: a Pos per position and Facts per move (ownership maps are never stored). */
+export interface ReviewSidecar { leads: (number | null)[]; moments: Moment[]; v?: 2; pos?: Pos[]; facts?: Facts[] }
 /** current.json: the unfinished local game to restore at launch (A1). */
 export interface Current {
   id: string; cursor: number
@@ -45,6 +47,18 @@ const listAll = () => call<Entry[]>('library_list') // newest first; a corrupt e
 export const read = (id: string) => call<string>('library_read', { id })
 export const sidecar = <T>(id: string, name: string) => call<T | null>('library_sidecar_read', { id, name })
 export const current = () => call<Current | null>('library_current_read')
+
+const num = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
+const vert = (v: unknown) => v === null || Array.isArray(v) && v.length === 2 && v.every(c => Number.isInteger(c) && c >= 0 && c < 25)
+const isPos = (p: Pos) => !!p && num(p.lead) && num(p.u) && Array.isArray(p.pv) && p.pv.every(vert) && Array.isArray(p.cands)
+  && p.cands.every(c => !!c && vert(c.v) && num(c.lead) && num(c.visits) && num(c.prior))
+const isFacts = (f: Facts) => !!f && num(f.sac) && typeof f.book === 'boolean'
+/** A reviewed game's classification data, so it reopens without a scan; null for a v1 sidecar (leads only), none, or a damaged one. */
+export async function reviewData(id: string): Promise<{ pos: Pos[]; facts: Facts[]; moments: Moment[] } | null> {
+  const r = await sidecar<ReviewSidecar>(id, 'review')
+  return r?.v === 2 && Array.isArray(r.pos) && r.pos.every(isPos) && Array.isArray(r.facts) && r.facts.every(isFacts) && Array.isArray(r.moments)
+    ? { pos: r.pos, facts: r.facts, moments: r.moments } : null
+}
 
 // ---------- one queue for every write ----------
 let queue: Promise<unknown> = Promise.resolve()

@@ -327,6 +327,10 @@ export class Board3D {
   private tremMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
   private shook: { v: Vertex; c: Sign; t0: number } | null = null
   private markers!: { 1: THREE.Mesh; [-1]: THREE.Mesh }
+  /** The last-move ring in its category's colour (state.lastTint); on slate over a halo in the plain ring's material (as in 2D). */
+  private tints!: { 1: [THREE.Mesh, THREE.Mesh]; [-1]: [THREE.Mesh] }
+  private tintMat!: THREE.MeshPhysicalMaterial
+  private tintCol = ''
   private boardMat!: THREE.MeshPhysicalMaterial
   /** Pale golden kaya (the scan, barely graded): readability comes from the stones' contact shadow and rim, not dark wood. */
   private woodTone = new THREE.Color(...KAYA_TONE)
@@ -514,6 +518,7 @@ export class Board3D {
       this.buildBoard()
     }
     this.state = state
+    if (state.lastTint && state.lastTint !== this.tintCol) { this.tintCol = state.lastTint; this.tintMat.color.set(state.lastTint) }
     this.reconcile(state)
     this.buildMarks()
     const own = state.ownership?.length === N * N ? state.ownership : null
@@ -640,6 +645,10 @@ export class Board3D {
     const mm = (c: number) => new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
     this.markers = { 1: new THREE.Mesh(markerGeo(this.kit.geoB.userData.prof), mm(0xe9dcc4)), [-1]: new THREE.Mesh(markerGeo(this.kit.geoW.userData.prof), mm(0x2a201a)) }
     for (const m of Object.values(this.markers)) { m.matrixAutoUpdate = false; m.visible = false; scene.add(m) }
+    this.tintMat = new THREE.MeshPhysicalMaterial({ roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 })
+    this.tints = { 1: [new THREE.Mesh(undefined, this.markers[1].material), new THREE.Mesh(undefined, this.tintMat)], [-1]: [new THREE.Mesh(undefined, this.tintMat)] }
+    this.tintGeos()
+    for (const m of [...this.tints[1], ...this.tints[-1]]) { m.matrixAutoUpdate = false; m.visible = false; scene.add(m) }
 
     // the table. Study: shadows only (the app's linen shows through). Contemplation: a dark wooden table fading into a
     // warm dark room (the canvas clears to the room colour), lit by the window
@@ -1174,6 +1183,16 @@ export class Board3D {
     this.invalidate()
   }
 
+  /** The tinted ring is wider than the plain one (its colour must read at a glance), about the 2D ring's size. */
+  private tintGeos() {
+    for (const c of [1, -1] as const) {
+      const prof = (c === 1 ? this.kit.geoB : this.kit.geoW).userData.prof, R = c === 1 ? this.kit.spec.rB : this.kit.spec.rW, ms = this.tints[c]
+      for (const m of ms) m.geometry.dispose()
+      ms[ms.length - 1].geometry = markerGeo(prof, R * 0.3, R * 0.47)
+      if (ms.length > 1) ms[0].geometry = markerGeo(prof, R * 0.27, R * 0.5)
+    }
+  }
+
   /** Ghost, stopped and refused stones' materials, from the set's two materials. */
   private hintMats() {
     const { black, white } = this.kit
@@ -1197,6 +1216,7 @@ export class Board3D {
     for (const m of [...Object.values(this.ghostMats), ...Object.values(this.pendingMats), ...Object.values(this.tremMats)]) m.dispose()
     this.hintMats()
     for (const c of [1, -1] as const) { const m = this.markers[c]; m.geometry.dispose(); m.geometry = markerGeo((c === 1 ? k.geoB : k.geoW).userData.prof) }
+    this.tintGeos()
     this.ghost.geometry = this.trem.geometry = k.geoB
     disposeKit(old)
     const N = this.N, placed = [...this.stones.entries()]
@@ -1452,6 +1472,9 @@ export class Board3D {
     const s0 = this.state, N = this.N, own = this.own, counting = s0?.counting, last = s0?.last, SH = this.kit.spec.shBot, TOP = SH + this.kit.spec.shTop
     const lastP = last ? last[1] * N + last[0] : -1
     this.markers[1].visible = this.markers[-1].visible = false
+    for (const m of this.tints[1]) m.visible = false
+    for (const m of this.tints[-1]) m.visible = false
+    const tint = !!s0?.lastTint
     const put = (s: Stone, y: number, aoA: number, aoS: number, dim: boolean, sx: number, sz: number) => {
       const { _m, _q, _v, _s } = this
       _m.compose(_v.set(sx, SH + y, sz), _q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, s.rotY), _s.setScalar(1))
@@ -1460,7 +1483,9 @@ export class Board3D {
       if (i >= 400) return
       L.setMatrixAt(i, _m); (L.geometry.attributes.aSeed.array as Float32Array)[i] = s.seed
       if (s.p === lastP && this.stones.get(lastP) === s && s.landed && !dim) {
-        const mk = this.markers[s.c as 1 | -1]; mk.matrix.copy(_m); mk.visible = true
+        const c = s.c as 1 | -1
+        if (tint) for (const mk of this.tints[c]) { mk.matrix.copy(_m); mk.visible = true }
+        else { const mk = this.markers[c]; mk.matrix.copy(_m); mk.visible = true }
       }
       if (aoA > 0 && na < 420) {
         const q = s.R * 2 * AO_K * aoS, black = s.c === 1

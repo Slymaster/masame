@@ -31,8 +31,11 @@ export interface BoardState {
   pending?: { v: Vertex; sign: Sign } | null
   /** Grid rectangle [x0, y0, x1, y1] outlined by a soft frame (a tsumego's area); the whole board stays clear. */
   frame?: [number, number, number, number] | null
+  /** CSS colour of the last move's category: the last-move ring takes it; unset keeps the plain ring. */
+  lastTint?: string | null
 }
-export interface Mark { v: Vertex; label: string; tone: 'best' | 'ok' | 'mistake' }
+/** best / ok / mistake: lettered markers; black / white: a ghost stone of that colour numbered `label` (a suggested line). */
+export interface Mark { v: Vertex; label: string; tone: 'best' | 'ok' | 'mistake' | 'black' | 'white' }
 
 interface Geom { N: number; bx: number; by: number; bw: number; cell: number; P: number[]; r: number; font: number; labelOff: number }
 
@@ -354,15 +357,33 @@ function mark(c: CanvasRenderingContext2D, kind: Mark2D, r: number, R: () => num
   }
 }
 
-function lastRing(c: CanvasRenderingContext2D, g: Geom, [cx, cy]: [number, number], col: Sign) {
-  c.strokeStyle = col === 1 ? 'rgba(238,230,214,0.92)' : 'rgba(26,26,29,0.85)'
-  c.lineWidth = Math.max(1.2, g.r * 0.085)
-  c.beginPath(); c.arc(cx, cy, g.r * 0.4, 0, TAU); c.stroke()
+function lastRing(c: CanvasRenderingContext2D, g: Geom, [cx, cy]: [number, number], col: Sign, tint?: string | null) {
+  const ink = col === 1 ? 'rgba(238,230,214,0.92)' : 'rgba(26,26,29,0.85)'
+  if (!tint) {
+    c.strokeStyle = ink; c.lineWidth = Math.max(1.2, g.r * 0.085)
+    c.beginPath(); c.arc(cx, cy, g.r * 0.4, 0, TAU); c.stroke()
+    return
+  }
+  // a pigment sinks into slate (red, olive): on a black stone it rides on the plain ring, widened into a hairline either
+  // side; on shell every pigment already stands out, alone it stays lighter
+  const w = Math.max(1.6, g.r * 0.13)
+  c.beginPath(); c.arc(cx, cy, g.r * 0.44, 0, TAU)
+  if (col === 1) { c.strokeStyle = ink; c.lineWidth = w + 2 * Math.max(0.7, g.r * 0.045); c.stroke() }
+  c.strokeStyle = tint; c.lineWidth = w; c.stroke()
+}
+
+/** A suggested move's number, in the ink opposite its ghost stone; sized on the cell so a phone's 19×19 still reads it. */
+function ghostNumber(c: CanvasRenderingContext2D, x: number, y: number, cell: number, label: string, tone: 'black' | 'white') {
+  const f = cell * (label.length > 1 ? 0.46 : 0.56)
+  c.font = `600 ${f.toFixed(1)}px ${LABEL_FONT}`
+  c.fillStyle = tone === 'black' ? '#F6F0E5' : '#1E1A16'
+  c.fillText(label, x, y + f * 0.07)
 }
 
 /** Veil and markers, also drawn into the 3D board's overlay texture: px / py map grid indices to canvas units. */
 export function paintMarks(c: CanvasRenderingContext2D, px: (i: number) => number, py: (i: number) => number, cell: number,
-  marks: Mark[] | null | undefined, focus: BoardState['focus'], w: number, h: number, veil = 0.24, frame: BoardState['frame'] = null, frameAlpha = 0.55) {
+  marks: Mark[] | null | undefined, focus: BoardState['focus'], w: number, h: number, veil = 0.24, frame: BoardState['frame'] = null, frameAlpha = 0.55,
+  ghostDiscs = true) {
   if (frame) {
     const m = cell * 0.5, x0 = px(frame[0]) - m, y0 = py(frame[1]) - m
     c.lineWidth = cell * 0.09; c.strokeStyle = `rgba(138,47,34,${frameAlpha})`
@@ -373,10 +394,16 @@ export function paintMarks(c: CanvasRenderingContext2D, px: (i: number) => numbe
     c.fillStyle = `rgba(246,240,229,${veil})`
     c.beginPath(); c.rect(0, 0, w, h); c.rect(x0, y0, px(focus[2]) + m - x0, py(focus[3]) + m - y0); c.fill('evenodd')
   }
-  const r = cell * 0.34
-  c.font = `600 ${(r * 1.15).toFixed(1)}px ${LABEL_FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle'
+  const r = cell * 0.34, font = `600 ${(r * 1.15).toFixed(1)}px ${LABEL_FONT}`
+  c.textAlign = 'center'; c.textBaseline = 'middle'
   for (const { v, label, tone } of marks ?? []) {
     const x = px(v[0]), y = py(v[1])
+    if (tone === 'black' || tone === 'white') {
+      if (ghostDiscs) ghostDisc(c, x, y, cell * 0.47, tone)
+      ghostNumber(c, x, y, cell, label, tone)
+      continue
+    }
+    c.font = font
     c.beginPath(); c.arc(x, y, r, 0, TAU)
     if (tone === 'mistake') {
       c.fillStyle = 'rgba(246,240,229,0.7)'; c.fill()
@@ -384,6 +411,14 @@ export function paintMarks(c: CanvasRenderingContext2D, px: (i: number) => numbe
     } else { c.fillStyle = tone === 'best' ? '#8A2F22' : '#6E5F4D'; c.fill(); c.fillStyle = '#F6F0E5' }
     c.fillText(label, x, y + r * 0.08)
   }
+}
+
+/** The 3D board's ghost stone, painted flat into its marks texture: a translucent stone lit from the upper left. */
+function ghostDisc(c: CanvasRenderingContext2D, x: number, y: number, r: number, tone: 'black' | 'white') {
+  const g = c.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.05, x, y, r)
+  if (tone === 'black') { g.addColorStop(0, 'rgba(78,78,86,0.88)'); g.addColorStop(0.6, 'rgba(26,26,31,0.88)'); g.addColorStop(1, 'rgba(8,8,10,0.9)') }
+  else { g.addColorStop(0, 'rgba(255,254,250,0.78)'); g.addColorStop(0.7, 'rgba(238,232,220,0.78)'); g.addColorStop(1, 'rgba(190,180,162,0.82)') }
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill()
 }
 
 /* ---------- view ---------- */
@@ -661,7 +696,12 @@ export class BoardView {
     c.setTransform(dpr, 0, 0, dpr, 0, 0)
     if (own) deadHint(c, g, own, s.signMap, this.at)
     if (s.counting) countMarks(c, g, s.signMap, s.counting, this.at)
-    if (s.focus || s.frame || s.marks?.length) paintMarks(c, i => g.P[i], i => g.P[i], g.cell, s.marks, s.focus, S, S, undefined, s.frame)
+    if (s.focus || s.frame || s.marks?.length) {
+      c.globalAlpha = 0.55 // the suggested line's stones, half-toned like the pending one; their numbers stay solid
+      for (const m of s.marks ?? []) if (m.tone === 'black' || m.tone === 'white') stone(c, g, m.v[0], m.v[1], m.tone === 'black' ? 1 : -1, 1, undefined, sk)
+      c.globalAlpha = 1
+      paintMarks(c, i => g.P[i], i => g.P[i], g.cell, s.marks, s.focus, S, S, undefined, s.frame, undefined, false)
+    }
     if (a) { const ap = this.at(a.x, a.y); stoneShadow(c, g, ...ap, t); stone(c, g, a.x, a.y, a.c, t, ap, sk) }
     const w = this.shook, wk = w ? (now - w.start) / SHAKE_MS : 1
     if (w && wk < 1 && !s.signMap[w.y]?.[w.x]) {
@@ -669,7 +709,7 @@ export class BoardView {
       c.globalAlpha = 1 - sstep(0.45, 1, wk); stoneShadow(c, g, ...p, 1); stone(c, g, w.x, w.y, w.c, 1, p, sk); c.globalAlpha = 1
     } else this.shook = null
     const l = s.last
-    if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) lastRing(c, g, this.at(l[0], l[1]), s.signMap[l[1]][l[0]])
+    if (l && s.signMap[l[1]]?.[l[0]] && (!a || t > 0.6)) lastRing(c, g, this.at(l[0], l[1]), s.signMap[l[1]][l[0]], s.lastTint)
     if (s.pending) { c.globalAlpha = 0.5; stone(c, g, s.pending.v[0], s.pending.v[1], s.pending.sign, 1, undefined, sk); c.globalAlpha = 1 }
     const h = this.hover
     if (h && s.interactive && !s.signMap[h[1]]?.[h[0]]) {
