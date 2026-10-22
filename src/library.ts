@@ -31,7 +31,7 @@ export interface Entry {
 }
 /** The 'review' sidecar (<id>.review.json): the scan's leads per move (Black's lead, null where unread) and the moments;
  * v2 adds what the move classifier needs: a Pos per position and Facts per move (ownership maps are never stored), the
- * line read (recordKey: a variation or an undone line is another record) and the side the moments were picked for. */
+ * line read (reviewKey: a variation or an undone line is another record) and the side the moments were picked for. */
 export interface ReviewSidecar { leads: (number | null)[]; moments: Moment[]; v?: 2; pos?: Pos[]; facts?: Facts[]; key?: string; side?: Sign | 0 }
 export interface ReviewData { key: string; side: Sign | 0; pos: Pos[]; facts: Facts[]; moments: Moment[] }
 /** current.json: the unfinished local game to restore at launch (A1). */
@@ -63,7 +63,7 @@ export async function reviewData(id: string, size: number): Promise<ReviewData |
   const isFacts = (f: Facts) => !!f && num(f.sac) && typeof f.book === 'boolean'
   const n = Array.isArray(r?.facts) ? r.facts.length : -1
   const isMoment = (m: Moment) => !!m && Number.isInteger(m.at) && m.at >= 0 && m.at < n && (m.sign === 1 || m.sign === -1) && num(m.loss) && num(m.lead)
-    && line(m.punish) && line(m.better) && map(m.lost) && map(m.kept)
+    && line(m.punish) && line(m.better) && !!m.punish[0] && !!m.better[0] && map(m.lost) && map(m.kept) // a real moment opens both lines with a stone
   return r?.v === 2 && typeof r.key === 'string' && (r.side === 1 || r.side === -1 || r.side === 0) && Array.isArray(r.pos) && r.pos.length === n + 1
     && r.pos.every(isPos) && r.facts!.every(isFacts) && Array.isArray(r.moments) && r.moments.every(isMoment)
     ? { key: r.key, side: r.side, pos: r.pos, facts: r.facts!, moments: r.moments } : null
@@ -88,6 +88,8 @@ export function remove(id: string): Promise<void> {
   change(id, null)
   return queued(() => call<void>('library_delete', { id }))
 }
+/** The stored SGF, read after the writes queued before it (a game just kept or saved). */
+export const readQueued = (id: string) => queued(() => read(id))
 export const setSidecar = (id: string, name: string, json: unknown) => queued(() => call<void>('library_sidecar_write', { id, name, json }))
 export const setCurrent = (c: Current | null) => queued(() => call<void>('library_current_write', { json: c }))
 

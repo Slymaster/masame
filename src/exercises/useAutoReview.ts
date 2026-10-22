@@ -7,7 +7,7 @@ import type { Analysis } from '../katago'
 import type { Reading } from '../rank'
 import type { Moment } from '../review'
 import { enqueue, posOf, loadQueue, ranksOf, newAuto, nextJob, RETRY_MS, reviewed, runJob, saveQueue, type Auto, type Job, type JobFlags } from './autoReview'
-import { recordKey } from './deck'
+import { reviewKey } from './deck'
 
 export function useAutoReview({ free, ask, scanRun, add, done, human, myRank }: {
   free: boolean // nothing else needs the engine, nor the player's attention
@@ -48,12 +48,12 @@ export function useAutoReview({ free, ask, scanRun, add, done, human, myRank }: 
     /** A finished game whose player is `side` (0: unknown, ignored), kept in the library under `flags.id`. */
     enqueue: (game: Game, side: Sign | 0, flags?: JobFlags) => { const q = enqueue(a.current, game, side, Date.now(), flags); if (q !== a.current.queue) { a.current.queue = q; changed() } },
     /** The scan positions of this record, shared by the foreground review. */
-    posOf: (game: Game) => posOf(a.current, recordKey(game)),
+    posOf: (game: Game) => posOf(a.current, reviewKey(game)),
     /** The rank probabilities of this record, shared by the foreground review. */
-    ranksOf: (game: Game) => ranksOf(a.current, recordKey(game)),
+    ranksOf: (game: Game) => ranksOf(a.current, reviewKey(game)),
     /** The player reviewed this record: its job goes. */
     reviewed: (game: Game, id?: string) => {
-      const k = recordKey(game)
+      const k = reviewKey(game)
       if (current.current?.k === k && (!id || !current.current.id || current.current.id === id)) { current.current = null; setPct(null) }
       reviewed(a.current, k, id); changed()
     },

@@ -43,7 +43,7 @@ import { phaseLine, useExercises } from './exercises/useExercises'
 import { anchored, loadRanks, localRank, rankName, readRank, saveRanks, withReading, type Reading } from './rank'
 import { useAutoReview } from './exercises/useAutoReview'
 import { useMining } from './tsumego/useMining'
-import { load as loadDeck, recordKey, weakest } from './exercises/deck'
+import { load as loadDeck, reviewKey, weakest } from './exercises/deck'
 import { tone } from './joseki/practice'
 import { load as loadRitual, openingBook } from './today/ritual'
 import { useToday } from './today/useToday'
@@ -422,7 +422,7 @@ export function App() {
       const ai = r && keepRank(k, r, !j.noAdjust)
       noteReview(j.id, j.pos, ms, j.facts, { key: k, side: j.side }).then(() => { if (r && !j.noRank) return noteRank(j.id, r) }).catch(console.error)
       if (ai) setNextAi(ai) // the next game's level, whichever game the line shows
-      if (!result || recordKey(game) !== k) return
+      if (!result || reviewKey(game) !== k) return
       setNote(short(d => d.autoDone(ms.length, r ? rankName(r.all) : undefined))) // replaces a stale note (saved…): the card says one at a time
     },
     human: canPlayAI, myRank: settings.myRank,
@@ -989,7 +989,7 @@ export function App() {
     const run = scanRun.current.catch(() => {}).then(async () => {
       // a game reviewed before (by hand or in the background) reopens from its sidecar, without the scan: only the line it read
       const saved = id ? await library.reviewData(id, game.info.size).catch(() => null) : null
-      if (saved && saved.key === recordKey(game) && saved.pos.length === end + 1) {
+      if (saved && saved.key === reviewKey(game) && saved.pos.length === end + 1) {
         saved.pos.forEach((p, i) => { pos[i] ??= p })
         if (saved.side === side) return { moments: saved.moments, facts: saved.facts, saved: true }
         // another side: its own moments from the saved positions (deep checks only); the sidecar keeps the first side's
@@ -1002,7 +1002,7 @@ export function App() {
     run.then(({ moments: ms, facts, saved, judged }) => {
       if (!live) return
       ex.add(game, ms, leadsOf(pos), mine || side)
-      if (!saved) noteReview(reviewId.current, pos, ms, facts, { key: recordKey(game), side }).catch(console.error)
+      if (!saved) noteReview(reviewId.current, pos, ms, facts, { key: reviewKey(game), side }).catch(console.error)
       if (!canPlayAI || !side || side !== mine) ar.reviewed(game, library.idOf(game)) // else once the rank is read too
       setReview(x => x && { ...x, moments: ms, judged })
       openMoment(-1, 'try', ms) // the report first; the moments stay one click away
@@ -1020,7 +1020,7 @@ export function App() {
       setReview(x => x && { ...x, rank: r })
       if (rankSide !== mine) return
       const lesson = bot ?? (shownEntry && { era: shownEntry.era, ...shownEntry.mentor && { mentor: true as const } }) // a lesson reopened from Mes parties stays one
-      const f = lesson ? lessonFlags(lesson) : {}, ai = r && !f.noRank && keep.current(recordKey(game), r, !f.noAdjust) // no note: it would replace the lesson's caption
+      const f = lesson ? lessonFlags(lesson) : {}, ai = r && !f.noRank && keep.current(reviewKey(game), r, !f.noAdjust) // no note: it would replace the lesson's caption
       if (r && !f.noRank) noteRank(reviewId.current, r).catch(console.error)
       if (ai) setNextAi(ai)
       ar.reviewed(game, library.idOf(game))
@@ -1247,8 +1247,8 @@ export function App() {
     : browsing ? catLine || t.reportHelp
     : !m ? t.noMoments(review.side)
     : review.step === 'try' ? graded === 'found' ? t.found : graded === 'short' ? t.shortOf(review.gap!) : graded ? t.missed(s, review.gap!) : t.tryAsk(p, game.moveNumber(m.at) + 1)
-    : review.step === 'punish' ? t.punishLine(p, gtp(m.punish[0]!, size), s, m.loss)
-    : t.betterLine(s, gtp(m.better[0]!, size), m.loss)
+    : review.step === 'punish' ? t.punishLine(p, (v => (v ? gtp(v, size) : t.passWord))(m.punish[0]), s, m.loss)
+    : t.betterLine(s, (v => (v ? gtp(v, size) : t.passWord))(m.better[0]), m.loss)
   const lastMoment = !!review?.moments && review.k === review.moments.length - 1
   // [action id, label, action]: the id tells refocus whether the same action is still offered
   type Link = [string, string, () => void]

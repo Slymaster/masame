@@ -3,7 +3,7 @@ import { Game, type Sign, type Vertex } from '../game'
 import type { Analysis } from '../katago'
 import { loadSgf, saveSgf } from '../sgf'
 import { CAP, eligible, enqueue, posOf, ranksOf, loadQueue, MAX_FAILS, newAuto, nextJob, QUEUE_KEY, RETRY_MS, reviewed, runJob, saveQueue, type Job } from './autoReview'
-import { addReview, emptyDeck, recordKey } from './deck'
+import { addReview, emptyDeck, recordKey, reviewKey } from './deck'
 import { PROFILES } from '../rank'
 
 // the classifier is tested on its own: here no move needs a deeper search, and no rank is known
@@ -60,6 +60,14 @@ describe('the queue', () => {
   it('uses the key of the deck’s reviewed games', () => {
     const g = game(12)
     expect(addReview(emptyDeck(), g, [], [], 1, 0).games[0].k).toBe(recordKey(g))
+  })
+  it('keys a job by the review\'s layout: a comment node elsewhere is another review (its positions are per node)', () => {
+    const moves = Array.from({ length: 12 }, (_, i) => `;${i % 2 ? 'W' : 'B'}[${'abcdefghi'[i % 9]}${'abcdefghi'[Math.floor(i / 9) + 2]}]`)
+    const at = (k: number) => loadSgf(`(;SZ[9]${[...moves.slice(0, k), ';C[x]', ...moves.slice(k)].join('')})`)
+    const [a, b] = [at(3), at(6)], ka = enqueue(newAuto([]), a, 1, 0)[0].k, kb = enqueue(newAuto([]), b, 1, 0)[0].k
+    expect(recordKey(a)).toBe(recordKey(b))
+    expect([ka, kb]).toEqual([reviewKey(a), reviewKey(b)])
+    expect(ka).not.toBe(kb)
   })
   it('loads what is sound, entry by entry, and survives garbage', () => {
     const ok: Job = { k: 'x', sgf: saveSgf(game(10)), side: -1, t: 5 }

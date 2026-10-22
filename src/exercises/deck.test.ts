@@ -5,7 +5,7 @@ import { NEW_PER_DAY, today } from '../joseki/store'
 import type { Moment } from '../review'
 import { loadSgf } from '../sgf'
 import {
-  addReview, BAD, counts, emptyDeck, exerciseOf, GAMES, gapOf, hand, isItem, KEY, keyOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save, sessionKeys,
+  addReview, BAD, counts, recordKey, reviewKey, emptyDeck, exerciseOf, GAMES, gapOf, hand, isItem, KEY, keyOf, lineOf, load, mv, nextExercise, positionOf, ratingOf, save, sessionKeys,
   weakest, whereLost, type Deck, type Exercise,
 } from './deck'
 
@@ -48,6 +48,17 @@ describe('an exercise', () => {
     const b = loadSgf('(;SZ[9];B[aa];W[bb];B[cc])'), w = loadSgf('(;SZ[9];W[aa];B[bb];W[cc])')
     const d = addReview(addReview(emptyDeck(), b, [moment({ at: 2 })], [], 1, NOW), w, [moment({ at: 2, sign: -1 })], [], 1, NOW)
     expect([Object.keys(d.items).length, d.games.length]).toEqual([2, 2])
+  })
+})
+
+describe('a review\'s key', () => {
+  it('tells where the pseudo-moves sit (positions are per node), and is the record\'s key without them', () => {
+    // a root comment is no node; a comment node after the moves is a pseudo-move
+    const xs = ['(;C[x];B[ee];W[cc];B[gg])', '(;B[ee];W[cc];C[x];B[gg])', '(;B[ee];C[x];W[cc];B[gg])', '(;B[ee];W[cc];B[gg])'].map(loadSgf)
+    expect(new Set(xs.map(recordKey)).size).toBe(1) // the exercise deck's key: the moves alone
+    expect(xs.map(reviewKey)).toEqual([recordKey(xs[0]), expect.any(String), expect.any(String), recordKey(xs[0])]) // none: sidecars and readings saved before stay valid
+    expect(new Set(xs.slice(0, 3).map(reviewKey)).size).toBe(3)
+    expect(reviewKey(loadSgf('(;B[ee];W[cc];C[x];B[gg])'))).toBe(reviewKey(xs[1]))
   })
 })
 

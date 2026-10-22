@@ -22,7 +22,7 @@ export function Timeline({ g, floor, go, auto, toggleAuto, live, relocate, ticks
     if (el) ro!.observe(el)
     return () => ro?.disconnect()
   }, [])
-  const glyph = matchMedia('(pointer: coarse)').matches ? 22 : 16, px = (i: number) => (w - 12) * (i - floor) / (total - floor)
+  const glyph = matchMedia('(hover: none) and (pointer: coarse)').matches ? 44 : 16, px = (i: number) => (w - 12) * (i - floor) / (total - floor)
   const rank = (c: Cat) => (c === 'brilliant' ? 5.5 : CATS.indexOf(c)) // errors first (blunder worst), then brilliant over great
   const groups: NonNullable<typeof ticks>[] = []
   for (const k of ticks ?? []) {

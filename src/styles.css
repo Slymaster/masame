@@ -138,7 +138,8 @@ canvas { display: block; -webkit-tap-highlight-color: transparent }
 .track i { position: absolute; top: 20px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--muted); pointer-events: none }
 .vars { display: flex; justify-content: center; gap: 14px; margin: 0 }
 .cmt { margin: 2px 0 0; max-height: 6.5em; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.45; color: var(--muted) }
-.mv { flex: none; min-width: 4.6em; text-align: right; font-family: var(--f-title); font-style: italic; font-size: 15px; color: var(--muted); text-transform: lowercase; white-space: nowrap; font-variant-numeric: tabular-nums }
+/* wide enough for "move 888 / 888" (87 px): a step never resizes the track, whose width groups the review's ticks */
+.mv { flex: none; min-width: 6.2em; text-align: right; font-family: var(--f-title); font-style: italic; font-size: 15px; color: var(--muted); text-transform: lowercase; white-space: nowrap; font-variant-numeric: tabular-nums }
 
 /* action bar: icon over label, hairlines between */
 .acts { flex: none; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 0 -14px; border-top: 1px solid var(--rule) }
@@ -657,7 +658,7 @@ section > .seg + .ogs-input { display: block; width: 100% }
   .track.ticked { padding-top: 22px }
   .track.ticked i { top: 52px }
   .tick { width: 22px; height: 22px; margin-left: -11px }
-  .tick::after { content: ""; position: absolute; inset: -11px -4px } /* a taller target than the glyph; neighbours may share it */
+  .tick::after { content: ""; position: absolute; inset: -11px } /* a 44 px target; ticks closer than that are one mark (Timeline) */
   .rv-row { min-height: 44px }
   .stepper .step button { width: 44px; height: 44px }
   .row, .seg button, .game-row, .jrow { min-height: 44px }

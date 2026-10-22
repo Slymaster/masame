@@ -191,8 +191,11 @@ describe('the review sidecar', () => {
       if (cmd === 'library_list') return [entry('g', 1)]
       if (cmd === 'library_sidecar_write') files.set(`${args?.id}.${args?.name}`, JSON.parse(JSON.stringify(args?.json))) // as Rust stores it
       if (cmd === 'library_sidecar_read') return files.get(`${args?.id}.${args?.name}`) ?? null
+      if (cmd === 'library_read') return STORED
     }
   })
+  const STORED = '(;SZ[19];B[pd];W[dp];B[pp])' // the entry's line
+  const keyOf = async (sgf: string) => (await import('./exercises/deck')).reviewKey((await import('./sgf')).loadSgf(sgf))
   // a 300-move 19×19 game: 6 candidates and a 7-move line per position, 3 moments with both ownership maps
   const pos = Array.from({ length: 301 }, (_, i) => ({ lead: -12.345678 + i / 7, u: 0.123456789, ...i % 9 === 0 && { deep: true as const },
     cands: Array.from({ length: 6 }, (_, k) => ({ v: [k + 10, 18 - k] as [number, number], lead: 1.23456789 * k, visits: 100 - k, prior: 0.0123456789 })),
@@ -203,12 +206,23 @@ describe('the review sidecar', () => {
 
   it('writes v2 (positions, facts, moments, leads for older readers) and reads it back; fits the 2 MB cap', async () => {
     const cur = await import('./current')
-    await cur.noteReview('g', pos, moments, facts, { key: 'line', side: 1 })
+    const key = await keyOf(STORED)
+    await cur.noteReview('g', pos, moments, facts, { key, side: 1 })
     const side = files.get('g.review') as import('./library').ReviewSidecar
     expect([side.v, side.leads.length, side.leads[7]]).toEqual([2, 301, pos[7].lead])
-    expect(await lib.reviewData('g', 19)).toEqual({ key: 'line', side: 1, pos, facts, moments })
+    expect(await lib.reviewData('g', 19)).toEqual({ key, side: 1, pos, facts, moments })
     expect(lib.get()?.[0].review).toEqual({ moments: 3 })
     expect(JSON.stringify(side).length).toBeLessThan(2 * 1024 * 1024 / 4) // measured: 204 kB
+  })
+  it('writes nothing for another line than the stored one (a variation reviewed): the entry keeps its review', async () => {
+    const cur = await import('./current'), mine = { leads: [1], moments: [], v: 2 }
+    files.set('g.review', mine)
+    for (const other of ['(;SZ[19];B[pd];W[dp];B[dd])', '(;SZ[19];B[pd];W[dp])', '(;SZ[19];C[x];B[pd];W[dp];B[pp])']) {
+      await cur.noteReview('g', pos, moments, facts, { key: await keyOf(other), side: 1 })
+      expect(files.get('g.review')).toBe(mine)
+    }
+    expect(host.log).not.toContain('library_sidecar_write')
+    expect(lib.get()?.[0].review).toBeUndefined()
   })
   it('reads no classification data from a v1 sidecar, none, or a damaged one; v1 leads stay for Count and Mining', async () => {
     files.set('g.review', { leads: [0.5, null, -1], moments: [] })
@@ -221,7 +235,9 @@ describe('the review sidecar', () => {
     for (const bad of [{ pos: [null] }, { pos: [{ ...pos[0], lead: 'x' }] }, { pos: [{ ...pos[0], cands: [{ v: [99, 0], lead: 0, visits: 1, prior: 0 }] }] }, { facts: [{ sac: 0 }] }, { moments: null },
       // moments that would crash the review (exerciseOf reads game.moves[at]), a sidecar of no known line or side, a short scan
       { moments: [null] }, { moments: ['x'] }, { moments: [{ ...moments[0], at: 9999 }] }, { moments: [{ ...moments[0], at: 11 }] }, { moments: [{ ...moments[0], sign: 0 }] },
-      { moments: [{ ...moments[0], punish: [[3, 25]] }] }, { moments: [{ ...moments[0], lost: [NaN] }] }, { key: undefined }, { side: 2 }, { pos: pos.slice(0, 11) }]) {
+      { moments: [{ ...moments[0], punish: [[3, 25]] }] },
+      // a line with no first stone (the lesson's caption names it: it blanked the app)
+      { moments: [{ ...moments[0], punish: [] }] }, { moments: [{ ...moments[0], better: [] }] }, { moments: [{ ...moments[0], better: [null, [3, 3]] }] }, { moments: [{ ...moments[0], lost: [NaN] }] }, { key: undefined }, { side: 2 }, { pos: pos.slice(0, 11) }]) {
       files.set('g.review', { ...ok, ...bad })
       expect(await lib.reviewData('g', 19)).toBeNull()
     }

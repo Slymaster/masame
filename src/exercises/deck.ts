@@ -65,6 +65,13 @@ export function recordKey(game: Game): string {
   return hash64(`${size}|${komi}|${codes(setup.black)}|${codes(setup.white)}|${moves.find(m => !m.setup)?.sign ?? 0}|${real(moves)}`)
 }
 
+/** A review's record: recordKey, plus where the pseudo-moves sit in the readable range when there are any (a review's
+ * positions and facts are indexed by node: the same moves with a comment node elsewhere are another review). */
+export function reviewKey(game: Game): string {
+  const at = game.moves.slice(0, reviewEnd(game)).flatMap((m, i) => (m.setup ? [i] : []))
+  return at.length ? hash64(`${recordKey(game)}|${at.join(',')}`) : recordKey(game)
+}
+
 /** New exercises for a review's moments (known ones untouched) and, when `me` is known, where its moves lost points. */
 export function addReview(d: Deck, game: Game, moments: Moment[], leads: (number | undefined)[], me: Sign | 0, now: number, date?: number): Deck {
   const items = { ...d.items }

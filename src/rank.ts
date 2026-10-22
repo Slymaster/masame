@@ -21,7 +21,7 @@ export const KEY = 'masame.rank', BAD = 'masame.rank.bad', CAP = 200
 const XS = PROFILES.map(p => RANKS.indexOf(p))
 
 export interface Reading { all: number; phases: (number | null)[]; n: number }
-/** A stored reading: k = the record's key (exercises/deck.ts recordKey), t = when (ms). */
+/** A stored reading: k = the record's key (exercises/deck.ts reviewKey), t = when (ms). */
 export interface Read extends Reading { k: string; t: number }
 export interface Ranks { v: 1; games: Read[] }
 export interface StoredRanks { p: Ranks; readOnly: boolean }

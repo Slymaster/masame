@@ -12,6 +12,7 @@ import type { Current, Entry } from './library'
 import { sync, type LocalClock } from './localClock'
 import type { Reading } from './rank'
 import type { Moment } from './review'
+import { reviewKey } from './exercises/deck'
 import { loadSgf, saveSgf } from './sgf'
 
 /** The AI of a local game. ritual: the daily 9×9 (never moves the AI level); era, mentor: a Master of an era, the mentor on. */
@@ -148,10 +149,11 @@ export function useCurrentGame(s: Shown, ver: number, onRestore: (r: Awaited<Ret
 }
 
 /** A review (automatic or by hand) read: its positions, facts and moments in the 'review' sidecar (v2, leads kept for the
- * older readers), tied to the line read (`key`: recordKey) and the side the moments were picked for; the entry marked reviewed. */
+ * older readers), tied to the line read (`key`: reviewKey) and the side the moments were picked for; the entry marked reviewed. Only for
+ * the entry's stored line: a variation's review stays in the session (Count and Mining read the sidecar against that SGF). */
 export async function noteReview(id: string | undefined | Promise<string | undefined>, pos: (Pos | undefined)[], moments: Moment[], facts: Facts[], of: { key: string; side: Sign | 0 }) {
   const k = await id
-  if (!k) return
+  if (!k || await library.readQueued(k).then(sgf => reviewKey(loadSgf(sgf))).catch(() => null) !== of.key) return
   // a position never read (a review stopped short) is stored as null, and makes reviewData ignore the sidecar
   await library.setSidecar(k, 'review', { leads: pos.map(p => p?.lead ?? null), moments, v: 2, pos: pos as Pos[], facts, ...of } satisfies library.ReviewSidecar)
   await library.patch(k, { review: { moments: moments.length } })

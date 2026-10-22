@@ -7,7 +7,7 @@ import type { Analysis } from '../katago'
 import { readRank, type Reading } from '../rank'
 import { leadsOf, levelsOf, readGame, reviewEnd, type Moment } from '../review'
 import { loadSgf, saveSgf } from '../sgf'
-import { recordKey } from './deck'
+import { reviewKey } from './deck'
 
 /** A game waiting for its review: the record as SGF (a snapshot: the shown game may grow variations), the player's side,
  * its library id (absent in queues saved before the library, or for a game not kept);
@@ -29,7 +29,7 @@ export const eligible = (g: Game, side: Sign | 0) =>
 export function enqueue(a: Auto, game: Game, side: Sign | 0, now: number, flags: JobFlags = {}): Job[] {
   const sgf = saveSgf(game), g = loadSgf(sgf) // the record as the job will read it
   if (!eligible(g, side)) return a.queue
-  const k = recordKey(g)
+  const k = reviewKey(g)
   // two library entries with the same moves (a file and its OGS copy) are two jobs: each gets its review written
   if (a.reviewed.has(flags.id ?? k) || a.queue.some(j => sameJob(j, k, flags.id))) return a.queue
   return [...a.queue, { k, sgf, side: side as Sign, t: now, ...flags.id && { id: flags.id }, ...flags.noRank && { noRank: true as const }, ...flags.noAdjust && { noAdjust: true as const } }].slice(-CAP)
