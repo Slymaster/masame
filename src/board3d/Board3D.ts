@@ -1681,11 +1681,13 @@ export class Board3D {
     this.sceneRoot.visible = fxOn
     this.scene.background = bd ? this.scene.environment : null
     if (bd) { this.scene.backgroundBlurriness = bd.blur; this.scene.backgroundIntensity = bd.intensity; this.scene.backgroundRotation.y = this.scene.environmentRotation.y }
+    if (this.propTick?.(now)) busy = true
     if (this.updateStones(now)) busy = true
     return busy
   }
 
   private camOverride: THREE.PerspectiveCamera | null = null // debug close-up
+  private propTick: ((now: number) => boolean) | null = null // debug.prop(): a prototype's per-frame hook
   private render(cam: THREE.Camera = this.camOverride ?? this.activeCam()) {
     ;(this.composer.passes[0] as RenderPass).camera = cam
     this.postFor(cam)
@@ -1798,6 +1800,37 @@ export class Board3D {
       look(o: Partial<Look>) { Object.assign(LOOKS[self.decorOn ?? self.opts.decor], o); self.extrasOn(); self.invalidate(); return { ...LOOKS[self.decorOn ?? self.opts.decor] } },
       /** The ambient animation: running now, its clock (s). */
       get ambient() { return { on: self.ambient(false), t: self.ambT, scene: !!self.sceneOn } },
+      /** Prototype seam (the opponent's hand): adds obj to the scene, tick(now) runs each frame before the stones are
+       *  placed (true: keep rendering); null removes it. */
+      prop(obj: THREE.Object3D | null, tick?: (now: number) => boolean) {
+        const old = self.scene.getObjectByName('debug-prop'); if (old) self.scene.remove(old)
+        if (obj) { obj.name = 'debug-prop'; self.scene.add(obj) }
+        self.propTick = obj && tick ? tick : null; self.invalidate()
+      },
+      /** The stone set in use (geometry, materials, sizes) and the lamp (Lanterne, a scene's andon). */
+      get kit() { return self.kit },
+      get lamp() { return self.lamp },
+      get camE() { return self.camE },
+      /** Poses the mounted scene's lamp; returns the pose it had (pass it back to restore). */
+      lampPose(pose: Mounted['lampPose']) { const s = self.sceneOn, old = s?.lampPose ?? null; if (s) { s.lampPose = pose; self.invalidate() } return old },
+      /** A player's bowl: its centre on the ground (x, y, z) and its heap's top (y, mm). */
+      bowl(c: Sign) {
+        const S = self.sets.find(s => s.c === c)!, Y = groundY(self.shape)
+        return { x: S.bowl[0], y: Y, z: S.bowl[1], top: Y + Math.max(...S.heap.map(p => p.y)) }
+      },
+      /** Where the next stone played at v would come to rest (girdle centre), its seed and spin; captures not counted. */
+      restSpot(v: Vertex) {
+        const N = self.N, [x, y] = v, j = jitter(N, x, y, self.moveNo + 1)
+        const s = { p: y * N + x, x, y, jx: j.jx, jz: j.jz, tx: j.jx, tz: j.jz }
+        settle(s as Stone, self.stones, N, gx(N, x), gz(N, y))
+        return { x: s.tx, y: self.kit.spec.shBot, z: s.tz, seed: j.seed, rotY: j.rotY }
+      },
+      /** The move counter jitter() is seeded with (captures replay one move with the same jitter). */
+      get moveNo() { return self.moveNo }, set moveNo(n: number) { self.moveNo = n },
+      /** Restarts the stone at v's drop at t0 (performance.now() time). */
+      dropT0(v: Vertex, t0: number) { const s = self.stones.get(v[1] * self.N + v[0]); if (s) { s.t0 = t0; s.landed = false; s.still = false } },
+      /** Draws the frame of time now at once (deterministic captures). */
+      drawAt(now: number) { self.updateScene(now); self.render() },
       /** Macro framing for material inspection (null restores the camera). */
       closeUp(at: [number, number] | null, dist = 160, tilt = 50, y = 0, yaw = 0) {
         if (!at) { self.camOverride = null; self.invalidate(); return }
