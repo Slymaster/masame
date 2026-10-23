@@ -105,6 +105,7 @@ The board takes the window; beside it, one floating card holds the game. Its hea
 
 - **The library.** Every game you play against the AI or between two players, your OGS games, the positions you save and the files you review are kept on your machine, with their result, the rank read in your moves, their key moments and your scores. Filter by source, search by opponent, open one with a click. Your ongoing OGS games come first, the ones where it's your move on top.
 - **Game review.** Up to three moments where a move cost the most points, each a short lesson: find the punishment yourself, see it, then see the better move. After a game against the AI, or at any time in a two-player or SGF game. It runs locally, in about a minute. From a key moment you can also try your own continuation, and KataGo answers. Every finished game is also read in the background, on your machine, as soon as the engine is free, and its key moments join your exercises without a click.
+- **Every move weighed.** After a review, each move gets a verdict from Brilliant to Blunder, judged by the winning chances it gives away at each player's level, as chess.com does for chess. The game report gives each player's accuracy; a seal on the board, a band on the track, KataGo's line and Retry take you to the moves that mattered. For your games, OGS games, SGF files and the Classics.
 - **Replay from memory.** The board empties and you replay the game, both sides, move by move; after a second miss the move is shown. Your score joins the game in My games.
 - **Guess the moves.** The Classics' mode, on any game of your library.
 - **Share.** One small sheet: save the game as SGF, make a postcard, print a kifu, or copy the OGS link.
@@ -185,7 +186,7 @@ OGS doesn't allow engine help during a game, so while an OGS game is going on, L
 
 ## Roadmap
 
-The foundations, the 3D Living Atelier and the teacher are in place, with the OGS client. Version 0.3 added the joseki trainer, variations and autoplay; version 0.4 read your games: the automatic review, exercises from your games, your rank read in your moves, the daily ritual, handicap, free analysis, a local clock and the postcard. Version 0.5 makes your lessons from your games: the library, tsumego, counting, replay from memory and the Classics, with the Masters of an era, the mentor, the position editor and the kifu. Version 0.6 brings stones and worlds: thirteen stone sets, thirteen décors and three goban shapes in six woods. Next comes Masame on Android, as a beta, and a signed Windows installer. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
+The foundations, the 3D Living Atelier and the teacher are in place, with the OGS client. Version 0.3 added the joseki trainer, variations and autoplay; version 0.4 read your games: the automatic review, exercises from your games, your rank read in your moves, the daily ritual, handicap, free analysis, a local clock and the postcard. Version 0.5 makes your lessons from your games: the library, tsumego, counting, replay from memory and the Classics, with the Masters of an era, the mentor, the position editor and the kifu. Version 0.6 brings stones and worlds: thirteen stone sets, thirteen décors and three goban shapes in six woods. Version 0.7 weighs every move of a reviewed game, as chess.com does, and gives the AI a hand that places its stones. Next comes Masame on Android, as a beta, and a signed Windows installer. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
 
 ## Credits
 
@@ -195,6 +196,7 @@ The foundations, the 3D Living Atelier and the teacher are in place, with the OG
 - [FSRS](https://github.com/open-spaced-repetition) by Open Spaced Repetition: the spaced repetition behind joseki practice (MIT).
 - [three.js](https://threejs.org/), [Tauri](https://tauri.app/) and [React](https://react.dev/).
 - Wood textures from [ambientCG](https://ambientcg.com/), lighting (HDRI) from [Poly Haven](https://polyhaven.com/) by Greg Zaal, Jarod Guest, Sergej Majboroda, Dario Barresi and Andreas Mischok, stone and ambient sounds from [Freesound](https://freesound.org/) by billhails2, Hongsungbock, MPooman, ellie.vanderlip, Olichite, Nox_Sound, kyles, PhilllChabbb and callmethefoo — all CC0.
+- The opponent's hand, made with [MakeHuman](https://static.makehumancommunity.org/)'s CC0 assets and MPFB: see [CREDITS.md](src-tauri/assets/hand/CREDITS.md).
 - Typefaces: Cormorant Garamond and Manrope, under the SIL Open Font License.
 
 ## Licence
