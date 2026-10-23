@@ -9,6 +9,8 @@ import { askFirst, confirmDiscard, openSgfFile, savePngFile, saveSgfFile } from 
 import { Game, type GameNode, type Move, type Sign, type Vertex } from './game'
 import { analyze, call, candidates, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
+import { handMove, handWanted, loadHand } from './opponentHand'
+import type { OpponentHand } from './board3d/hand'
 import { notify } from './notify'
 import { OgsSection } from './OgsSection'
 import { Clock } from './Clock'
@@ -33,13 +35,17 @@ import { isMac, isMobile, shortcut } from './platform'
 import { useFullscreen, useWindowTheme } from './window'
 import { getVersion, onBackButtonPress } from '@tauri-apps/api/app'
 import { checkDue, updateSettings, type UpdateInfo } from './update'
-import { fromOf, gradeTry, lessonBoard, readGame, REPLY, verdict, type Moment, type Step } from './review'
+import { fromOf, gradeTry, leadsOf, lessonBoard, levelsOf, momentAt, readGame, REPLY, reviewEnd, verdict, type Moment, type Step } from './review'
+import { accuracy, CATS, classify, decidedLoss, NOTABLE, parseRank, shownLoss, tally, type Cat, type Judged, type Levels, type Pos } from './classify'
+import { catColor } from './cats'
+import { CatIcon } from './CatIcon'
+import { bookMoves, loadBook } from './book'
 import { useJoseki } from './joseki/useJoseki'
 import { phaseLine, useExercises } from './exercises/useExercises'
 import { anchored, loadRanks, localRank, rankName, readRank, saveRanks, withReading, type Reading } from './rank'
 import { useAutoReview } from './exercises/useAutoReview'
 import { useMining } from './tsumego/useMining'
-import { load as loadDeck, recordKey, weakest } from './exercises/deck'
+import { load as loadDeck, reviewKey, weakest } from './exercises/deck'
 import { tone } from './joseki/practice'
 import { load as loadRitual, openingBook } from './today/ritual'
 import { useToday } from './today/useToday'
@@ -63,6 +69,7 @@ import { Kifu } from './KifuPage'
 const QUICK = { maxVisits: 80, overrideSettings: { maxTime: 0.3 } }, DEEP = { maxVisits: 800, overrideSettings: { maxTime: 2.5 } }
 
 const SIZES = [9, 13, 19]
+const RETRY: Cat[] = ['inaccuracy', 'mistake', 'miss', 'blunder'] // the categories whose move has a lesson to retry
 const HUMAN_BYTES = 99_066_230
 // the analysis net a phone recommends (networks.rs: fast on the iPhone, compact on Android), named in the first-run card
 const PHONE_NET_BYTES = /Android/.test(globalThis.navigator?.userAgent || '') ? 14_466_254 : 97_898_094
@@ -78,16 +85,16 @@ const LIGHTS: TimeMode[] = ['auto', 'morning', 'afternoon', 'evening']
 const AUTOPLAY = [0.5, 1, 2, 4] as const // seconds per move
 interface Settings {
   lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; botResign: boolean; delay: boolean; territory: boolean
-  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor | 'auto'; stones: StoneSet; ambientSound: boolean; depthOfField: boolean; goban: GobanShape; wood: Wood
+  renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor | 'auto'; stones: StoneSet; ambientSound: boolean; depthOfField: boolean; opponentHand: boolean; goban: GobanShape; wood: Wood
   langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number; autoplay: typeof AUTOPLAY[number]
   handicap: number; clock: ClockSetting
   style: 'level' | 'era'; era: number; mentor: boolean // a Master of an era instead of the AI level; the mentor (v0.5 B)
 }
 const SETTINGS_KEY = 'baduk.settings'
-function loadSettings(): Settings {
+export function loadSettings(): Settings {
   const d: Settings = {
     lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, botResign: true, delay: true, territory: false,
-    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', ambientSound: false, depthOfField: true, goban: 'table', wood: 'kaya', langChosen: false, panelHidden: false,
+    renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', ambientSound: false, depthOfField: true, opponentHand: true, goban: 'table', wood: 'kaya', langChosen: false, panelHidden: false,
     autoUpdate: true, updateChecked: 0, autoplay: 1, handicap: 0, clock: 'off', style: 'level', era: 1850, mentor: false,
   }
   let j: Partial<Settings> = {}
@@ -101,7 +108,7 @@ function loadSettings(): Settings {
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
     decor: s.decor === 'auto' || (readyDecors() as readonly unknown[]).includes(s.decor) ? s.decor : 'atelier', // a décor not shipped yet: the default
     stones: (readySets() as readonly unknown[]).includes(s.stones) ? s.stones : 'japonaise', // a set still to earn is kept and shown as the default (stonesOn)
-    ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false,
+    ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false, opponentHand: s.opponentHand !== false, // on unless switched off, also for settings saved before the option
     goban: (readyShapes() as readonly unknown[]).includes(s.goban) ? s.goban : 'table', wood: (readyWoods() as readonly unknown[]).includes(s.wood) ? s.wood : 'kaya', panelHidden: s.panelHidden === true, ...updateSettings(j),
     autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
     handicap: Number.isInteger(s.handicap) && s.handicap >= 2 && s.handicap <= 9 ? s.handicap : 0,
@@ -272,10 +279,12 @@ export function App() {
   }
   const [own, setOwn] = useState<{ game: Game; data: number[] | null; score: number } | null>(null)
   // game review: null = off; moments null while reading; branch = the lesson's variation (null while reading or clean)
+  // after reading: k −1 is the report (browsing the game, judged move by move), k ≥ 0 a moment's lesson; pv: KataGo's line shown
   const [review, setReview] = useState<{ side: Sign | 0; pct: number; error: unknown; moments: Moment[] | null; k: number; step: Step
-    branch: Game | null; ask: GameNode | null; gap: number | null; explored: boolean; rank?: Reading | null } | null>(null) // rank: undefined while read
+    branch: Game | null; ask: GameNode | null; gap: number | null; explored: boolean; rank?: Reading | null // rank: undefined while read
+    judged: (Judged | null)[] | null; levels: Levels; pv: boolean } | null>(null)
   const [reviewTry, retryReview] = useReducer((x: number) => x + 1, 0)
-  const scan = useRef<{ last: Game['board']; leads: (number | undefined)[] } | null>(null) // scan leads of the record ending on `last`
+  const scan = useRef<{ last: Game['board']; pos: (Pos | undefined)[] } | null>(null) // scan positions of the record ending on `last`
   const scanRun = useRef<Promise<unknown>>(Promise.resolve()) // the last readGame or answer: the next one starts once it settles (2 queries at most)
   const reviewId = useRef<Promise<string | undefined>>(Promise.resolve(undefined)) // the reviewed game's library id
 
@@ -306,6 +315,19 @@ export function App() {
     const id = setTimeout(() => { earlyStart.current = true; call('engine_start').catch(() => {}) }, 5000) // errors arrive as engine-status
     return () => clearTimeout(id)
   }, [settings.opponent, canPlayAI])
+
+  // The opponent's hand (desktop, on by default): hand.ts and the built-in model, loaded the first time it could play
+  // (handWanted); the bot's moves use it in Contemplation (see botTurn)
+  const handRef = useRef<OpponentHand | null>(null)
+  const handReady = settings.opponentHand && !isMobile && renderer === '3d'
+  const handNeeded = handWanted({ ...settings, mobile: isMobile, renderer, reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches })
+  useEffect(() => { if (handNeeded) loadHand().then(h => { handRef.current = h }, e => console.error('hand', e)) }, [handNeeded])
+  const handOn = handReady && settings.camera === 'contemplation'
+  const handOnRef = useRef(handOn)
+  handOnRef.current = handOn
+  useEffect(() => { if (!handOn) handRef.current?.stop() }, [handOn]) // Study or the option off: put away at once (a pending move then lands on time)
+  /** The hand may play the bot's next move: the option ready, Contemplation, motion allowed, a Board3D mounted. */
+  const handPlays = () => handOnRef.current && !!view.current && 'setHand' in view.current && !matchMedia('(prefers-reduced-motion: reduce)').matches
 
   // Updates: a silent check at launch (at most daily, unless turned off), a manual one, install on click only.
   const [version, setVersion] = useState('')
@@ -413,12 +435,12 @@ export function App() {
     scanRun, add: (...x) => ex.add(...x),
     done: (k, ms, r, j) => { // a job is always the player's own game
       const ai = r && keepRank(k, r, !j.noAdjust)
-      noteReview(j.id, j.leads, ms).then(() => { if (r && !j.noRank) return noteRank(j.id, r) }).catch(console.error)
+      noteReview(j.id, j.pos, ms, j.facts, { key: k, side: j.side }).then(() => { if (r && !j.noRank) return noteRank(j.id, r) }).catch(console.error)
       if (ai) setNextAi(ai) // the next game's level, whichever game the line shows
-      if (!result || recordKey(game) !== k) return
+      if (!result || reviewKey(game) !== k) return
       setNote(short(d => d.autoDone(ms.length, r ? rankName(r.all) : undefined))) // replaces a stale note (saved…): the card says one at a time
     },
-    human: canPlayAI,
+    human: canPlayAI, myRank: settings.myRank,
   })
   const books = { view, preload: sheet === 'learn', rank: settings.myRank, setRank: (v: string) => set('myRank', v), blocked: ongoing || !!review, playFrom: (m: Move[]) => playFrom(m), setBook: setPanel }
   const jt = useJoseki({ ...books, open: panel === 'joseki', setOpen: panelOpen('joseki') })
@@ -443,7 +465,7 @@ export function App() {
   useMining({ free: bgFree, ask: (g, q) => analyze(g, { ...q, priority: -1 }), scanRun, known: ex.has, add: ex.addItems }) // tsumego from reviewed games
   const workOpening = () => { if (!ongoing && !review) practiseFuseki() } // Travailler › Ouverture, after its exercises: S'entraîner on the fuseki
   const cl = useClassics({
-    view, open: panel === 'classics', setOpen: panelOpen('classics'), blocked: ongoing || !!review, canAnalyze, setThinking, rank: settings.myRank,
+    view, open: panel === 'classics', setOpen: panelOpen('classics'), blocked: ongoing || !!review, canAnalyze, setThinking, rank: settings.myRank, review: g => void reviewClassic(g),
     ask: (g, q) => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, q)); scanRun.current = run; return run },
   })
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
@@ -478,6 +500,11 @@ export function App() {
   const mine: Sign | 0 = bot ? -bot.sign as Sign : online?.me ?? ogsSide(game) // the side a review looks at
   const shown = review?.branch ?? game
   const m = review?.moments?.[review.k]
+  const browsing = !!review?.moments && review.k < 0 // the report: the game browsed move by move, each judged
+  const judgedAt = browsing ? game.cursor - 1 : -1 // the move the caption judges: the last one on the board
+  const jm = judgedAt >= 0 ? review!.judged?.[judgedAt] ?? null : null
+  const judgedAll = review?.judged
+  const scores = useMemo(() => judgedAll && ([1, -1] as const).map(c => ({ acc: accuracy(judgedAll, game, c), n: tally(judgedAll, game, c) })), [judgedAll, game])
   const from = m ? fromOf(m, review!.step) : 0
   const reading = !!review && !review.moments
   // ① takes only the punisher's moves (← may show the engine's turn); ② and ③ explore freely
@@ -617,7 +644,11 @@ export function App() {
       const g = loadSgf(text)
       if (!asked && !(await canLeave())) return
       const e = from.entry, again = e && resumable(e)
-      if (e) library.bind(g, e.id)
+      if (e) {
+        library.bind(g, e.id)
+        // the classifier reads each side's level in BR/WR: an older bot game kept the ranks only in its entry
+        for (const [k, sd] of [['BR', e.black], ['WR', e.white]] as const) if (!g.root.data[k]?.[0] && sd.rank) g.root.data[k] = [sd.rank]
+      }
       start(again ? local(g, e) : g, again ? again.bot : null); if (SIZES.includes(g.info.size)) resize(g.info.size)
       if (from.ogsId !== undefined) { keepOgs(g, ogsSide(g), from.ogsId); ar.enqueue(g, ogsSide(g), { id: library.idOf(g) }) } // an ended OGS game of mine
     } catch (e) {
@@ -799,6 +830,10 @@ export function App() {
   const finish = (text: Msg, botWon: boolean | null, re: string) => {
     game.promote() // the decided line is the record's main line, which RE describes
     game.info.result = re
+    if (bot) { // the record keeps each side's level for the classifier, also once reopened (bot gone)
+      const d = game.root.data, b = bot.era ? MASTER_RANK : bot.rank
+      d.BR = [bot.sign === 1 ? b : settings.myRank]; d.WR = [bot.sign === 1 ? settings.myRank : b]
+    }
     setResult(game, { msg: text, re })
     if (bot) ar.enqueue(game, -bot.sign as Sign, { ...lessonFlags(bot), id: library.idOf(game) })
     if (bot?.ritual) td.played()
@@ -840,12 +875,21 @@ export function App() {
   }
 
   // Game review: reading (scan + deep checks), then lessons on the branch boards
+  const classics = useRef(new WeakSet<Game>()) // classics opened as the shown game: judged at pro level for both sides
+  /** Each side's level for the classification: the bot's and yours, OGS's ranks, else the SGF's (unknown: yours). */
+  const levelsFor = (): Levels => {
+    if (classics.current.has(game) || shownEntry?.classic) return { black: 10, white: 10 }
+    const me = bot ? -bot.sign : shownEntry?.source === 'ai' ? shownEntry.me : 0 // a bot game reopened: the player's side at their level now
+    const rank = (c: Sign) => bot && c === bot.sign ? bot.era ? MASTER_RANK : bot.rank : c === me ? settings.myRank : online?.players[c === 1 ? 'black' : 'white'].rank
+    const sgf = levelsOf(game, settings.myRank)
+    return { black: parseRank(rank(1)) ?? sgf.black, white: parseRank(rank(-1)) ?? sgf.white }
+  }
   const startReview = (side: Sign | 0) => {
     const last = game.boards.at(-1)!
-    if (scan.current?.last !== last) scan.current = { last, leads: ar.leadsOf(game) } // a background review's leads, if any
-    setReview({ side, pct: 0, error: null, moments: null, k: 0, step: 'try', branch: null, ask: null, gap: null, explored: false })
+    if (scan.current?.last !== last) scan.current = { last, pos: ar.posOf(game) } // a background review's positions, if any
+    setReview({ side, pct: 0, error: null, moments: null, k: -1, step: 'try', branch: null, ask: null, gap: null, explored: false, judged: null, levels: levelsFor(), pv: false })
     // a reviewed game enters the library (a local or OGS game of mine is in it already)
-    reviewId.current = (online ? library.keep(game, 'ogs', online.me, { ogsId: online.id }) : library.keep(game, 'file', side)).catch(e => { console.error('library', e); return undefined })
+    reviewId.current = (online ? library.keep(game, 'ogs', online.me, { ogsId: online.id }) : library.keep(game, 'file', side, classics.current.has(game) ? { classic: true } : {})).catch(e => { console.error('library', e); return undefined })
     changed()
   }
   const openMoment = (k: number, step: Step, moments = review!.moments!) => {
@@ -854,6 +898,30 @@ export function App() {
     changed()
   }
   const leaveReview = () => { setReview(null); changed() }
+  const toReport = () => openMoment(-1, 'try')
+  /** Retry on a judged move: its lesson, from the moments or from a deep check of that move alone. */
+  const retryAt = (i: number) => {
+    const ms = review!.moments!, k = ms.findIndex(x => x.at === i), g = game, id = reviewId.current
+    if (k >= 0) return openMoment(k, 'try')
+    setThinking(true)
+    const run = scanRun.current.catch(() => {}).then(() => momentAt(g, i, (at, q) => analyze(g.branch(at), q as Record<string, unknown>), 0.5)) // a calibrated label may cost under 2 points
+    scanRun.current = run
+    run.then(x => {
+      if (reviewId.current !== id) return // Esc and another review (or side) since: not this one's moment
+      if (!x) return setNote(d => d.noMomentHere)
+      const next = [...ms, x].sort((a, b) => a.at - b.at)
+      openMoment(next.indexOf(x), 'try', next)
+    }, e => setNote(d => d.answerFailed(failureText(e, d)))).finally(() => setThinking(false))
+  }
+  /** Les Classiques' "Review with KataGo": the master's game becomes the shown game, then is reviewed (once shown: startReview reads `game`). */
+  const pendingReview = useRef<Game | null>(null)
+  const reviewClassic = async (g: Game) => {
+    abandon()
+    if (!(await canLeave())) return
+    cl.close(); classics.current.add(g); pendingReview.current = g
+    start(g, null); if (SIZES.includes(g.info.size)) resize(g.info.size)
+  }
+  useEffect(() => { if (pendingReview.current === game) { pendingReview.current = null; startReview(0) } }, [game]) // eslint-disable-line react-hooks/exhaustive-deps
   const retryLesson = () => { setReview(x => x && { ...x, error: null }); retryReview() }
 
   // The bot's turn: ask KataGo (human policy at the bot's rank + a small search), then play after a human-like pause.
@@ -892,16 +960,20 @@ export function App() {
       }, random)
       if (m.kind === 'resign') return finish(d => d.resigns(bot.sign), false, resignResult(-bot.sign as Sign))
       const wait = settings.delay ? m.delay - (performance.now() - t0) : 0
-      if (wait > 0) await new Promise(r => setTimeout(r, wait))
-      if (!live) return
       const v: Vertex | null = m.kind === 'play' ? [m.index % n, Math.floor(m.index / n)] : null
+      // the opponent's hand plays White's stones from the bowl across the board (Black's sits by the player); the stone
+      // lands when it would have without it, or a little later on a quick move. Thinking time off: the player chose speed.
+      const h = handRef.current
+      if (v && h && bot.sign === -1 && settings.delay && handPlays() && game.isLegal(v)) await handMove(h, view.current as Board3D, v, wait, () => live && handPlays())
+      else if (wait > 0) await new Promise(r => setTimeout(r, wait))
+      if (!live) return
       if (game.play(v) !== 'ok') game.play(null) // shortcut: an illegal sample (superko corner case) becomes a pass
       winrates.current.set(game.lastMove!, botWinrate)
       if (v && game.lastMove?.vertex) view.current?.drop(v, bot.sign)
       else view.current?.pass?.(bot.sign)
       setDirty(true); changed()
     }).catch(e => live && setBotError(d => d.botFailed(failureText(e, d)))).finally(() => live && setThinking(false))
-    return () => { live = false; setThinking(false) }
+    return () => { live = false; setThinking(false); if (handRef.current?.pending) handRef.current.stop() } // a move still in his fingers is dropped
   }, [botTurn, ver, game, botRetry]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Two passes: counting. KataGo's ownership suggests the dead stones (without an engine, none are suggested);
@@ -932,16 +1004,28 @@ export function App() {
   useEffect(() => {
     if (!reading || !review || !scan.current) return
     let live = true
-    const leads = scan.current.leads
-    const run = scanRun.current.catch(() => {}).then(() => readGame(game, review.side, leads,
-      (at, q) => analyze(game.branch(at), q as Record<string, unknown>), () => live, pct => live && setReview(x => x && { ...x, pct })))
+    const pos = scan.current.pos, { side, levels } = review, end = reviewEnd(game), id = library.idOf(game)
+    const ask = (at: number, q: object) => analyze(game.branch(at), q as Record<string, unknown>)
+    const run = scanRun.current.catch(() => {}).then(async () => {
+      // a game reviewed before (by hand or in the background) reopens from its sidecar, without the scan: only the line it read
+      const saved = id ? await library.reviewData(id, game.info.size).catch(() => null) : null
+      if (saved && saved.key === reviewKey(game) && saved.pos.length === end + 1) {
+        saved.pos.forEach((p, i) => { pos[i] ??= p })
+        if (saved.side === side) return { moments: saved.moments, facts: saved.facts, saved: true }
+        // another side: its own moments from the saved positions (deep checks only); the sidecar keeps the first side's
+        return { ...await readGame(game, side, pos, ask, () => live, pct => live && setReview(x => x && { ...x, pct }), { levels, facts: saved.facts }), saved: true }
+      }
+      const book = await loadBook().then(db => bookMoves(game, db), () => undefined) // no book: no Book moves
+      return { ...await readGame(game, side, pos, ask, () => live, pct => live && setReview(x => x && { ...x, pct }), { levels, book }), saved: false }
+    }).then(r => ({ ...r, judged: classify(game, pos, r.facts, levels, end) }))
     scanRun.current = run
-    run.then(ms => {
+    run.then(({ moments: ms, facts, saved, judged }) => {
       if (!live) return
-      ex.add(game, ms, leads, mine || review.side)
-      noteReview(reviewId.current, leads, ms).catch(console.error)
-      if (!canPlayAI || !review.side || review.side !== mine) ar.reviewed(game, library.idOf(game)) // else once the rank is read too
-      openMoment(0, 'try', ms)
+      ex.add(game, ms, leadsOf(pos), mine || side)
+      if (!saved) noteReview(reviewId.current, pos, ms, facts, { key: reviewKey(game), side }).catch(console.error)
+      if (!canPlayAI || !side || side !== mine) ar.reviewed(game, library.idOf(game)) // else once the rank is read too
+      setReview(x => x && { ...x, judged })
+      openMoment(-1, 'try', ms) // the report first; the moments stay one click away
     }, e => live && setReview(x => x && { ...x, error: e }))
     return () => { live = false }
   }, [reading, review?.side, game, reviewTry]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -956,7 +1040,7 @@ export function App() {
       setReview(x => x && { ...x, rank: r })
       if (rankSide !== mine) return
       const lesson = bot ?? (shownEntry && { era: shownEntry.era, ...shownEntry.mentor && { mentor: true as const } }) // a lesson reopened from Mes parties stays one
-      const f = lesson ? lessonFlags(lesson) : {}, ai = r && !f.noRank && keep.current(recordKey(game), r, !f.noAdjust) // no note: it would replace the lesson's caption
+      const f = lesson ? lessonFlags(lesson) : {}, ai = r && !f.noRank && keep.current(reviewKey(game), r, !f.noAdjust) // no note: it would replace the lesson's caption
       if (r && !f.noRank) noteRank(reviewId.current, r).catch(console.error)
       if (ai) setNextAi(ai)
       ar.reviewed(game, library.idOf(game))
@@ -1117,7 +1201,7 @@ export function App() {
             ' ': e.target instanceof HTMLButtonElement ? undefined : toggleAuto,
             home: () => goTo(0), end: () => goTo(shown.moves.length),
             ...(fullscreen && !isMac && { escape: () => setFullscreen(false) }), // after a sheet's Esc and before a review's
-            ...(review && { escape: leaveReview }),
+            ...(review && { escape: review.branch ? toReport : leaveReview }), // a lesson goes back to the report first
             j: jt.toggle, e: ex.toggle, d: openLearn, b: () => door('games'),
             p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
             t: ongoing ? undefined : () => set('territory', !settings.territory), h: togglePanel,
@@ -1144,6 +1228,24 @@ export function App() {
   }, [])
 
   const { size, komi, playerBlack, playerWhite } = game.info
+  const played = jm && game.moves[judgedAt]
+  // KataGo's line, cut at its first move on an occupied or repeated point (a capture or ko replay would hide a real stone);
+  // the played move crossed unless the kept line already numbers it. Off while A is held: the live position's candidates win.
+  const pvMarks = jm && review?.pv && !an ? (() => {
+    const sm = game.boards[judgedAt].signMap, seen = new Set<string>(), marks: { v: Vertex; label: string; tone: 'black' | 'white' }[] = []
+    for (const [k, v] of jm.pv.entries()) {
+      if (!v) continue
+      if (sm[v[1]][v[0]] || seen.has(`${v}`)) break
+      seen.add(`${v}`); marks.push({ v, label: String(k + 1), tone: (k % 2 ? -played!.sign : played!.sign) === 1 ? 'black' : 'white' })
+    }
+    return played!.vertex && !seen.has(`${played!.vertex}`) ? [{ v: played!.vertex, label: '×', tone: 'mistake' as const }, ...marks] : marks
+  })() : null
+  const nextOf = (c: Cat) => { // the report's rows: the next move of that category, from the shown one (then from the start)
+    const j = review!.judged!, i = j.findIndex((x, i) => i >= game.cursor && x?.cat === c)
+    goTo((i >= 0 ? i : j.findIndex(x => x?.cat === c)) + 1)
+  }
+  const ticks = browsing && judgedAll ? judgedAll.flatMap((j, i) => (j && NOTABLE.includes(j.cat)
+    ? [{ at: i + 1, cat: j.cat, label: t.catHead(game.moveNumber(i) + 1, t.cats[j.cat], shownLoss(j)) }] : [])) : undefined
   const board = shown.board, toPlay = shown.toPlay, last = shown.lastMove
   const shownOwn = settings.territory && own?.game === game && !ongoing ? own : null
   const ghost = mt.stopped && !tr.open && last?.vertex ? { v: last.vertex, sign: last.sign } : null // the stopped move, in half-tone
@@ -1153,9 +1255,17 @@ export function App() {
   // the review's caption and its links (p: the colour that punishes, s: the one that made the mistake)
   const p = m ? -m.sign : 0, s = m?.sign ?? 0
   const graded = m && review?.step === 'try' && review.gap !== null ? verdict(m, review.gap) : null
+  // the report's caption: the shown move's category, what it cost, why (KataGo's move named)
+  const jmHead = jm && t.catHead(game.moveNumber(judgedAt) + 1, t.cats[jm.cat], shownLoss(jm))
+  // KataGo's move named in the sentence; a Best that is not KataGo's own move names the move it preferred (a pass: "passer")
+  const jmV = jm && (v => (v ? gtp(v, size) : t.passWord))(jm.best ?? jm.pv[0] ?? null)
+  const jmWhy = jm && (decidedLoss(jm) ? t.catDecided(jmV!) : t.catWhy[jm.cat](played!.sign, jm.cat === 'best'
+    ? jm.best ? gtp(jm.best, size) : jm.pv.length && !jm.pv[0] && played!.vertex ? t.passWord : ''
+    : jmV!))
+  const catLine = jm && `${jmHead}. ${jmWhy}`
   const lessonLine = !review ? null
     : reading ? t.reading
-    : !m ? t.noMoments(review.side)
+    : browsing || !m ? catLine || t.reportHelp
     : review.step === 'try' ? graded === 'found' ? t.found : graded === 'short' ? t.shortOf(review.gap!) : graded ? t.missed(s, review.gap!) : t.tryAsk(p, game.moveNumber(m.at) + 1)
     : review.step === 'punish' ? t.punishLine(p, gtp(m.punish[0]!, size), s, m.loss)
     : t.betterLine(s, gtp(m.better[0]!, size), m.loss)
@@ -1210,6 +1320,9 @@ export function App() {
   // td.onward's step index: the ritual's exercises 0 (its exercises, then its counting), joseki or fuseki 1
   const links: Link[] = tr.open ? [...tr.links, ...td.onward(jt.open || ft.open ? 1 : ex.open || ct.open ? 0 : -1, ex.open ? !!ex.today?.done : undefined)] : review?.error ? [['retry', t.retry, retryLesson]]
     : !review ? gameLinks
+    : browsing ? [...jm?.pv.length ? [['pv', review.pv ? t.pvHide : t.pvShow, () => setReview(x => x && { ...x, pv: !x.pv })] as Link] : [],
+      ...jm && RETRY.includes(jm.cat) ? [['retry', t.retryMove, () => retryAt(judgedAt)] as Link] : [],
+      ...!jm && review.moments!.length ? [['moments', t.keyMoments, () => openMoment(0, 'try')] as Link] : []]
     : !m ? [['back', t.backToGame, leaveReview]]
     : review.step === 'try' ? [...(graded ? [['again', t.retry, () => openMoment(review.k, 'try')] as Link] : []), ['punish', t.seePunishment, () => openMoment(review.k, 'punish')]]
     : review.step === 'punish' ? [['better', t.seeBetter, () => openMoment(review.k, 'better')]]
@@ -1340,6 +1453,9 @@ export function App() {
             counting: final ? { dead: countingNow!.dead, territory: final.territory }
               : removal ? { dead: ogs.deadOf(board.signMap, removal.removed), territory: board.signMap.map(r => r.map(() => 0 as Sign)) } : null, // OGS scores
             captures: { black: board.getCaptures(1), white: board.getCaptures(-1) }, // the 3D lids: prisoners taken by each
+            lastCat: jm?.cat,
+            // KataGo's line from the position before the judged move, in numbered ghost stones; the played move crossed
+            ...(pvMarks && { signMap: game.boards[judgedAt].signMap, last: null, marks: pvMarks }),
             ...tr.board,
             ...(cands && { marks: cands.flatMap(c => c.v ? [{ v: c.v, label: c.label, tone: tone(c.loss) }] : []) }),
           }}
@@ -1355,7 +1471,8 @@ export function App() {
                 <span className="txt"><b>{t.ended(res.winner, res.how, res.points)}{said && <span className="said"> · {said}</span>}</b>{' '}
                   <small>{!said && res.winner !== 0 && t.endedHow(res.how, res.points)}</small></span>
                 {aiMoved && <span className="chip">{t.aiLevel}{' '}<b>{bot && <i>{bot.rank} →</i>} {aiMoved}</b></span>}
-              </> : <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>}
+              </> : message === catLine && jm ? <span className="txt cat-line"><CatIcon cat={jm.cat} size={20} /> <b style={{ color: catColor(jm.cat, skin) }}>{jmHead}</b><span className="why">{' · '}{jmWhy}</span></span>
+              : <span className="txt">{message}{tuned && <span aria-hidden="true"> · {tuned}</span>}</span>}
               {!anLine && links.map(([id, label, act]) => <button key={id} data-act={id} className="link" onClick={() => { refocus.current = id; act() }}>
                 {id === 'review' && message === cardLine && <Icon name="review" />}{label}</button>)}
             </span>}
@@ -1407,8 +1524,8 @@ export function App() {
                 </ul>
               ) : review ? (
                 <section className="rv">
-                  <div className="lab"><span>{t.review}</span><span>{reading ? t.percent(review.pct) : ''}</span></div>
-                  {!bot && (
+                  <div className="lab"><span>{browsing ? t.report : t.review}</span><span>{reading ? t.percent(review.pct) : ''}</span></div>
+                  {!bot && !browsing && ( // the report judges both sides; whose moments the lessons take, chosen before
                     <div className="field">
                       <span>{t.reviewSide}</span>
                       <Seg label={t.reviewSide} value={review.side} options={[[1, t.black], [-1, t.white], [0, t.both]]} set={v => v !== review.side && startReview(v)} />
@@ -1419,7 +1536,23 @@ export function App() {
                     <div className="bar" role="progressbar" aria-label={t.reading} aria-valuenow={review.pct} aria-valuemin={0} aria-valuemax={100}>
                       <i style={{ width: `${review.pct}%` }} />
                     </div>
-                  </> : !m ? <p className="estimate">{t.noMoments(review.side)}</p> : <>
+                  </> : browsing && scores ? <>
+                    {jmWhy && <p className="say rv-why">{jmWhy}</p>}
+                    <div className="rv-report">
+                      <ul className="phases">
+                        <li className="rv-head"><span /><b>{t.black}</b><b>{t.white}</b></li>
+                        <li className="rv-acc"><span>{t.accuracy}</span>{scores.map((x, i) => <b key={i}>{t.accuracyOf(x.acc)}</b>)}</li>
+                        {CATS.map(c => <li key={c}><button className="rv-row" disabled={!scores[0].n[c] && !scores[1].n[c]} onClick={() => nextOf(c)}
+                          aria-current={jm?.cat === c || undefined} title={t.reportNext(t.cats[c])}>
+                          <CatIcon cat={c} size={20} /><span>{t.cats[c]}</span>{scores.map((x, i) => <b key={i} className={x.n[c] ? undefined : 'z'}>{x.n[c]}</b>)}
+                        </button></li>)}
+                      </ul>
+                    </div>
+                    {review.moments!.length > 0 ? <div className="field">
+                      <span>{t.keyMoments}</span>
+                      <Seg label={t.keyMoments} value={-1} options={review.moments!.map((_, i) => [i, String(i + 1)])} set={k => openMoment(k, 'try')} />
+                    </div> : <p className="estimate">{t.noMoments(review.side)}</p>}
+                  </> : m && <>
                     <p className="state">{t.moment(review.k + 1, review.moments!.length, game.moveNumber(m.at) + 1, m.loss)}</p>
                     {review.moments!.length > 1 && (
                       <Seg label={t.moments} value={review.k} options={review.moments!.map((_, i) => [i, String(i + 1)])} set={k => openMoment(k, 'try')} />
@@ -1456,7 +1589,7 @@ export function App() {
                 )
               })}
               {!review && cta}
-              <Timeline g={shown} floor={floor} go={goTo} auto={!!auto} toggleAuto={toggleAuto} live={live} relocate={relocate} />
+              <Timeline g={shown} floor={floor} go={goTo} auto={!!auto} toggleAuto={toggleAuto} live={live} relocate={relocate} ticks={ticks} />
               {settings.territory && !review && !ongoing && (
                 <p className="estimate" aria-live="polite">
                   {!inTauri() || !canAnalyze ? t.territoryNeedsNet : shownOwn ? t.estimate(shownOwn.score) : t.estimating}
@@ -1464,7 +1597,10 @@ export function App() {
               )}</>}
             </div>
             <div className="acts">
-              {tr.acts ?? (review ? <button className="act" onClick={leaveReview} title="Esc"><Icon name="arrow-back-up" />{t.backToGame}</button> : <>
+              {tr.acts ?? (review ? <>
+                {review.branch && <button className="act" onClick={toReport} title="Esc"><Icon name="review" />{t.toReport}</button>}
+                <button className="act" onClick={leaveReview} title={review.branch ? undefined : 'Esc'}><Icon name="arrow-back-up" />{t.backToGame}</button>
+              </> : <>
                 {(final || removal) && !result
                   ? <button className="act accent" onClick={removal ? () => send(() => ogs.acceptRemoved(removal.id, removal.removed)) : validate}><Icon name="hand-stop" />{t.validate}</button>
                   : <button className="act" onClick={() => play(null)} disabled={game.ended || locked || !humanTurn || !!online?.placing} title="P"><Icon name="hand-stop" />{t.pass}</button>}
@@ -1606,6 +1742,7 @@ export function App() {
                 <Switch label={t.highContrast} on={settings.highContrast} toggle={() => set('highContrast', !settings.highContrast)} />
                 <Switch label={t.depthOfField} title={t.depthOfFieldHint} on={settings.depthOfField} toggle={() => set('depthOfField', !settings.depthOfField)} />
                 <Switch label={t.ambientSound} title={t.ambientSoundHint} on={settings.ambientSound} toggle={() => set('ambientSound', !settings.ambientSound)} />
+                <Switch label={t.opponentHand} title={t.opponentHandHint} on={settings.opponentHand} toggle={() => set('opponentHand', !settings.opponentHand)} />
               </>}
             </div>
           </section>}

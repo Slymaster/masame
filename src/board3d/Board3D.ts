@@ -16,7 +16,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import type { Sign, Vertex } from '@sabaki/go-board'
-import { paintMarks, type BoardState } from '../board/BoardView'
+import { drawBadge, paintMarks, type BoardState } from '../board/BoardView'
+import type { Cat } from '../classify'
 import { rng } from '../board/noise'
 import type { Decor } from './decors'
 import type { StoneSet } from './stoneSets'
@@ -45,6 +46,30 @@ export interface Board3DOptions {
   goban?: GobanShape; wood?: Wood
 }
 export type FallbackReason = 'webgl2' | 'context-lost' | 'slow'
+
+/** A hand that plays the opponent's stones (hand.ts), plugged in with Board3D.setHand. */
+export interface HandPlug {
+  /** Added to the scene while plugged in; shown only where the plug says (it reads ctx.camE). */
+  readonly root: THREE.Object3D
+  /** Each frame, before the stones are placed; true keeps frames coming. */
+  tick(now: number): boolean
+}
+/** What Board3D tells a hand, read live (like SceneCtx for a décor's scene). Units mm, the board top's centre at the origin. */
+export interface HandCtx {
+  /** 0 in Study, 1 in Contemplation, between during the crossfade. */
+  readonly camE: number
+  /** The stone set in use (its geometry and materials are Board3D's: don't dispose them). */
+  readonly kit: StoneKit
+  /** A player's bowl: its centre on the ground (y = the ground: the table, or the floor beside a legged goban) and its heap's top. */
+  bowl(c: Sign): { x: number; y: number; z: number; top: number }
+  /** Where the next stone played at v will come to rest (girdle centre), with its seed and spin; captures not counted. */
+  restSpot(v: Vertex): { x: number; y: number; z: number; seed: number; rotY: number }
+  /** The board's own stone at v: when its drop started (performance.now ms), null while there is none to draw. */
+  dropT0(v: Vertex): number | null
+  /** The window's light and the lamp (Lanterne, a scene's andon): read them, don't change them. */
+  readonly key: THREE.DirectionalLight
+  readonly lamp: THREE.SpotLight
+}
 export interface Board3DInit {
   /** The app should switch to the 2D BoardView (WebGL2 missing, context lost, or still too slow at the lowest quality). */
   onFallback?: (reason: FallbackReason) => void
@@ -327,6 +352,9 @@ export class Board3D {
   private tremMats!: { 1: THREE.MeshPhysicalMaterial; [-1]: THREE.MeshPhysicalMaterial }
   private shook: { v: Vertex; c: Sign; t0: number } | null = null
   private markers!: { 1: THREE.Mesh; [-1]: THREE.Mesh }
+  /** The last move's category seal (state.lastCat), facing the camera over the stone's upper right; one texture per category. */
+  private badge = new THREE.Sprite(new THREE.SpriteMaterial({ depthTest: false, toneMapped: false }))
+  private badgeTex = new Map<Cat, THREE.CanvasTexture>()
   private boardMat!: THREE.MeshPhysicalMaterial
   /** Pale golden kaya (the scan, barely graded): readability comes from the stones' contact shadow and rim, not dark wood. */
   private woodTone = new THREE.Color(...KAYA_TONE)
@@ -514,6 +542,14 @@ export class Board3D {
       this.buildBoard()
     }
     this.state = state
+    const cat = state.lastCat
+    if (cat && !this.badgeTex.has(cat)) {
+      const cv = Object.assign(document.createElement('canvas'), { width: 128, height: 128 })
+      drawBadge(cv.getContext('2d')!, cat, 64, 62, 50)
+      const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace
+      this.badgeTex.set(cat, tx)
+    }
+    if (cat && this.badge.material.map !== this.badgeTex.get(cat)) { this.badge.material.map = this.badgeTex.get(cat)!; this.badge.material.needsUpdate = true }
     this.reconcile(state)
     this.buildMarks()
     const own = state.ownership?.length === N * N ? state.ownership : null
@@ -561,13 +597,14 @@ export class Board3D {
     this.cleanup()
     this.sound.destroy()
     this.sceneOn?.s.dispose(); this.sceneOn?.env?.dispose()
+    this.setHand(null) // the hand outlives this view: keep its meshes out of the disposal below
     if (!this.renderer) return
     this.scene.traverse(o => {
       const m = o as THREE.Mesh
       m.geometry?.dispose()
       for (const mat of ([] as THREE.Material[]).concat(m.material ?? [])) mat.dispose()
     })
-    for (const t of Object.values(this.maps ?? {})) t.dispose()
+    for (const t of [...Object.values(this.maps ?? {}), ...this.badgeTex.values()]) t.dispose()
     for (const g of Object.values(this.grounds)) { g.map.dispose(); g.bump?.dispose() }
     this.tableMat.alphaMap?.dispose()
     this.owTex.dispose(); this.shojiTex.dispose()
@@ -640,6 +677,7 @@ export class Board3D {
     const mm = (c: number) => new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
     this.markers = { 1: new THREE.Mesh(markerGeo(this.kit.geoB.userData.prof), mm(0xe9dcc4)), [-1]: new THREE.Mesh(markerGeo(this.kit.geoW.userData.prof), mm(0x2a201a)) }
     for (const m of Object.values(this.markers)) { m.matrixAutoUpdate = false; m.visible = false; scene.add(m) }
+    this.badge.visible = false; this.badge.renderOrder = 10; scene.add(this.badge)
 
     // the table. Study: shadows only (the app's linen shows through). Contemplation: a dark wooden table fading into a
     // warm dark room (the canvas clears to the room colour), lit by the window
@@ -1451,7 +1489,7 @@ export class Board3D {
     let busy = false, nb = 0, nw = 0, db = 0, dw = 0, na = 0
     const s0 = this.state, N = this.N, own = this.own, counting = s0?.counting, last = s0?.last, SH = this.kit.spec.shBot, TOP = SH + this.kit.spec.shTop
     const lastP = last ? last[1] * N + last[0] : -1
-    this.markers[1].visible = this.markers[-1].visible = false
+    this.markers[1].visible = this.markers[-1].visible = this.badge.visible = false
     const put = (s: Stone, y: number, aoA: number, aoS: number, dim: boolean, sx: number, sz: number) => {
       const { _m, _q, _v, _s } = this
       _m.compose(_v.set(sx, SH + y, sz), _q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, s.rotY), _s.setScalar(1))
@@ -1461,6 +1499,7 @@ export class Board3D {
       L.setMatrixAt(i, _m); (L.geometry.attributes.aSeed.array as Float32Array)[i] = s.seed
       if (s.p === lastP && this.stones.get(lastP) === s && s.landed && !dim) {
         const mk = this.markers[s.c as 1 | -1]; mk.matrix.copy(_m); mk.visible = true
+        if (s0?.lastCat) { this.badge.visible = true; this.badge.position.set(sx + 0.72 * s.R, TOP + y + 0.2 * s.R, sz - 0.72 * s.R); this.badge.scale.setScalar(1.25 * s.R) }
       }
       if (aoA > 0 && na < 420) {
         const q = s.R * 2 * AO_K * aoS, black = s.c === 1
@@ -1681,9 +1720,39 @@ export class Board3D {
     this.sceneRoot.visible = fxOn
     this.scene.background = bd ? this.scene.environment : null
     if (bd) { this.scene.backgroundBlurriness = bd.blur; this.scene.backgroundIntensity = bd.intensity; this.scene.backgroundRotation.y = this.scene.environmentRotation.y }
+    if (this.hand?.tick(now)) busy = true
     if (this.updateStones(now)) busy = true
     return busy
   }
+
+  private hand: HandPlug | null = null
+  /** The opponent's hand: its root joins the scene and it ticks each frame; null takes it out. Returns what it may read. */
+  setHand(plug: HandPlug | null): HandCtx {
+    this.hand?.root.removeFromParent()
+    this.hand = plug
+    if (plug && !this.dead) this.scene.add(plug.root)
+    this.invalidate()
+    return this.handCtx
+  }
+  private readonly handCtx: HandCtx = (() => {
+    const self = this
+    return {
+      get camE() { return self.camE },
+      get kit() { return self.kit },
+      key: this.key, lamp: this.lamp,
+      bowl(c: Sign) {
+        const S = self.sets.find(s => s.c === c)!, Y = groundY(self.shape)
+        return { x: S.bowl[0], y: Y, z: S.bowl[1], top: Y + Math.max(...S.heap.map(p => p.y)) }
+      },
+      restSpot(v: Vertex) {
+        const N = self.N, [x, y] = v, j = jitter(N, x, y, self.moveNo + 1)
+        const s = { p: y * N + x, x, y, jx: j.jx, jz: j.jz, tx: j.jx, tz: j.jz }
+        settle(s as Stone, self.stones, N, gx(N, x), gz(N, y))
+        return { x: s.tx, y: self.kit.spec.shBot, z: s.tz, seed: j.seed, rotY: j.rotY }
+      },
+      dropT0(v: Vertex) { return self.stones.get(v[1] * self.N + v[0])?.t0 ?? null },
+    }
+  })()
 
   private camOverride: THREE.PerspectiveCamera | null = null // debug close-up
   private render(cam: THREE.Camera = this.camOverride ?? this.activeCam()) {
@@ -1798,6 +1867,12 @@ export class Board3D {
       look(o: Partial<Look>) { Object.assign(LOOKS[self.decorOn ?? self.opts.decor], o); self.extrasOn(); self.invalidate(); return { ...LOOKS[self.decorOn ?? self.opts.decor] } },
       /** The ambient animation: running now, its clock (s). */
       get ambient() { return { on: self.ambient(false), t: self.ambT, scene: !!self.sceneOn } },
+      /** The move counter jitter() is seeded with (captures replay one move with the same jitter). */
+      get moveNo() { return self.moveNo }, set moveNo(n: number) { self.moveNo = n },
+      /** Restarts the stone at v's drop at t0 (performance.now() time). */
+      dropT0(v: Vertex, t0: number) { const s = self.stones.get(v[1] * self.N + v[0]); if (s) { s.t0 = t0; s.landed = false; s.still = false } },
+      /** Draws the frame of time now at once (deterministic captures). */
+      drawAt(now: number) { self.updateScene(now); self.render() },
       /** Macro framing for material inspection (null restores the camera). */
       closeUp(at: [number, number] | null, dist = 160, tilt = 50, y = 0, yaw = 0) {
         if (!at) { self.camOverride = null; self.invalidate(); return }

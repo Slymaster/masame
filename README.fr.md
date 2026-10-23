@@ -105,6 +105,7 @@ Le goban occupe la fenêtre ; à côté, une seule carte flottante porte la par
 
 - **La bibliothèque.** Chaque partie jouée contre l'IA ou à deux, tes parties OGS, les positions que tu enregistres et les fichiers que tu revois sont gardés sur ta machine, avec leur résultat, le rang lu dans tes coups, leurs moments clés et tes scores. Filtre par source, cherche par adversaire, ouvre une partie d'un clic. Tes parties OGS en cours viennent d'abord, celles où c'est à toi de jouer en tête.
 - **Revue de partie.** Jusqu'à trois moments où un coup a coûté le plus de points, chacun une courte leçon : trouve toi-même la punition, vois-la, puis vois le bon coup. Après une partie contre l'IA, ou à tout moment dans une partie à deux joueurs ou un SGF. Elle tourne en local, en une minute environ. À partir d'un moment clé, tu peux aussi essayer ta propre suite, et KataGo répond. Chaque partie terminée est aussi lue en arrière-plan, sur ta machine, dès que le moteur est libre, et ses moments clés rejoignent tes exercices sans un clic.
+- **Chaque coup pesé.** Après une revue, chaque coup reçoit un verdict, de Brillant à Gaffe, jugé sur les chances de gagner qu'il cède au niveau de chaque joueur, comme chess.com le fait pour les échecs. Le bilan de la partie donne la précision de chaque joueur ; un sceau sur le goban, une bande sur la frise, la ligne de KataGo et Réessayer mènent aux coups qui ont compté. Pour tes parties, les parties OGS, les fichiers SGF et les Classiques.
 - **Rejouer de mémoire.** Le goban se vide et tu rejoues la partie, les deux camps, coup par coup ; au deuxième échec, le coup s'affiche. Ton score rejoint la partie dans Mes parties.
 - **Deviner les coups.** Le mode des Classiques, sur n'importe quelle partie de ta bibliothèque.
 - **Partager.** Une petite feuille : enregistre la partie en SGF, fais une carte postale, imprime un kifu, ou copie le lien OGS.
@@ -116,6 +117,7 @@ Le goban occupe la fenêtre ; à côté, une seule carte flottante porte la par
 
 - **Les saisons dans la lumière.** En Auto, la lumière suit l'heure et la date : une heure dorée plus longue en été, une lumière basse et froide en hiver, et le reflet de la neige dans le Washitsu de décembre à février.
 - **Décor auto, ambiance sonore, profondeur de champ.** Le décor peut suivre la saison et l'heure ; une ambiance sonore discrète (feuilles, vent, pluie) et une profondeur de champ d'objectif quand tu lèves les yeux sont là si tu les veux.
+- **La main de l'adversaire.** En vue Contemplation, contre l'IA, la main de ton adversaire prend une pierre dans son bol et la pose. Activée par défaut, elle se désactive dans l'Atelier. Les crédits du modèle : [src-tauri/assets/hand/CREDITS.md](src-tauri/assets/hand/CREDITS.md).
 - **Deux langues.** Entièrement en français et en anglais ; suit la langue du système et se change dans l'app.
 - **Un mode léger 2D.** Un goban Canvas, utilisé automatiquement quand le rendu 3D n'est pas disponible.
 
@@ -184,7 +186,7 @@ OGS n'autorise aucune aide d'un moteur pendant une partie : tant qu'une partie 
 
 ## Feuille de route
 
-Les fondations, l'Atelier vivant en 3D et le professeur sont en place, avec le client OGS. La version 0.3 a ajouté l'entraîneur de joseki, les variantes et la lecture automatique ; la version 0.4 a lu tes parties : la revue automatique, les exercices tirés de tes parties, ton rang lu dans tes coups, le rituel du jour, le handicap, l'analyse libre, une pendule locale et la carte postale. La version 0.5 fabrique tes leçons à partir de tes parties : la bibliothèque, les tsumego, le comptage, rejouer de mémoire et les Classiques, avec les Maîtres d'une époque, le mentor, l'éditeur de position et le kifu. La version 0.6 apporte des pierres et des mondes : treize jeux de pierres, treize décors et trois formes de goban en six bois. Vient ensuite Masame sur Android, en bêta, et un installeur Windows signé. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
+Les fondations, l'Atelier vivant en 3D et le professeur sont en place, avec le client OGS. La version 0.3 a ajouté l'entraîneur de joseki, les variantes et la lecture automatique ; la version 0.4 a lu tes parties : la revue automatique, les exercices tirés de tes parties, ton rang lu dans tes coups, le rituel du jour, le handicap, l'analyse libre, une pendule locale et la carte postale. La version 0.5 fabrique tes leçons à partir de tes parties : la bibliothèque, les tsumego, le comptage, rejouer de mémoire et les Classiques, avec les Maîtres d'une époque, le mentor, l'éditeur de position et le kifu. La version 0.6 apporte des pierres et des mondes : treize jeux de pierres, treize décors et trois formes de goban en six bois. La version 0.7 pèse chaque coup d'une partie revue, comme chess.com, et donne à l'IA une main qui pose ses pierres. Vient ensuite Masame sur Android, en bêta, et un installeur Windows signé. Le plan complet et ses raisons sont dans [docs/proposition.md](docs/proposition.md) (en anglais : [docs/proposal.en.md](docs/proposal.en.md)).
 
 ## Remerciements
 
@@ -194,6 +196,7 @@ Les fondations, l'Atelier vivant en 3D et le professeur sont en place, avec le c
 - [FSRS](https://github.com/open-spaced-repetition), d'Open Spaced Repetition : la répétition espacée de l'entraînement aux joseki (MIT).
 - [three.js](https://threejs.org/), [Tauri](https://tauri.app/) et [React](https://react.dev/).
 - Textures de bois d'[ambientCG](https://ambientcg.com/), éclairage (HDRI) de [Poly Haven](https://polyhaven.com/) par Greg Zaal, Jarod Guest, Sergej Majboroda, Dario Barresi et Andreas Mischok, sons de pierres et d'ambiance de [Freesound](https://freesound.org/) par billhails2, Hongsungbock, MPooman, ellie.vanderlip, Olichite, Nox_Sound, kyles, PhilllChabbb et callmethefoo — tous en CC0.
+- La main de l'adversaire, faite avec les ressources CC0 de [MakeHuman](https://static.makehumancommunity.org/) et MPFB : voir [CREDITS.md](src-tauri/assets/hand/CREDITS.md).
 - Polices : Cormorant Garamond et Manrope, sous SIL Open Font License.
 
 ## Licence

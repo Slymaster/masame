@@ -1,6 +1,8 @@
 mod backend;
 mod engine;
 mod failure;
+#[cfg(desktop)]
+mod hand;
 #[cfg(any(target_os = "ios", all(test, unix)))]
 mod inproc;
 #[cfg(target_os = "ios")]
@@ -641,6 +643,7 @@ pub fn run() {
             #[cfg(desktop)] update_check, #[cfg(desktop)] update_install, #[cfg(desktop)] print_page,
             ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history,
             library::library_list, library::library_read, library::library_write, library::library_delete,
+            #[cfg(desktop)] hand::hand_bytes,
             library::library_sidecar_read, library::library_sidecar_write, library::library_current_read, library::library_current_write
         ])
         .build(tauri::generate_context!())
