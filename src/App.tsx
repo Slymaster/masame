@@ -9,7 +9,6 @@ import { askFirst, confirmDiscard, openSgfFile, savePngFile, saveSgfFile } from 
 import { Game, type GameNode, type Move, type Sign, type Vertex } from './game'
 import { analyze, call, candidates, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
-import { handInstalled, installHand } from './handAsset'
 import { handMove, handWanted, loadHand } from './opponentHand'
 import type { OpponentHand } from './board3d/hand'
 import { notify } from './notify'
@@ -317,30 +316,12 @@ export function App() {
     return () => clearTimeout(id)
   }, [settings.opponent, canPlayAI])
 
-  // The opponent's hand (desktop, on by default): fetched once, the first time it could play (handWanted) or when the
-  // player turns the option on in the Workshop; turning it off keeps the file. 'absent': checked, not on disk.
-  const [hand, setHand] = useState<{ s: 'idle' | 'absent' | 'downloading' | 'ready' } | { s: 'error'; err: Msg }>({ s: 'idle' })
-  const handFailed = useCallback((e: unknown) => { // the line shows the localized message only; the detail goes to the console
-    console.error('hand', e)
-    const code = (e as { code?: unknown })?.code
-    setHand({ s: 'error', err: d => failureText({ code: typeof code === 'string' ? code : 'hand_bad' }, d) })
-  }, [])
-  const getHand = useCallback(() => {
-    setHand({ s: 'downloading' })
-    installHand().then(() => setHand({ s: 'ready' }), handFailed)
-  }, [handFailed])
-  useEffect(() => {
-    if (!settings.opponentHand || isMobile) return
-    const checked = (ok: boolean) => setHand(h => h.s === 'idle' ? { s: ok ? 'ready' : 'absent' } : h) // a download already started wins
-    handInstalled().then(checked, () => checked(false))
-  }, [settings.opponentHand])
-  // The automatic download leaves 'absent' for good, so it is tried once per session; Retry and the next launch try again.
-  const handNeeded = handWanted({ ...settings, mobile: isMobile, renderer, reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches })
-  useEffect(() => { if (handNeeded && hand.s === 'absent') getHand() }, [handNeeded, hand.s, getHand])
-  // hand.ts and the model: loaded once the option is on with the 3D board; the bot's moves use it in Contemplation (see botTurn)
+  // The opponent's hand (desktop, on by default): hand.ts and the built-in model, loaded the first time it could play
+  // (handWanted); the bot's moves use it in Contemplation (see botTurn)
   const handRef = useRef<OpponentHand | null>(null)
-  const handReady = settings.opponentHand && hand.s === 'ready' && renderer === '3d'
-  useEffect(() => { if (handReady) loadHand().then(h => { handRef.current = h }, handFailed) }, [handReady, handFailed])
+  const handReady = settings.opponentHand && !isMobile && renderer === '3d'
+  const handNeeded = handWanted({ ...settings, mobile: isMobile, renderer, reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches })
+  useEffect(() => { if (handNeeded) loadHand().then(h => { handRef.current = h }, e => console.error('hand', e)) }, [handNeeded])
   const handOn = handReady && settings.camera === 'contemplation'
   const handOnRef = useRef(handOn)
   handOnRef.current = handOn
@@ -1761,13 +1742,7 @@ export function App() {
                 <Switch label={t.highContrast} on={settings.highContrast} toggle={() => set('highContrast', !settings.highContrast)} />
                 <Switch label={t.depthOfField} title={t.depthOfFieldHint} on={settings.depthOfField} toggle={() => set('depthOfField', !settings.depthOfField)} />
                 <Switch label={t.ambientSound} title={t.ambientSoundHint} on={settings.ambientSound} toggle={() => set('ambientSound', !settings.ambientSound)} />
-                <Switch label={t.opponentHand} title={t.opponentHandHint} on={settings.opponentHand} toggle={() => { // switched on by hand: fetch now, whatever the view
-                  if (!settings.opponentHand && hand.s !== 'ready' && hand.s !== 'downloading') getHand()
-                  set('opponentHand', !settings.opponentHand)
-                }} />
-                {settings.opponentHand && hand.s !== 'idle' && hand.s !== 'absent' && <p className={`engine${hand.s === 'error' ? ' err' : ''}`} aria-live="polite">
-                  {hand.s === 'error' ? t.handFailed(hand.err(t)) : hand.s === 'downloading' ? t.handDownloading : t.handReady}
-                  {hand.s === 'error' && <> · <button className="link" onClick={getHand}>{t.retry}</button></>}</p>}
+                <Switch label={t.opponentHand} title={t.opponentHandHint} on={settings.opponentHand} toggle={() => set('opponentHand', !settings.opponentHand)} />
               </>}
             </div>
           </section>}

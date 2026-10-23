@@ -43,7 +43,7 @@ describe('reach', () => {
     expect(dist(shoulder, hip)).toBeCloseTo(dist(S0, hip), 6)
   })
   // the wrist at the press, from the stone's rest spot, in the frame of his heading (from the shoulder toward the stone):
-  // measured on the MakeHuman hand (downloads/hand/hand-v1.glb) in the grip pose
+  // measured on the MakeHuman hand (src-tauri/assets/hand/hand-v1.glb) in the grip pose
   const WRIST = { along: -181, side: 20, up: 25 }
   const shapes = { table: TABLE, ashi, pliant }
   for (const [name, shape] of Object.entries(shapes)) for (const N of [19, 13, 9]) for (const coords of [false, true]) {

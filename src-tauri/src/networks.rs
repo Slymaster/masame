@@ -305,7 +305,7 @@ pub fn finish(dir: &Path, name: &str, bytes: u64, sha256: &str) -> Res<()> {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
 
     const FIXTURE: &str = r#"{"count":4,"next":"https://evil.example/?page=2","results":[
@@ -459,7 +459,7 @@ pub(crate) mod tests {
     }
 
     /// Local plain-HTTP server answering every connection with `response`; returns its base URL.
-    pub(crate) fn serve(response: Vec<u8>) -> String {
+    fn serve(response: Vec<u8>) -> String {
         use std::io::{Read, Write};
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/", l.local_addr().unwrap());
@@ -470,7 +470,7 @@ pub(crate) mod tests {
         url
     }
 
-    pub(crate) fn reply(head: &str, body: &[u8]) -> Vec<u8> { [format!("HTTP/1.1 {head}\r\nConnection: close\r\n\r\n").as_bytes(), body].concat() }
+    fn reply(head: &str, body: &[u8]) -> Vec<u8> { [format!("HTTP/1.1 {head}\r\nConnection: close\r\n\r\n").as_bytes(), body].concat() }
 
     #[tokio::test]
     async fn redirects_are_not_followed() {

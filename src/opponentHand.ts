@@ -1,9 +1,9 @@
-// The opponent's hand in the app (Workshop option): hand.ts and the downloaded model, loaded once per session on first
+// The opponent's hand in the app (Workshop option): hand.ts and the built-in model, loaded once per session on first
 // need, and the bot's move timed so its stone lands when it would have without the hand.
 import type { Vertex } from '@sabaki/go-board'
 import type { Board3D } from './board3d/Board3D'
 import type { OpponentHand } from './board3d/hand'
-import { handBytes } from './handAsset'
+import { call } from './katago'
 
 /** The gesture's fastest pace: up to the handoff, it may play this much faster than its natural timeline. */
 export const MIN_K = 0.55
@@ -15,16 +15,16 @@ export function handTiming(wait: number, handoffMs: number) {
   return { start: Math.max(0, wait - lead), land: Math.max(wait, lead), k }
 }
 
-/** Whether the hand could play now, so the model may be fetched without asking: the option on, a desktop with the 3D
+/** Whether the hand could play now, so hand.ts and the model are worth loading: the option on, a desktop with the 3D
  *  board in Contemplation, thinking time on, against the AI, the AI possibly White (the hand plays White only), motion
  *  allowed. Anywhere else nobody would see it. */
 export const handWanted = (o: { opponentHand: boolean; mobile: boolean; renderer: string; camera: string; delay: boolean; opponent: string; color: string; reducedMotion: boolean }) =>
   o.opponentHand && !o.mobile && o.renderer === '3d' && o.camera === 'contemplation' && o.delay && o.opponent === 'ai' && o.color !== 'w' && !o.reducedMotion
 
 let loading: Promise<OpponentHand> | null = null
-/** hand.ts (a lazy chunk) and the verified model, built once; a failure is forgotten so a retry loads again. */
+/** hand.ts (a lazy chunk) and the model (raw bytes over IPC), built once; a failure is forgotten so a retry loads again. */
 export function loadHand() {
-  return (loading ??= Promise.all([import('./board3d/hand'), handBytes()])
+  return (loading ??= Promise.all([import('./board3d/hand'), call<ArrayBuffer>('hand_bytes')])
     .then(([m, glb]) => m.OpponentHand.load(glb))
     .catch(e => { loading = null; throw e }))
 }

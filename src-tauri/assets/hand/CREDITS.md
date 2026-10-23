@@ -3,14 +3,8 @@
 `hand-v1.glb`: the 3D hand that plays the AI's moves in the Contemplation view, when the "Opponent's hand" option is
 on in the Workshop.
 
-It is not bundled with Masame. The desktop app downloads it once from this folder
-(`https://raw.githubusercontent.com/Slymaster/masame/main/downloads/hand/hand-v1.glb`) when the option is turned on,
-checks its size and SHA-256 against the values pinned in `src-tauri/src/hand.rs`, and keeps it in the app's data folder
-(`hand/`).
-
-**The file name is versioned and the file is never modified.** Released apps pin v1's size and hash, so a changed
-`hand-v1.glb` would be refused by every copy of Masame already installed. A future hand is a new file, `hand-v2.glb`,
-with its own pins in a new release.
+It is built into the desktop app (`src-tauri/src/hand.rs`, which also checks its size and SHA-256 in a test); the
+phone apps leave it out.
 
 ## The model
 
@@ -27,4 +21,4 @@ MakeHuman's `game_engine` rig, the skin baked onto the hand's own UVs (1024² JP
 - Project: [MakeHuman](https://static.makehumancommunity.org/)
 
 To regenerate it, see the header of `scripts/hand-makehuman.py` (an isolated Blender profile, MPFB installed from its
-zip, the two CC0 packs loaded with MPFB's own loader). It writes `hand-v2.glb` by default, never over v1.
+zip, the two CC0 packs loaded with MPFB's own loader). It writes `hand-v2.glb` next to this file by default, never over v1.

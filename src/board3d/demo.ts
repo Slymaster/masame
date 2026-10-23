@@ -7,7 +7,7 @@ import { Board3D, type Board3DOptions, type Board3DState } from './Board3D'
 import { DECORS } from './decors'
 import { arm, run, selftestOn } from './selftest'
 import type { OpponentHand, Variant } from './hand'
-import handUrl from '../../downloads/hand/hand-v1.glb?url' // dev page only: the app downloads it instead
+import handUrl from '../../src-tauri/assets/hand/hand-v1.glb?url' // dev page only: the app gets its bytes from Rust
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const SETUP: Vertex[] = [[15, 3], [3, 15], [15, 16], [3, 3], [2, 5], [2, 9], [5, 16], [5, 15], [6, 15], [4, 15], [6, 16], [16, 2], [15, 2], [16, 3], [16, 4], [17, 4], [17, 5], [15, 1], [14, 1], [16, 1], [9, 3], [16, 13], [16, 10], [9, 16]]
