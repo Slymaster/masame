@@ -669,7 +669,8 @@ pub fn run() {
             ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history,
             library::library_list, library::library_read, library::library_write, library::library_delete,
             #[cfg(desktop)] hand::hand_bytes,
-            library::library_sidecar_read, library::library_sidecar_write, library::library_current_read, library::library_current_write
+            library::library_sidecar_read, library::library_sidecar_write, library::library_current_read, library::library_current_write,
+            library::library_admit
         ])
         .build(context);
     let application = match application {

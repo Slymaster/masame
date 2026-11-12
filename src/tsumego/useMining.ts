@@ -34,18 +34,20 @@ export function useMining({ free, ask, scanRun, known, add }: {
     if (!free || busy.current || !entries) return
     if (m.current.wait.length) keep([], Date.now()) // a new day: the problems waiting come first
     if (!canMine(m.current, Date.now())) return
-    const e = entries.find(e => e.review && e.size <= 19 && !m.current.done.includes(e.id) && (fails.current.get(e.id) ?? 0) < MAX_FAILS)
+    const e = entries.find(e => library.writable(e.id) && e.review && e.size <= 19 && !m.current.done.includes(e.id) && (fails.current.get(e.id) ?? 0) < MAX_FAILS)
     if (!e) return
+    const valid = library.guard(e.id)
     busy.current = true
     const run = scanRun.current.catch(() => {}).then(async () => {
       const [sgf, rv] = await Promise.all([library.read(e.id), library.sidecar<library.ReviewSidecar>(e.id, 'review')])
       const game = loadSgf(sgf), vs = e.me === 1 ? e.white.name : e.me === -1 ? e.black.name : ''
-      return mineGame(game, (rv?.moments ?? []).map(x => x.at), reviewEnd(game), vs, (g, deep) => latest.current.ask(g, deep ? CONFIRM_QUERY : MINE_QUERY), () => freeRef.current, Date.now())
+      if (!valid()) return null
+      return mineGame(game, (rv?.moments ?? []).map(x => x.at), reviewEnd(game), vs, (g, deep) => latest.current.ask(g, deep ? CONFIRM_QUERY : MINE_QUERY), () => freeRef.current && valid(), Date.now())
     })
     scanRun.current = run
     run.then(xs => {
       busy.current = false
-      if (!xs) return // interrupted: read again from the start when the engine is free
+      if (!xs || !valid()) { bump(); return } // interrupted or deleted: never admit late results
       m.current = markDone(m.current, e.id)
       keep(xs, Date.now())
       bump()

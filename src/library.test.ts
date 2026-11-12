@@ -6,7 +6,8 @@ const host = vi.hoisted(() => ({ log: [] as string[], answer: (_cmd: string, _ar
 vi.mock('./katago', () => ({
   call: vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
     host.log.push(cmd === 'library_write' || cmd === 'library_delete' ? `${cmd} ${args?.id}` : cmd)
-    return host.answer(cmd, args)
+    const answer = await host.answer(cmd, args)
+    return cmd === 'library_admit' && answer === undefined ? true : answer
   }),
 }))
 
@@ -69,13 +70,51 @@ describe('the store', () => {
     expect(ids(lib.get())).toEqual(['b', 'a'])
   })
 
-  it('remove takes the entry out of the store at once', async () => {
+  it('remove keeps the entry until the native deletion succeeds', async () => {
     host.answer = cmd => cmd === 'library_list' ? [entry('b', 2), entry('a', 1)] : undefined
     await lib.load()
     const done = lib.remove('b')
-    expect(ids(lib.get())).toEqual(['a'])
+    expect(ids(lib.get())).toEqual(['b', 'a'])
     await done
+    expect(ids(lib.get())).toEqual(['a'])
     expect(host.log).toEqual(['library_list', 'library_delete b'])
+  })
+
+  it('a failed deletion retains the entry, rejects and allows retry', async () => {
+    host.answer = cmd => { if (cmd === 'library_list') return [entry('g', 1)]; if (cmd === 'library_delete') throw new Error('disk full') }
+    await lib.load()
+    const oldJob = lib.guard('g'), cancelled = vi.fn(), off = lib.onDelete(cancelled)
+    await expect(lib.remove('g')).rejects.toThrow('disk full')
+    expect(ids(lib.get())).toEqual(['g'])
+    expect(lib.writable('g')).toBe(true)
+    expect(oldJob()).toBe(false)
+    expect(cancelled).toHaveBeenCalledWith('g', 'start')
+    expect(cancelled).toHaveBeenCalledWith('g', 'failed')
+    host.answer = () => undefined
+    await lib.remove('g')
+    expect(lib.get()).toEqual([])
+    off()
+  })
+
+  it('suppresses delayed SGFs, reviews, patches and current pointers after deletion', async () => {
+    host.answer = cmd => cmd === 'library_list' ? [entry('g', 1)] : undefined
+    await lib.load()
+    const live = lib.guard('g')
+    await lib.remove('g')
+    await Promise.all([lib.write('g', '(;)', entry('g', 2)), lib.setSidecar('g', 'review', {}), lib.patch('g', { counted: 4 }), lib.setCurrent({ id: 'g' } as never)])
+    expect(live()).toBe(false)
+    expect(host.log).toEqual(['library_list', 'library_delete g'])
+    expect(lib.get()).toEqual([])
+  })
+
+  it('joins concurrent deletes and prevents writes while the native delete is pending', async () => {
+    const slow = deferred()
+    host.answer = cmd => cmd === 'library_delete' ? slow.p : undefined
+    const a = lib.remove('g'), b = lib.remove('g')
+    expect(a).toBe(b)
+    await lib.write('g', '(;)', entry('g', 1))
+    slow.open(); await a
+    expect(host.log).toEqual(['library_delete g'])
   })
 
   it('a write before the index is loaded neither hides the index nor gets lost', async () => {
@@ -181,6 +220,103 @@ describe('a game and its entry', () => {
     expect(await lib.keep(await game('(;SZ[19];B[pd])'), 'ogs', -1, { ogsId: 42 })).toBe('ogs-42')
     expect(lib.get()?.[0]).toMatchObject({ id: 'ogs-42', ogsId: 42, me: -1 })
   })
+
+  it('allows an explicit OGS reimport but neither the old board nor its late analysis can resurrect it', async () => {
+    host.answer = cmd => cmd === 'library_list' ? [] : undefined
+    const sgf = '(;SZ[9];B[ee])', old = await game(sgf)
+    const id = await lib.keep(old, 'ogs', 1, { ogsId: 42 }), late = lib.guard(id)
+    await lib.remove(id)
+    await lib.keep(await game(sgf), 'ogs', 1, { ogsId: 42 }, false)
+    expect(lib.get()).toEqual([]) // a duplicate ended-game notification is not an explicit import
+    const fresh = await game(sgf)
+    await lib.keep(fresh, 'ogs', 1, { ogsId: 42 })
+    expect(lib.active(fresh)).toBe(true)
+    expect(lib.active(old)).toBe(false)
+    expect(late()).toBe(false)
+    await lib.rewrite(old, 'ogs', 1)
+    expect(host.log.filter(x => x === 'library_write ogs-42')).toHaveLength(2)
+    expect(lib.get()).toHaveLength(1)
+  })
+
+  it('keeps a replayed ended notification suppressed across restart until explicit reimport', async () => {
+    const disk = new Map<string, Entry>(), deleted = new Set<string>(), sidecars = new Set<string>()
+    host.answer = (cmd, a) => {
+      const id = a?.id as string
+      if (cmd === 'library_list') return [...disk.values()]
+      if (cmd === 'library_admit') { if (a?.reimport) deleted.delete(id); return !deleted.has(id) }
+      if (cmd === 'library_write' && a?.entry) disk.set(id, a.entry as Entry)
+      if (cmd === 'library_delete') { disk.delete(id); deleted.add(id) }
+      if (cmd === 'library_sidecar_write') sidecars.add(id)
+    }
+    const sgf = '(;SZ[9]RE[W+R];B[ee])', original = await game(sgf)
+    const id = await lib.keep(original, 'ogs', 1, { ogsId: 42 }), oldJob = lib.guard(id)
+    await lib.remove(id)
+    vi.resetModules()
+    lib = await import('./library') // process RAM reset; native opt-outs survive
+    const { notificationNotice } = await import('./ogs')
+    const now = Date.now(), notice = notificationNotice({ id: 'replayed', type: 'gameEnded', game_id: 42,
+      timestamp: (now - 60_000) / 1000, outcome: 'Resignation', black_lost: true }, now, new Set())
+    expect(notice?.kind).toBe('ended')
+    const jobs: string[] = [], replayed = await game(sgf)
+    await lib.keep(replayed, 'ogs', 1, { ogsId: 42 }, false)
+    if (lib.active(replayed)) jobs.push(id) // App awaits keep/admission before enqueue
+    await lib.setSidecar(id, 'review', {})
+    expect([disk.size, sidecars.size, jobs.length]).toEqual([0, 0, 0])
+    expect(host.log.filter(x => x === `library_write ${id}`)).toHaveLength(1)
+    const fresh = await game(sgf)
+    await lib.keep(fresh, 'ogs', 1, { ogsId: 42 }, true)
+    expect(disk.size).toBe(1)
+    expect(lib.active(fresh)).toBe(true)
+    expect(lib.active(replayed)).toBe(false)
+    expect(oldJob()).toBe(false)
+    await lib.rewrite(replayed, 'ogs', 1)
+    expect(host.log.filter(x => x === `library_write ${id}`)).toHaveLength(2)
+  })
+
+  it('does not admit or enqueue an automatic copy while the native tombstone read is pending or fails', async () => {
+    const pending = deferred()
+    host.answer = cmd => cmd === 'library_admit' ? pending.p : cmd === 'library_list' ? [] : undefined
+    const g = await game('(;SZ[9]RE[W+R];B[ee])'), jobs: string[] = []
+    const kept = lib.keep(g, 'ogs', 1, { ogsId: 42 }, false).then(id => { if (lib.active(g)) jobs.push(id) })
+    await Promise.resolve()
+    expect(lib.active(g)).toBe(false)
+    expect(jobs).toEqual([])
+    expect(host.log).not.toContain('library_write ogs-42')
+    pending.fail(new Error('tombstone read failed'))
+    await expect(kept).rejects.toThrow('tombstone read failed')
+    expect(lib.active(g)).toBe(false)
+    expect(jobs).toEqual([])
+    expect(host.log).not.toContain('library_write ogs-42')
+  })
+
+  it('serializes a delayed automatic refusal before an explicit reimport without reblocking the new copy', async () => {
+    let deny!: (allowed: boolean) => void
+    const late = new Promise<boolean>(ok => { deny = ok })
+    host.answer = (cmd, a) => cmd === 'library_admit' ? a?.reimport ? true : late : cmd === 'library_list' ? [] : undefined
+    const old = await game('(;SZ[9];B[ee])'), fresh = await game('(;SZ[9];B[ee])')
+    const oldWork = lib.guard('ogs-42')
+    const automatic = lib.keep(old, 'ogs', 1, { ogsId: 42 }, false)
+    await vi.waitFor(() => expect(host.log).toContain('library_admit'))
+    const explicit = lib.keep(fresh, 'ogs', 1, { ogsId: 42 }, true)
+    const freshWork = lib.guard('ogs-42')
+    deny(false)
+    await Promise.all([automatic, explicit])
+    expect(lib.writable('ogs-42')).toBe(true)
+    expect(lib.active(fresh)).toBe(true)
+    expect(lib.active(old)).toBe(false)
+    expect(oldWork()).toBe(false)
+    expect(freshWork()).toBe(true)
+    expect(lib.get()).toHaveLength(1)
+    expect(host.log.filter(x => x === 'library_write ogs-42')).toHaveLength(1)
+  })
+
+  it('rolls back an optimistic entry when native writing refuses it', async () => {
+    host.answer = cmd => { if (cmd === 'library_list') return []; if (cmd === 'library_write') throw new Error('native tombstone refused write') }
+    const g = await game('(;SZ[9];B[ee])')
+    await expect(lib.keep(g, 'ogs', 1, { ogsId: 42 }, false)).rejects.toThrow('native tombstone refused write')
+    expect(lib.get()).toEqual([])
+    expect(lib.active(g)).toBe(false)
+  })
 })
 
 describe('the review sidecar', () => {
@@ -203,6 +339,18 @@ describe('the review sidecar', () => {
   const facts = Array.from({ length: 300 }, (_, i) => ({ sac: i % 50 ? 0 : 3, book: i < 8 }))
   const map = Array.from({ length: 361 }, (_, i) => Math.sin(i))
   const moments = [10, 100, 200].map(at => ({ at, sign: 1 as const, loss: 5.4321, lead: -3.21, punish: pos[0].pv, better: pos[1].pv, lost: map, kept: map }))
+
+  it('ignores a review whose pending library id resolves after deletion and reimport', async () => {
+    const cur = await import('./current'), sgf = await import('./sgf')
+    const id = await lib.keep(sgf.loadSgf(STORED), 'ogs', 1, { ogsId: 42 })
+    const valid = lib.guard(id), pending = deferred()
+    const review = cur.noteReview(pending.p.then(() => id), pos, moments, facts, { key: await keyOf(STORED), side: 1 }, valid)
+    await lib.remove(id)
+    await lib.keep(sgf.loadSgf(STORED), 'ogs', 1, { ogsId: 42 })
+    pending.open(); await review
+    expect(host.log).not.toContain('library_sidecar_write')
+    expect(lib.get()?.find(e => e.id === id)?.review).toBeUndefined()
+  })
 
   it('writes v2 (positions, facts, moments, leads for older readers) and reads it back; fits the 2 MB cap', async () => {
     const cur = await import('./current')

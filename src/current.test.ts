@@ -91,6 +91,17 @@ describe('the writer', () => {
     k.changed(() => shown(new Game({ size: 19 })))
     expect([o.write.mock.calls.length, o.setCurrent.mock.calls.length, library.idOf(g)]).toEqual([0, 0, undefined])
   })
+
+  it('forgets a deleted game before its debounce, pagehide and board replacement can save it', () => {
+    const o = out(), k = keeper(o), g = local(new Game({ size: 9 }))
+    g.play([2, 2]); k.changed(() => shown(g))
+    k.forget(library.idOf(g)!)
+    vi.advanceTimersByTime(1000)
+    k.close()
+    k.changed(() => shown(new Game({ size: 9 }), { bot: null }))
+    expect(o.write).not.toHaveBeenCalled()
+    expect(o.setCurrent.mock.calls.every(([c]) => c === null)).toBe(true)
+  })
 })
 
 describe('restoring', () => {

@@ -8,6 +8,7 @@ import { call } from './katago'
 import type { Reading } from './rank'
 import type { Moment } from './review'
 import { saveSgf } from './sgf'
+import { LocalizedError } from './i18n'
 
 export type Source = 'ai' | 'two' | 'ogs' | 'file' | 'position'
 export interface Side { name: string; rank: string }
@@ -73,25 +74,52 @@ export async function reviewData(id: string, size: number): Promise<ReviewData |
 let queue: Promise<unknown> = Promise.resolve()
 const queued = <T>(f: () => Promise<T>): Promise<T> => { const r = queue.catch(() => {}).then(f); queue = r; return r }
 
+// A deletion invalidates work already running, even if it fails or the same OGS game is imported again later.
+const epochs = new Map<string, number>(), incarnations = new Map<string, number>()
+const blocked = new Set<string>(), removing = new Map<string, Promise<void>>()
+type DeletePhase = 'start' | 'failed'
+const deletions = new Set<(id: string, phase: DeletePhase) => void>()
+export const onDelete = (f: (id: string, phase: DeletePhase) => void) => { deletions.add(f); return () => { deletions.delete(f) } }
+export const writable = (id: string) => !blocked.has(id)
+export const guard = (id?: string): (() => boolean) => {
+  const epoch = id ? epochs.get(id) : undefined
+  return () => !id || writable(id) && epochs.get(id) === epoch
+}
+
 /** The game's SGF (null: unchanged) and its entry (null: unchanged); the entry also updates the store at once. */
 export function write(id: string, sgf: string | null, entry: Entry | null): Promise<void> {
+  if (!writable(id)) return Promise.resolve()
+  const previous = entries?.find(e => e.id === id) ?? early.get(id) ?? null
   if (entry) change(id, entry)
-  return queued(() => call<void>('library_write', { id, sgf, entry }))
+  return queued(() => call<void>('library_write', { id, sgf, entry })).catch(e => {
+    if (entry && (entries ? entries.find(x => x.id === id) === entry : early.get(id) === entry)) change(id, previous)
+    throw e
+  })
 }
 /** Merges fields into a stored entry (memory score, counted, rankRead…), loading the index first if needed; unknown ids are ignored. */
 export function patch(id: string, p: Partial<Omit<Entry, 'id'>>): Promise<void> {
-  if (!entries) return load().then(() => patch(id, p))
+  const live = guard(id)
+  if (!entries) return load().then(() => { if (live()) return patch(id, p) })
   const e = entries.find(x => x.id === id)
   return e ? write(id, null, { ...e, ...p }) : Promise.resolve()
 }
 export function remove(id: string): Promise<void> {
-  change(id, null)
-  return queued(() => call<void>('library_delete', { id }))
+  const pending = removing.get(id)
+  if (pending) return pending
+  blocked.add(id)
+  epochs.set(id, (epochs.get(id) ?? 0) + 1)
+  deletions.forEach(f => f(id, 'start'))
+  const done = queued(() => call<void>('library_delete', { id })).then(() => {
+    incarnations.set(id, (incarnations.get(id) ?? 0) + 1)
+    change(id, null)
+  }, e => { blocked.delete(id); deletions.forEach(f => f(id, 'failed')); throw e }).finally(() => { removing.delete(id) })
+  removing.set(id, done)
+  return done
 }
 /** The stored SGF, read after the writes queued before it (a game just kept or saved). */
 export const readQueued = (id: string) => queued(() => read(id))
-export const setSidecar = (id: string, name: string, json: unknown) => queued(() => call<void>('library_sidecar_write', { id, name, json }))
-export const setCurrent = (c: Current | null) => queued(() => call<void>('library_current_write', { json: c }))
+export const setSidecar = (id: string, name: string, json: unknown) => writable(id) ? queued(() => call<void>('library_sidecar_write', { id, name, json })) : Promise.resolve()
+export const setCurrent = (c: Current | null) => !c || writable(c.id) ? queued(() => call<void>('library_current_write', { json: c })) : Promise.resolve()
 
 // ---------- the store (for useSyncExternalStore) ----------
 let entries: Entry[] | null = null // null: not loaded yet
@@ -126,10 +154,15 @@ export function newId(source: Source, o: { ogsId?: number; hash?: string; now?: 
 
 // ---------- a game and its entry ----------
 const ids = new WeakMap<Game, string>()
+const boundAt = new WeakMap<Game, number>()
+const rejected = new WeakSet<Game>() // a denied automatic copy stays invalid even after a later explicit import
+const admitting = new WeakSet<Game>()
 /** The id a shown game is kept under in the library, once it entered it. */
 export const idOf = (g: Game) => ids.get(g)
 /** Ties a game to its library id (a game opened from the library, a local game given its id at its first move). */
-export const bind = (g: Game, id: string) => { ids.set(g, id) }
+export const bind = (g: Game, id: string) => { ids.set(g, id); boundAt.set(g, incarnations.get(id) ?? 0) }
+/** An old board cannot resurrect a deleted record, including after an explicit reimport of the same id. */
+export const active = (g: Game) => { const id = ids.get(g); return !rejected.has(g) && !admitting.has(g) && (!id || writable(id) && boundAt.get(g) === (incarnations.get(id) ?? 0)) }
 
 /** An entry for a game, from its info and its SGF root properties (BR/WR ranks, HA, DT); `o` sets or overrides the rest. */
 export function entryOf(g: Game, o: { id: string; source: Source; me: Sign | 0 } & Partial<Entry>): Entry {
@@ -148,13 +181,37 @@ export function entryOf(g: Game, o: { id: string; source: Source; me: Sign | 0 }
  * Keeps a game in the library once — a file reviewed, replayed from memory or guessed, an OGS game imported — and
  * returns its id. A file is keyed by its content, so opening the same file again finds the same entry.
  */
-export async function keep(g: Game, source: Source, me: Sign | 0, extra: Partial<Entry> = {}): Promise<string> {
+export async function keep(g: Game, source: Source, me: Sign | 0, extra: Partial<Entry> = {}, reimport = true): Promise<string> {
   const known = ids.get(g)
   if (known) return known
   const sgf = saveSgf(g), id = newId(source, { ogsId: extra.ogsId, hash: source === 'file' ? hash64(sgf) : undefined })
-  ids.set(g, id)
+  if (!reimport && blocked.has(id)) { bind(g, id); rejected.add(g); return id }
+  if (removing.has(id)) throw new LocalizedError(d => d.gamesDeleting)
+  // Invalidate older work before binding the explicit new board, so its own review captures the new generation.
+  if (source === 'ogs' && reimport) epochs.set(id, (epochs.get(id) ?? 0) + 1)
+  const epoch = epochs.get(id)
+  bind(g, id)
+  if (source === 'ogs') {
+    admitting.add(g)
+    let admitted: boolean
+    try { admitted = await queued(async () => {
+      if (epochs.get(id) !== epoch || removing.has(id)) return false
+      const allowed = await call<boolean>('library_admit', { id, reimport })
+      if (epochs.get(id) !== epoch || removing.has(id)) return false
+      if (allowed !== true) { blocked.add(id); return false }
+      blocked.delete(id)
+      return true
+    }) }
+    catch (e) { admitting.delete(g); rejected.add(g); throw e }
+    if (!admitted) { admitting.delete(g); rejected.add(g); return id }
+  }
+  else blocked.delete(id) // a new Game object is an explicit import; an already bound board never gets here
+  const live = guard(id)
   const xs = await load().catch(() => null)
-  if (!xs?.some(e => e.id === id)) await write(id, sgf, entryOf(g, { id, source, me, ...source === 'file' && { added: Date.now() }, ...extra }))
+  try {
+    if (live() && !xs?.some(e => e.id === id)) await write(id, sgf, entryOf(g, { id, source, me, ...source === 'file' && { added: Date.now() }, ...extra }))
+  } catch (e) { rejected.add(g); throw e }
+  finally { admitting.delete(g) }
   return id
 }
 
@@ -162,7 +219,8 @@ export async function keep(g: Game, source: Source, me: Sign | 0, extra: Partial
 export async function rewrite(g: Game, source: Source, me: Sign | 0): Promise<string> {
   const id = ids.get(g)
   if (!id) return keep(g, source, me)
+  const live = guard(id)
   const prev = (await load().catch(() => null))?.find(e => e.id === id)
-  await write(id, saveSgf(g), { ...prev, ...entryOf(g, { id, source, me, ...prev && { date: prev.date } }) })
+  if (live() && active(g)) await write(id, saveSgf(g), { ...prev, ...entryOf(g, { id, source, me, ...prev && { date: prev.date } }) })
   return id
 }

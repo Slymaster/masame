@@ -10,6 +10,7 @@ import { isMobile, shortcut } from './platform' // OGS on phones: v1.1
 import { rankName } from './rank'
 import { Seg } from './Seg'
 import { Sheet } from './Sheet'
+import { askFirst } from './files'
 
 const H = 3600_000, D = 24 * H
 
@@ -59,17 +60,26 @@ export const badges = (e: Entry): string[] => [
 const who = (p: { name: string; rank: string }, sign: 1 | -1) =>
   <span key={sign} className="who"><span className="nm">{p.name || t.color(sign)}</span>{p.rank && !p.name.endsWith(p.rank) && <span className="rk">{p.rank}</span>}</span>
 
-export function GamesSheet({ onClose, opener, onResume, onOpen, onImport, onImportOgs }: {
+export function GamesSheet({ onClose, opener, onResume, onOpen, onImport, onImportOgs, onDelete }: {
   onClose: () => void; opener: HTMLElement | null
   onResume: (id: number) => void // an ongoing OGS game
   onOpen: (e: Entry) => void // a library game, shown on the board
   onImport: () => void // Import an SGF…
   onImportOgs: (id: number) => void // a finished OGS game not in the library yet
+  onDelete: (e: Entry) => Promise<void>
 }) {
   const active = useSyncExternalStore(ogs.active.subscribe, ogs.active.get)
   const searches = useSyncExternalStore(ogs.searches.subscribe, ogs.searches.get)
   const entries = useSyncExternalStore(library.subscribe, library.get)
   const [error, setError] = useState<unknown>(null)
+  const [deleting, setDeleting] = useState<string | null>(null), [deleteError, setDeleteError] = useState<unknown>(null)
+  const erase = async (e: Entry) => {
+    if (deleting) return
+    setDeleting(e.id); setDeleteError(null)
+    try { if (await askFirst(t.gamesDeleteAsk, t.gamesDelete)) await onDelete(e) }
+    catch (err) { setDeleteError(err) }
+    finally { setDeleting(null) }
+  }
   const [filter, setFilter] = useState<Filter>('all'), [q, setQ] = useState(''), [pages, setPages] = useState(1)
   useEffect(() => { if (inTauri()) library.load().catch(setError) }, [])
   // OGS filter: the finished OGS games, 20 a page, fetched only when asked for
@@ -114,19 +124,23 @@ export function GamesSheet({ onClose, opener, onResume, onOpen, onImport, onImpo
           <Seg label={t.gamesFilterLabel} value={filter} options={FILTERS.filter(f => !isMobile || f !== 'ogs').map(f => [f, t.gamesFilters[f]])} set={f => { setFilter(f); setPages(1) }} />
           <input className="ogs-input" type="search" value={q} onChange={e => { setQ(e.target.value); setPages(1) }} placeholder={t.gamesSearch} aria-label={t.gamesSearch}
             autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} />
+          {!!deleteError && <p className="say err" role="alert">{failureText(deleteError)}</p>}
           {error ? <p className="say err" role="alert">{failureText(error)}</p>
             : !page ? <p className="say">{t.gamesLoading}</p>
             : !page.rows.length ? <p className="say">{entries!.length ? t.gamesNoMatch : t.gamesEmpty}</p>
             : <ul className="lib">
               {page.rows.map(e => {
                 const bs = badges(e)
-                return <li key={e.id}><button className="lib-row" onClick={() => onOpen(e)}>
+                return <li key={e.id} className="lib-item"><button className="lib-row" disabled={deleting === e.id} onClick={() => onOpen(e)}>
                   <span className="lib-top">
                     <span className="lib-who">{e.me ? who(opponents(e)[0], e.me === 1 ? -1 : 1) : <>{who(e.black, 1)}<span className="vs">·</span>{who(e.white, -1)}</>}</span>
                     <span className="lib-res">{outcome(e)}</span>
                   </span>
                   <span className="lib-sub">{[t.date(e.date), `${e.size}×${e.size}`, e.rankRead && t.lbPlayedLike(rankName(e.rankRead.all))].filter(Boolean).join(' · ')}</span>
                   {bs.length > 0 && <span className="lib-badges">{bs.map(b => <i key={b}>{b}</i>)}</span>}
+                </button><button className="link lib-delete" disabled={!!deleting} onClick={() => void erase(e)}
+                  aria-label={t.gamesDeleteLabel(`${opponents(e).map(p => p.name || t.color(e.me || 1)).join(' / ')} · ${t.date(e.date)}`)}>
+                  {deleting === e.id ? t.gamesDeleting : t.gamesDelete}
                 </button></li>
               })}
             </ul>}
