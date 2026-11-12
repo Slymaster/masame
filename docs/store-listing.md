@@ -2,7 +2,7 @@
 
 Tout ce que demandent App Store Connect et la Play Console pour Masame 0.5.0 sur iPhone et Android, prêt à coller. Chaque champ limité donne son nombre de caractères (espaces compris, comptés comme les consoles : un caractère accentué ou « × » compte pour un).
 
-Ce que contient la version téléphone, pour vérifier chaque phrase : jouer contre KataGo à ton niveau (réseau humain calibré par rang, Maîtres d'une époque, mentor), revue de chaque partie, Apprendre (rituel du jour, exercices tirés de tes parties avec répétition espacée, tsumego, compter, joseki, fuseki, rejouer de mémoire, les Classiques), Mes parties, import/export SGF, français et anglais, goban 2D. KataGo tourne sur le téléphone (iPhone : Neural Engine ; Android : processeur) après un téléchargement unique de deux réseaux depuis katagotraining.org (iPhone : Humain 99 Mo + Rapide 98 Mo ; Android : Humain 99 Mo + Rapide 14 Mo). Pas encore sur téléphone : OGS (jeu en ligne, connexion) et le goban 3D. Pas de compte, pas de publicité, pas de statistiques d'usage, pas d'achat intégré.
+Ce que contient la version téléphone, pour vérifier chaque phrase : jouer contre KataGo à ton niveau (réseau humain calibré par rang, Maîtres d'une époque, mentor), revue de chaque partie, Apprendre (rituel du jour, exercices tirés de tes parties avec répétition espacée, tsumego, compter, joseki, fuseki, rejouer de mémoire, les Classiques), Mes parties, import/export SGF, français et anglais, goban 2D. KataGo tourne sur le téléphone (iPhone : Neural Engine ; Android : processeur) après un téléchargement unique de deux réseaux depuis katagotraining.org (iPhone : Humain 99 Mo + Rapide 98 Mo ; Android : Humain 99 Mo + Rapide 14 Mo). OGS est facultatif sur téléphone comme sur ordinateur : parties classées, défis, observation et correspondance au premier plan. Le goban 3D reste réservé au bureau. Pas de compte Masame, pas de publicité, pas de statistiques d'usage, pas d'achat intégré.
 
 URL de la politique de confidentialité, pour les deux stores : **https://github.com/Slymaster/masame/blob/main/PRIVACY.md**. Elle ne répond qu'une fois develop fusionné dans main ; d'ici là, https://github.com/Slymaster/masame/blob/develop/PRIVACY.md fonctionne (à remplacer par l'adresse `main` à la release). Adresse de contact publique, dans PRIVACY.md et ici : `sylvain@guarani-llc.com`.
 
@@ -16,7 +16,7 @@ Langues de la fiche : **anglais (U.S.)** comme langue principale, et **français
 
 ### Informations sur l'app
 
-**Nom** (limite 30) — EN (6 caractères)
+**Nom** (limite 30) : EN (6 caractères)
 
 ```
 Masame
@@ -28,7 +28,7 @@ FR (6 caractères)
 Masame
 ```
 
-Si « Masame » est déjà pris sur l'App Store (le nom doit être unique), repli — EN (9 caractères)
+Si « Masame » est déjà pris sur l'App Store (le nom doit être unique), repli : EN (9 caractères)
 
 ```
 Masame Go
@@ -42,7 +42,7 @@ Masame: Go, Baduk, Weiqi
 
 Le nom affiché sous l'icône reste « Masame » (CFBundleDisplayName) quel que soit le nom de la fiche.
 
-**Sous-titre** (limite 30) — EN (20 caractères)
+**Sous-titre** (limite 30) : EN (20 caractères)
 
 ```
 Learn Go with KataGo
@@ -76,10 +76,10 @@ Gratuit, tous les pays. Pas d'achat intégré.
 
 ### Version 0.5.0
 
-**Texte promotionnel** (limite 170, modifiable sans nouvelle version) — EN (169 caractères)
+**Texte promotionnel** (limite 170, modifiable sans nouvelle version) : EN (169 caractères)
 
 ```
-KataGo plays you at your rank, shows where your points went and turns your mistakes into exercises. Joseki, fuseki, tsumego, the Edo classics. Offline, free, no account.
+KataGo plays you at your rank, shows where your points went and turns your mistakes into exercises. Joseki, fuseki, tsumego, the Edo classics. Offline play is free without an account; online OGS is optional.
 ```
 
 FR (168 caractères)
@@ -88,7 +88,7 @@ FR (168 caractères)
 KataGo joue à ton niveau, te montre où filent tes points et fait de tes erreurs des exercices. Joseki, fuseki, tsumego, parties d'Edo. Hors ligne, gratuit, sans compte.
 ```
 
-**Description** (limite 4000) — EN (2708 caractères)
+**Description** (limite 4000) : EN (2708 caractères)
 
 ```
 Masame is a Go board and a teacher. Across the goban sits KataGo, the open-source Go engine, playing not like a machine but like a human of the rank you choose, from 20 kyu to 9 dan. After each game it shows you where your points went, and your own mistakes come back as exercises.
@@ -124,7 +124,7 @@ The board is drawn with the grain of kaya, slate and shell stones. In English an
 
 No account, no ads, no tracking, no in-app purchases. Your games stay on your phone. Masame is free and open source (MIT licence): github.com/Slymaster/masame
 
-Not yet on iPhone: online play on OGS and the 3D board. Both are in the desktop version of Masame, for macOS, Windows and Linux.
+Optional online play on OGS: ranked games, challenges, watching and correspondence, with secure browser sign-in. The 3D board remains desktop-only. Phone notifications are not available while the app is closed.
 ```
 
 FR (3048 caractères)
@@ -163,10 +163,10 @@ Le goban porte le veinage du kaya, avec des pierres d'ardoise et de coquillage. 
 
 Pas de compte, pas de publicité, pas de pistage, pas d'achat intégré. Tes parties restent sur ton téléphone. Masame est gratuit et open source (licence MIT) : github.com/Slymaster/masame
 
-Pas encore sur iPhone : le jeu en ligne sur OGS et le goban 3D. Les deux sont dans la version ordinateur de Masame, pour macOS, Windows et Linux.
+Le jeu en ligne OGS est facultatif : parties classées, défis, observation et correspondance, avec connexion sécurisée dans le navigateur. Le goban 3D reste sur ordinateur. Pas de notifications lorsque l’app téléphone est fermée.
 ```
 
-**Mots-clés** (limite 100, séparés par des virgules sans espace ; Apple indexe déjà le nom et le sous-titre, donc ni « Masame », « Go », « KataGo », « learn » ni « apprends » ici) — EN (93 caractères)
+**Mots-clés** (limite 100, séparés par des virgules sans espace ; Apple indexe déjà le nom et le sous-titre, donc ni « Masame », « Go », « KataGo », « learn » ni « apprends » ici) : EN (93 caractères)
 
 ```
 baduk,weiqi,igo,tsumego,joseki,fuseki,goban,sgf,AI,board,game,strategy,kyu,dan,review,offline
@@ -178,16 +178,16 @@ FR (99 caractères)
 baduk,weiqi,igo,tsumego,joseki,fuseki,goban,sgf,IA,jeu,plateau,stratégie,kyu,dan,analyse,hors ligne
 ```
 
-**Nouveautés de cette version** (limite 4000) — EN (276 caractères)
+**Nouveautés de cette version** (limite 4000) : EN (276 caractères)
 
 ```
-The first version of Masame for iPhone. Play KataGo at your level, see the review of every game, learn with the daily ritual, the trainers and the Classics, and keep your games on your phone, on the kaya board. Online play on OGS and the 3D board will come in a later version.
+The first version of Masame for iPhone. Play KataGo at your level, see the review of every game, learn with the daily ritual, the trainers and the Classics, and keep your games on your phone, on the kaya board. This release adds optional online play on OGS while the app is visible. The 3D board remains desktop-only.
 ```
 
 FR (320 caractères)
 
 ```
-La première version de Masame pour iPhone. Joue contre KataGo à ton niveau, retrouve la revue de chaque partie, apprends avec le rituel du jour, les entraînements et les Classiques, et garde tes parties sur ton téléphone, sur le goban en kaya. Le jeu en ligne sur OGS et le goban 3D viendront dans une prochaine version.
+La première version de Masame pour iPhone. Joue contre KataGo à ton niveau, retrouve la revue de chaque partie, apprends avec le rituel du jour, les entraînements et les Classiques, et garde tes parties sur ton téléphone, sur le goban en kaya. Cette version ajoute OGS au premier plan. Le goban 3D reste réservé à l’ordinateur.
 ```
 
 **URL d'assistance** :
@@ -228,28 +228,30 @@ Réponds **Aucun / None** ou **Non / No** partout :
 
 Résultat attendu : **4+**. Ne coche pas « Made for Kids » (catégorie Enfants) : l'app convient à tous, mais la catégorie Enfants impose des règles (pas de liens sortants sans contrôle parental, entre autres) que Masame ne vise pas.
 
-### Confidentialité de l'app (App Privacy) → « Données non collectées »
+### Confidentialité de l'app avec OGS
 
-À la question « Do you or your third-party partners collect data from this app? », réponds **No, we do not collect data from this app**. La fiche affichera « Data Not Collected / Données non collectées ».
+Ne pas reconduire la réponse « Données non collectées » de la première version hors ligne. OGS reçoit les identifiants
+de compte et d'installation, les actions et le contenu des parties en ligne. Déclarer **User ID**, **Device ID** et
+**Gameplay Content**, liés au compte et utilisés pour **App Functionality**, sans tracking, publicité ni analytics.
+Le manifeste `PrivacyInfo.xcprivacy` reflète ces catégories. Vérifier les pratiques OGS et l'hôte callback avant la soumission.
 
-Pourquoi c'est exact, au sens d'Apple (« collecter » = transmettre des données hors de l'appareil d'une façon qui permet au développeur ou à ses partenaires d'y accéder au-delà du temps nécessaire pour répondre à la requête) :
+Le mot de passe reste dans le navigateur système chez OGS ; le refresh token reste dans le Keychain iOS ou le coffre
+Android Keystore. L'hôte HTTPS du callback ne reçoit qu'un code à usage unique protégé par PKCE et son state.
+Le jeu local reste utilisable sans compte. Pas de chat intégré et pas de push lorsque l'app téléphone est fermée.
 
-- Masame n'a ni serveur, ni compte, ni statistiques d'usage, ni rapports de plantage, ni SDK tiers de publicité ou de mesure.
-- Ses seules requêtes réseau sur iPhone vont à katagotraining.org : lire la liste des réseaux et les télécharger. Elles n'envoient aucune donnée de l'utilisateur ; l'adresse IP n'est vue que pour servir le fichier, comme pour tout téléchargement.
-- Parties, réglages et progression restent sur l'appareil (la sauvegarde iCloud de l'utilisateur est faite par Apple, sous son compte, pas par Masame).
-- Pas de suivi (tracking) : pas d'identifiant publicitaire, donc pas de demande App Tracking Transparency.
-- Le manifeste de confidentialité de l'app (`PrivacyInfo.xcprivacy`) ne déclare que les API à raison requise (horodatage de fichiers), aucune donnée collectée.
+Références à revalider à la release : [déclarations Apple](https://developer.apple.com/app-store/app-privacy-details/),
+[Data safety Google Play](https://support.google.com/googleplay/android-developer/answer/10787469).
 
 ### Conformité à l'export (chiffrement)
 
-Déjà déclarée dans l'Info.plist : `ITSAppUsesNonExemptEncryption = false`. App Store Connect ne pose donc plus la question à chaque build. Pourquoi c'est exact : sur iPhone, Masame n'utilise que le chiffrement fourni par iOS, pour le HTTPS des téléchargements (le client réseau passe par le TLS d'Apple, `native-tls`, et non par une bibliothèque de chiffrement embarquée). Le seul autre calcul cryptographique est un sha256 qui vérifie l'intégrité des réseaux téléchargés : un hachage n'est pas du chiffrement de données. Un usage limité au chiffrement du système est exempté, et la France ne demande alors pas de déclaration à l'ANSSI. Si un jour l'app embarque son propre chiffrement (rustls, par exemple), il faudra revoir cette réponse.
+Déjà déclarée dans l'Info.plist : `ITSAppUsesNonExemptEncryption = false`. App Store Connect ne pose donc plus la question à chaque build. Pourquoi c'est exact : sur iPhone, Masame n'utilise que le chiffrement fourni par iOS, pour le HTTPS des téléchargements (le client réseau passe par le TLS d'Apple, `native-tls`, et non par une bibliothèque de chiffrement embarquée). Les tokens sont protégés par le Keychain du système ; PKCE et les téléchargements utilisent SHA-256, un hachage plutôt qu’un chiffrement de données. Un usage limité au chiffrement du système est exempté, et la France ne demande alors pas de déclaration à l'ANSSI. Si un jour l'app embarque son propre chiffrement (rustls, par exemple), il faudra revoir cette réponse.
 
 ### Notes pour l'App Review (en anglais)
 
-Informations de connexion : **aucune connexion requise** (décocher « Sign-in required »). Coordonnées : ton nom, ton téléphone, `sylvain@guarani-llc.com`.
+Informations de connexion : jeu local sans compte ; OGS exige un compte OGS facultatif. Pour une revue des fonctionnalités connectées, fournir un compte de test dédié dans les champs privés de review, après autorisation du propriétaire. Coordonnées : ton nom, ton téléphone, `sylvain@guarani-llc.com`.
 
 ```
-No sign-in is needed: Masame has no account.
+No sign-in is needed for local play and learning. OGS sign-in is optional for online play; Masame has no account of its own.
 
 Masame is a Go (baduk) app. Its AI opponent and its game review use KataGo, an open-source Go engine that runs on the device. KataGo needs two neural networks, which the app downloads once, on the user's request, from katagotraining.org, the official KataGo distribution site (Human 99 MB and Fast 98 MB). Please use Wi-Fi.
 
@@ -259,7 +261,7 @@ These downloads are neural-network weights, that is data read by the engine, nev
 
 Once the networks are installed: Play › New game against the AI. Each time the engine starts, it spends about 11 seconds preparing the networks for the Neural Engine ("Preparing the engine…"); the first move comes right after. After a game, the review shows its key moments. Learn holds the daily ritual, the joseki and fuseki trainers and the Classics.
 
-Online play on OGS, which the desktop version offers, is not in this iPhone version: the app makes no network request other than the network catalogue and downloads at katagotraining.org.
+Online play on OGS is optional. Play > OGS offers browser sign-in, ranked games, challenges, watching and correspondence. The system browser returns through a verified HTTPS Universal Link. No chat or phone push is included. OGS games keep running on the server while the app is suspended; the board and clock are refreshed on return. Engine help is disabled during ongoing games. Please provide a dedicated OGS review account through the store review credentials field if review requires authenticated play; no credentials belong in this document.
 
 Masame is free and open source (MIT): https://github.com/Slymaster/masame
 ```
@@ -272,7 +274,7 @@ Langue par défaut de la fiche : **anglais (États-Unis) – en-US**, avec une t
 
 ### Fiche principale du Store
 
-**Nom de l'app** (limite 30) — EN (6 caractères)
+**Nom de l'app** (limite 30) : EN (6 caractères)
 
 ```
 Masame
@@ -286,10 +288,10 @@ Masame
 
 Si Play le refuse (les noms n'y sont pas exclusifs, ça ne devrait pas arriver) : « Masame Go » (9).
 
-**Description courte** (limite 80) — EN (77 caractères)
+**Description courte** (limite 80) : EN (77 caractères)
 
 ```
-Play and learn Go (baduk) against KataGo, at your level. Offline, no account.
+Play and learn Go (baduk) against KataGo, at your level. Offline play needs no account; online OGS is optional.
 ```
 
 FR (76 caractères)
@@ -298,7 +300,7 @@ FR (76 caractères)
 Joue et apprends le go contre KataGo, à ton niveau. Hors ligne, sans compte.
 ```
 
-**Description complète** (limite 4000) — EN (2753 caractères)
+**Description complète** (limite 4000) : EN (2753 caractères)
 
 ```
 Masame is a Go board and a teacher. Across the goban sits KataGo, the open-source Go engine, playing not like a machine but like a human of the rank you choose, from 20 kyu to 9 dan. After each game it shows you where your points went, and your own mistakes come back as exercises.
@@ -334,7 +336,7 @@ The board is drawn with the grain of kaya, slate and shell stones. In English an
 
 No account, no ads, no tracking, no in-app purchases. Your games stay on your phone. Masame is free and open source (MIT licence): github.com/Slymaster/masame
 
-Not yet on Android: online play on OGS and the 3D board. Both are in the desktop version of Masame, for macOS, Windows and Linux.
+Optional online play on OGS: ranked games, challenges, watching and correspondence, with secure browser sign-in. The 3D board remains desktop-only. Phone notifications are not available while the app is closed.
 ```
 
 FR (3127 caractères)
@@ -373,7 +375,7 @@ Le goban porte le veinage du kaya, avec des pierres d'ardoise et de coquillage. 
 
 Pas de compte, pas de publicité, pas de pistage, pas d'achat intégré. Tes parties restent sur ton téléphone. Masame est gratuit et open source (licence MIT) : github.com/Slymaster/masame
 
-Pas encore sur Android : le jeu en ligne sur OGS et le goban 3D. Les deux sont dans la version ordinateur de Masame, pour macOS, Windows et Linux.
+Le jeu en ligne OGS est facultatif : parties classées, défis, observation et correspondance, avec connexion sécurisée dans le navigateur. Le goban 3D reste sur ordinateur. Pas de notifications lorsque l’app téléphone est fermée.
 ```
 
 **Éléments graphiques** : icône 512×512 (`icon-512.png`), image de présentation 1024×500 sans texte (`feature-graphic.png`, une seule pour les deux langues), 6 captures téléphone par langue (1080×2400). Voir `design/screenshots/masame-stores-0.5.0/google-play/`.
@@ -387,7 +389,10 @@ Pas encore sur Android : le jeu en ligne sur OGS et le goban 3D. Les deux sont d
 
 ### Contenu de l'app (Règles et programmes › Contenu de l'app)
 
-**Accès à l'app** : « Toutes les fonctionnalités sont disponibles sans restrictions d'accès particulières ». Rien à fournir : pas de compte. Si un champ libre est proposé : « No sign-in. The AI needs two networks that the app downloads once from katagotraining.org (Settings › Networks, or "Open networks" on the first screen, 113 MB, Wi-Fi recommended). »
+**Accès à l'app** : le jeu local et l'apprentissage sont libres d'accès ; les parties en ligne nécessitent un compte OGS
+facultatif. Déclarer cette restriction et fournir un compte de test dans les champs privés de Play Console pour la revue
+OGS, après accord du propriétaire. Ne conserver aucun mot de passe dans le dépôt. Les réseaux locaux se téléchargent
+une fois depuis Settings › Networks (113 Mo sur Android, Wi-Fi conseillé).
 
 **Annonces** : « Non, mon app ne contient pas d'annonces ».
 
@@ -396,17 +401,23 @@ Pas encore sur Android : le jeu en ligne sur OGS et le goban 3D. Les deux sont d
 - Adresse e-mail : `sylvain@guarani-llc.com`. Catégorie : **Jeu** (« Game »), pas « Divertissement » ni « Autre ».
 - Violence, peur, sexualité, langage grossier, substances contrôlées, humour grossier : **Non** partout.
 - Jeux d'argent simulés ou réels, contenu de type loterie : **Non**.
-- « Les utilisateurs peuvent-ils interagir ou échanger du contenu ? » : **Non**. Sur téléphone, dans cette version, il n'y a ni OGS, ni discussion, ni partage entre joueurs (l'export SGF passe par la feuille de partage du système, à l'initiative de l'utilisateur, ce qui ne compte pas).
+- « Les utilisateurs peuvent-ils interagir ou échanger du contenu ? » : **Oui**, via les coups et défis OGS. Il n’y a pas de chat intégré. Réévaluer la classification IARC avec ce parcours réel au lieu de reconduire la réponse de la version hors ligne.
 - Partage de la position géographique : **Non**. Achats de biens numériques : **Non**. Navigateur web ou moteur de recherche : **Non**.
 - Résultat attendu : PEGI 3, ESRB Everyone, USK 0, et l'équivalent « tous publics » ailleurs.
 
-**Public cible et contenus** : coche **13-15, 16-17 et 18 ans et plus**, pas les tranches de moins de 13 ans. À « L'app pourrait-elle attirer involontairement les enfants ? », réponds **Non**. Pourquoi : cocher une tranche de moins de 13 ans fait entrer l'app dans le programme Familles de Google (règles Familles, déclarations supplémentaires, contrôle renforcé à chaque mise à jour) sans rien apporter ici. L'app convient pourtant à tous (PEGI 3) : rien n'empêche un enfant de l'installer, et elle ne collecte rien de personne. Ce choix pourra changer si une version pour les enfants est un jour visée.
+**Public cible et contenus** : coche **13-15, 16-17 et 18 ans et plus**, pas les tranches de moins de 13 ans. À « L'app pourrait-elle attirer involontairement les enfants ? », réponds **Non**. Pourquoi : cocher une tranche de moins de 13 ans fait entrer l'app dans le programme Familles de Google (règles Familles, déclarations supplémentaires, contrôle renforcé à chaque mise à jour) sans rien apporter ici. L'app convient pourtant à tous (PEGI 3) : rien n'empêche un enfant de l'installer, Le parcours OGS facultatif transmet des données à OGS et doit être pris en compte dans les déclarations. Ce choix pourra changer si une version pour les enfants est un jour visée.
 
 **Sécurité des données** (Data safety) :
 
-- « Votre app collecte-t-elle ou partage-t-elle des types de données utilisateur obligatoires ? » : **Non**. Le formulaire saute alors les questions sur le chiffrement en transit et la suppression des données. La fiche affichera « Aucune donnée collectée » et « Aucune donnée partagée avec des tiers ».
-- Justification, au sens de Google (« collecter » = transmettre des données hors de l'appareil ; les données traitées uniquement sur l'appareil ne comptent pas) : pas de compte, pas de serveur, pas de statistiques d'usage, pas de rapports de plantage, pas de SDK tiers. Les seules requêtes vont à katagotraining.org pour la liste des réseaux et leur téléchargement, sans aucune donnée de l'utilisateur. Parties, réglages et progression restent sur le téléphone. La sauvegarde automatique d'Android est faite par Google sous le compte de l'utilisateur ; elle exclut les réseaux.
-- Création de compte : « Mon app ne permet pas de créer un compte ». Examen de sécurité indépendant : non.
+- Réévaluer le formulaire avec OGS. Les identifiants utilisateur/installation et le contenu des parties sont transmis à OGS
+  pour le compte et le multijoueur ; ce sont des catégories facultatives liées au parcours en ligne, chiffrées en transit.
+- Ne pas réutiliser l'affirmation « seules requêtes vers katagotraining.org » ou « aucune donnée collectée ». Vérifier les
+  catégories et les exemptions de partage pour les transferts explicitement initiés par l'utilisateur selon la documentation Google.
+- Pas de compte Masame créé. Le compte OGS et les parties en ligne se gèrent/suppriment sur OGS ; la déconnexion Masame
+  efface seulement les identifiants locaux et tente leur révocation. Répondre aux exigences de suppression de compte applicables
+  après validation du parcours OGS et fournir le lien de gestion du compte demandé par le formulaire.
+- L'auteur ne reçoit ni analytics, ni rapports de plantage. Pas de tracking, d'identifiant publicitaire ou de permissions sensibles.
+  Le coffre mobile et les transactions PKCE sont exclus des sauvegardes. Voir `PRIVACY.md` et `docs/ogs-mobile.md`.
 
 **Identifiant publicitaire** : « Non, mon app n'utilise pas l'identifiant publicitaire ».
 
@@ -419,13 +430,13 @@ Limite 500 caractères par langue, avec les balises de langue de la console.
 EN (376 caractères)
 
 ```
-First test version of Masame for Android. Play KataGo at your level, see the review of every game, learn with the daily ritual, the trainers and the Classics. KataGo runs on your phone's processor after a one-time download of two networks (113 MB) from Settings › Networks. Not on phones yet: OGS and the 3D board. Please report problems at github.com/Slymaster/masame/issues.
+First test version of Masame for Android. Play KataGo at your level, see the review of every game, learn with the daily ritual, the trainers and the Classics. KataGo runs on your phone's processor after a one-time download of two networks (113 MB) from Settings › Networks. Optional OGS online play is available while the app is visible. The 3D board remains desktop-only. Please report problems at github.com/Slymaster/masame/issues.
 ```
 
 FR (426 caractères)
 
 ```
-Première version de test de Masame pour Android. Joue contre KataGo à ton niveau, retrouve la revue de chaque partie, apprends avec le rituel du jour, les entraînements et les Classiques. KataGo tourne sur le processeur de ton téléphone après un téléchargement unique de deux réseaux (113 Mo) dans Réglages › Réseaux. Pas encore sur téléphone : OGS et le goban 3D. Signale les problèmes sur github.com/Slymaster/masame/issues.
+Première version de test de Masame pour Android. Joue contre KataGo à ton niveau, retrouve la revue de chaque partie, apprends avec le rituel du jour, les entraînements et les Classiques. KataGo tourne sur le processeur de ton téléphone après un téléchargement unique de deux réseaux (113 Mo) dans Réglages › Réseaux. OGS est disponible au premier plan. Le goban 3D reste sur ordinateur. Signale les problèmes sur github.com/Slymaster/masame/issues.
 ```
 
 Collées dans la console :

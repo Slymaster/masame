@@ -2,6 +2,7 @@ package com.sylvainrey.masame
 
 import android.graphics.Color
 import android.os.Bundle
+import android.webkit.WebView
 import android.view.View
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
@@ -9,6 +10,17 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
+  private var ogsWebView: WebView? = null
+  override fun onWebViewCreate(webView: WebView) {
+    super.onWebViewCreate(webView)
+    ogsWebView = webView
+  }
+  private fun ogsActive(active: Boolean) {
+    ogsWebView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('masame-app-active',{detail:$active}))", null)
+  }
+  override fun onPause() { ogsActive(false); super.onPause() }
+  override fun onResume() { super.onResume(); ogsActive(true) }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     // the bars show the linen beneath them (no white scrim behind the 3-button bar), with dark icons: the page is always light
     val linen = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)

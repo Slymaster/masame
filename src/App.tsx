@@ -20,6 +20,7 @@ import { Seg } from './Seg'
 import { Gallery } from './Gallery'
 import { Switch } from './Switch'
 import * as ogs from './ogs'
+import { ogsAnalysisBlocked, setAnalysisBlocked } from './enginePolicy'
 import { Sheet } from './Sheet'
 import { Icon } from './Icon'
 import { Timeline } from './Timeline'
@@ -102,7 +103,7 @@ export function loadSettings(): Settings {
   const s = { ...d, ...j }
   return {
     ...s, lang: storedLang(j), langChosen: j.langChosen === true,
-    opponent: (['human', 'ai', 'ogs'] as const).includes(s.opponent) && !(isMobile && s.opponent === 'ogs') ? s.opponent : 'ai', // OGS on phones: v1.1
+    opponent: (['human', 'ai', 'ogs'] as const).includes(s.opponent) ? s.opponent : 'ai',
     ogsSpeed: (['blitz', 'rapid', 'live', 'correspondence'] as const).includes(s.ogsSpeed) ? s.ogsSpeed : 'rapid', myRank: clampRank(s.myRank), aiRank: clampRank(s.aiRank),
     renderer: j.renderer === '2d' || j.renderer === '3d' ? j.renderer : webgl2() ? '3d' : '2d',
     camera: s.camera === 'contemplation' ? 'contemplation' : 'study', light: LIGHTS.includes(s.light) ? s.light : 'auto', highContrast: s.highContrast === true,
@@ -255,7 +256,7 @@ export function App() {
   const [started, setStarted] = useState<{ id: number; who: string } | null>(null)
   const challengeRows = useSyncExternalStore(ogs.challenges.subscribe, ogs.challenges.get)
   const activeRows = useSyncExternalStore(ogs.active.subscribe, ogs.active.get)
-  useEffect(() => { if (!isMobile) ogs.startBackground() }, []) // OGS on phones: v1.1
+  useEffect(() => ogs.startBackground(), [])
   const [session2d, setSession2d] = useState(false) // 2D after a WebGL context loss, for this session only
   const renderer: Renderer = session2d || isMobile ? '2d' : settings.renderer // phones: 2D only until v1.1
   const panelHidden = settings.panelHidden && !isMobile // phones: the card is the only place for the game's controls
@@ -368,6 +369,9 @@ export function App() {
   const atEnd = game.cursor === game.moves.length
   // OGS forbids engine help in an ongoing game: no KataGo query of any kind until it is finished (nor while joining one: `joining`)
   const ongoing = !!online && online.phase !== 'finished'
+  const ogsBlocked = ogsAnalysisBlocked(joining, online?.phase, !!online && !ogs.isReady(online.id))
+  setAnalysisBlocked(ogsBlocked)
+  useEffect(() => { if (ogsBlocked) setHeld(false); if (inTauri()) void call('engine_ogs_guard', { blocked: ogsBlocked }).catch(() => {}) }, [ogsBlocked])
   const myGame = ongoing && online.me !== 0 ? online : null // an unfinished OGS game I play
   const opponent = online && online.me !== 0 ? online.players[online.me === 1 ? 'white' : 'black'] : null
   // The trainers borrow the board and the card, one at a time; the game waits underneath, untouched. A new activity (a
@@ -428,7 +432,7 @@ export function App() {
   }
   const keep = useRef(keepRank)
   keep.current = keepRank
-  const bgFree = canAnalyze && engine.state !== 'error' && !thinking && !review && !panel && !ongoing && !joining && !playingLocal && !auto && !held
+  const bgFree = canAnalyze && engine.state !== 'error' && !thinking && !review && !panel && !ogsBlocked && !playingLocal && !auto && !held
   const ar = useAutoReview({
     free: bgFree,
     ask: (g, q) => analyze(g, { ...q, priority: -1 }), // KataGo serves higher priorities first: the bot, the trainers jump the queue
@@ -442,7 +446,7 @@ export function App() {
     },
     human: canPlayAI, myRank: settings.myRank,
   })
-  const books = { view, preload: sheet === 'learn', rank: settings.myRank, setRank: (v: string) => set('myRank', v), blocked: ongoing || !!review, playFrom: (m: Move[]) => playFrom(m), setBook: setPanel }
+  const books = { view, preload: sheet === 'learn', rank: settings.myRank, setRank: (v: string) => set('myRank', v), blocked: ogsBlocked || !!review, playFrom: (m: Move[]) => playFrom(m), setBook: setPanel }
   const jt = useJoseki({ ...books, open: panel === 'joseki', setOpen: panelOpen('joseki') })
   const ft = useJoseki({ ...books, book: 'fuseki', open: panel === 'fuseki', setOpen: panelOpen('fuseki') })
   /** S'entraîner on the fuseki, a line started at once (the ritual, and Travailler › Opening). */
@@ -450,22 +454,22 @@ export function App() {
   const practiseFuseki = () => { if (ft.failed) return practiseJoseki(); setSheet(null); setPanel('fuseki'); ft.practise() } // the joseki stands in for a book that did not load
   // Compter (C1) and Rejouer de mémoire (C2)
   const ct = useCounting({
-    open: panel === 'count', setOpen: panelOpen('count'), blocked: ongoing || !!review, canAnalyze, setThinking,
+    open: panel === 'count', setOpen: panelOpen('count'), blocked: ogsBlocked || !!review, canAnalyze, setThinking,
     light: g => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, { maxVisits: TERRITORY_VISITS, includeOwnership: true })); scanRun.current = run; return run.then(a => a.ownership) },
   })
-  const mem = useMemory({ view, open: panel === 'memory', setOpen: panelOpen('memory'), blocked: ongoing || !!review, onEnd: m => setNote(short(m)) })
+  const mem = useMemory({ view, open: panel === 'memory', setOpen: panelOpen('memory'), blocked: ogsBlocked || !!review, onEnd: m => setNote(short(m)) })
   /** Replays the shown game from memory; its score goes to its library entry (a file or an unkept game is kept first). */
   const replay = () => mem.start(game, async () => library.idOf(game) ?? library.keep(game, online ? 'ogs' : bot ? 'ai' : 'file', mine, online ? { ogsId: online.id } : {}))
   const ex = useExercises({
-    view, open: panel === 'exercises', setOpen: panelOpen('exercises'), blocked: ongoing || !!review, canAnalyze, setThinking,
+    view, open: panel === 'exercises', setOpen: panelOpen('exercises'), blocked: ogsBlocked || !!review, canAnalyze, setThinking,
     autoLine: ar.pct !== null ? t.autoRunning(ar.pct) : ar.pending ? t.autoPending(ar.pending) : null,
     ask: (g, q = REPLY) => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, q as Record<string, unknown>)); scanRun.current = run; return run },
     hand: ct.available ? HAND - COUNTS : HAND,
   })
   useMining({ free: bgFree, ask: (g, q) => analyze(g, { ...q, priority: -1 }), scanRun, known: ex.has, add: ex.addItems }) // tsumego from reviewed games
-  const workOpening = () => { if (!ongoing && !review) practiseFuseki() } // Travailler › Ouverture, after its exercises: S'entraîner on the fuseki
+  const workOpening = () => { if (!ogsBlocked && !review) practiseFuseki() } // Travailler › Ouverture, after its exercises: S'entraîner on the fuseki
   const cl = useClassics({
-    view, open: panel === 'classics', setOpen: panelOpen('classics'), blocked: ongoing || !!review, canAnalyze, setThinking, rank: settings.myRank, review: g => void reviewClassic(g),
+    view, open: panel === 'classics', setOpen: panelOpen('classics'), blocked: ogsBlocked || !!review, canAnalyze, setThinking, rank: settings.myRank, review: g => void reviewClassic(g),
     ask: (g, q) => { const run = scanRun.current.catch(() => {}).then(() => analyze(g, q)); scanRun.current = run; return run },
   })
   const [ritualSaid, setRitualSaid] = useState<number | null>(null) // the ritual got done with a panel open: its streak, said in that panel's note
@@ -474,7 +478,7 @@ export function App() {
   const opening = ft.counts && openingBook(weakest(ex.games)) === 'fuseki' ? 'fuseki' : 'joseki'
   const netsUnknown = inTauri() && !nets // at launch: the steps needing a net are neither done nor off yet
   const td = useToday({
-    blocked: ongoing || !!review,
+    blocked: ogsBlocked || !!review,
     // the exercises step: a hand of exercises, then two positions to count when your reviewed games give some
     decks: [handStep(netsUnknown ? { done: false, left: null } : canAnalyze ? ex.today : null, ct.available ? countStep(ct.today) : null), (opening === 'fuseki' ? ft : jt).today ?? { done: false, left: null }], canPlay: netsUnknown ? null : canPlayAI, rank: settings.myRank,
     // each step closes the Learn sheet, then takes the card
@@ -487,7 +491,7 @@ export function App() {
   useEffect(() => { if (sheet !== 'game') setFromPos(null) }, [sheet])
   const positions = useRef(new WeakSet<Game>()) // shown positions: saved, they enter the library as 'position'
   const ed = useEditor({
-    view, open: panel === 'editor', setOpen: panelOpen('editor'), blocked: ongoing || !!review, size: game.info.size,
+    view, open: panel === 'editor', setOpen: panelOpen('editor'), blocked: ogsBlocked || !!review, size: game.info.size,
     onAi: g => { setSettings(s => ({ ...s, opponent: 'ai', handicap: 0 })); resize(g.info.size); door('game'); setFromPos(g) },
     onTwo: g => void fromPosition(g), onDone: g => void fromPosition(g, true),
   })
@@ -495,7 +499,7 @@ export function App() {
   const tr = trainers.find(x => x.open) ?? ex
   const trInfo = cl.info ?? ed.info ?? ct.info ?? ex.info // a trainer's own position: its board size and komi on the meta line
   const removal = online?.phase === 'stone removal' && atEnd ? online : null
-  const humanTurn = joining ? false : online ? online.phase === 'play' && atEnd && (online.placing ? online.me === 1 : game.toPlay === online.me) : !bot || game.toPlay !== bot.sign
+  const humanTurn = joining || online && !ogs.isReady(online.id) ? false : online ? online.phase === 'play' && atEnd && (online.placing ? online.me === 1 : game.toPlay === online.me) : !bot || game.toPlay !== bot.sign
   const mt = useMentor({ game, bot, changed, thinkingTime: !!bot && humanTurn && atEnd && !result && !game.ended && !panel })
   const mine: Sign | 0 = bot ? -bot.sign as Sign : online?.me ?? ogsSide(game) // the side a review looks at
   const shown = review?.branch ?? game
@@ -510,10 +514,10 @@ export function App() {
   // ① takes only the punisher's moves (← may show the engine's turn); ② and ③ explore freely
   const lessonPlayable = !!review?.branch && !thinking && !shown.ended && !review.error && (review.step !== 'try' || shown.toPlay === -m!.sign)
   const countingNow = !review && counting?.game === game && game.ended && atEnd ? counting : null
-  const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result) && !ongoing
+  const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result) && !ogsBlocked
   const canReview = reviewShown && canAnalyze
   // a game to replay from memory: moves to place, not one being played (the AI's, an OGS game going on), no review
-  const canMemory = game.moves.some(m => !m.setup) && (!bot || !!result) && !ongoing && !review
+  const canMemory = game.moves.some(m => !m.setup) && (!bot || !!result) && !ogsBlocked && !review
   const shownEntry = library.idOf(game) ? library.get()?.find(e => e.id === library.idOf(game)) : undefined // the shown game's library entry, once loaded
   const live = ongoing || !!bot && !result || !!panel // a game being played (or a trainer shown): no autoplay
   const locked = !!result && atEnd // a decided line: playing from an earlier move opens a variation
@@ -703,6 +707,7 @@ export function App() {
   // OGS: a socket send fails only when signed out
   const send = (f: () => void) => { try { f(); return true } catch (e) { setNote(d => failureText(e, d)); return false } }
   const follow = (id: number) => {
+    setAnalysisBlocked(true)
     start(new Game({ size: game.info.size }), null); setJoining(true) // an empty board, not playable, until the gamedata
     let shownGame: Game | null = null, len = 0, error: Msg | null = null
     try {
@@ -728,6 +733,7 @@ export function App() {
   // for callbacks that outlive the render they were made in (a match or a challenge starting later)
   const latestFollow = useRef(follow)
   latestFollow.current = follow
+  useEffect(() => ogs.onSignedIn(() => { if (online) latestFollow.current(online.id) }), [online?.id, online?.me]) // eslint-disable-line react-hooks/exhaustive-deps
   const resume = async (id: number) => { if (online?.id === id) return; abandon(); if (await canLeave()) follow(id) }
   const importGame = async (id: number) => { abandon(); if (await canLeave()) open(() => ogs.sgf(id), true, { ogsId: id }) }
   const find = async () => {
@@ -991,14 +997,14 @@ export function App() {
 
   // "Ombre et lumière": ownership of the displayed position, debounced, kept until the next estimate arrives.
   useEffect(() => {
-    if (!settings.territory || !canAnalyze || review || ongoing || joining) return
+    if (!settings.territory || !canAnalyze || review || ogsBlocked) return
     let live = true
     const t = setTimeout(() => {
       analyze(game, { maxVisits: TERRITORY_VISITS, includeOwnership: true })
         .then(a => live && setOwn({ game, data: a.ownership, score: a.scoreLead }), e => live && setNote(d => failureText(e, d)))
     }, 250)
     return () => { live = false; clearTimeout(t) }
-  }, [settings.territory, ver, game, canAnalyze, !!review, ongoing, joining]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [settings.territory, ver, game, canAnalyze, !!review, ogsBlocked]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reading: resumes from the scan cache after an error ("Try again") or a colour change.
   useEffect(() => {
@@ -1074,7 +1080,7 @@ export function App() {
   // Free analysis while A is held: a quick read, then a deep one, cached per position (the deep one replaces it)
   const reads = useRef(new WeakMap<Game['board'], { a: Analysis; deep: boolean; toPlay: Sign }>()) // a PL pseudo-move keeps the board, not the side to move
   const [anError, setAnError] = useState<unknown>(null)
-  const an = held && !ongoing && !joining && !panel && !countingNow && !removal && !reading // OGS forbids engine help in an ongoing game
+  const an = held && !ogsBlocked && !panel && !countingNow && !removal && !reading // OGS forbids engine help in an ongoing game
   const anRead = an ? [reads.current.get(shown.board)].find(r => r?.toPlay === shown.toPlay) : undefined
   useEffect(() => {
     if (!an || !canAnalyze || anRead?.deep) return
@@ -1112,7 +1118,7 @@ export function App() {
   // an id is enabled in the bar only when it is here and src/menu.ts's rule allows it now.
   const commands: Record<string, () => void> = {
     undo, new: newCommand, open, save, postcard, panel: togglePanel,
-    pass: () => play(null), resign, territory: () => { if (!ongoing) set('territory', !settings.territory) }, review: () => { if (canReview && !review) startReview(mine) },
+    pass: () => play(null), resign, territory: () => { if (!ogsBlocked) set('territory', !settings.territory) }, review: () => { if (canReview && !review) startReview(mine) },
     today: openLearn, exercises: ex.toggle, tsumego: ex.tsumego, joseki: jt.toggle, fuseki: ft.toggle, games: () => door('games'), count: ct.toggle, memory: () => { if (canMemory) replay() },
     position: ed.start, kifu: () => door('kifu'), classics: cl.openList,
     camera: () => set('camera', settings.camera === 'study' ? 'contemplation' : 'study'),
@@ -1175,7 +1181,7 @@ export function App() {
     hasGame: game.moves.length > 0 || game.info.setup.black.length + game.info.setup.white.length > 0, canUndo: !panel && !review && !online && game.cursor > 0 && !(bot && result),
     canPass: !panel && !review && !countingNow && !removal && !game.ended && !locked && humanTurn && !online?.placing,
     canResign: !panel && !review && !result && (!!bot || !!myGame), canReview: !panel && !review && canReview,
-    engineHelp: !ongoing && !review, canAnalyze, is3d: renderer === '3d', canMemory: !panel && canMemory,
+    engineHelp: !ogsBlocked && !review, canAnalyze, is3d: renderer === '3d', canMemory: !panel && canMemory,
   })
   const enabledKey = JSON.stringify(enabled)
   useEffect(() => { if (isMac && inTauri()) call('set_menu_enabled', { enabled }).catch(console.error) }, [enabledKey]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1247,7 +1253,7 @@ export function App() {
   const ticks = browsing && judgedAll ? judgedAll.flatMap((j, i) => (j && NOTABLE.includes(j.cat)
     ? [{ at: i + 1, cat: j.cat, label: t.catHead(game.moveNumber(i) + 1, t.cats[j.cat], shownLoss(j)) }] : [])) : undefined
   const board = shown.board, toPlay = shown.toPlay, last = shown.lastMove
-  const shownOwn = settings.territory && own?.game === game && !ongoing ? own : null
+  const shownOwn = settings.territory && own?.game === game && !ogsBlocked ? own : null
   const ghost = mt.stopped && !tr.open && last?.vertex ? { v: last.vertex, sign: last.sign } : null // the stopped move, in half-tone
   const engineWait = engine.state === 'tuning' ? t.tuningCaption
     : (thinking || reading || an) && engine.state === 'starting' ? t.engineStarting
@@ -1285,7 +1291,7 @@ export function App() {
   const cardLine = onCard && resultLine
   const incoming = !myGame && challengeRows.find(c => !c.mine)
   // a finished game shown untouched (from Mes parties, or a file): Revoir, Rejouer de mémoire, Deviner les coups, when each makes sense
-  const guessable = !ongoing && !joining && !playingLocal && !search && canAnalyze && canGuess(game) // Les Classiques' mode on a shown game
+  const guessable = !ogsBlocked && !playingLocal && !search && canAnalyze && canGuess(game) // Les Classiques' mode on a shown game
   const quietShown = canMemory && !bot && !dirty && !unfinished(game) && !result
   const libraryShown = quietShown && !!library.idOf(game) // a game opened from Mes parties
   const libraryLinks: Link[] = [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []), ['memory', t.memLink, replay],
@@ -1511,7 +1517,7 @@ export function App() {
                 <Icon name={sound ? 'volume' : 'volume-off'} />
               </button>
               {/* phones: no 3D nor its Atelier yet (v1.1); a toggle for the candidate moves stands in for holding A */}
-              {isMobile ? <button className="icon sm cands" aria-pressed={held} onClick={() => setHeld(v => !v)} aria-label={t.candidates} title={t.candidates}><Icon name="target" /></button> : <>
+              {isMobile ? <button className="icon sm cands" disabled={ogsBlocked} aria-pressed={held} onClick={() => setHeld(v => !v)} aria-label={t.candidates} title={t.candidates}><Icon name="target" /></button> : <>
                 <button className="icon sm" aria-pressed={renderer === '3d'} onClick={() => { setSession2d(false); set('renderer', renderer === '3d' ? '2d' : '3d') }}
                   aria-label={t.renderToggle} title={renderer === '3d' ? t.render3d : t.render2d}><Icon name={renderer === '3d' ? 'cube' : 'square'} /></button>
                 <button className="icon sm" onClick={openSheet('atelier')} aria-label={t.atelier} title={t.atelier}><Icon name="view" /></button>
@@ -1590,7 +1596,7 @@ export function App() {
               })}
               {!review && cta}
               <Timeline g={shown} floor={floor} go={goTo} auto={!!auto} toggleAuto={toggleAuto} live={live} relocate={relocate} ticks={ticks} />
-              {settings.territory && !review && !ongoing && (
+              {settings.territory && !review && !ogsBlocked && (
                 <p className="estimate" aria-live="polite">
                   {!inTauri() || !canAnalyze ? t.territoryNeedsNet : shownOwn ? t.estimate(shownOwn.score) : t.estimating}
                 </p>
@@ -1611,7 +1617,7 @@ export function App() {
                   ? <button key="resume" className="act" onClick={() => send(() => ogs.resumeGame(myGame.id))} disabled={!ogs.canResume(myGame)}><Icon name="play" />{t.resume}</button>
                   : <button key="pause" className="act" onClick={() => send(() => ogs.pauseGame(myGame.id))} disabled={!ogs.canPause(myGame)}
                     title={myGame.pausesLeft === undefined ? undefined : t.ogsPausesLeft(myGame.pausesLeft)}><Icon name="pause" />{t.ogsPause}</button>
-                  : <button className="act" aria-pressed={settings.territory} onClick={() => set('territory', !settings.territory)} disabled={ongoing}
+                  : <button className="act" aria-pressed={settings.territory} onClick={() => set('territory', !settings.territory)} disabled={ogsBlocked}
                     title={ongoing ? t.ogsUnavailable : 'T'}><Icon name="sun-low" />{t.territory}</button>}
                 {reviewShown ? <button key="review" className={`act${result ? ' accent' : ''}`} onClick={() => startReview(mine)}
                   disabled={!canAnalyze} title={canAnalyze ? undefined : t.reviewNeedsNet}><Icon name="review" />{t.reviewGame}</button>
@@ -1628,7 +1634,7 @@ export function App() {
             <div className="lab"><span>{t.newGame}</span><span /></div>
             <div className="opts">
               <Seg label={t.size} value={nextSize} options={SIZES.map(n => [n, `${n}×${n}`])} set={resize} />
-              <Seg label={t.opponent} value={settings.opponent} options={[['human', t.twoPlayers], ['ai', t.ai], ...isMobile ? [] : [['ogs', 'OGS'] as ['ogs', string]]]} set={v => set('opponent', v)} />
+              <Seg label={t.opponent} value={settings.opponent} options={[['human', t.twoPlayers], ['ai', t.ai], ['ogs', 'OGS']]} set={v => set('opponent', v)} />
               {settings.opponent === 'ogs' ? (
                 <OgsSection speed={settings.ogsSpeed} setSpeed={v => set('ogsSpeed', v)}
                   // correspondence: the search is listed in the sheet, and its start told by a notice
@@ -1691,7 +1697,7 @@ export function App() {
               <Seg label={t.autoplay} value={settings.autoplay} options={AUTOPLAY.map(s => [s, t.perMove(s)])} set={v => set('autoplay', v)} />
             </div>
             <Switch label={t.territory} k="T" on={settings.territory} toggle={() => set('territory', !settings.territory)}
-              disabled={ongoing} title={ongoing ? t.ogsUnavailable : undefined} />
+              disabled={ogsBlocked} title={ongoing ? t.ogsUnavailable : undefined} />
           </section>
 
           {!isMobile && <section id="atelier">

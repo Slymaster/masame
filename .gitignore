@@ -27,3 +27,8 @@ scripts/joseki/.cache/
 *.p8
 *.mobileprovision
 keystore.properties
+
+# Generated from verified owner-provided OAuth/deep-link configuration, never a default domain.
+src-tauri/ogs-mobile.generated/
+
+tests/ogs-auth/target/

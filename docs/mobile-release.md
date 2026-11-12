@@ -9,6 +9,13 @@ Sans tag (push ou PR qui touche le build mobile), ils construisent la même chos
 
 Les secrets vivent dans deux environnements GitHub, chacun réservé à ses tags. Le build desktop (`release`) ne les voit jamais, et inversement.
 
+## Prérequis OGS mobile
+
+La prochaine version mobile inclut OGS au premier plan. Les builds exigent le callback HTTPS enregistré, les certificats
+Android et les associations Android/iOS hébergées. Aucun domaine fictif n'est utilisé. Suivre [OGS mobile](ogs-mobile.md)
+pour les paramètres, les fichiers générés et les tests signés. Garder la PR en draft tant que ces prérequis sont absents.
+La confidentialité et les réponses stores de la version hors ligne doivent être mises à jour avant publication.
+
 ## Une fois : iPhone (TestFlight)
 
 1. **Fiche App Store Connect.** Dans Certificates, Identifiers & Profiles, l'App ID `com.sylvainrey.masame` (équipe GUARANI LLC, `CN9TKA949C`). Puis dans App Store Connect, Apps > « + » > Nouvelle app : iOS, nom « Masame », identifiant `com.sylvainrey.masame`.

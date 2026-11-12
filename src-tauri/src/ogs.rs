@@ -1,13 +1,9 @@
 // OGS login: OAuth2 authorization code + PKCE in the player's own browser, redirected to a loopback listener.
-// The refresh token never leaves this side; the webview only ever gets a short-lived access token.
+// The refresh token never leaves this side; the webview receives an access token (OGS currently issues 30-day tokens).
 // Also the public OGS reads the webview cannot make itself (no CORS headers).
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine as _;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tauri::{AppHandle, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -15,8 +11,7 @@ use tokio::sync::{oneshot, Mutex};
 
 use crate::failure::{Failure, Res};
 
-const BASE: &str = "https://online-go.com";
-const CLIENT_ID: &str = "Zcn8DN7Jg5uCKB184btHYhvUllN6cxnU6enuDdOJ"; // Masame's public OAuth client id on OGS (not a secret)
+use crate::ogs_oauth::{BASE, CLIENT_ID, Tokens, now, random, challenge, authorize_url, same, grant, form};
 const PORT: u16 = 0; // 0 = any free port (RFC 8252 §7.3); 47321 if OGS wants the exact registered URI
 const FILE: &str = "ogs.json";
 const ACCOUNT: &str = "ogs";
@@ -27,36 +22,13 @@ const REFRESH_MARGIN: u64 = 86_400; // access tokens last 30 days; refresh in th
 const MAX_HISTORY: usize = 4_000_000; // a long career is a few hundred kB of TSV
 const HISTORY_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Tokens { access: String, refresh: String, expires_at: u64 }
-
 #[derive(Default)]
 pub struct Ogs {
+    pub mobile: crate::ogs_mobile::Auth,
     tokens: Mutex<Option<Tokens>>, // None until read from the vault
     cancel: std::sync::Mutex<Option<oneshot::Sender<()>>>, // dropping it cancels the pending login
     running: Mutex<()>, // a cancelled login releases its port before the next one binds
 }
-
-fn now() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()) }
-
-fn random(bytes: usize) -> String {
-    let mut b = vec![0; bytes];
-    getrandom::fill(&mut b).expect("OS random generator");
-    URL_SAFE_NO_PAD.encode(b)
-}
-
-fn challenge(verifier: &str) -> String { URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes())) }
-
-fn authorize_url(base: &str, redirect: &str, state: &str, challenge: &str) -> String {
-    let mut u = reqwest::Url::parse(&format!("{base}/oauth2/authorize/")).expect("base URL");
-    u.query_pairs_mut().extend_pairs([
-        ("response_type", "code"), ("client_id", CLIENT_ID), ("redirect_uri", redirect), ("scope", "read write"),
-        ("state", state), ("code_challenge", challenge), ("code_challenge_method", "S256"),
-    ]);
-    u.into()
-}
-
-fn same(a: &str, b: &str) -> bool { a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0, |d, (x, y)| d | (x ^ y)) == 0 }
 
 const PAGE_OK: &str = "Masame est connecté à OGS. Tu peux fermer cet onglet.</p><p lang=\"en\">Masame is connected to OGS. You can close this tab.";
 const PAGE_DENIED: &str = "Connexion à OGS annulée. Tu peux fermer cet onglet.</p><p lang=\"en\">OGS sign-in cancelled. You can close this tab.";
@@ -118,30 +90,6 @@ async fn wait_for_code(l: TcpListener, state: String) -> Res<String> {
             Some(r) = conns.join_next() => if let Ok(Some(r)) = r { return r },
         }
     }
-}
-
-/// Form body, application/x-www-form-urlencoded (reqwest's `form` feature is not enabled).
-fn form(pairs: &[(&str, &str)]) -> String {
-    let mut u = reqwest::Url::parse("http://x/").unwrap();
-    u.query_pairs_mut().extend_pairs(pairs);
-    u.query().unwrap_or_default().into()
-}
-
-#[derive(Deserialize)]
-struct Grant { access_token: String, refresh_token: String, expires_in: u64 }
-
-/// POST to the token endpoint. A 400/401 (invalid_grant, …) is `ogs_login_required`; anything else `ogs_network`.
-async fn grant(c: &reqwest::Client, base: &str, pairs: &[(&str, &str)]) -> Res<Tokens> {
-    let net = |e: &dyn ToString| Failure::with("ogs_network", e.to_string());
-    // Trailing slash: without it OGS redirects, and the POST would come back as a GET.
-    let r = c.post(format!("{base}/oauth2/token/")).header(reqwest::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(form(pairs)).send().await.map_err(|e| net(&e))?;
-    let status = r.status();
-    if status == 400 || status == 401 { return Err(Failure::with("ogs_login_required", status)) }
-    if !status.is_success() { return Err(net(&status)) }
-    let g: Grant = serde_json::from_slice(&r.bytes().await.map_err(|e| net(&e))?).map_err(|_| net(&"bad token response"))?;
-    if g.access_token.is_empty() || g.refresh_token.is_empty() { return Err(net(&"bad token response")) }
-    Ok(Tokens { access: g.access_token, refresh: g.refresh_token, expires_at: now().saturating_add(g.expires_in) })
 }
 
 /// Where the tokens' JSON lives. Errors are fixed codes or I/O messages, never the stored text.
@@ -324,8 +272,14 @@ async fn rating_history(c: &reqwest::Client, base: &str, player_id: u64) -> Res<
 /// Signs in through the default browser; a new call or ogs_login_cancel rejects a pending one with ogs_cancelled.
 #[tauri::command]
 pub async fn ogs_login(app: AppHandle, s: State<'_, crate::App>) -> Res<()> {
-    // Mobile v1 has no OGS sign-in: refused before any loopback listener or browser opens. Guest watching needs none.
-    if cfg!(mobile) { return Err(Failure::new("ogs_unavailable")) }
+    #[cfg(mobile)]
+    {
+        s.ogs.mobile.begin(&mobile_store(&app)?, mobile_redirect(), |url| crate::open_url(&app, url)).await?;
+        emit_auth(&app).await;
+        return Ok(());
+    }
+    #[cfg(desktop)]
+    {
     let (tx, rx) = oneshot::channel::<()>();
     drop(s.ogs.cancel.lock().unwrap().replace(tx));
     let v = Vault::of(&app)?;
@@ -333,22 +287,102 @@ pub async fn ogs_login(app: AppHandle, s: State<'_, crate::App>) -> Res<()> {
         r = async { let _port = s.ogs.running.lock().await; login(&s.http, BASE, &v, &s.ogs.tokens, |url| crate::open_url(&app, url)).await } => r,
         _ = rx => Err(Failure::new("ogs_cancelled")),
     }
+    }
 }
 
 #[tauri::command]
-pub fn ogs_login_cancel(s: State<'_, crate::App>) { drop(s.ogs.cancel.lock().unwrap().take()) }
+pub async fn ogs_login_cancel(app: AppHandle, s: State<'_, crate::App>) -> Res<()> {
+    drop(s.ogs.cancel.lock().unwrap().take());
+    #[cfg(mobile)]
+    { s.ogs.mobile.cancel(&mobile_store(&app)?).await?; emit_auth(&app).await; }
+    #[cfg(desktop)]
+    let _ = app;
+    Ok(())
+}
 
 #[tauri::command]
-pub async fn ogs_token(app: AppHandle, s: State<'_, crate::App>) -> Res<String> { token(&s.http, BASE, &Vault::of(&app)?, &s.ogs.tokens).await }
+pub async fn ogs_token(app: AppHandle, s: State<'_, crate::App>) -> Res<String> {
+    #[cfg(mobile)]
+    { s.ogs.mobile.token(&mobile_store(&app)?, &s.http, BASE).await }
+    #[cfg(desktop)]
+    { token(&s.http, BASE, &Vault::of(&app)?, &s.ogs.tokens).await }
+}
 
 #[tauri::command]
 pub async fn ogs_logout(app: AppHandle, s: State<'_, crate::App>) -> Res<()> {
+    drop(s.ogs.cancel.lock().unwrap().take());
+    #[cfg(mobile)]
+    { s.ogs.mobile.logout(&mobile_store(&app)?, &s.http, BASE).await?; emit_auth(&app).await; }
+    #[cfg(desktop)]
     logout(&s.http, BASE, &Vault::of(&app)?, &s.ogs.tokens).await;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn ogs_rating_history(player_id: u64, s: State<'_, crate::App>) -> Res<String> { rating_history(&s.http, BASE, player_id).await }
+
+// Mobile callbacks are never passed through a webview command or printed in logs.
+#[cfg(mobile)]
+fn mobile_redirect() -> &'static str { env!("MASAME_OGS_CALLBACK_URL") }
+#[cfg(mobile)]
+fn mobile_store(app: &AppHandle) -> Res<crate::ogs_secure::NativeStore> {
+    // CI compilation fixtures cannot sign in, restore a session or touch any existing native credentials.
+    crate::ogs_mobile::redirect(mobile_redirect())?;
+    Ok(crate::ogs_secure::NativeStore { identifier: app.config().identifier.clone() })
+}
+
+#[tauri::command]
+pub async fn ogs_auth_state(app: AppHandle, s: State<'_, crate::App>) -> Res<crate::ogs_mobile::AuthState> {
+    #[cfg(mobile)]
+    { s.ogs.mobile.state(&mobile_store(&app)?).await }
+    #[cfg(desktop)]
+    { Ok(if s.ogs.tokens.lock().await.is_some() || Vault::of(&app)?.load().is_some() { crate::ogs_mobile::AuthState::SignedIn } else { crate::ogs_mobile::AuthState::SignedOut }) }
+}
+
+#[cfg(mobile)]
+async fn emit_auth(app: &AppHandle) {
+    use tauri::{Emitter, Manager};
+    let state = app.state::<crate::App>();
+    let status = match mobile_store(app) {
+        Ok(store) => state.ogs.mobile.state(&store).await,
+        Err(e) => Err(e),
+    }.unwrap_or_else(|e| crate::ogs_mobile::AuthState::Failed { code: e.code });
+    let _ = app.emit("ogs-auth-state", status);
+}
+
+#[cfg(mobile)]
+pub fn setup_mobile(app: &AppHandle) {
+    use tauri::{Manager, Emitter};
+    use tauri_plugin_deep_link::DeepLinkExt;
+    if mobile_redirect().is_empty() { return }
+    let handle = app.clone();
+    app.deep_link().on_open_url(move |event| {
+        receive_mobile_urls(handle.clone(), event.urls());
+    });
+    if let Ok(Some(urls)) = app.deep_link().get_current() { receive_mobile_urls(app.clone(), urls); }
+    // Same event on Android/iOS. Webview visibility is also used by the UI, covering an event delivered before mount.
+    let h = app.clone();
+    #[cfg(target_os = "ios")]
+    crate::ios::on_active_change(move |active| { let _ = h.emit("ogs-app-active", active); });
+    #[cfg(target_os = "android")]
+    let _ = h;
+    let _ = app.state::<crate::App>();
+}
+
+#[cfg(mobile)]
+fn receive_mobile_urls(app: AppHandle, urls: Vec<reqwest::Url>) {
+    use tauri::Manager;
+    tauri::async_runtime::spawn(async move {
+        let s = app.state::<crate::App>();
+        for url in urls {
+            // Ignore any unrelated/malformed URL. State/PKCE and the exact compiled callback are checked in Rust.
+            let mut base = url.clone(); base.set_query(None); base.set_fragment(None);
+            if base.as_str() != mobile_redirect() { continue }
+            if let Ok(store) = mobile_store(&app) { let _ = s.ogs.mobile.finish(&store, &s.http, BASE, url.as_str()).await; }
+        }
+        emit_auth(&app).await;
+    });
+}
 
 #[cfg(test)]
 mod tests {

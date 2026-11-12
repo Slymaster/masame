@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { call, inTauri } from './katago'
+import { isMobile } from './platform'
 import { failureText, t } from './i18n'
 import * as ogs from './ogs'
 import { Seg } from './Seg'
@@ -39,6 +40,8 @@ export function OgsSection(p: OgsSectionProps) {
   const [me, setMe] = useState<ogs.Player | null | undefined>(ogs.me ?? undefined) // undefined: not known yet
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const authState = useSyncExternalStore(ogs.auth.subscribe, ogs.auth.get)
+  const [storageError, setStorageError] = useState(false)
   const [tab, setTab] = useState<Tab>(() => storedTab())
   const pick = (v: Tab) => { setTab(v); try { localStorage.setItem(TAB_KEY, v) } catch { /* private mode: not remembered */ } }
   // the sign-in button gives way to Cancel while the browser is out: focus follows, then lands on what replaces it
@@ -49,12 +52,48 @@ export function OgsSection(p: OgsSectionProps) {
   }, [waiting])
   useEffect(() => {
     if (!inTauri()) return setMe(null)
-    ogs.connect().then(setMe, e => { setMe(null); if (e?.code !== 'ogs_login_required') setError(failureText(e)) })
+    let live = true
+    const refresh = async () => {
+      if (isMobile) {
+        const state = await call<ogs.AuthState>('ogs_auth_state')
+        if (!live) return
+        ogs.auth.set(state)
+      }
+      const player = await ogs.connect()
+      if (live) setMe(player)
+    }
+    refresh().catch(e => { if (live) { setMe(null); if (e?.code !== 'ogs_login_required') { setError(failureText(e)); setStorageError(String(e?.code).startsWith('ogs_storage')) } } })
+    return () => { live = false }
   }, [])
-  const signIn = () => {
-    setWaiting(true); setError(null)
-    call('ogs_login').then(() => ogs.connect()).then(p => { setMe(p); if (p) onSignedIn() }, e => { if (!silent(e)) setError(failureText(e)) })
-      .finally(() => setWaiting(false))
+  useEffect(() => {
+    if (!isMobile) return
+    setWaiting(authState.phase === 'pending')
+    if (authState.phase === 'failed') { setError(failureText(authState)); setStorageError(authState.code.startsWith('ogs_storage')) }
+    let live = true
+    if (authState.phase === 'signedOut') setMe(null)
+    if (authState.phase === 'signedIn') ogs.connect().then(player => { if (live) setMe(player) }, e => { if (live) setError(failureText(e)) })
+    if (authState.phase !== 'pending') return () => { live = false }
+    // Timers can be suspended; native state checks its absolute expiration on every read.
+    const timeout = setTimeout(() => void call<ogs.AuthState>('ogs_auth_state').then(ogs.auth.set, e => setError(failureText(e))),
+      Math.max(0, authState.expiresAt * 1000 - Date.now()) + 10)
+    return () => { live = false; clearTimeout(timeout) }
+  }, [authState])
+  const signIn = async () => {
+    setWaiting(true); setError(null); setStorageError(false)
+    try {
+      await call('ogs_login')
+      if (isMobile) ogs.auth.set(await call<ogs.AuthState>('ogs_auth_state'))
+      else { const player = await ogs.connect(); setMe(player); if (player) onSignedIn() }
+    } catch (e) { if (!silent(e)) setError(failureText(e)); setStorageError(String((e as { code?: string })?.code).startsWith('ogs_storage')) }
+    finally { if (!isMobile || ogs.auth.get().phase !== 'pending') setWaiting(false) }
+  }
+  const cancelSignIn = async () => {
+    try { await call('ogs_login_cancel'); setWaiting(false); if (isMobile) ogs.auth.set(await call<ogs.AuthState>('ogs_auth_state')) }
+    catch (e) { setError(failureText(e)) }
+  }
+  const resetStorage = async () => {
+    try { await ogs.logout(); setStorageError(false); setError(null); setMe(null); ogs.auth.set({ phase: 'signedOut' }) }
+    catch (e) { setError(failureText(e)) }
   }
   const signOut = async () => {
     if (!(await onSignOut())) return
@@ -65,9 +104,10 @@ export function OgsSection(p: OgsSectionProps) {
   if (!me) return <>
     <p className="quiet">{inTauri() ? t.ogsSignInHelp : t.ogsInAppOnly}</p>
     {waiting
-      ? <p className="quiet" aria-live="polite">{t.ogsWaiting} <button className="link" ref={cancel} onClick={() => void call('ogs_login_cancel').catch(() => {})}>{t.cancel}</button></p>
+      ? <p className="quiet" aria-live="polite">{t.ogsWaiting} <button className="link" ref={cancel} onClick={cancelSignIn}>{t.cancel}</button></p>
       : <button className="btn accent" ref={main} onClick={signIn} disabled={!inTauri() || me === undefined}>{t.ogsSignIn}</button>}
     {error && <p className="quiet err" role="alert">{error}</p>}
+    {storageError && <button className="link" onClick={resetStorage}>{t.ogsSignOut}</button>}
     {inTauri() && <div className="ogs-pane">
       <div className="lab"><span>{t.ogsTabs.watch}</span><span /></div>
       <OgsWatch onWatch={p.onWatch} onOpenLink={p.onOpenLink} />

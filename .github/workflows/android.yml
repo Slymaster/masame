@@ -1,5 +1,5 @@
-# Android build (arm64 App Bundle). Pushes and pull requests touching the Android build get an unsigned AAB and nothing
-# else. On an android-vX.Y.Z tag push the same unsigned AAB goes to a second job, the only one holding secrets (the
+# Android build (arm64 App Bundle). Without OGS configuration, nonrelease CI compiles a debug fixture only, never published.
+# Configured builds get an unsigned AAB. On an android-vX.Y.Z tag push that AAB goes to a second job, the only one holding secrets (the
 # `play` environment, restricted to android-v* tags): it signs the bundle with the upload key and sends it to Google
 # Play's internal testing track. That job runs no project code, so neither the keystore nor the Play service account
 # is ever visible to the build's npm, cargo or Gradle code.
@@ -16,6 +16,8 @@ on:
       - src-tauri/tauri.conf.json
       - src-tauri/tauri.android.conf.json
       - src-tauri/build.rs
+      - src-tauri/ogs_build_env.rs
+      - scripts/mobile-ogs*
       - src-tauri/Cargo.toml
       - src-tauri/Cargo.lock
       - src-tauri/src/**
@@ -38,6 +40,10 @@ env:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    env:
+      MASAME_OGS_CALLBACK_URL: ${{ vars.MASAME_OGS_CALLBACK_URL }}
+      MASAME_OGS_ANDROID_CERT_SHA256: ${{ vars.MASAME_OGS_ANDROID_CERT_SHA256 }}
+      MASAME_OGS_OAUTH_REGISTERED: ${{ vars.MASAME_OGS_OAUTH_REGISTERED }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -58,6 +64,13 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Prepare and verify the registered OGS mobile callback
+        if: env.RELEASE == 'true' || env.MASAME_OGS_CALLBACK_URL != ''
+        run: |
+          node --test scripts/mobile-ogs.check.mjs
+          node scripts/mobile-ogs.mjs prepare
+          node scripts/mobile-ogs.mjs verify
+
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch
         with:
           toolchain: stable
@@ -65,6 +78,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
           key: android
 
       - name: Cache the KataGo build
@@ -88,11 +102,13 @@ jobs:
 
       # Play refuses a versionCode it has already seen: the run number only grows (dry runs use some, harmlessly).
       - name: Build the App Bundle (unsigned)
+        if: env.RELEASE == 'true' || env.MASAME_OGS_CALLBACK_URL != ''
         run: |
-          pnpm tauri android build --ci --target aarch64 --aab \
+          pnpm tauri android build --config src-tauri/ogs-mobile.generated/tauri.conf.json --ci --target aarch64 --aab \
             --config "{\"bundle\":{\"android\":{\"versionCode\":$GITHUB_RUN_NUMBER}}}"
 
       - name: Check the App Bundle
+        if: env.RELEASE == 'true' || env.MASAME_OGS_CALLBACK_URL != ''
         run: |
           aabs=(src-tauri/gen/android/app/build/outputs/bundle/*Release/*.aab)
           [ ${#aabs[@]} -eq 1 ] && [ -f "${aabs[0]}" ] || { echo "::error::expected one release AAB, found: ${aabs[*]}"; exit 1; }
@@ -114,6 +130,12 @@ jobs:
             echo "$(basename "$so"): LOAD alignments $(echo $aligns)"
           done
           mkdir -p "$RUNNER_TEMP/aab" && cp "${aabs[0]}" "$RUNNER_TEMP/aab/masame.aab"
+
+      - name: Compile native Android debug fixture without OAuth configuration (never published)
+        if: env.RELEASE != 'true' && env.MASAME_OGS_CALLBACK_URL == ''
+        env:
+          MASAME_OGS_COMPILE_ONLY: '1'
+        run: pnpm tauri android build --debug --ci --target aarch64 --apk
 
       - name: Keep the unsigned App Bundle for signing (tags only)
         if: env.RELEASE == 'true'

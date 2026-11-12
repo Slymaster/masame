@@ -22,3 +22,6 @@
 
 # rustls-platform-verifier: called from Rust through JNI only, so it looks unused.
 -keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }
+
+# JNI entry point for the OGS Keystore backend.
+-keep class com.sylvainrey.masame.OgsVault { *; }

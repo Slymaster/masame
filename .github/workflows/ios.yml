@@ -14,6 +14,8 @@ on:
       - src-tauri/tauri.conf.json
       - src-tauri/tauri.ios.conf.json
       - src-tauri/build.rs
+      - src-tauri/ogs_build_env.rs
+      - scripts/mobile-ogs*
       - src-tauri/Cargo.toml
       - src-tauri/Cargo.lock
       - src-tauri/src/**
@@ -38,6 +40,12 @@ jobs:
     environment: ${{ startsWith(github.ref, 'refs/tags/ios-v') && 'testflight' || '' }}
     env:
       RELEASE: ${{ startsWith(github.ref, 'refs/tags/ios-v') }}
+      MASAME_OGS_CALLBACK_URL: ${{ vars.MASAME_OGS_CALLBACK_URL }}
+      MASAME_OGS_ANDROID_CERT_SHA256: ${{ vars.MASAME_OGS_ANDROID_CERT_SHA256 }}
+      MASAME_OGS_OAUTH_REGISTERED: ${{ vars.MASAME_OGS_OAUTH_REGISTERED }}
+      # Tauri forwards TAURI* settings to Xcode's second Cargo invocation; these values are public build configuration.
+      TAURI_ENV_MASAME_OGS_CALLBACK_URL: ${{ vars.MASAME_OGS_CALLBACK_URL }}
+      TAURI_ENV_MASAME_OGS_OAUTH_REGISTERED: ${{ vars.MASAME_OGS_OAUTH_REGISTERED }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -63,6 +71,13 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Prepare and verify the registered OGS mobile callback
+        if: env.RELEASE == 'true' || env.MASAME_OGS_CALLBACK_URL != ''
+        run: |
+          node --test scripts/mobile-ogs.check.mjs
+          node scripts/mobile-ogs.mjs prepare
+          node scripts/mobile-ogs.mjs verify
+
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch
         with:
           toolchain: stable
@@ -70,6 +85,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
           key: ios
 
       # libkatago_ios.a, its iOS deps and the host protoc that compiles its .proto files (built by build-katago.sh,
@@ -98,8 +114,16 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Build without signing
-        if: env.RELEASE != 'true'
-        run: pnpm tauri ios build --ci --no-sign
+        if: env.RELEASE != 'true' && env.MASAME_OGS_CALLBACK_URL != ''
+        run: pnpm tauri ios build --config src-tauri/ogs-mobile.generated/tauri.conf.json --ci --no-sign
+
+      - name: Compile native iOS debug fixture without OAuth configuration (never published)
+        if: env.RELEASE != 'true' && env.MASAME_OGS_CALLBACK_URL == ''
+        env:
+          MASAME_OGS_COMPILE_ONLY: '1'
+          TAURI_ENV_MASAME_OGS_COMPILE_ONLY: '1'
+          TAURI_ENV_MASAME_OGS_CI: 'true'
+        run: pnpm tauri ios build --debug --ci --no-sign
 
       # Tauri archives, then has Xcode export and sign it for the App Store with a cloud-managed distribution certificate
       # and an App Store profile it creates through the API key: nothing to keep in the repository or the keychain.
@@ -121,7 +145,7 @@ jobs:
           unset APPLE_API_KEY_P8
           IFS=. read -r major minor _ <<< "$VERSION"
           echo "BUILD_VERSION=$major.$minor.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
-          pnpm tauri ios build --ci --export-method app-store-connect --build-number "$GITHUB_RUN_NUMBER" \
+          pnpm tauri ios build --config src-tauri/ogs-mobile.generated/tauri.conf.json --ci --export-method app-store-connect --build-number "$GITHUB_RUN_NUMBER" \
             --config "{\"bundle\":{\"iOS\":{\"bundleVersion\":\"$major.$minor\"}}}"
 
       # No secrets here: the IPA is this app, at this version, signed for the App Store by this team.
