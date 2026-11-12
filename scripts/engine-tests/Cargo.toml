@@ -1,0 +1,14 @@
+# Exercise the actual engine module without GTK/WebKit, on developer machines and Windows CI.
+[package]
+name = "masame-engine-tests"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.152"
+tokio = { version = "=1.53.2", features = ["process", "io-util", "sync", "macros", "rt-multi-thread", "time", "net"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_Debug", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }

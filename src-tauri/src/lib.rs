@@ -1,6 +1,8 @@
 mod backend;
 mod engine;
 mod failure;
+#[cfg(any(windows, test))]
+mod startup;
 #[cfg(desktop)]
 mod hand;
 #[cfg(any(target_os = "ios", all(test, unix)))]
@@ -450,13 +452,21 @@ async fn update_install(app: AppHandle, s: State<'_, App>) -> Res<()> {
             }
         }, || {}).await.map_err(|e| e.to_string())?;
         let _ = app.emit("update-installing", ()); // downloaded and verified (also when the size was unknown)
-        s.engine.stop();
+        s.engine.prepare_update().await.map_err(|e| format!("{e:?}"))?;
+        #[cfg(windows)]
+        startup::record("update verified; engine exited; handing installer over");
         let u = update.clone();
         tauri::async_runtime::spawn_blocking(move || u.install(bytes)).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())
     }.await;
     match r {
         Ok(()) => { app.request_restart(); Ok(()) }
-        Err(e) => { *s.update.lock().unwrap() = Some(update); Err(Failure::with("update_failed", e)) }
+        Err(e) => {
+            s.engine.cancel_update();
+            #[cfg(windows)]
+            startup::record("update failed; installation not completed");
+            *s.update.lock().unwrap() = Some(update);
+            Err(Failure::with("update_failed", e))
+        }
     }
 }
 
@@ -591,6 +601,9 @@ fn quit(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    #[cfg(windows)]
+    startup::init(&context.config().identifier, &context.package_info().version.to_string());
     let builder = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(arg_files(std::env::args_os(), &std::env::current_dir().unwrap_or_default()))));
     // Linux has no single instance (the plugin needs zbus, see keyring in Cargo.toml): a second launch opens its own window.
@@ -608,6 +621,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            #[cfg(windows)]
+            startup::record("setup entered");
             #[cfg(target_os = "android")]
             init_tls();
             let h = app.handle().clone();
@@ -620,7 +635,11 @@ pub fn run() {
             };
             #[cfg(target_os = "ios")]
             let engine = ios_setup(app.handle(), engine);
-            if let Err(e) = install_config(app.handle()) { eprintln!("[katago] config not installed: {e:?}") }
+            if let Err(e) = install_config(app.handle()) {
+                eprintln!("[katago] config not installed: {e:?}");
+                #[cfg(windows)]
+                startup::record(&format!("config unavailable: {e:?}"));
+            }
             app.manage(App {
                 engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), ogs: Default::default(),
                 #[cfg(desktop)]
@@ -636,7 +655,13 @@ pub fn run() {
         if e.id().as_ref() == "quit" { return quit(app) }
         if let Some(id) = menu::ACTIONS.iter().find(|a| e.id().as_ref() == **a) { let _ = app.emit("menu", id); }
     });
-    builder
+    let application = builder
+        .on_page_load(|_webview, payload| {
+            #[cfg(windows)]
+            startup::record(&format!("webview navigation {:?}", payload.event()));
+            #[cfg(not(windows))]
+            let _ = payload;
+        })
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
             engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, set_menu_enabled, take_opened,
@@ -646,9 +671,22 @@ pub fn run() {
             #[cfg(desktop)] hand::hand_bytes,
             library::library_sidecar_read, library::library_sidecar_write, library::library_current_read, library::library_current_write
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|app, ev| match ev {
+        .build(context);
+    let application = match application {
+        Ok(app) => app,
+        Err(error) => {
+            #[cfg(windows)]
+            {
+                startup::fatal(&error.to_string());
+                std::process::exit(1);
+            }
+            #[cfg(not(windows))]
+            panic!("error while building tauri application: {error}");
+        }
+    };
+    application.run(|app, ev| match ev {
+            #[cfg(windows)]
+            RunEvent::Ready => startup::record("event loop ready"),
             // Closing the window or quitting: the page writes its pending library change first (the shown game's last
             // move, its clock), then we close. shortcut: a fixed wait, not an answer from the page; fine for two small files.
             RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } if !FLUSHED.swap(true, Ordering::SeqCst) => {
