@@ -6,7 +6,7 @@ use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -122,6 +122,8 @@ struct Proc { child: Child, tx: mpsc::UnboundedSender<String>, spec: Spec }
 
 pub struct Engine {
     proc: Mutex<Option<Proc>>,
+    retiring: Mutex<Vec<Child>>, // stopped/replaced children retain their OS handles until reaped
+    updating: AtomicBool, // prevents a concurrent query from reopening an executable the installer will replace
     status: watch::Sender<Status>,
     pending: Arc<Mutex<HashMap<String, oneshot::Sender<Res<Value>>>>>,
     stderr: Arc<Mutex<VecDeque<String>>>,
@@ -144,7 +146,7 @@ impl Engine {
     /// `emit(event, payload)` forwards status changes ("engine-status") and partial results ("engine-partial").
     pub fn new(emit: impl Fn(&str, Value) + Send + Sync + 'static) -> Arc<Self> {
         Arc::new(Self {
-            proc: Mutex::new(None), status: watch::channel(Status::Stopped).0, pending: Default::default(),
+            proc: Mutex::new(None), retiring: Mutex::new(Vec::new()), updating: AtomicBool::new(false), status: watch::channel(Status::Stopped).0, pending: Default::default(),
             stderr: Default::default(), gen: AtomicU64::new(0), ids: AtomicU64::new(0), emit: Arc::new(emit),
             timeouts: AtomicU32::new(0), log: None, fallback: None, on_ready: None, progress: Mutex::new(Instant::now()), paused: watch::channel(false).0, query_timeout: QUERY_TIMEOUT, start_timeout: START_TIMEOUT,
         })
@@ -208,6 +210,7 @@ impl Engine {
 
     /// Replaces the running process with `spec`; a launch that cannot even spawn goes to the fallback.
     fn launch(self: &Arc<Self>, guard: &mut Option<Proc>, mut spec: Spec) -> Res<()> {
+        if self.updating.load(Ordering::SeqCst) { return Err(Failure::new("engine_stopped")) }
         loop {
             let Err(e) = self.spawn(guard, spec.clone()) else { return Ok(()) };
             match self.fall_back(&spec, e) {
@@ -220,7 +223,7 @@ impl Engine {
     fn spawn(self: &Arc<Self>, guard: &mut Option<Proc>, spec: Spec) -> Res<()> {
         // New generation first: the old process's reader must not report its own exit, even if this launch fails.
         let gen = self.gen.fetch_add(1, Ordering::SeqCst) + 1;
-        if let Some(mut old) = guard.take() { let _ = old.child.start_kill(); }
+        if let Some(old) = guard.take() { self.retire(old); }
         self.fail_pending(Failure::new("engine_stopped"));
         for (p, code) in [(&spec.bin, "engine_missing"), (&spec.config, "config_missing"), (&spec.model, "model_missing")] {
             if !p.is_file() { return Err(Failure::with(code, p.display())); }
@@ -332,7 +335,7 @@ impl Engine {
         };
         if kill {
             self.gen.fetch_add(1, Ordering::SeqCst); // the killed process's reader must stay silent
-            if let Some(mut p) = guard.take() { let _ = p.child.start_kill(); }
+            if let Some(p) = guard.take() { self.retire(p); }
         }
         drop(guard);
         self.set_status(Status::Error { error: error.clone() }); // status first: a query arriving now sees the error
@@ -467,10 +470,52 @@ impl Engine {
         }
     }
 
+    /// Download verification has already succeeded. Block new launches, then wait until Windows has closed the
+    /// engine executable and DLL handles before handing them to NSIS. No process mutex is held across an await.
+    #[cfg(desktop)]
+    pub async fn prepare_update(&self) -> Res<()> {
+        self.updating.store(true, Ordering::SeqCst);
+        let mut processes = {
+            let mut guard = self.proc();
+            self.gen.fetch_add(1, Ordering::SeqCst);
+            if let Some(process) = guard.take() { self.retire(process); }
+            std::mem::take(&mut *self.retiring.lock().unwrap_or_else(PoisonError::into_inner))
+        };
+        self.fail_pending(Failure::new("engine_stopped"));
+        self.set_status(Status::Stopped);
+        while let Some(mut process) = processes.pop() {
+            self.log("update: waiting for engine exit");
+            let error = match tokio::time::timeout(Duration::from_secs(10), process.wait()).await {
+                Ok(Ok(_)) => None,
+                Ok(Err(e)) => Some(Failure::with("update_failed", format!("engine exit: {e}"))),
+                Err(_) => Some(Failure::with("update_failed", "engine exit timed out; installer not started")),
+            };
+            if let Some(error) = error {
+                processes.push(process);
+                self.retiring.lock().unwrap_or_else(PoisonError::into_inner).extend(processes);
+                return Err(error);
+            }
+        }
+        self.log("update: engine exited");
+        Ok(())
+    }
+
+    #[cfg(desktop)]
+    pub fn cancel_update(&self) { self.updating.store(false, Ordering::SeqCst); }
+
+    // Called while holding proc, including on stop/fallback. prepare_update drains under the same lock so it
+    // cannot overlook a child whose termination was requested just before the updater acquired the engine.
+    fn retire(&self, mut process: Proc) {
+        let _ = process.child.start_kill();
+        let mut old = self.retiring.lock().unwrap_or_else(PoisonError::into_inner);
+        old.retain_mut(|child| !matches!(child.try_wait(), Ok(Some(_))));
+        old.push(process.child);
+    }
+
     pub fn stop(&self) {
         self.log("stop");
         self.gen.fetch_add(1, Ordering::SeqCst);
-        if let Some(mut p) = self.proc().take() { let _ = p.child.start_kill(); }
+        if let Some(p) = self.proc().take() { self.retire(p); }
         self.fail_pending(Failure::new("engine_stopped"));
         self.set_status(Status::Stopped);
     }
@@ -478,7 +523,7 @@ impl Engine {
     /// Synchronous kill for app exit.
     pub fn kill(&self) {
         self.gen.fetch_add(1, Ordering::SeqCst);
-        if let Some(mut p) = self.proc().take() { let _ = p.child.start_kill(); }
+        if let Some(p) = self.proc().take() { self.retire(p); }
     }
 
     /// The app goes to the background (iOS kills an app that uses the GPU there): KataGo drops its searches (the
@@ -569,6 +614,95 @@ mod tests {
         assert_eq!(e.ensure(s).unwrap_err().code, "engine_missing");
         assert!(matches!(e.status(), Status::Error { .. }));
         assert!(e.analyze(json!({})).await.is_err());
+    }
+
+    #[cfg(desktop)]
+    #[tokio::test]
+    async fn update_blocks_launches_until_an_install_failure_allows_retry() {
+        let e = Engine::new(|_, _| {});
+        e.prepare_update().await.unwrap();
+        assert_eq!(e.ensure(spec()).unwrap_err().code, "engine_stopped");
+        e.cancel_update();
+        let mut missing = spec();
+        missing.bin = "/nonexistent/katago".into();
+        assert_eq!(e.ensure(missing).unwrap_err().code, "engine_missing");
+    }
+
+    #[cfg(all(desktop, unix))]
+    #[tokio::test]
+    async fn update_reaps_a_live_engine_before_returning_and_stops_pending_queries() {
+        let e = Engine::new(|_, _| {});
+        e.ensure(fake("update-exit", HANG)).unwrap();
+        let pid = e.proc().as_ref().unwrap().child.id().unwrap();
+        let pending = tokio::spawn({ let e = e.clone(); async move { e.analyze(json!({"moves": []})).await } });
+        tokio::task::yield_now().await;
+        e.prepare_update().await.unwrap();
+        assert_eq!(pending.await.unwrap().unwrap_err().code, "engine_stopped");
+        assert!(e.running_spec().is_none());
+        // An exited but unreaped child still has a PID. This proves that the OS process is actually gone.
+        assert!(!std::process::Command::new("kill").args(["-0", &pid.to_string()]).stderr(Stdio::null()).status().unwrap().success());
+        assert_eq!(e.ensure(fake("update-blocked", HANG)).unwrap_err().code, "engine_stopped");
+    }
+
+    #[cfg(all(desktop, any(unix, windows)))]
+    #[tokio::test]
+    async fn update_reaps_children_stopped_or_replaced_just_before_installation() {
+        // stop() relinquishes the active slot, but the updater must still wait for that child's OS exit.
+        let e = Engine::new(|_, _| {});
+        e.ensure(update_fixture("update-after-stop")).unwrap();
+        let stopped = e.proc().as_ref().unwrap().child.id().unwrap();
+        e.stop();
+        assert!(e.running_spec().is_none());
+        assert_eq!(e.retiring.lock().unwrap().len(), 1, "stopped child handle is retained");
+        e.prepare_update().await.unwrap();
+        assert!(process_exited(stopped), "stop immediately before update must be reaped");
+        assert!(e.retiring.lock().unwrap().is_empty());
+
+        // Replacing a process also retires the old one. Both generations must have exited before installation.
+        let e = Engine::new(|_, _| {});
+        e.ensure(update_fixture("update-replaced-old")).unwrap();
+        let replaced = e.proc().as_ref().unwrap().child.id().unwrap();
+        e.ensure(update_fixture("update-replaced-new")).unwrap();
+        let current = e.proc().as_ref().unwrap().child.id().unwrap();
+        assert_ne!(replaced, current);
+        e.prepare_update().await.unwrap();
+        assert!(process_exited(replaced) && process_exited(current), "neither generation may hold installer resources open");
+        assert!(e.retiring.lock().unwrap().is_empty());
+    }
+
+    #[cfg(all(desktop, unix))]
+    fn update_fixture(name: &str) -> Spec { fake(name, HANG) }
+
+    // The same regression runs on Windows. Compile a tiny native protocol process with the Rust toolchain
+    // already running cargo test; no PowerShell process tricks, installed model or GPU is required.
+    #[cfg(all(desktop, windows))]
+    fn update_fixture(name: &str) -> Spec {
+        let dir = std::env::temp_dir().join(format!("baduk-update-process-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join(format!("{name}.rs"));
+        let bin = dir.join(format!("{name}.exe"));
+        std::fs::write(&source, include_str!("../../scripts/windows/fake-engine.rs")).unwrap();
+        let output = std::process::Command::new("rustc").args(["--edition", "2021"]).arg(source).arg("-o").arg(&bin).output().unwrap();
+        assert!(output.status.success(), "fixture compiler: {}", String::from_utf8_lossy(&output.stderr));
+        Spec { bin: bin.clone(), config: bin.clone(), model: bin, human: None, cwd: dir, overrides: vec![] }
+    }
+
+    #[cfg(all(desktop, unix))]
+    fn process_exited(pid: u32) -> bool {
+        !std::process::Command::new("kill").args(["-0", &pid.to_string()]).stderr(Stdio::null()).status().unwrap().success()
+    }
+
+    #[cfg(all(desktop, windows))]
+    fn process_exited(pid: u32) -> bool {
+        use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_INVALID_PARAMETER, WAIT_OBJECT_0};
+        use windows_sys::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+        unsafe {
+            let process = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
+            if process.is_null() { return GetLastError() == ERROR_INVALID_PARAMETER }
+            let exited = WaitForSingleObject(process, 0) == WAIT_OBJECT_0;
+            CloseHandle(process);
+            exited
+        }
     }
 
     /// A stand-in engine: a shell script (it is also passed as config and model, which only need to exist).

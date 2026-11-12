@@ -1,4 +1,8 @@
 node_modules/
+# Isolated engine test build (uses the production Rust modules without GUI dependencies)
+scripts/engine-tests/target/
+windows-evidence/
+__pycache__/
 dist/
 src-tauri/target/
 src-tauri/gen/schemas/

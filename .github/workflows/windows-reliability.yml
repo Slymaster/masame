@@ -1,0 +1,69 @@
+# No release environment, production signing key or publication. The updater fixtures have their own build-time
+# identifier, loopback endpoint and throwaway signing key and never leave this disposable VM.
+name: Windows reliability
+on:
+  pull_request:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-reliability-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  installed-app:
+    runs-on: windows-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            src-tauri
+            scripts/engine-tests
+          key: windows-reliability
+          cache-on-failure: true
+      - run: pnpm install --frozen-lockfile
+      - name: Test the engine and startup logger without a mocked GUI runtime
+        run: cargo test --locked --manifest-path scripts/engine-tests/Cargo.toml
+      - name: Test the loopback update fixture
+        run: python -m unittest discover -s scripts/windows -p test_*.py -v
+      - name: Fetch the pinned official Windows engines
+        run: ./scripts/fetch-windows-engine.ps1
+      - name: Install the pinned native WebDriver bridge
+        run: cargo install tauri-driver --version 2.0.6 --locked
+      - name: Build the production-configured NSIS package
+        run: pnpm tauri build --ci --bundles nsis
+      - name: Exercise the installed app at normal user integrity
+        shell: pwsh
+        run: |
+          # Use a true LUA token, rather than only a lower integrity label. The updater plugin branches on
+          # TokenElevation, which remains 1 with gsudo's restricted Medium token on the recorded hosted runner.
+          $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+          icacls "$env:GITHUB_WORKSPACE" /grant "${identity}:(OI)(CI)F" /T /C | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Could not grant the runner account access to its test workspace' }
+          python scripts/windows/launch_user_token.py --evidence windows-evidence/token-failure.json -- python -c "raise SystemExit(23)"
+          if ($LASTEXITCODE -ne 23) { throw 'Filtered-token launcher did not propagate a failing child exit code' }
+          python scripts/windows/launch_user_token.py --evidence windows-evidence/token-preflight-launch.json -- python scripts/windows/check_user_token.py --evidence windows-evidence/token-preflight.json
+          if ($LASTEXITCODE -ne 0) { throw 'Filtered-token stdout/stderr or process-handle preflight failed' }
+          python scripts/windows/launch_user_token.py --evidence windows-evidence/token.json -- pwsh -NoProfile -File ./scripts/test-windows-install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Filtered-token Windows harness failed ($LASTEXITCODE)" }
+      - name: Keep validation evidence (never installers or signing keys)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-reliability-evidence
+          path: windows-evidence/
+          if-no-files-found: warn
+          retention-days: 7
