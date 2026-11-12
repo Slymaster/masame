@@ -3,9 +3,10 @@
 import { useEffect, useReducer, useRef, useState, type RefObject } from 'react'
 import type { Facts, Pos } from '../classify'
 import type { Game, Sign } from '../game'
-import type { Analysis } from '../katago'
+import { inTauri, type Analysis } from '../katago'
 import type { Reading } from '../rank'
 import type { Moment } from '../review'
+import * as library from '../library'
 import { enqueue, posOf, loadQueue, ranksOf, newAuto, nextJob, RETRY_MS, reviewed, runJob, saveQueue, type Auto, type Job, type JobFlags } from './autoReview'
 import { reviewKey } from './deck'
 
@@ -22,31 +23,59 @@ export function useAutoReview({ free, ask, scanRun, add, done, human, myRank }: 
   a.current ??= newAuto(loadQueue())
   const [ver, bump] = useReducer((x: number) => x + 1, 0)
   const [pct, setPct] = useState<number | null>(null)
+  const [restored, setRestored] = useState(!inTauri())
   const current = useRef<Job | null>(null)
   const freeRef = useRef(free), latest = useRef({ ask, add, done, human, myRank })
   freeRef.current = free; latest.current = { ask, add, done, human, myRank }
   const changed = () => { saveQueue(a.current.queue); bump() }
 
   useEffect(() => {
+    if (!inTauri()) return
+    // A process may have died after the native delete but before localStorage was flushed.
+    // Never resume an orphaned persisted analysis job.
+    let ready = false
+    const restore = () => {
+      const xs = library.get()
+      if (!xs || ready) return
+      ready = true
+      a.current.queue = a.current.queue.filter(j => !j.id || xs.some(e => e.id === j.id))
+      changed(); setRestored(true)
+    }
+    // A later successful retry (for example opening My games) also releases the runner.
+    const off = library.subscribe(restore)
+    library.load().then(restore, e => console.error('automatic review library', e))
+    return off
+  }, [])
+
+  useEffect(() => library.onDelete((id, phase) => {
+    if (phase !== 'start') return
+    a.current.queue = a.current.queue.filter(j => j.id !== id)
+    if (current.current?.id === id) { current.current = null; setPct(null) }
+    changed()
+  }), [])
+
+  useEffect(() => {
     const s = a.current, j = nextJob(s, Date.now())
-    if (!free || current.current || !j) return
+    if (!restored || !free || current.current || !j) return
     current.current = j; setPct(null)
-    const live = () => freeRef.current && current.current === j
+    const valid = library.guard(j.id)
+    const live = () => freeRef.current && current.current === j && valid()
     let got: Reading | null = null
     const run = scanRun.current.catch(() => {}).then(() => runJob(s, j, (g, q) => latest.current.ask(g, q), live,
       p => current.current === j && setPct(p), (...x) => latest.current.add(...x), latest.current.human ? r => { got = r } : undefined, latest.current.myRank))
     scanRun.current = run
     run.then(r => {
+      if (current.current !== j || !valid()) return
       if (current.current === j) current.current = null
       if (r === 'failed') setTimeout(bump, RETRY_MS)
       else if (r !== 'paused') { setPct(null); latest.current.done(j.k, r.moments, got, { ...j, pos: posOf(s, j.k), facts: r.facts }) } // before changed() saves the queue without the job
       changed()
     }, e => { console.error('automatic review', e); if (current.current === j) current.current = null }) // never leaves the runner stuck
-  }, [free, ver, scanRun])
+  }, [free, restored, ver, scanRun])
 
   return {
     /** A finished game whose player is `side` (0: unknown, ignored), kept in the library under `flags.id`. */
-    enqueue: (game: Game, side: Sign | 0, flags?: JobFlags) => { const q = enqueue(a.current, game, side, Date.now(), flags); if (q !== a.current.queue) { a.current.queue = q; changed() } },
+    enqueue: (game: Game, side: Sign | 0, flags?: JobFlags) => { if (!library.active(game) || flags?.id && !library.writable(flags.id)) return; const q = enqueue(a.current, game, side, Date.now(), flags); if (q !== a.current.queue) { a.current.queue = q; changed() } },
     /** The scan positions of this record, shared by the foreground review. */
     posOf: (game: Game) => posOf(a.current, reviewKey(game)),
     /** The rank probabilities of this record, shared by the foreground review. */

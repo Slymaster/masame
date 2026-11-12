@@ -184,7 +184,8 @@ function Goban({ state, onPlay, view, mode, options, thinking, onFallback, inert
 const ogsSide = ({ info }: Game): Sign | 0 => !ogs.me ? 0 : info.playerBlack === ogs.me.username ? 1 : info.playerWhite === ogs.me.username ? -1 : 0
 
 /** Keeps an OGS game of mine in the library (once), at its end or when imported. */
-const keepOgs = (g: Game, me: Sign | 0, ogsId: number, extra: Partial<library.Entry> = {}) => { library.keep(g, 'ogs', me, { ogsId, ...extra }).catch(e => console.error('library', e)) }
+const keepOgs = (g: Game, me: Sign | 0, ogsId: number, extra: Partial<library.Entry> = {}, reimport = false) =>
+  library.keep(g, 'ogs', me, { ogsId, ...extra }, reimport).then(id => library.active(g) ? id : undefined)
 
 /** The notes short enough for the result card's title line (i18n.test.ts keeps their wordings short); see `said`. */
 const shortNotes = new WeakSet<Msg>()
@@ -215,6 +216,9 @@ const botName = (b: { rank: string; era?: number }) => (b.era ? t.masterOf(b.era
 
 export function App() {
   const [game, setGame] = useState(() => new Game({ size: 19 }))
+  const currentBoard = useRef(game)
+  currentBoard.current = game
+  const [deletingGame, setDeletingGame] = useState<Game | null>(null)
   const [ver, rerender] = useReducer((x: number) => x + 1, 0) // Game is mutable; bump after each change
   const verRef = useRef(ver)
   verRef.current = ver
@@ -435,7 +439,8 @@ export function App() {
     scanRun, add: (...x) => ex.add(...x),
     done: (k, ms, r, j) => { // a job is always the player's own game
       const ai = r && keepRank(k, r, !j.noAdjust)
-      noteReview(j.id, j.pos, ms, j.facts, { key: k, side: j.side }).then(() => { if (r && !j.noRank) return noteRank(j.id, r) }).catch(console.error)
+      const valid = library.guard(j.id)
+      noteReview(j.id, j.pos, ms, j.facts, { key: k, side: j.side }, valid).then(() => { if (r && !j.noRank && valid()) return noteRank(j.id, r, valid) }).catch(console.error)
       if (ai) setNextAi(ai) // the next game's level, whichever game the line shows
       if (!result || reviewKey(game) !== k) return
       setNote(short(d => d.autoDone(ms.length, r ? rankName(r.all) : undefined))) // replaces a stale note (saved…): the card says one at a time
@@ -603,6 +608,18 @@ export function App() {
     if (SIZES.includes(r.game.info.size)) resize(r.game.info.size)
     setNote(short(d => d.gameResumed))
   })
+  const deleteGame = async (e: library.Entry) => {
+    if (library.idOf(currentBoard.current) === e.id) {
+      setDeletingGame(currentBoard.current)
+      reviewId.current = Promise.resolve(undefined)
+      setReview(null); setAuto(null); setHeld(false)
+    }
+    try { await library.remove(e.id) }
+    finally { setDeletingGame(null) }
+    if (library.idOf(currentBoard.current) !== e.id) return
+    scan.current = null; pendingReview.current = null; setPanel(null)
+    start(new Game({ size: currentBoard.current.info.size }), null)
+  }
   /** Leaving the shown game: an unfinished OGS game goes on without us; unsaved moves are lost. */
   // only a live game I play goes on with my clock running; spectated and correspondence games are left silently
   const leaveAsked = !!myGame && !myGame.corr
@@ -650,7 +667,7 @@ export function App() {
         for (const [k, sd] of [['BR', e.black], ['WR', e.white]] as const) if (!g.root.data[k]?.[0] && sd.rank) g.root.data[k] = [sd.rank]
       }
       start(again ? local(g, e) : g, again ? again.bot : null); if (SIZES.includes(g.info.size)) resize(g.info.size)
-      if (from.ogsId !== undefined) { keepOgs(g, ogsSide(g), from.ogsId); ar.enqueue(g, ogsSide(g), { id: library.idOf(g) }) } // an ended OGS game of mine
+      if (from.ogsId !== undefined) { const id = await keepOgs(g, ogsSide(g), from.ogsId, {}, true); if (id) ar.enqueue(g, ogsSide(g), { id }) } // explicit import may restore a deleted local copy
     } catch (e) {
       setNote(d => d.openFailed(failureText(e, d)))
     }
@@ -812,7 +829,8 @@ export function App() {
     if (n.gameId === undefined) return
     // a game of mine that ended outside Masame (correspondence, the website): reviewed too, the game being over
     const id = n.gameId
-    if (n.kind === 'ended' && n.outcome !== 'Void') ogs.sgf(id).then(s => { const g = loadSgf(s); keepOgs(g, ogsSide(g), id); ar.enqueue(g, ogsSide(g), { id: library.idOf(g) }) }).catch(console.error)
+    const valid = library.guard(`ogs-${id}`)
+    if (n.kind === 'ended' && n.outcome !== 'Void' && valid()) ogs.sgf(id).then(async s => { if (!valid()) return; const g = loadSgf(s), kept = await keepOgs(g, ogsSide(g), id); if (kept && valid()) ar.enqueue(g, ogsSide(g), { id: kept }) }).catch(console.error)
     if (n.kind === 'declined' && n.gameId === waiting.current?.gameId) { stopWait(); setNote(d => d.ogsDeclined(who)) }
     else if (n.kind === 'started' && n.gameId !== online?.id && n.gameId !== waiting.current?.gameId && document.hasFocus()) { if (!result) setNote(null); setStarted({ id: n.gameId, who }) }
   }
@@ -823,7 +841,7 @@ export function App() {
     if (!ogsEnded) return
     const { black: b, white: w } = online.players
     keepOgs(online.game, online.me, online.id, { result: online.result!.re, black: { name: b.username, rank: b.rank }, white: { name: w.username, rank: w.rank } })
-    ar.enqueue(online.game, online.me as Sign, { id: library.idOf(online.game) })
+      .then(id => { if (id) ar.enqueue(online.game, online.me as Sign, { id }) }).catch(console.error)
   }, [ogsEnded, online?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** End of a game: record the result (and, against the bot, nudge its rank toward a 50 % win rate, once). */
@@ -927,7 +945,7 @@ export function App() {
   // The bot's turn: ask KataGo (human policy at the bot's rank + a small search), then play after a human-like pause.
   // A failed query is retried (the Rust side restarts a crashed engine and waits until it is warm); after the last
   // attempt the note offers "Réessayer" — undo and new game stay available throughout.
-  const botTurn = !!bot && !result && !game.ended && atEnd && game.toPlay === bot.sign && !panel && !mt.stopped
+  const botTurn = !!bot && deletingGame !== game && !result && !game.ended && atEnd && game.toPlay === bot.sign && !panel && !mt.stopped
   useEffect(() => {
     if (!botTurn || !bot) return
     let live = true
@@ -1005,6 +1023,7 @@ export function App() {
     if (!reading || !review || !scan.current) return
     let live = true
     const pos = scan.current.pos, { side, levels } = review, end = reviewEnd(game), id = library.idOf(game)
+    const valid = library.guard(id), alive = () => live && valid() && library.active(game)
     const ask = (at: number, q: object) => analyze(game.branch(at), q as Record<string, unknown>)
     const run = scanRun.current.catch(() => {}).then(async () => {
       // a game reviewed before (by hand or in the background) reopens from its sidecar, without the scan: only the line it read
@@ -1013,16 +1032,16 @@ export function App() {
         saved.pos.forEach((p, i) => { pos[i] ??= p })
         if (saved.side === side) return { moments: saved.moments, facts: saved.facts, saved: true }
         // another side: its own moments from the saved positions (deep checks only); the sidecar keeps the first side's
-        return { ...await readGame(game, side, pos, ask, () => live, pct => live && setReview(x => x && { ...x, pct }), { levels, facts: saved.facts }), saved: true }
+        return { ...await readGame(game, side, pos, ask, alive, pct => alive() && setReview(x => x && { ...x, pct }), { levels, facts: saved.facts }), saved: true }
       }
       const book = await loadBook().then(db => bookMoves(game, db), () => undefined) // no book: no Book moves
-      return { ...await readGame(game, side, pos, ask, () => live, pct => live && setReview(x => x && { ...x, pct }), { levels, book }), saved: false }
+      return { ...await readGame(game, side, pos, ask, alive, pct => alive() && setReview(x => x && { ...x, pct }), { levels, book }), saved: false }
     }).then(r => ({ ...r, judged: classify(game, pos, r.facts, levels, end) }))
     scanRun.current = run
     run.then(({ moments: ms, facts, saved, judged }) => {
-      if (!live) return
+      if (!alive()) return
       ex.add(game, ms, leadsOf(pos), mine || side)
-      if (!saved) noteReview(reviewId.current, pos, ms, facts, { key: reviewKey(game), side }).catch(console.error)
+      if (!saved) noteReview(reviewId.current, pos, ms, facts, { key: reviewKey(game), side }, () => valid() && library.active(game)).catch(console.error)
       if (!canPlayAI || !side || side !== mine) ar.reviewed(game, library.idOf(game)) // else once the rank is read too
       setReview(x => x && { ...x, judged })
       openMoment(-1, 'try', ms) // the report first; the moments stay one click away
@@ -1035,13 +1054,14 @@ export function App() {
   useEffect(() => {
     if (!rankSide) return
     let live = true
-    readRank(game, rankSide, ar.ranksOf(game), (g, q) => analyze(g, { ...q, priority: -1 }), () => live).then(r => {
-      if (!live) return
+    const valid = library.guard(library.idOf(game)), alive = () => live && valid() && library.active(game)
+    readRank(game, rankSide, ar.ranksOf(game), (g, q) => analyze(g, { ...q, priority: -1 }), alive).then(r => {
+      if (!alive()) return
       setReview(x => x && { ...x, rank: r })
       if (rankSide !== mine) return
       const lesson = bot ?? (shownEntry && { era: shownEntry.era, ...shownEntry.mentor && { mentor: true as const } }) // a lesson reopened from Mes parties stays one
       const f = lesson ? lessonFlags(lesson) : {}, ai = r && !f.noRank && keep.current(reviewKey(game), r, !f.noAdjust) // no note: it would replace the lesson's caption
-      if (r && !f.noRank) noteRank(reviewId.current, r).catch(console.error)
+      if (r && !f.noRank) noteRank(reviewId.current, r, () => valid() && library.active(game)).catch(console.error)
       if (ai) setNextAi(ai)
       ar.reviewed(game, library.idOf(game))
     }, e => { if (live) { console.error('rank', e); setReview(x => x && { ...x, rank: null }) } })
@@ -1794,6 +1814,7 @@ export function App() {
       )}
       {sheet === 'games' && (
         <GamesSheet onClose={closeSheet} opener={opener.current} onResume={id => { closeSheet(); resume(id) }}
+          onDelete={deleteGame}
           onOpen={e => { closeSheet(); open(() => library.read(e.id), false, { entry: e }) }} onImport={() => { closeSheet(); open() }}
           onImportOgs={id => { closeSheet(); importGame(id) }} />
       )}

@@ -63,6 +63,10 @@ export function keeper(out: Pick<typeof library, 'write' | 'setCurrent'> = libra
   const report = (p: Promise<void>) => { p.catch(e => console.error('library', e)) }
   return {
     flush,
+    forget(id: string) {
+      if (id !== lastId) return
+      clearTimeout(timer); job = last = null; lastId = ''
+    },
     /** Closing the app: the pending write, or the shown unfinished game written again, its clock charged up to now. */
     close() { if (job) flush(); else if (shown && unfinished(shown) && library.idOf(shown) === lastId) last?.() },
     changed(get: () => Shown) {
@@ -72,13 +76,15 @@ export function keeper(out: Pick<typeof library, 'write' | 'setCurrent'> = libra
         if (shown && unfinished(shown) && library.idOf(shown)) report(out.setCurrent(null))
         shown = g
       }
-      if (!dates.has(g) || !g.moves.length) return
+      if (!dates.has(g) || !g.moves.length || !library.active(g)) return
       let id = library.idOf(g)
       if (!id) library.bind(g, id = library.newId(s.bot ? 'ai' : 'two'))
       if (!dates.get(g)) dates.set(g, Date.now())
       const key = id
+      const live = library.guard(key)
       lastId = key
       job = last = () => {
+        if (!live() || !library.active(g)) return
         const now = get(), x = snapshot(key, now.game === g ? now : s, Date.now(), library.get()?.find(e => e.id === key))
         report(out.write(key, x.sgf, x.entry)); report(out.setCurrent(x.current))
       }
@@ -136,6 +142,10 @@ export function useCurrentGame(s: Shown, ver: number, onRestore: (r: Awaited<Ret
   const k = useRef<ReturnType<typeof keeper> | null>(null), latest = useRef(s), first = useRef(s.game), restoreRef = useRef(onRestore)
   latest.current = s; restoreRef.current = onRestore
   useEffect(() => { if (inTauri()) (k.current ??= keeper()).changed(() => latest.current) }, [ver, s.game, s.bot])
+  useEffect(() => library.onDelete((id, phase) => {
+    if (phase === 'start') k.current?.forget(id)
+    else if (library.idOf(latest.current.game) === id) k.current?.changed(() => latest.current)
+  }), [])
   useEffect(() => { // closing the window or quitting: the pending write now (Rust waits a moment before closing, see lib.rs)
     if (!inTauri()) return
     const flush = () => k.current?.close(), off = on<null>('library-flush', flush), stop = onLeave(flush)
@@ -151,15 +161,17 @@ export function useCurrentGame(s: Shown, ver: number, onRestore: (r: Awaited<Ret
 /** A review (automatic or by hand) read: its positions, facts and moments in the 'review' sidecar (v2, leads kept for the
  * older readers), tied to the line read (`key`: reviewKey) and the side the moments were picked for; the entry marked reviewed. Only for
  * the entry's stored line: a variation's review stays in the session (Count and Mining read the sidecar against that SGF). */
-export async function noteReview(id: string | undefined | Promise<string | undefined>, pos: (Pos | undefined)[], moments: Moment[], facts: Facts[], of: { key: string; side: Sign | 0 }) {
+export async function noteReview(id: string | undefined | Promise<string | undefined>, pos: (Pos | undefined)[], moments: Moment[], facts: Facts[], of: { key: string; side: Sign | 0 }, valid = library.guard(typeof id === 'string' ? id : undefined)) {
   const k = await id
-  if (!k || await library.readQueued(k).then(sgf => reviewKey(loadSgf(sgf))).catch(() => null) !== of.key) return
+  const live = library.guard(k)
+  if (!k || !valid() || !live() || await library.readQueued(k).then(sgf => reviewKey(loadSgf(sgf))).catch(() => null) !== of.key || !live() || !valid()) return
   // a position never read (a review stopped short) is stored as null, and makes reviewData ignore the sidecar
   await library.setSidecar(k, 'review', { leads: pos.map(p => p?.lead ?? null), moments, v: 2, pos: pos as Pos[], facts, ...of } satisfies library.ReviewSidecar)
-  await library.patch(k, { review: { moments: moments.length } })
+  if (live() && valid()) await library.patch(k, { review: { moments: moments.length } })
 }
 /** The player's rank read in a kept game, once stored; never for a game played with the mentor (a lesson). */
-export async function noteRank(id: string | undefined | Promise<string | undefined>, r: Reading) {
+export async function noteRank(id: string | undefined | Promise<string | undefined>, r: Reading, valid = library.guard(typeof id === 'string' ? id : undefined)) {
   const k = await id
-  if (k && !(await library.load()).find(e => e.id === k)?.mentor) await library.patch(k, { rankRead: r })
+  const live = library.guard(k)
+  if (k && valid() && !(await library.load()).find(e => e.id === k)?.mentor && live() && valid()) await library.patch(k, { rankRead: r })
 }
