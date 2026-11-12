@@ -104,6 +104,7 @@ The board takes the window; beside it, one floating card holds the game. Its hea
 ### My games
 
 - **The library.** Every game you play against the AI or between two players, your OGS games, the positions you save and the files you review are kept on your machine, with their result, the rank read in your moves, their key moments and your scores. Filter by source, search by opponent, open one with a click. Your ongoing OGS games come first, the ones where it's your move on top.
+- **Delete a local game.** My games offers a separate Delete action with confirmation. The game and its analysis are removed; existing exercises, spaced repetition and earned rewards stay. Deleting an OGS copy leaves the server game untouched, and an explicit import can restore a local copy.
 - **Game review.** Up to three moments where a move cost the most points, each a short lesson: find the punishment yourself, see it, then see the better move. After a game against the AI, or at any time in a two-player or SGF game. It runs locally, in about a minute. From a key moment you can also try your own continuation, and KataGo answers. Every finished game is also read in the background, on your machine, as soon as the engine is free, and its key moments join your exercises without a click.
 - **Every move weighed.** After a review, each move gets a verdict from Brilliant to Blunder, judged by the winning chances it gives away at each player's level, as chess.com does for chess. The game report gives each player's accuracy; a seal on the board, a band on the track, KataGo's line and Retry take you to the moves that mattered. For your games, OGS games, SGF files and the Classics.
 - **Replay from memory.** The board empties and you replay the game, both sides, move by move; after a second miss the move is shown. Your score joins the game in My games.
@@ -120,6 +121,7 @@ The board takes the window; beside it, one floating card holds the game. Its hea
 - **The opponent's hand.** In the Contemplation view, against the AI, your opponent's hand takes a stone from the bowl and places it. On by default, it can be turned off in the Workshop. The model's credits: [src-tauri/assets/hand/CREDITS.md](src-tauri/assets/hand/CREDITS.md).
 - **Two languages.** Entirely in French and English, following the system language, switchable in the app.
 - **A 2D light mode.** A Canvas board, used automatically when the 3D renderer is unavailable.
+- **Remembered coordinates.** The board button and C shortcut share one preference, kept across games and restarts in both board renderers.
 
 ## Status
 
@@ -127,7 +129,7 @@ Masame is young, and honest about it.
 
 - **macOS, Apple Silicon** works today. The engine is a self-contained KataGo 1.18.2 (Metal) with static dependencies; it needs macOS 13 or later and no Homebrew libraries at run time.
 - **macOS, Intel**: the same app with KataGo 1.18.2 built for OpenCL, with automatic CPU fallback; macOS 13 or later. A preview.
-- **Windows** support is written — the code, the NSIS installer and a KataGo OpenCL build with automatic CPU fallback — and built by GitHub Actions. The installer is available as a preview, not yet tested on real hardware.
+- **Windows**: the NSIS installer, installed interface, reinstallation and updater are exercised in GitHub Actions with real CPU KataGo analysis. The app records startup failures and waits for the engine to exit before an update replaces its files. It remains an unsigned preview; the reported Avira detection and GPU execution on user hardware are not validated.
 - **Linux, x86_64**: an AppImage, a .deb and an .rpm, built on Ubuntu 22.04 by GitHub Actions, with KataGo 1.18.2 compiled from source (OpenCL, with automatic CPU fallback). Also a preview.
 
 **Download** the latest version from the [releases page](https://github.com/Slymaster/masame/releases/latest): a DMG for macOS (Apple Silicon, or Intel: the `x64` DMG), an installer for Windows (x64), and an AppImage, a .deb and an .rpm for Linux (x86_64). The macOS build is signed and notarized by Apple, so it opens without a warning. The Windows build is not signed yet: when SmartScreen appears, click **More info**, then **Run anyway**.
@@ -186,7 +188,7 @@ OGS doesn't allow engine help during a game, so while an OGS game is going on, L
 
 ## Roadmap
 
-The foundations, the 3D Living Atelier and the teacher are in place, with the OGS client. Version 0.3 added the joseki trainer, variations and autoplay; version 0.4 read your games: the automatic review, exercises from your games, your rank read in your moves, the daily ritual, handicap, free analysis, a local clock and the postcard. Version 0.5 makes your lessons from your games: the library, tsumego, counting, replay from memory and the Classics, with the Masters of an era, the mentor, the position editor and the kifu. Version 0.6 brings stones and worlds: thirteen stone sets, thirteen décors and three goban shapes in six woods. Version 0.7 weighs every move of a reviewed game, as chess.com does, and gives the AI a hand that places its stones. Next comes Masame on Android, as a beta, and a signed Windows installer. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
+The foundations, the 3D Living Atelier and the teacher are in place, with the OGS client. Version 0.3 added the joseki trainer, variations and autoplay; version 0.4 read your games: the automatic review, exercises from your games, your rank read in your moves, the daily ritual, handicap, free analysis, a local clock and the postcard. Version 0.5 makes your lessons from your games: the library, tsumego, counting, replay from memory and the Classics, with the Masters of an era, the mentor, the position editor and the kifu. Version 0.6 brings stones and worlds: thirteen stone sets, thirteen décors and three goban shapes in six woods. Version 0.7 weighs every move of a reviewed game, as chess.com does, and gives the AI a hand that places its stones. Version 0.8 adds confirmed deletion from the library, remembers board coordinates and improves Windows startup and update reliability. OGS on phones remains outside this release. Next comes Masame on Android, as a beta, and a signed Windows installer. The full plan and its reasoning are in [docs/proposal.en.md](docs/proposal.en.md) (in French: [docs/proposition.md](docs/proposition.md)).
 
 ## Credits
 

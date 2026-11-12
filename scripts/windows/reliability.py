@@ -400,7 +400,7 @@ def copy_logs(data, evidence, prefix):
 
 
 def download_compact(destination):
-    request = urllib.request.Request(COMPACT_URL, headers={"User-Agent": "Masame/0.7"})
+    request = urllib.request.Request(COMPACT_URL, headers={"User-Agent": "Masame/0.8"})
     with urllib.request.urlopen(request, timeout=90) as response:
         # Bound the read even if the upstream server accidentally returns a different/larger payload.
         model = response.read(COMPACT_BYTES + 1)
