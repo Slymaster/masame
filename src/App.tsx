@@ -86,7 +86,7 @@ const AUTOPLAY = [0.5, 1, 2, 4] as const // seconds per move
 interface Settings {
   lang: Lang; opponent: 'human' | 'ai' | 'ogs'; ogsSpeed: ogs.Speed; color: 'b' | 'w' | 'r'; myRank: string; aiRank: string; autoAdjust: boolean; botResign: boolean; delay: boolean; territory: boolean
   renderer: Renderer; camera: Board3DOptions['camera']; light: TimeMode; highContrast: boolean; decor: Decor | 'auto'; stones: StoneSet; ambientSound: boolean; depthOfField: boolean; opponentHand: boolean; goban: GobanShape; wood: Wood
-  langChosen: boolean; panelHidden: boolean; autoUpdate: boolean; updateChecked: number; autoplay: typeof AUTOPLAY[number]
+  langChosen: boolean; panelHidden: boolean; coords: boolean; autoUpdate: boolean; updateChecked: number; autoplay: typeof AUTOPLAY[number]
   handicap: number; clock: ClockSetting
   style: 'level' | 'era'; era: number; mentor: boolean // a Master of an era instead of the AI level; the mentor (v0.5 B)
 }
@@ -95,7 +95,7 @@ export function loadSettings(): Settings {
   const d: Settings = {
     lang: 'en', opponent: 'ai', ogsSpeed: 'rapid', color: 'b', myRank: DEFAULT_RANK, aiRank: DEFAULT_RANK, autoAdjust: true, botResign: true, delay: true, territory: false,
     renderer: '3d', camera: 'study', light: 'auto', highContrast: false, decor: 'atelier', stones: 'japonaise', ambientSound: false, depthOfField: true, opponentHand: true, goban: 'table', wood: 'kaya', langChosen: false, panelHidden: false,
-    autoUpdate: true, updateChecked: 0, autoplay: 1, handicap: 0, clock: 'off', style: 'level', era: 1850, mentor: false,
+    coords: true, autoUpdate: true, updateChecked: 0, autoplay: 1, handicap: 0, clock: 'off', style: 'level', era: 1850, mentor: false,
   }
   let j: Partial<Settings> = {}
   try { j = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') ?? {} } catch { /* private mode or garbage: defaults */ }
@@ -110,6 +110,7 @@ export function loadSettings(): Settings {
     stones: (readySets() as readonly unknown[]).includes(s.stones) ? s.stones : 'japonaise', // a set still to earn is kept and shown as the default (stonesOn)
     ambientSound: s.ambientSound === true, depthOfField: s.depthOfField !== false, opponentHand: s.opponentHand !== false, // on unless switched off, also for settings saved before the option
     goban: (readyShapes() as readonly unknown[]).includes(s.goban) ? s.goban : 'table', wood: (readyWoods() as readonly unknown[]).includes(s.wood) ? s.wood : 'kaya', panelHidden: s.panelHidden === true, ...updateSettings(j),
+    coords: typeof j.coords === 'boolean' ? j.coords : true,
     autoplay: AUTOPLAY.includes(s.autoplay) ? s.autoplay : 1, botResign: s.botResign !== false,
     handicap: Number.isInteger(s.handicap) && s.handicap >= 2 && s.handicap <= 9 ? s.handicap : 0,
     clock: typeof s.clock === 'string' && Object.hasOwn(CLOCKS, s.clock) ? s.clock : 'off',
@@ -220,13 +221,14 @@ export function App() {
   verRef.current = ver
   const view = useRef<View>(null)
   const [nextSize, setNextSize] = useState(19)
-  const [coords, setCoords] = useState(true)
   const [sound, setSound] = useState(true)
   const [note, setNote] = useMsg()
   const [dirty, setDirty] = useState(false) // moves played/undone since the last new game, open or save
   // the language lives in the settings; t is switched before the render that uses it
   const [settings, setSettings] = useState(() => { const s = loadSettings(); setLang(s.lang); return s })
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setSettings(s => ({ ...s, [k]: v }))
+  const coords = settings.coords
+  const toggleCoords = () => setSettings(s => ({ ...s, coords: !s.coords }))
   useEffect(() => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch { /* private mode */ } }, [settings])
 
   // the current match against the bot (null = two players), the results by line (keyed by its leaf), the bot's winrates for resigning
@@ -1203,7 +1205,7 @@ export function App() {
             ...(fullscreen && !isMac && { escape: () => setFullscreen(false) }), // after a sheet's Esc and before a review's
             ...(review && { escape: review.branch ? toReport : leaveReview }), // a lesson goes back to the report first
             j: jt.toggle, e: ex.toggle, d: openLearn, b: () => door('games'),
-            p: () => play(null), c: () => setCoords(v => !v), m: () => setSound(v => !v),
+            p: () => play(null), c: toggleCoords, m: () => setSound(v => !v),
             t: ongoing ? undefined : () => set('territory', !settings.territory), h: togglePanel,
             ...tr.keys, // an open takeover's keys win over the game's (the editor mutes P, C and T)
             ...(renderer === '3d' && {
@@ -1684,7 +1686,7 @@ export function App() {
         <Sheet title={t.settings} onClose={closeSheet} opener={opener.current} focus={netsFromSettings.current ? '[data-nets]' : undefined}>
           <section>
             <div className="lab"><span>{t.boardSection}</span><span /></div>
-            <Switch label={t.coords} k="C" on={coords} toggle={() => setCoords(v => !v)} />
+            <Switch label={t.coords} k="C" on={coords} toggle={toggleCoords} />
             <Switch label={t.sound} k="M" on={sound} toggle={() => setSound(v => !v)} />
             <div className="row" style={{ cursor: 'default', gap: 16 }}>
               <span>{t.autoplay} <kbd>{t.space}</kbd></span>
