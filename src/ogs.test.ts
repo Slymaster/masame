@@ -11,12 +11,17 @@ type Data = GobanEngineConfig & { clock: protocol.GameClock }
 const fixture = json as unknown as { live: { gamedata: Data; events: { t: number; m: unknown[] }[] }; freeHandicap: Data; handicapOne: Data; finished: Data; finishedSgf: string }
 
 // signed in or out, inside Tauri or not, and the Rust rating-history answer
-const host = vi.hoisted(() => ({ signedIn: true, tauri: true, tsv: '' }))
+const host = vi.hoisted(() => ({ signedIn: true, tauri: true, mobile: false, tsv: '', auth: { phase: 'signedOut' } as ogs.AuthState, events: new Map<string, ((data: any) => void)[]>() }))
+vi.mock('./platform', () => ({ get isMobile() { return host.mobile } }))
 vi.mock('./katago', () => ({
+  on: vi.fn(async (name: string, cb: (data: any) => void) => {
+    host.events.set(name, [...host.events.get(name) ?? [], cb])
+    return () => host.events.set(name, host.events.get(name)?.filter(f => f !== cb) ?? [])
+  }),
   inTauri: () => host.tauri,
   call: vi.fn(async (cmd: string) => {
     if (cmd === 'ogs_token') { if (host.signedIn) return 'token'; throw Object.assign(new Error('ogs_login_required'), { code: 'ogs_login_required' }) }
-    return cmd === 'ogs_rating_history' ? host.tsv : undefined
+    return cmd === 'ogs_auth_state' ? host.auth : cmd === 'ogs_rating_history' ? host.tsv : undefined
   }),
 }))
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.1.0' }))
@@ -484,13 +489,14 @@ describe('session', () => {
     lost = false
     host.signedIn = true
     host.tauri = true
+    host.mobile = false; host.events.clear(); host.auth = { phase: 'signedOut' }; ogs.auth.set(host.auth)
     vi.useFakeTimers()
     vi.stubGlobal('WebSocket', FakeSocket)
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: { method?: string; headers: Record<string, string>; body?: string }) => {
       fetches.push(`${url} ${init.headers.Authorization}`)
       const method = init.method ?? 'GET'
       calls.push({ url, method, auth: init.headers.Authorization, type: init.headers['Content-Type'], body: init.body && JSON.parse(init.body) })
-      const custom = reply(url, method)
+      const custom = await reply(url, method)
       if (custom instanceof Response) return custom
       const body = custom ?? (url.endsWith('/ui/config') ? (init.headers.Authorization ? { user_jwt: 'jwt-1', user: { id: 1002, username: 'me', ranking: 30.2 } } : { user_jwt: 'guest-jwt', user: { id: 0, username: 'Guest', anonymous: true } })
         : url.includes('/me/challenges/') ? { results: [] }
@@ -503,7 +509,11 @@ describe('session', () => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
   })
-  const online = async () => { await ogs.connect(); const a = last(); a.open(); return a }
+  const online = async (seeded = false) => {
+    await ogs.connect(); const a = last(); a.open()
+    if (seeded) await vi.waitFor(() => expect(ogs.active.get()).not.toBeNull())
+    return a
+  }
 
   it('authenticates on every connect and re-joins followed games after a reconnect', async () => {
     const statuses: string[] = []
@@ -534,6 +544,10 @@ describe('session', () => {
     expect(b.sent[0][1].jwt).toBe('jwt-2')
     expect(b.sent.find(m => m[0] === 'game/connect')![1]).toEqual({ game_id: 1, chat: false })
 
+    expect(() => ogs.move(1, [3, 3])).toThrow('ogs_resyncing')
+    b.receive(['game/1/gamedata', live])
+    b.receive(['game/1/clock', live.clock])
+    await vi.waitFor(() => expect(ogs.isReady(1)).toBe(true))
     ogs.move(1, [3, 3])
     ogs.move(1, null)
     ogs.setRemoved(1, [[9, 2], [9, 4]], true)
@@ -545,8 +559,198 @@ describe('session', () => {
       ['game/removed_stones/accept', { game_id: 1, stones: 'jc', strict_seki_mode: false }],
       ['game/disconnect', { game_id: 1 }],
     ])
-    expect(statuses).toEqual(['connecting', 'online', 'connecting', 'online'])
+    expect(statuses[0]).toBe('connecting')
+    expect(statuses).toContain('resyncing')
+    expect(statuses.at(-1)).toBe('online')
     off()
+  })
+
+  it('resynchronizes on foreground with one reconnect and no queued player move', async () => {
+    const a = await online()
+    ogs.follow(1, () => {})
+    a.receive(['game/1/gamedata', live])
+    expect(ogs.isReady(1)).toBe(true)
+    ogs.suspendSession()
+    expect(() => ogs.move(1, [3, 3])).toThrow('ogs_resyncing')
+    const first = ogs.resumeSession(), duplicate = ogs.resumeSession()
+    await Promise.all([first, duplicate])
+    expect(a.readyState).toBe(3)
+    vi.advanceTimersByTime(1000)
+    const b = last(); b.open()
+    expect(b.commands().filter(c => c === 'game/connect')).toHaveLength(1)
+    expect(b.commands()).not.toContain('game/move')
+    expect(() => ogs.move(1, [3, 3])).toThrow('ogs_resyncing')
+    const withoutClock = { ...clone(live), clock: undefined }
+    b.receive(['game/1/gamedata', withoutClock])
+    expect(ogs.isReady(1)).toBe(false)
+    b.receive(['game/1/clock', live.clock])
+    await vi.waitFor(() => expect(ogs.isReady(1)).toBe(true))
+    ogs.move(1, [3, 3])
+    expect(b.commands().filter(c => c === 'game/move')).toHaveLength(1)
+    expect(fetches.filter(c => c.includes('/ui/config'))).toHaveLength(2)
+  })
+
+  it('ignores the old transport during a failed refresh and recovers only after a successful retry', async () => {
+    const a = await online(true), events: string[] = []
+    ogs.follow(1, e => events.push(e[0]))
+    a.receive(['game/1/gamedata', live])
+    let reject!: (e: Error) => void
+    reply = url => url.endsWith('/ui/config') ? new Promise((_, no) => { reject = no }) : undefined
+    ogs.suspendSession()
+    a.receive(['game/1/gamedata', fixture.finished])
+    const resuming = ogs.resumeSession()
+    await vi.waitFor(() => expect(reject).toBeDefined())
+    a.receive(['game/1/gamedata', fixture.finished])
+    a.receive(['game/1/clock', live.clock])
+    reject(new Error('network unavailable'))
+    await expect(resuming).rejects.toMatchObject({ code: 'ogs_network' })
+    expect(events).toEqual(['gamedata'])
+    expect(ogs.isReady(1)).toBe(false)
+    expect(() => ogs.move(1, [3, 3])).toThrow('ogs_resyncing')
+    // An automatic reconnect before JWT recovery must not authenticate or accept a stale game either.
+    a.end(1006); vi.advanceTimersByTime(1000)
+    const b = last(); b.open(); b.receive(['game/1/gamedata', live])
+    expect(b.commands()).not.toContain('authenticate')
+    expect(events).toEqual(['gamedata'])
+    reply = () => undefined
+    await ogs.resumeSession()
+    vi.advanceTimersByTime(1000)
+    const c = last(); c.open()
+    c.receive(['game/1/gamedata', live]); c.receive(['game/1/clock', live.clock])
+    await vi.waitFor(() => expect(ogs.isReady(1)).toBe(true))
+    expect(FakeSocket.all.flatMap(s => s.commands())).not.toContain('game/move')
+    ogs.move(1, [3, 3])
+    expect(c.commands().filter(x => x === 'game/move')).toHaveLength(1)
+  })
+
+  it('waits for both fresh account lists before enabling moves after a foreground return', async () => {
+    const a = await online(true)
+    ogs.follow(1, () => {}); a.receive(['game/1/gamedata', live])
+    let active!: (v: unknown) => void, challenges!: (v: unknown) => void
+    reply = url => url.includes('/me/games/') ? new Promise(ok => { active = ok })
+      : url.includes('/me/challenges/') ? new Promise(ok => { challenges = ok }) : undefined
+    ogs.suspendSession(); await ogs.resumeSession(); vi.advanceTimersByTime(1000)
+    const b = last(); b.open(); b.receive(['game/1/gamedata', live]); b.receive(['game/1/clock', live.clock])
+    await vi.waitFor(() => { expect(active).toBeDefined(); expect(challenges).toBeDefined() })
+    expect(() => ogs.move(1, [3, 3])).toThrow('ogs_resyncing')
+    active({ results: [] })
+    await vi.waitFor(() => expect(ogs.active.get()).toEqual([]))
+    expect(() => ogs.move(1, [3, 3])).toThrow('ogs_resyncing')
+    challenges({ results: [] })
+    await vi.waitFor(() => expect(ogs.isReady(1)).toBe(true))
+    expect(b.commands()).not.toContain('game/move')
+    ogs.move(1, [3, 3])
+    expect(b.commands().filter(x => x === 'game/move')).toHaveLength(1)
+  })
+
+  it.each(['/me/games/', '/me/challenges/'])('keeps a failed %s refresh blocked until the next successful resume', async path => {
+    const a = await online(true)
+    ogs.follow(1, () => {}); a.receive(['game/1/gamedata', live])
+    reply = url => url.includes(path) ? new Response('{}', { status: 503 }) : undefined
+    ogs.suspendSession(); await ogs.resumeSession(); vi.advanceTimersByTime(1000)
+    const b = last(); b.open(); b.receive(['game/1/gamedata', live]); b.receive(['game/1/clock', live.clock])
+    await vi.waitFor(() => expect(calls.some(c => c.url.includes(path))).toBe(true))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(ogs.isReady(1)).toBe(false)
+    expect(() => ogs.move(1, [3, 3])).toThrow('ogs_resyncing')
+    reply = () => undefined
+    await ogs.resumeSession(); vi.advanceTimersByTime(1000)
+    const c = last(); c.open(); c.receive(['game/1/gamedata', live]); c.receive(['game/1/clock', live.clock])
+    await vi.waitFor(() => expect(ogs.isReady(1)).toBe(true))
+    expect(FakeSocket.all.flatMap(s => s.commands())).not.toContain('game/move')
+  })
+
+  it('allows a resumed guest without authenticated account lists', async () => {
+    host.signedIn = false
+    await ogs.connect({ guest: true })
+    const a = last(); a.open(); ogs.follow(1, () => {}); a.receive(['game/1/gamedata', live])
+    ogs.suspendSession(); await ogs.resumeSession(); vi.advanceTimersByTime(1000)
+    const b = last(); b.open(); b.receive(['game/1/gamedata', live]); b.receive(['game/1/clock', live.clock])
+    expect(ogs.isReady(1)).toBe(true)
+    expect(calls.some(c => c.url.includes('/me/games/') || c.url.includes('/me/challenges/'))).toBe(false)
+  })
+
+  it('does not accept an account list from an earlier connection as the current resync', async () => {
+    const a = await online(true)
+    ogs.follow(1, () => {}); a.receive(['game/1/gamedata', live])
+    const activeResponses: ((v: unknown) => void)[] = []
+    reply = url => url.includes('/me/games/') ? new Promise(ok => activeResponses.push(ok)) : undefined
+    ogs.suspendSession(); await ogs.resumeSession(); vi.advanceTimersByTime(1000)
+    const b = last(); b.open(); b.receive(['game/1/gamedata', live])
+    await vi.waitFor(() => expect(activeResponses).toHaveLength(1))
+    ogs.suspendSession(); await ogs.resumeSession(); vi.advanceTimersByTime(1000)
+    const c = last(); c.open(); c.receive(['game/1/gamedata', live])
+    await vi.waitFor(() => expect(activeResponses).toHaveLength(2))
+    activeResponses[0]({ results: [] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(ogs.active.get()?.map(g => g.id)).toEqual([9])
+    expect(ogs.isReady(1)).toBe(false)
+    activeResponses[1]({ results: [] })
+    await vi.waitFor(() => expect(ogs.isReady(1)).toBe(true))
+    expect(ogs.active.get()).toEqual([])
+  })
+
+  it('invalidates a foreground refresh when the app suspends again before it finishes', async () => {
+    const a = await online(true)
+    ogs.follow(1, () => {}); a.receive(['game/1/gamedata', live])
+    const responses: ((v: unknown) => void)[] = []
+    reply = url => url.endsWith('/ui/config') ? new Promise(ok => responses.push(ok)) : undefined
+    ogs.suspendSession(); const first = ogs.resumeSession()
+    await vi.waitFor(() => expect(responses).toHaveLength(1))
+    ogs.suspendSession(); const second = ogs.resumeSession()
+    await vi.waitFor(() => expect(responses).toHaveLength(2))
+    responses[1]({ user_jwt: 'current-jwt' }); await second
+    responses[0]({ user_jwt: 'obsolete-jwt' }); await first
+    reply = () => undefined
+    vi.advanceTimersByTime(1000)
+    const b = last(); b.open(); b.receive(['game/1/gamedata', live])
+    await vi.waitFor(() => expect(ogs.isReady(1)).toBe(true))
+    expect(b.sent.find(x => x[0] === 'authenticate')?.[1].jwt).toBe('current-jwt')
+    expect(FakeSocket.all.flatMap(s => s.commands())).not.toContain('game/move')
+  })
+
+  it('recovers when startup was suspended before the first socket existed', async () => {
+    let firstConfig!: (v: unknown) => void, configs = 0
+    reply = url => url.endsWith('/ui/config') && ++configs === 1 ? new Promise(ok => { firstConfig = ok }) : undefined
+    const connecting = ogs.connect()
+    await vi.waitFor(() => expect(firstConfig).toBeDefined())
+    ogs.suspendSession()
+    const resuming = ogs.resumeSession()
+    firstConfig({ user_jwt: 'startup-jwt', user: { id: 1002, username: 'me', ranking: 30 } })
+    await Promise.all([connecting, resuming])
+    const a = last(); a.open(); ogs.follow(1, () => {}); a.receive(['game/1/gamedata', live])
+    await vi.waitFor(() => expect(ogs.isReady(1)).toBe(true))
+    expect(configs).toBe(2)
+    expect(a.commands()).toContain('authenticate')
+  })
+
+  it('recovers a native login completed before lifecycle listeners were installed', async () => {
+    host.mobile = true; host.signedIn = false; host.auth = { phase: 'signedIn' }
+    const doc = new EventTarget(), win = new EventTarget()
+    Object.assign(doc, { visibilityState: 'visible' })
+    vi.stubGlobal('document', doc); vi.stubGlobal('window', win)
+    const signedIn = vi.fn(), off = ogs.onSignedIn(signedIn)
+    const stop = ogs.startBackground()
+    host.signedIn = true // the cold-start native exchange finishes before the first state read
+    await vi.waitFor(() => expect(ogs.me?.username).toBe('me'))
+    expect(ogs.auth.get()).toEqual({ phase: 'signedIn' })
+    expect(signedIn).toHaveBeenCalledTimes(1)
+    stop(); off()
+    expect(host.events.get('ogs-auth-state')).toHaveLength(0)
+    expect(host.events.get('ogs-app-active')).toHaveLength(0)
+  })
+
+  it('does not retry an OPEN transport send that fails', async () => {
+    const a = await online()
+    ogs.follow(1, () => {})
+    a.receive(['game/1/gamedata', live])
+    const send = a.send.bind(a)
+    a.send = () => { throw new Error('network lost') }
+    expect(() => ogs.move(1, [3, 3])).toThrow('ogs_offline')
+    a.send = send
+    a.end(1006); vi.advanceTimersByTime(1000); last().open()
+    last().receive(['game/1/gamedata', live])
+    expect(last().commands()).not.toContain('game/move')
   })
 
   it('re-fetches the game when the record goes out of sync', async () => {
@@ -641,6 +845,8 @@ describe('session', () => {
 
   it('sends cancel, undo and pause', async () => {
     const a = await online()
+    ogs.follow(1, () => {})
+    a.receive(['game/1/gamedata', live])
     ogs.cancelGame(1)
     ogs.requestUndo(1, 116); ogs.acceptUndo(1, 116); ogs.cancelUndo(1, 116)
     ogs.pauseGame(1); ogs.resumeGame(1)

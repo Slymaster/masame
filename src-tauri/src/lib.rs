@@ -11,6 +11,10 @@ mod library;
 mod menu;
 mod networks;
 mod ogs;
+mod ogs_oauth;
+mod ogs_mobile;
+#[cfg(mobile)]
+mod ogs_secure;
 
 use engine::{Engine, Spec, Status};
 use failure::{Failure, Res};
@@ -19,7 +23,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::path::BaseDirectory;
@@ -29,6 +33,7 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 
 struct App {
     engine: Arc<Engine>,
+    ogs_engine_guard: AtomicU64,
     http: reqwest::Client,
     catalog: Mutex<Vec<Entry>>,
     downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
@@ -112,7 +117,10 @@ fn native_library_dir() -> Result<PathBuf, jni::errors::Error> {
     let ctx = ndk_context::android_context();
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) };
     vm.attach_current_thread(|env| {
-        let context = unsafe { JObject::from_raw(env, ctx.context().cast()) };
+        // ndk-context owns a global reference. Borrow it, then create our own local reference for this frame.
+        let raw_context = ctx.context().cast();
+        let borrowed = unsafe { env.as_cast_raw::<JObject>(&raw_context)? };
+        let context = env.new_local_ref(&*borrowed)?;
         let info = env.call_method(&context, jni_str!("getApplicationInfo"), jni_sig!("()Landroid/content/pm/ApplicationInfo;"), &[])?.l()?;
         let dir = env.get_field(&info, jni_str!("nativeLibraryDir"), jni_sig!("Ljava/lang/String;"))?.l()?;
         Ok(PathBuf::from(env.cast_local::<JString>(dir)?.try_to_string(env)?))
@@ -385,8 +393,20 @@ fn engine_stop(s: State<'_, App>) { s.engine.stop() }
 /// One analysis query (positions are built by the frontend); starts or restarts the engine as needed.
 #[tauri::command]
 async fn engine_analyze(app: AppHandle, s: State<'_, App>, query: Value) -> Res<Value> {
+    let epoch = s.ogs_engine_guard.load(Ordering::SeqCst);
+    if epoch & 1 != 0 { return Err(Failure::new("ogs_engine_blocked")) }
     ensure_engine(&app, &s)?;
-    s.engine.analyze(query).await
+    let result = s.engine.analyze(query).await;
+    if s.ogs_engine_guard.load(Ordering::SeqCst) != epoch { return Err(Failure::new("ogs_engine_blocked")) }
+    result
+}
+
+/// Defence in depth for the UI's synchronous analysis gate; an epoch rejects already-running results too.
+#[tauri::command]
+fn engine_ogs_guard(s: State<'_, App>, blocked: bool) {
+    let _ = s.ogs_engine_guard.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |epoch| {
+        ((epoch & 1 != 0) != blocked).then_some(epoch + 1)
+    });
 }
 
 /// Opens one of a few fixed pages (credits) in the default browser; the webview never passes a URL.
@@ -496,7 +516,9 @@ fn init_tls() {
     let ctx = ndk_context::android_context();
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) };
     let Err(e) = vm.attach_current_thread(|env| {
-        let context = unsafe { jni::objects::JObject::from_raw(env, ctx.context().cast()) };
+        let raw_context = ctx.context().cast();
+        let borrowed = unsafe { env.as_cast_raw::<jni::objects::JObject>(&raw_context)? };
+        let context = env.new_local_ref(&*borrowed)?;
         rustls_platform_verifier::android::init_with_env(env, context)
     }) else { return };
     use std::ffi::{c_char, c_int, CString};
@@ -602,7 +624,7 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build()).plugin(tauri_plugin_notification::init());
     #[cfg(mobile)]
-    let builder = builder.plugin(tauri_plugin_opener::init());
+    let builder = builder.plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_deep_link::init());
     let builder = builder
         .manage(library::Library::default())
         .plugin(tauri_plugin_dialog::init())
@@ -622,12 +644,14 @@ pub fn run() {
             let engine = ios_setup(app.handle(), engine);
             if let Err(e) = install_config(app.handle()) { eprintln!("[katago] config not installed: {e:?}") }
             app.manage(App {
-                engine, http: networks::client(), catalog: Default::default(), downloads: Default::default(), ogs: Default::default(),
+                engine, ogs_engine_guard: AtomicU64::new(0), http: networks::client(), catalog: Default::default(), downloads: Default::default(), ogs: Default::default(),
                 #[cfg(desktop)]
                 update: Default::default(),
                 #[cfg(engine_variants)]
                 failed_variants: Default::default(),
             });
+            #[cfg(mobile)]
+            ogs::setup_mobile(app.handle());
             Ok(())
         });
     // Our menu items (macOS) go to the frontend, which runs them exactly like their keyboard shortcuts.
@@ -639,9 +663,9 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             networks_catalog, networks_state, network_download, network_cancel, network_delete, network_set_active,
-            engine_status, engine_start, engine_stop, engine_analyze, engine_log_tail, open_link, set_language, set_menu_enabled, take_opened,
+            engine_status, engine_start, engine_stop, engine_analyze, engine_ogs_guard, engine_log_tail, open_link, set_language, set_menu_enabled, take_opened,
             #[cfg(desktop)] update_check, #[cfg(desktop)] update_install, #[cfg(desktop)] print_page,
-            ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history,
+            ogs::ogs_login, ogs::ogs_login_cancel, ogs::ogs_token, ogs::ogs_logout, ogs::ogs_rating_history, ogs::ogs_auth_state,
             library::library_list, library::library_read, library::library_write, library::library_delete,
             #[cfg(desktop)] hand::hand_bytes,
             library::library_sidecar_read, library::library_sidecar_write, library::library_current_read, library::library_current_write

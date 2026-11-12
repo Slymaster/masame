@@ -1,0 +1,40 @@
+name: OGS mobile checks
+on:
+  push:
+    branches: [develop]
+    paths: &paths
+      - .github/workflows/ogs-mobile-checks.yml
+      - src/**
+      - src-tauri/ogs_build_env.rs
+      - src-tauri/build.rs
+      - src-tauri/src/ogs*
+      - src-tauri/src/failure.rs
+      - scripts/mobile-ogs*
+      - tests/ogs-auth/**
+  pull_request:
+    paths: *paths
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: tests/ogs-auth
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+      - run: node --test scripts/mobile-ogs.check.mjs
+      - run: cargo test --manifest-path tests/ogs-auth/Cargo.toml --locked

@@ -3,6 +3,7 @@
 
 import type { Game, Sign, Vertex } from './game'
 import { LocalizedError } from './i18n'
+import { analysisTicket, acceptAnalysis } from './enginePolicy'
 
 /** Checked per call (not at import) so a browser preview can install a stand-in before opening a view. */
 export const inTauri = () => '__TAURI_INTERNALS__' in window
@@ -111,6 +112,8 @@ export function positionQuery(game: Game) {
 }
 
 export async function analyze(game: Game, extra: Record<string, unknown>): Promise<Analysis> {
-  const n = game.info.size
-  return parseAnalysis(await call('engine_analyze', { query: { ...positionQuery(game), ...extra } }), n)
+  const ticket = analysisTicket(), n = game.info.size
+  const raw = await call('engine_analyze', { query: { ...positionQuery(game), ...extra } })
+  acceptAnalysis(ticket)
+  return parseAnalysis(raw, n)
 }

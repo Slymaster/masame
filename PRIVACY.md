@@ -1,82 +1,111 @@
 # Privacy policy · Politique de confidentialité
 
-*Masame, on macOS, Windows, Linux, iPhone and Android. Effective 15 October 2026.*
+*Prepared for the next Masame mobile OGS release. Not a notice that this draft build has been published.*
 *En français plus bas.*
 
 ## English
 
-**Masame collects no data.** There is no Masame account, no analytics, no tracking, no advertising and no crash reporting. Masame has no server: nothing you do in the app is sent to its author or to anyone else.
+Masame has no Masame account, analytics, advertising, tracking or automatic crash reporting. Its author operates no server
+that receives your games or learning progress. Offline play and learning work without an OGS account.
 
-### What the app connects to, and why
+### Network services you use
 
-- **katagotraining.org** (and its download server, media.katagotraining.org), the official KataGo site: to read the list of networks and to download the networks you choose. The phones need two, downloaded once from the app; after that, Masame plays and reviews offline. These requests carry nothing about you beyond what any download does (your IP address, seen by that site).
-- **Desktop only — GitHub** (github.com and its file servers): at most once a day, Masame asks whether a new version exists (you can turn this off in Settings), and downloads an update only when you click Install.
-- **Desktop only — OGS** (online-go.com, and ai.online-go.com, OGS's scorer): only if you sign in to OGS or watch games there. Sign-in happens in your browser; Masame never sees your password and keeps its OGS token in the system keychain. What you then share with OGS is governed by OGS's own privacy policy.
-- **The phones have no OGS in this version**, so on iPhone and Android the only host Masame contacts is katagotraining.org.
-- A link you tap (the source code, a licence) opens in your browser.
+- **katagotraining.org** and **media.katagotraining.org** provide the network catalogue and the neural networks you choose
+  to download. After installation, local play and analysis work offline. Like any download host, these sites see your IP address.
+- **OGS (online-go.com)** is optional on desktop, Android and iPhone. If you sign in or watch games, Masame contacts OGS.
+  Your password is entered in the system browser on OGS, never in Masame. OGS receives the game actions, account identifiers,
+  a randomly generated installation identifier, app version, browser user agent and language needed by its client protocol.
+  OGS keeps the online games and account under its own [privacy policy](https://online-go.com/docs/privacy-policy).
+  During dead-stone marking, **ai.online-go.com** may receive the final board, game rules and an OGS session JWT for OGS's scorer.
+  Your local learning progress and unrelated local games are not uploaded to OGS.
+- **The HTTPS sign-in callback host** is the host shown in the browser at the end of OGS authorization. It is associated with
+  the installed app. The callback carries a one-use authorization code and state, never your refresh token or password.
+  When association works the OS opens Masame; the static fallback page has no analytics. The code can only be exchanged
+  with the private verifier kept on your device. The release owner must configure the host before distributing the app.
+- **Desktop updates:** GitHub and its file servers are checked for a new version when automatic checks are enabled.
+  Updates download only when you choose to install them. Phone apps update through their stores.
+- Links you open and files you explicitly export go through your browser or system sharing UI.
 
-### What stays on your device
+### Local storage and deletion
 
-Your games library, your settings, your learning progress (exercises, decks, streak, rank) and the downloaded networks are stored in the app's own folder on your device. Nothing in it is sent anywhere. SGF files you export go where you choose. Deleting the app deletes them.
+Games, settings, learning progress and downloaded networks stay in the app's data folder. Exported files go where you choose.
+The Android Keystore protects a key used to encrypt OGS credentials in the app's non-backup folder. iOS uses its device-only
+Keychain while the device is unlocked. An OAuth sign-in transaction is valid for at most five minutes and consumed once. Expired transactions are removed when the app next checks them.
+Mobile has no plaintext credential fallback. OGS access tokens are available to the local webview; refresh tokens remain native.
 
-### Backups
+Signing out erases local OGS credentials and attempts to revoke them at OGS. If the device is offline, local sign-out still works;
+you can revoke Masame's authorization from OGS too. Sign-out does not delete your OGS account or online games. Use OGS's
+account controls for their deletion. Deleting Masame removes its local files; use sign-out before removal to erase its Keychain
+entry as well. A Keychain entry can survive an app reinstall depending on the operating system.
 
-- **iPhone:** your device's iCloud backup includes your games and settings, as for any app, but never the networks (they are excluded and downloaded again when needed).
-- **Android:** Android's Auto Backup includes your games and settings, never the networks, and never an OGS sign-in token.
+### Backups and notifications
 
-These backups are made by Apple or Google under your account, not by Masame.
+Your device's Apple/Google backup may include your local games, settings and progress under your own account. Downloaded
+networks are excluded. Mobile OGS credentials and pending sign-ins are device-only and are not included in those backups.
+Masame does not send phone push notifications or keep your online games connected after the OS suspends or closes the app.
+Your OGS clock can keep running while Masame is not visible. Desktop can show local notifications while Masame remains open.
 
-### Notifications
+### Children and stores
 
-On desktop, Masame can show local system notifications about your OGS games (your move, a challenge, a game that starts or ends), only while it is open in the background. They are created on your computer; there is no push server. The phone versions send no notifications.
-
-### Children
-
-Masame collects nothing from anyone, children included. On the phones there is no chat, no account and no contact with other players.
-
-### The stores
-
-Apple's App Store and Google Play may collect information when you download the app, under their own privacy policies. Masame receives none of it beyond the anonymous, aggregated statistics both consoles show every developer.
+Masame has no in-app chat. Optional OGS play connects you to other players and is governed by OGS's account rules.
+Apple and Google process app downloads under their own policies. The author sees the anonymous aggregated statistics provided
+by their store consoles. The next mobile release's store privacy disclosures must include the optional OGS integration.
 
 ### Contact
 
-Questions or concerns: open an issue at [github.com/Slymaster/masame/issues](https://github.com/Slymaster/masame/issues), or write to sylvain@guarani-llc.com. Masame is open source (MIT), so all of the above can be checked in [its code](https://github.com/Slymaster/masame). If this policy changes, the new version will be published here with its date.
+Write to sylvain@guarani-llc.com or open [an issue](https://github.com/Slymaster/masame/issues).
+Masame is [open source](https://github.com/Slymaster/masame), under the MIT licence.
 
 ## Français
 
-**Masame ne collecte aucune donnée.** Pas de compte Masame, pas de statistiques d'usage, pas de pistage, pas de publicité, pas de rapports de plantage. Masame n'a pas de serveur : rien de ce que tu fais dans l'app n'est envoyé à son auteur ni à personne d'autre.
+Masame n'a ni compte Masame, ni statistiques d'usage, publicité, pistage ou rapports automatiques de plantage. Son auteur
+n'exploite aucun serveur recevant tes parties ou ta progression. Le jeu et l'apprentissage locaux fonctionnent sans compte OGS.
 
-### À quoi l'app se connecte, et pourquoi
+### Services réseau utilisés
 
-- **katagotraining.org** (et son serveur de téléchargement, media.katagotraining.org), le site officiel de KataGo : pour lire la liste des réseaux et télécharger ceux que tu choisis. Sur téléphone, il en faut deux, téléchargés une fois depuis l'app ; ensuite Masame joue et analyse hors ligne. Ces requêtes ne disent rien de toi au-delà de ce que dit n'importe quel téléchargement (ton adresse IP, vue par ce site).
-- **Sur ordinateur seulement — GitHub** (github.com et ses serveurs de fichiers) : au plus une fois par jour, Masame demande s'il existe une nouvelle version (désactivable dans les Réglages), et ne télécharge une mise à jour que si tu cliques sur Installer.
-- **Sur ordinateur seulement — OGS** (online-go.com, et ai.online-go.com, le compteur de points d'OGS) : seulement si tu te connectes à OGS ou si tu y regardes des parties. La connexion se fait dans ton navigateur ; Masame ne voit jamais ton mot de passe et garde son jeton OGS dans le trousseau du système. Ce que tu partages ensuite avec OGS relève de la politique de confidentialité d'OGS.
-- **Les téléphones n'ont pas OGS dans cette version** : sur iPhone et Android, le seul site que Masame contacte est katagotraining.org.
-- Un lien que tu touches (le code source, une licence) s'ouvre dans ton navigateur.
+- **katagotraining.org** et **media.katagotraining.org** fournissent le catalogue et les réseaux que tu choisis de télécharger.
+  Après installation, le jeu et l'analyse locaux fonctionnent hors ligne. Ces sites voient ton adresse IP comme tout hébergeur.
+- **OGS (online-go.com)** est facultatif sur ordinateur, Android et iPhone. Masame contacte OGS quand tu te connectes ou
+  regardes des parties. Tu saisis ton mot de passe dans le navigateur système sur OGS, jamais dans Masame. OGS reçoit les
+  actions de jeu, les identifiants du compte, un identifiant d'installation aléatoire, la version de l'app, le user agent et la langue
+  prévus par son protocole. OGS conserve les parties et le compte selon sa [politique](https://online-go.com/docs/privacy-policy).
+  Pendant le marquage des pierres mortes, **ai.online-go.com** peut recevoir le plateau final, les règles et un JWT de session
+  OGS pour son compteur. Ta progression d'apprentissage et tes autres parties locales ne sont pas envoyées à OGS.
+- **L'hôte HTTPS de retour de connexion**, visible dans le navigateur à la fin de l'autorisation OGS, est associé à l'app
+  installée. Le retour porte un code d'autorisation à usage unique et un state, jamais ton refresh token ni ton mot de passe.
+  Le système ouvre Masame quand l'association fonctionne ; la page statique de secours n'a pas de statistiques. Le code
+  nécessite le verifier privé gardé sur l'appareil. Le responsable de la release doit configurer cet hôte avant distribution.
+- **Mises à jour sur ordinateur :** GitHub et ses serveurs sont interrogés si les vérifications automatiques sont activées.
+  Une mise à jour se télécharge seulement si tu choisis de l'installer. Les téléphones se mettent à jour par leurs stores.
+- Les liens ouverts et les fichiers que tu exportes passent par le navigateur ou le partage système à ton initiative.
 
-### Ce qui reste sur ton appareil
+### Stockage local et suppression
 
-Ta bibliothèque de parties, tes réglages, ta progression (exercices, decks, série de jours, rang) et les réseaux téléchargés sont rangés dans le dossier de l'app sur ton appareil. Rien n'en sort. Les fichiers SGF que tu exportes vont où tu le décides. Supprimer l'app les supprime.
+Parties, réglages, progression et réseaux restent dans le dossier de l'app. Les exports vont où tu choisis. Android Keystore
+protège une clé qui chiffre les identifiants OGS dans un dossier exclu des sauvegardes. iOS utilise son Keychain limité à
+l'appareil déverrouillé. Une transaction OAuth est valable au plus cinq minutes et consommée une seule fois. Une transaction expirée est effacée au prochain contrôle par l’app. Sur mobile,
+aucun identifiant n'est enregistré en clair. La webview locale reçoit l'access token OGS ; le refresh token reste natif.
 
-### Sauvegardes
+Se déconnecter efface les identifiants locaux et tente de les révoquer chez OGS. Hors ligne, la déconnexion locale fonctionne
+quand même ; tu peux aussi révoquer l'autorisation de Masame depuis OGS. Cela ne supprime ni ton compte ni tes parties OGS.
+Leur suppression passe par les réglages OGS. Supprimer Masame supprime ses fichiers locaux ; déconnecte-toi avant pour effacer
+également son entrée Keychain. Selon le système, une entrée Keychain peut survivre à une réinstallation.
 
-- **iPhone :** la sauvegarde iCloud de ton appareil inclut tes parties et tes réglages, comme pour toute app, mais jamais les réseaux (ils en sont exclus et se retéléchargent au besoin).
-- **Android :** la sauvegarde automatique d'Android inclut tes parties et tes réglages, jamais les réseaux, et jamais un jeton de connexion OGS.
+### Sauvegardes et notifications
 
-Ces sauvegardes sont faites par Apple ou Google sous ton compte, pas par Masame.
+La sauvegarde Apple/Google de ton appareil peut inclure tes parties locales, réglages et progression, sous ton propre compte.
+Les réseaux téléchargés sont exclus. Les identifiants OGS mobiles et les connexions en attente restent liés à l'appareil et ne sont
+pas dans ces sauvegardes. Masame n'envoie pas de push sur téléphone et ne maintient pas les parties connectées après suspension
+ou fermeture par le système. Ton horloge OGS peut continuer pendant que Masame n'est pas visible. Sur ordinateur, des notifications
+locales sont possibles tant que Masame reste ouvert.
 
-### Notifications
+### Enfants et stores
 
-Sur ordinateur, Masame peut afficher des notifications locales du système sur tes parties OGS (à toi de jouer, un défi, une partie qui commence ou se termine), seulement quand il est ouvert en arrière-plan. Elles sont créées sur ton ordinateur ; il n'y a pas de serveur de notifications. Les versions téléphone n'envoient aucune notification.
-
-### Enfants
-
-Masame ne collecte rien de personne, enfants compris. Sur téléphone, il n'y a ni discussion, ni compte, ni contact avec d'autres joueurs.
-
-### Les stores
-
-L'App Store d'Apple et Google Play peuvent recueillir des informations quand tu télécharges l'app, selon leurs propres politiques. Masame n'en reçoit rien, hormis les statistiques anonymes et agrégées que les deux consoles montrent à tout développeur.
+Masame n'a pas de discussion intégrée. Le jeu OGS facultatif te met en relation avec d'autres joueurs selon les règles de compte
+OGS. Apple et Google traitent les téléchargements selon leurs politiques. L'auteur voit les statistiques anonymes agrégées de leurs
+consoles. Les déclarations de confidentialité de la prochaine version mobile doivent inclure l'intégration OGS facultative.
 
 ### Contact
 
-Une question, une inquiétude : ouvre une issue sur [github.com/Slymaster/masame/issues](https://github.com/Slymaster/masame/issues), ou écris à sylvain@guarani-llc.com. Masame est open source (MIT) : tout ce qui précède se vérifie dans [son code](https://github.com/Slymaster/masame). Si cette politique change, la nouvelle version sera publiée ici, avec sa date.
+Écris à sylvain@guarani-llc.com ou ouvre [une issue](https://github.com/Slymaster/masame/issues).
+Masame est [open source](https://github.com/Slymaster/masame), sous licence MIT.

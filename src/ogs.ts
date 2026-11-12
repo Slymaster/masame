@@ -4,7 +4,8 @@
 import { char2num, encodeMove, GobanEngine, GobanSocket, type AdHocPackedMove, type GobanEngineConfig, type GobanEnginePhase, type GobanEngineRules, type JGOFTimeControl, type protocol } from 'goban-engine'
 import { Game, type Sign, type Vertex } from './game'
 import { getVersion } from '@tauri-apps/api/app'
-import { call, inTauri } from './katago'
+import { call, inTauri, on } from './katago'
+import { isMobile } from './platform'
 import { noDead, toggleDead, type Dead } from './scoring'
 import { scoreResult } from './sgf'
 
@@ -373,7 +374,7 @@ export function removedFrom(res: any): { stones: Vertex[]; needsSealing: unknown
 
 // --- Session: one socket for the whole app, authenticated on every (re)connect.
 
-export type Status = 'connecting' | 'online' | 'offline'
+export type Status = 'connecting' | 'resyncing' | 'online' | 'offline'
 let status: Status = 'offline'
 const watchers = new Set<() => void>()
 const setStatus = (s: Status) => { status = s; watchers.forEach(w => w()) }
@@ -420,6 +421,22 @@ let jwt = '' // the session's current one, for the scorer
 export const drift = () => socket?.clock_drift ?? 0
 let session: Promise<Player | null> | null = null
 const followed = new Set<number>()
+const ready = new Map<number, { data: boolean; clock: boolean }>()
+let suspended = false
+let transportReady = false, needsRefresh = false, listsReady = false
+let connectionEpoch = 0, refreshEpoch = 0
+let resumeTask: Promise<void> | null = null
+let refreshJwt: ((epoch: number) => Promise<void>) | null = null
+const signedInSubs = new Set<() => void>()
+export const onSignedIn = (cb: () => void) => { signedInSubs.add(cb); return () => { signedInSubs.delete(cb) } }
+export type AuthState = { phase: 'signedOut' | 'signedIn' } | { phase: 'pending'; expiresAt: number } | { phase: 'failed'; code: string }
+export const auth = store<AuthState>({ phase: 'signedOut' })
+const synchronizing = () => { for (const id of followed) ready.set(id, { data: false, clock: false }) }
+const invalidateTransport = () => { connectionEpoch++; transportReady = false; listsReady = false; synchronizing() }
+const usableTransport = () => transportReady && !needsRefresh && !suspended && !!socket?.connected
+export const isReady = (id: number) => usableTransport() && listsReady && !resumeTask && !!ready.get(id)?.data && !!ready.get(id)?.clock
+const syncStatus = () => setStatus(suspended ? 'connecting' : !usableTransport() || !listsReady || !!resumeTask || [...followed].some(id => !isReady(id)) ? 'resyncing' : 'online')
+
 const timers = new Set<ReturnType<typeof setTimeout>>() // keepalives and scorer waits: cleared by disconnect()
 // game/<id>/<event> names are template-literal keys in goban-engine's types: subscribe through a plain signature
 type Loose = { on(e: string, f: (d: any) => void): unknown; off(e: string, f: (d: any) => void): unknown }
@@ -480,20 +497,37 @@ export function connect(o: { guest?: boolean } = {}): Promise<Player | null> {
       client: 'masame', client_version: version,
     }
     const s = socket = new GobanSocket(SITE, { quiet: true })
+    const initialRefreshEpoch = refreshEpoch
+    let connectedBefore = false
+    refreshJwt = async epoch => {
+      const cfg = await json<{ user_jwt: string }>('/api/v1/ui/config', { anon: !signedIn })
+      if (socket === s && gen === generation && epoch === refreshEpoch) jwt = cfg.user_jwt
+    }
     s.on('connect', () => {
+      if (socket !== s || suspended || needsRefresh) return
+      const epoch = ++connectionEpoch
+      transportReady = true
+      // On a return, both account lists must belong to this connection before a player can act.
+      // The first connection keeps its existing asynchronous seeding; guests have no account lists.
+      listsReady = !signedIn || !connectedBefore && refreshEpoch === initialRefreshEpoch
+      connectedBefore = true
       // sent here rather than through s.authenticate(), which would send it after this handler's game/connects
       s.send('authenticate', { ...auth, jwt })
       if (signedIn) {
         s.send('automatch/list', {})
-        seedActive(gen)
-        refreshChallenges()
+        void Promise.all([seedActive(gen, epoch), refreshChallenges(gen, epoch)]).then(results => {
+          if (socket !== s || epoch !== connectionEpoch || !usableTransport()) return
+          listsReady = results.every(Boolean)
+          syncStatus()
+        })
       }
+      synchronizing()
       for (const id of followed) s.send('game/connect', { game_id: id, chat: false })
-      setStatus('online')
+      syncStatus()
     })
-    s.on('disconnect', () => setStatus(socket === s ? 'connecting' : 'offline')) // GobanSocket reconnects by itself
+    s.on('disconnect', () => { if (socket === s) { invalidateTransport(); setStatus('connecting') } }) // GobanSocket reconnects by itself
     s.on('unrecoverable_error', () => setStatus('offline'))
-    s.on('user/jwt', j => { jwt = j })
+    s.on('user/jwt', j => { if (socket === s && usableTransport()) jwt = j })
     if (signedIn) listen(s)
     return me
   })().catch(e => {
@@ -505,11 +539,86 @@ export function connect(o: { guest?: boolean } = {}): Promise<Player | null> {
 const mine = async () => { const p = await connect(); if (!p) throw fail('ogs_login_required'); return p }
 
 /** At app launch: connects silently when signed in. */
-export function startBackground() { if (inTauri()) connect().catch(() => {}) }
+export function startBackground() {
+  if (!inTauri()) return () => {}
+  connect().catch(() => {})
+  if (!isMobile) return () => {}
+  let live = true
+  const stops: (() => void)[] = []
+  const track = (p: Promise<() => void>) => p.then(stop => { if (live) stops.push(stop); else stop() }).catch(() => {})
+  let authEvents = 0
+  const updateAuth = (state: AuthState) => {
+    const previous = auth.get().phase
+    auth.set(state)
+    if (state.phase === 'signedIn') {
+      // An earlier startup token read may still be rejecting while the native callback finishes. Retry that one race.
+      connect().catch(e => { if (e?.code === 'ogs_login_required') return connect(); throw e })
+        .then(() => { if (previous !== 'signedIn') signedInSubs.forEach(cb => cb()) }, () => {})
+    }
+  }
+  const listenAuth = on<AuthState>('ogs-auth-state', state => { authEvents++; updateAuth(state) })
+  track(listenAuth)
+  // Subscribe first, then recover state. A cold-start callback may have finished before the webview existed.
+  const before = authEvents
+  void listenAuth.then(() => call<AuthState>('ogs_auth_state')).then(state => { if (live && authEvents === before) updateAuth(state) }, () => {})
+  track(on<boolean>('ogs-app-active', active => { if (active) void resumeSession().catch(() => {}); else suspendSession() }))
+  const visibility = () => { if (document.visibilityState === 'hidden') suspendSession(); else void resumeSession().catch(() => {}) }
+  document.addEventListener('visibilitychange', visibility)
+  const nativeActivity = (e: Event) => { if ((e as CustomEvent<boolean>).detail) void resumeSession().catch(() => {}); else suspendSession() }
+  window.addEventListener('masame-app-active', nativeActivity)
+  const online = () => void resumeSession().catch(() => {})
+  window.addEventListener('online', online)
+  return () => { live = false; stops.forEach(stop => stop()); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('online', online); window.removeEventListener('masame-app-active', nativeActivity) }
+}
+
+// A suspended transport can still report OPEN. Never send a player action to it; refresh credentials and force a
+// fresh connection on return. The existing GobanSocket object/listeners survive, while its old wire is discarded.
+export function suspendSession() {
+  suspended = true; needsRefresh = true; refreshEpoch++; invalidateTransport(); resumeTask = null
+  if (socket) setStatus('connecting')
+}
+function wire(s: GobanSocket): WebSocket {
+  // goban-engine is pinned to 8.3.226. Its send() queues even a failed OPEN send, so player actions must use the
+  // underlying WebSocket without that retry queue. Fail closed if a dependency update changes this private field.
+  const raw = (s as unknown as { socket?: WebSocket }).socket
+  if (!raw || typeof raw.send !== 'function' || typeof raw.close !== 'function') throw fail('ogs_offline')
+  return raw
+}
+export function resumeSession(): Promise<void> {
+  if (resumeTask) return resumeTask
+  if (!suspended && socket?.connected && status === 'online') return Promise.resolve()
+  suspended = false
+  if (!socket) return connect().then(() => { if (needsRefresh) return resumeSession() })
+  const s = socket, gen = generation
+  needsRefresh = true; invalidateTransport(); setStatus('resyncing')
+  const epoch = ++refreshEpoch
+  const task = (async () => {
+    await refreshJwt?.(epoch)
+    if (gen !== generation || socket !== s || epoch !== refreshEpoch || suspended) return
+    needsRefresh = false
+    const raw = wire(s)
+    // CLOSED/CONNECTING already has GobanSocket's reconnect in progress; do not create a second one.
+    if (raw.readyState === WebSocket.OPEN) raw.close(1000, 'foreground refresh')
+  })().catch(e => {
+    if (gen === generation && epoch === refreshEpoch && (e as { code?: string })?.code === 'ogs_login_required') { auth.set({ phase: 'signedOut' }); disconnect() }
+    throw e
+  })
+  resumeTask = task
+  return task.finally(() => { if (resumeTask === task) { resumeTask = null; if (socket === s) syncStatus() } })
+}
+
+function action(command: string, data: object, id?: number) {
+  const s = live()
+  if (!usableTransport() || !listsReady || resumeTask || (id !== undefined && !isReady(id))) throw fail('ogs_resyncing')
+  // No retry: a failed send must be retried by the player only after a fresh server position.
+  try { wire(s).send(JSON.stringify([command, data])) }
+  catch { invalidateTransport(); setStatus('connecting'); void resumeSession().catch(() => {}); throw fail('ogs_offline') }
+}
 export const isGuest = () => guest && !!socket
 
 function listen(s: GobanSocket) {
   s.on('active_game', e => {
+    if (socket !== s || !usableTransport()) return
     const myId = me?.id
     if (myId === undefined) return
     touched?.add(e.id)
@@ -525,15 +634,18 @@ function listen(s: GobanSocket) {
     notify(turnNotice(e, myId))
   })
   s.on('automatch/entry', e => {
+    if (socket !== s || !usableTransport()) return
     const o = e.size_speed_options.find(x => x.speed === 'correspondence')
     if (o) addSearch({ uuid: e.uuid, size: parseInt(o.size) as BoardSize, speed: 'correspondence' })
   })
   s.on('automatch/start', d => {
+    if (socket !== s || !usableTransport()) return
     if (searchStore.get().some(x => x.uuid === d.uuid)) notify({ kind: 'started', key: `started-${d.game_id}`, gameId: d.game_id })
     dropSearch(d.uuid)
   })
-  s.on('automatch/cancel', d => dropSearch(d?.uuid ?? null))
+  s.on('automatch/cancel', d => { if (socket === s && usableTransport()) dropSearch(d?.uuid ?? null) })
   s.on('notification', n => {
+    if (socket !== s || !usableTransport()) return
     if (n.type === 'challenge' || n.type === 'delete') refreshChallenges()
     notify(notificationNotice(n, Date.now(), followed))
   })
@@ -555,7 +667,7 @@ const side = (black: RestPlayer, white: RestPlayer, myId: number) => {
 }
 
 const ONGOING_ALL = '/api/v1/me/games/?ended__isnull=true&ordering=-id&page_size=100'
-async function seedActive(gen: number) {
+async function seedActive(gen: number, epoch: number): Promise<boolean> {
   const seenNow = touched = new Set<number>()
   try {
     type Row = { id: number; width: number; players: { black: RestPlayer; white: RestPlayer }; time_per_move?: number }
@@ -565,7 +677,7 @@ async function seedActive(gen: number) {
       rows.push(...r.results)
       path = r.next?.startsWith(SITE + '/') ? r.next.slice(SITE.length) : null // the bearer goes to OGS only
     }
-    if (gen !== generation || touched !== seenNow || !me) return
+    if (gen !== generation || epoch !== connectionEpoch || touched !== seenNow || !me) return false
     const next = new Map<number, ActiveRow>()
     for (const g of rows) {
       next.set(g.id, {
@@ -576,17 +688,18 @@ async function seedActive(gen: number) {
     for (const id of seenNow) { const r = activeMap.get(id); if (r) next.set(id, r); else next.delete(id) }
     activeMap = next
     activeStore.set([...next.values()])
-  } catch { /* the next connect tries again */ } finally { if (touched === seenNow) touched = null }
+    return true
+  } catch { return false } finally { if (touched === seenNow) touched = null }
 }
 
 const speedOf = (tc: { speed?: string } | undefined, tpm: number): Speed =>
   (tc?.speed as Speed | undefined) ?? (!tpm || tpm >= 3600 ? 'correspondence' : tpm >= 20 ? 'live' : 'blitz')
-async function refreshChallenges() {
+async function refreshChallenges(gen = generation, epoch = connectionEpoch): Promise<boolean> {
   try {
     const myId = me?.id
     type Row = { id: number; challenger: RestPlayer; challenged: RestPlayer; game: { id: number; width: number; ranked: boolean; handicap: number; time_per_move: number; time_control_parameters?: string | object; time_control?: object } }
     const { results } = await json<{ results: Row[] }>('/api/v1/me/challenges/?page_size=50')
-    if (me?.id !== myId) return
+    if (gen !== generation || epoch !== connectionEpoch || me?.id !== myId) return false
     challengeStore.set(results.map(c => {
       const p = c.game.time_control_parameters, tc = typeof p === 'string' ? JSON.parse(p) : p ?? c.game.time_control
       return {
@@ -594,7 +707,8 @@ async function refreshChallenges() {
         size: c.game.width, speed: speedOf(tc, c.game.time_per_move), ranked: !!c.game.ranked, handicap: c.game.handicap,
       }
     }))
-  } catch { /* kept as it was: the next notification refreshes it */ }
+    return true
+  } catch { return false } // kept as it was; a new connection retries the required list
 }
 
 function clearSession() {
@@ -607,8 +721,10 @@ function clearSession() {
 export function disconnect() {
   const s = socket
   generation++
+  refreshEpoch++
+  invalidateTransport(); needsRefresh = false
   socket = null; session = null; me = null; guest = false; jwt = ''
-  followed.clear()
+  followed.clear(); ready.clear(); refreshJwt = null; resumeTask = null; suspended = false
   for (const stop of asking.values()) stop()
   clearSession()
   s?.disconnect()
@@ -656,7 +772,8 @@ export function follow(id: number, onEvent: (ev: GameEvent, state: Followed | nu
     if (left || scoring !== 'waiting' || state?.phase !== 'stone removal') return // a proposal came, or the phase moved on
     const removed = removedFrom(res)
     if (removed && socket === s) {
-      s.send('game/removed_stones/set', { game_id: id, removed: true, stones: stonesString(removed.stones), needs_sealing: removed.needsSealing, auto_scored: true } as never)
+      if (!isReady(id)) return
+      action('game/removed_stones/set', { game_id: id, removed: true, stones: stonesString(removed.stones), needs_sealing: removed.needsSealing, auto_scored: true }, id)
       scoring = undefined
     } else scoring = 'failed'
     tell()
@@ -676,6 +793,7 @@ export function follow(id: number, onEvent: (ev: GameEvent, state: Followed | nu
     }
   }
   const handlers = EVENTS.map(name => [`game/${id}/${name}`, (data: unknown) => {
+    if (socket !== s || !usableTransport()) return
     let ev: GameEvent = [name, data]
     try { state = apply(state, ev, me?.id) } catch (e) { state = null; ev = ['error', (e as { code?: string }).code ?? String(e)] }
     if (name === 'error') ev = ['error', fail('ogs_refused', typeof data === 'string' ? data : undefined)] // the server's English text as detail
@@ -684,34 +802,40 @@ export function follow(id: number, onEvent: (ev: GameEvent, state: Followed | nu
     // without a state, a move means handicap placement went on: fetch the game again until it is complete
     if (name === 'gamedata') asked = false
     // an error (a refused move, kept on the board by the optimistic play) also takes the server's version
-    else if (!asked && (state?.reload || (!state && name === 'move') || name === 'error')) { asked = true; join() }
+    else if (!asked && (state?.reload || (!state && name === 'move') || name === 'error')) { asked = true; ready.set(id, { data: false, clock: false }); syncStatus(); join() }
+    if (state) {
+      const r = ready.get(id)
+      if (r && name === 'gamedata') { r.data = true; r.clock = !!state.clock || !state.tc || state.phase !== 'play' }
+      if (r && name === 'clock') r.clock = true
+      if (r && (name === 'gamedata' || name === 'clock')) syncStatus()
+    }
     onEvent(ev, state)
   }] as const)
   for (const [e, h] of handlers) ee.on(e, h)
-  followed.add(id)
+  followed.add(id); ready.set(id, { data: false, clock: false }); if (s.connected) syncStatus()
   if (s.connected) join() // otherwise the connect handler sends it
   return () => {
     left = true
     stopWait()
     for (const [e, h] of handlers) ee.off(e, h)
-    followed.delete(id)
+    followed.delete(id); ready.delete(id); if (socket === s && s.connected) syncStatus()
     if (socket === s) s.send('game/disconnect', { game_id: id })
   }
 }
 
-export const move = (id: number, v: Vertex | null) => live().send('game/move', { game_id: id, move: toOgs(v) })
-export const resign = (id: number) => live().send('game/resign', { game_id: id })
-export const cancelGame = (id: number) => live().send('game/cancel', { game_id: id })
+export const move = (id: number, v: Vertex | null) => action('game/move', { game_id: id, move: toOgs(v) }, id)
+export const resign = (id: number) => action('game/resign', { game_id: id }, id)
+export const cancelGame = (id: number) => action('game/cancel', { game_id: id }, id)
 /** Undo: request with moveNumber(s), accept or cancel with s.undo.move. */
-export const requestUndo = (id: number, move: number) => live().send('game/undo/request', { game_id: id, move_number: move })
-export const acceptUndo = (id: number, move: number) => live().send('game/undo/accept', { game_id: id, move_number: move })
-export const cancelUndo = (id: number, move: number) => live().send('game/undo/cancel', { game_id: id, move_number: move })
-export const pauseGame = (id: number) => live().send('game/pause', { game_id: id })
-export const resumeGame = (id: number) => live().send('game/resume', { game_id: id })
+export const requestUndo = (id: number, move: number) => action('game/undo/request', { game_id: id, move_number: move }, id)
+export const acceptUndo = (id: number, move: number) => action('game/undo/accept', { game_id: id, move_number: move }, id)
+export const cancelUndo = (id: number, move: number) => action('game/undo/cancel', { game_id: id, move_number: move }, id)
+export const pauseGame = (id: number) => action('game/pause', { game_id: id }, id)
+export const resumeGame = (id: number) => action('game/resume', { game_id: id }, id)
 export const setRemoved = (id: number, stones: Vertex[], removed: boolean) =>
-  live().send('game/removed_stones/set', { game_id: id, removed, stones: stonesString(stones) })
+  action('game/removed_stones/set', { game_id: id, removed, stones: stonesString(stones) }, id)
 export const acceptRemoved = (id: number, stones: Vertex[]) =>
-  live().send('game/removed_stones/accept', { game_id: id, stones: stonesString(stones), strict_seki_mode: false })
+  action('game/removed_stones/accept', { game_id: id, stones: stonesString(stones), strict_seki_mode: false }, id)
 
 /** Automatch: `started` resolves with the new game's id; nothing resolves after cancel(). */
 export function findMatch(size: BoardSize, speed: Speed): { cancel(): void; started: Promise<number> } {
@@ -746,7 +870,7 @@ export async function challenge(playerId: number, body: unknown): Promise<{ chal
 }
 /** Live challenges: OGS drops them without a keepalive every second. Returns stop(). */
 export function keepAlive(challengeId: number, gameId: number): () => void {
-  const send = () => { if (socket) socket.send('challenge/keepalive', { challenge_id: challengeId, game_id: gameId }) }
+  const send = () => { if (socket?.connected && !suspended && !resumeTask) { try { action('challenge/keepalive', { challenge_id: challengeId, game_id: gameId }) } catch { /* no stale keepalives */ } } }
   send()
   const t = setInterval(send, 1000)
   timers.add(t)
