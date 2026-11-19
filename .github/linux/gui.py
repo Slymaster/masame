@@ -2,7 +2,6 @@
 import hashlib
 import os
 from pathlib import Path
-import re
 import signal
 import subprocess
 import sys
@@ -59,6 +58,21 @@ def click(name):
 def visible(needle):
     return any(needle in (n+' '+t) for n, r, t, _ in accessible() if r not in ('application', 'frame'))
 
+def actual_version():
+    marker = 'Masame '+version
+    for n, r, t, _ in accessible():
+        if r in ('application', 'frame'): continue
+        for text in (n.strip(), t.strip()):
+            if text == marker or text.startswith(marker+' ·') or text == marker+' is up to date':
+                return text
+
+def restarted_version():
+    evidence=actual_version()
+    if evidence: return evidence
+    if any(r=='dialog' for _,r,_,_ in accessible()): return
+    settings=button('Settings')
+    if settings: settings.queryAction().doAction(0)
+
 def digest(path):
     with path.open('rb') as f:
         h=hashlib.sha256()
@@ -69,18 +83,16 @@ try:
     print('Running', program, 'pid', app.pid, flush=True)
     click('Settings')
     if mode == 'smoke':
-        until(lambda: visible('Masame '+version), f'version {version} in Settings')
-        print(f'Interactive settings opened and displayed version {version}', flush=True)
+        title=until(actual_version, f'installed version {version} in Settings')
+        print(f'Interactive settings opened and displayed {title!r}', flush=True)
     elif mode == 'update':
         until(lambda: visible('Masame '+version+' is available'), 'published update offered', 110)
         click('Install')
         expected = rest[0]
         until(lambda: digest(program) == expected, 'on-disk AppImage reaching official SHA256', 180)
         print('AppImage replaced at original path; SHA256 =', expected, flush=True)
-        until(lambda: button('Settings'), 'restarted Masame window', 90)
-        click('Settings')
-        until(lambda: visible('Masame '+version), 'updated app reporting its version in Settings')
-        print('Updated app relaunched itself, version', version, flush=True)
+        title=until(restarted_version, 'restarted app reporting installed version in Settings', 90)
+        print('Updated app relaunched itself, version evidence:', repr(title), flush=True)
     else: raise ValueError(mode)
 finally:
     try: os.killpg(app.pid, signal.SIGTERM)
