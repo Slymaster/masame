@@ -1,0 +1,147 @@
+name: Verify public Masame 0.8.1 on Windows
+on:
+  push:
+    branches: [codex/verify-081-windows]
+permissions:
+  contents: read
+concurrency:
+  group: public-081-windows
+  cancel-in-progress: false
+jobs:
+  installed:
+    name: ${{ matrix.test }} (Windows x64)
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [installer, updater]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Read the reliability harness from the published 0.8.0 commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 4f0b623286ff9e61d16567246efb7fb1512d7d35
+          persist-credentials: false
+          sparse-checkout: scripts/windows
+      - name: Install the same native WebView2 bridge as the reliability suite
+        run: cargo install tauri-driver --version 2.0.6 --locked
+      - name: Exercise official release binaries using a normal Windows user token
+        shell: pwsh
+        env:
+          PACKAGE_TEST: ${{ matrix.test }}
+        run: |
+          $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+          icacls "$env:GITHUB_WORKSPACE" /grant "${identity}:(OI)(CI)F" /T /C | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Could not grant the runner account access to its evidence folder' }
+          @'
+          import contextlib
+          import ctypes
+          import http.client
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          import tempfile
+          import urllib.request
+
+          import reliability as qa
+
+          OLD, NEW = "0.8.0", "0.8.1"
+          BASE = "https://github.com/Slymaster/masame/releases"
+          MANIFEST = BASE + "/latest/download/latest.json"
+          mode = os.environ["PACKAGE_TEST"]
+          assert mode in ("installer", "updater") and os.environ["RUNNER_ENVIRONMENT"] == "github-hosted"
+          assert not ctypes.windll.shell32.IsUserAnAdmin() and qa.current_token_elevation() == 0
+          evidence = Path("windows-evidence").resolve()
+          evidence.mkdir(exist_ok=True)
+          data = Path(os.environ["LOCALAPPDATA"]) / "com.sylvainrey.masame"
+          assert not data.exists(), "This verification requires a fresh runner profile"
+          result = {"mode": mode, "complete": False, "manifest": MANIFEST, "medium_integrity": True}
+          def read(url):
+              with urllib.request.urlopen(url, timeout=60) as response:
+                  return response.read()
+          def package(folder, version):
+              name = f"Masame_{version}_x64-setup.exe"
+              base = f"{BASE}/download/v{version}/"
+              rows = read(base + "SHA256SUMS.txt").decode("utf-8").splitlines()
+              expected = [row.split()[0] for row in rows if row.split()[-1] == name]
+              assert len(expected) == 1 and re.fullmatch("[0-9a-f]{64}", expected[0])
+              output = folder / name
+              with urllib.request.urlopen(base + name, timeout=120) as response, output.open("wb") as f:
+                  shutil.copyfileobj(response, f)
+              assert qa.digest(output) == expected[0], "Published installer digest mismatch"
+              result["installer"] = {"url": base + name, "sha256": expected[0], "bytes": output.stat().st_size}
+              return output
+          def record_version(app, phase, expected):
+              reply = app.invoke("plugin:app|version")
+              assert reply == {"ok": True, "value": expected}, (phase, reply)
+              result[phase] = reply["value"]
+              print(f"{phase}: {reply['value']}", flush=True)
+          def restarted():
+              log = data / "startup.log"
+              if not log.is_file():
+                  return False
+              marker = f"launch Masame {NEW}"
+              text = log.read_text(encoding="utf-8")
+              return marker in text and "event loop ready" in text.rsplit(marker, 1)[1]
+          try:
+              with tempfile.TemporaryDirectory(prefix="masame-public-", ignore_cleanup_errors=True) as folder:
+                  temp = Path(folder).resolve()
+                  version = NEW if mode == "installer" else OLD
+                  exe = qa.install(package(temp, version), temp / "Installed Masame")
+                  try:
+                      qa.check_resources(exe.parent)
+                      driver = qa.edge_driver(temp, evidence)
+                      with qa.Browser(exe, driver, evidence, "installed") as app:
+                          app.interactive(version)
+                          record_version(app, "installed_version", version)
+                          result["installed_exe_sha256"] = qa.digest(exe)
+                          if mode == "updater":
+                              manifest = json.loads(read(MANIFEST))
+                              assert manifest["version"].lstrip("v") == NEW, manifest["version"]
+                              target = manifest["platforms"]["windows-x86_64"]
+                              assert target["url"] == f"{BASE}/download/v{NEW}/Masame_{NEW}_x64-setup.exe"
+                              assert target["signature"] == read(target["url"] + ".sig").decode().strip()
+                              result["target_url"] = target["url"]
+                              app.js("localStorage.setItem('masame-ci-persist','public-update')")
+                              update = app.invoke("update_check")
+                              assert update == {"ok": True, "value": {"version": NEW, "install": True}}, update
+                              result["offered_version"] = update["value"]["version"]
+                              print(f"Production updater offers {NEW}", flush=True)
+                              try:
+                                  handoff = app.invoke("update_install")
+                              except (OSError, http.client.HTTPException, RuntimeError):
+                                  pass  # WebDriver loses the original process during NSIS handoff.
+                              else:
+                                  qa.check_install_handoff(handoff)
+                              qa.eventually(lambda: exe.is_file() and qa.digest(exe) != result["installed_exe_sha256"], timeout=180)
+                              qa.eventually(restarted, timeout=100)
+                              result["automatic_restart"] = True
+                      if mode == "updater":
+                          with qa.Browser(exe, driver, evidence, "updated") as app:
+                              app.interactive(NEW, expected_marker="public-update")
+                              record_version(app, "updated_version", NEW)
+                              assert app.invoke("update_check") == {"ok": True, "value": None}
+                          qa.check_resources(exe.parent)
+                          result.update({"data_retained": True, "updated_exe_sha256": qa.digest(exe)})
+                      result["complete"] = True
+                  finally:
+                      qa.copy_logs(data, evidence, mode)
+                      with contextlib.suppress(Exception):
+                          qa.stop_installed(exe)
+          finally:
+              report = json.dumps(result, indent=2)
+              (evidence / "result.json").write_text(report, encoding="utf-8")
+              print(report, flush=True)
+          '@ | Set-Content -Encoding UTF8 scripts/windows/verify_public_081.py
+          python scripts/windows/launch_user_token.py --evidence windows-evidence/token.json -- python scripts/windows/verify_public_081.py
+          if ($LASTEXITCODE -ne 0) { throw "Published Windows release verification failed ($LASTEXITCODE)" }
+      - name: Preserve the evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: public-081-windows-${{ matrix.test }}
+          path: windows-evidence/
+          if-no-files-found: warn
+          retention-days: 7
