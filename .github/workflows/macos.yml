@@ -1,0 +1,16 @@
+name: Verify public Masame on macOS
+on:
+  push:
+    branches: [codex/verify-081-macos]
+permissions:
+  contents: read
+jobs:
+  install:
+    runs-on: macos-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: ./install-dmg.sh 0.8.0
+      - run: ./test-ui.sh testInstalledApplicationOpens

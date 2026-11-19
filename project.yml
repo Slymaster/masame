@@ -1,0 +1,34 @@
+name: ReleaseVerification
+options:
+  deploymentTarget:
+    macOS: '14.0'
+settings:
+  base:
+    GENERATE_INFOPLIST_FILE: YES
+    SWIFT_VERSION: '5.0'
+    CODE_SIGN_IDENTITY: '-'
+targets:
+  Host:
+    type: application
+    platform: macOS
+    sources: [Host]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ci.masame.verify.host
+  PublicReleaseTests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [Tests]
+    dependencies:
+      - target: Host
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ci.masame.verify.tests
+        TEST_TARGET_NAME: Host
+schemes:
+  PublicRelease:
+    build:
+      targets:
+        Host: all
+    test:
+      targets: [PublicReleaseTests]
