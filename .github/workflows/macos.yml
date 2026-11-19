@@ -1,16 +1,35 @@
-name: Verify public Masame on macOS
+name: Verify Masame 0.8.1 public downloads and macOS apps
 on:
   push:
     branches: [codex/verify-081-macos]
 permissions:
   contents: read
 jobs:
-  install:
-    runs-on: macos-latest
-    timeout-minutes: 9
+  files:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - run: ./install-dmg.sh 0.8.0
-      - run: ./test-ui.sh testInstalledApplicationOpens
+      - run: sudo apt-get update -qq && sudo apt-get install -y minisign
+      - run: python3 verify-assets.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+  mac:
+    name: ${{ matrix.os }} / ${{ matrix.test }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+        test: [testInstalledApplicationOpens, testPublicUpdate]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install the published DMG
+        run: ./install-dmg.sh ${{ matrix.test == 'testPublicUpdate' && '0.8.0' || '0.8.1' }}
+      - name: Verify the installed app through its UI
+        run: ./test-ui.sh "${{ matrix.test }}"
