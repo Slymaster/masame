@@ -1,0 +1,77 @@
+name: Public Linux release verification
+on:
+  push:
+    branches: [codex/verify-081-linux]
+permissions:
+  contents: read
+jobs:
+  ubuntu:
+    name: Ubuntu / ${{ matrix.format }}
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [appimage, deb]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      FORMAT: ${{ matrix.format }}
+      VERSION: ${{ contains(github.event.head_commit.message, '[baseline]') && '0.8.0' || '0.8.1' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: { persist-credentials: false }
+      - name: Install GTK, accessibility and virtual desktop
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libfuse2 libxdo3 libgtk-3-0 dbus-x11 at-spi2-core python3-pyatspi xvfb xauth gsettings-desktop-schemas
+      - name: Verify official package SHA256 and run installed UI
+        run: |
+          bash .github/linux/assets.sh "$VERSION" "$FORMAT"
+          if [[ $FORMAT == deb ]]; then
+            pkg="$PWD/download/$VERSION/Masame_${VERSION}_amd64.deb"
+            sudo apt-get install -y "$pkg"
+            name=$(dpkg-deb -f "$pkg" Package)
+            dpkg-query -W -f='${Status} ${Package} ${Architecture} ${Version}\n' "$name"
+            test "$(dpkg-query -W -f='${Version}' "$name")" = "$VERSION"
+            program=$(dpkg -L "$name" | awk '/\/bin\/masame$/{print; exit}')
+          else
+            program="$RUNNER_TEMP/Masame.AppImage"
+            install -m 0755 "download/$VERSION/Masame_${VERSION}_amd64.AppImage" "$program"
+            ls -l /dev/fuse
+          fi
+          bash .github/linux/gui.sh smoke "$program" "$VERSION"
+      - name: Upgrade the signed 0.8.0 AppImage through Settings and verify automatic restart
+        if: matrix.format == 'appimage' && env.VERSION == '0.8.1'
+        run: |
+          official=https://github.com/Slymaster/masame/releases/latest/download/latest.json
+          curl -fLSs --retry 4 "$official" -o latest.json
+          jq -e '(.version == "0.8.1") and (.platforms["linux-x86_64"].url == "https://github.com/Slymaster/masame/releases/download/v0.8.1/Masame_0.8.1_amd64.AppImage") and ((.platforms["linux-x86_64"].signature | length) > 0)' latest.json
+          bash .github/linux/assets.sh 0.8.0 appimage
+          program="$RUNNER_TEMP/Masame-upgrade.AppImage"
+          install -m 0755 download/0.8.0/Masame_0.8.0_amd64.AppImage "$program"
+          echo "Before update:"; sha256sum "$program"
+          digest=$(sha256sum download/0.8.1/Masame_0.8.1_amd64.AppImage | cut -d' ' -f1)
+          bash .github/linux/gui.sh update "$program" 0.8.1 "$digest"
+  fedora:
+    name: Fedora / RPM
+    runs-on: ubuntu-24.04
+    container: { image: 'fedora:latest' }
+    timeout-minutes: 20
+    env:
+      CONTAINER_FEDORA: "1"
+      VERSION: ${{ contains(github.event.head_commit.message, '[baseline]') && '0.8.0' || '0.8.1' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: { persist-credentials: false }
+      - name: Install distribution helpers and verified RPM
+        shell: bash
+        run: |
+          cat /etc/fedora-release
+          dnf -y install python3-pyatspi at-spi2-core xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon dbus-x11 gsettings-desktop-schemas gtk3 findutils
+          bash .github/linux/assets.sh "$VERSION" rpm
+          pkg="download/$VERSION/Masame-${VERSION}-1.x86_64.rpm"
+          dnf -y install "./$pkg"
+          name=$(rpm -qp --qf '%{NAME}' "$pkg")
+          rpm -q --qf '%{NAME} %{VERSION}-%{RELEASE} %{ARCH}\n' "$name"
+          test "$(rpm -q --qf '%{VERSION}' "$name")" = "$VERSION"
+          program=$(rpm -ql "$name" | awk '/\/bin\/masame$/{print; exit}')
+          bash .github/linux/gui.sh smoke "$program" "$VERSION"
