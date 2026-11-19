@@ -234,5 +234,5 @@ export function useExercises({ view, open, setOpen, blocked, canAnalyze, ask, se
   const keys: Record<string, (() => void) | undefined> = {
     escape: close, ' ': undefined, arrowup: () => {}, arrowdown: () => {}, arrowleft: () => {}, arrowright: () => {}, home: () => {}, end: () => {}, p: () => {},
   }
-  return { ...none, play, board, note, links, body, acts, keys, info: x ? { size: x.size, komi: x.komi } : null } // the meta line reads the exercise's board and komi
+  return { ...none, play, board, note, links, body, acts, keys, info: x ? { size: x.size, komi: x.komi, rules: x.rules } : null } // the meta line reads the exercise's board and komi
 }

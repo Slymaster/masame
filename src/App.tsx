@@ -5,7 +5,8 @@ import { centreShift } from './board/frame'
 import type { Board3D, Board3DOptions, Board3DState, FallbackReason, TimeMode } from './board3d/Board3D'
 import { rng } from './board/noise'
 import { adjustRank, botProfile, clampEra, clampRank, decide, DEFAULT_RANK, lessonFlags, MASTER_RANK, RANKS, stepEra, stepRank } from './bot'
-import { askFirst, confirmDiscard, openSgfFile, savePngFile, saveSgfFile } from './files'
+import { askFirst, confirmDiscard, openSgfFile, readDroppedSgf, savePngFile, saveSgfFile } from './files'
+import { analysisRulesLabel, canCountLocally } from './rules'
 import { Game, type GameNode, type Move, type Sign, type Vertex } from './game'
 import { analyze, call, candidates, gtp, inTauri, on, type Analysis, type EngineStatus, type NetState, type Progress } from './katago'
 import { Networks } from './Networks'
@@ -25,7 +26,7 @@ import { Icon } from './Icon'
 import { Timeline } from './Timeline'
 import { cardSkin, LOOKS, readyDecors } from './board3d/logic'
 import { noDead, score, suggestDead, toggleDead, type Dead } from './scoring'
-import { loadSgf, MAX_SGF, readResult, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
+import { sgfGameCount, loadSgf, MAX_SGF, readResult, resignResult, saveSgf, scoreResult, timeResult } from './sgf'
 import { failureText, LocalizedError, pick, setLang, storedLang, t, type Lang, type Msg } from './i18n'
 import type { Decor } from './board3d/decors'
 import { readySets, STONE_DATA, type StoneSet } from './board3d/stoneSets'
@@ -56,7 +57,7 @@ import { GamesSheet, named } from './GamesSheet'
 import { ShareSheet } from './ShareSheet'
 import { menuEnabled } from './menu'
 import * as library from './library'
-import { isLocal, local, noteRank, noteReview, resumable, unfinished, useCurrentGame, type Bot } from './current'
+import { isLocal, local, noteRank, noteReview, resumeEntry, unfinished, useCurrentGame, type Bot } from './current'
 import { useMentor } from './useMentor'
 import { useCounting } from './count/useCounting'
 import { useMemory } from './memory/useMemory'
@@ -270,7 +271,7 @@ export function App() {
   // counting phase after two passes: which stones are dead (suggested by KataGo, toggled by the player)
   const [counting, setCounting] = useState<{ game: Game; dead: Dead; own: number[] | null } | null>(null)
   const [clock, setClock] = useState<LocalClock | null>(null) // a local game's byo-yomi clock, dropped with its game
-  const [paused, setPaused] = useState<{ game: Game; len: number } | null>(null) // a restored game's clock waits for the next move
+  const [clockPaused, setClockPaused] = useState(false) // a restored game's clock waits for the next move
 
   const [engine, setEngine] = useState<EngineStatus>({ state: 'stopped' })
   const [nets, setNets] = useState<NetState | null>(null)
@@ -516,6 +517,7 @@ export function App() {
   const reading = !!review && !review.moments
   // ① takes only the punisher's moves (← may show the engine's turn); ② and ③ explore freely
   const lessonPlayable = !!review?.branch && !thinking && !shown.ended && !review.error && (review.step !== 'try' || shown.toPlay === -m!.sign)
+  const externalCount = game.ended && atEnd && !result && !recorded && !online && !canCountLocally(game.info.rules)
   const countingNow = !review && counting?.game === game && game.ended && atEnd ? counting : null
   const reviewShown = inTauri() && game.info.size <= 19 && game.moves.length > 0 && (!bot || !!result) && !ongoing
   const canReview = reviewShown && canAnalyze
@@ -552,7 +554,7 @@ export function App() {
     if (clock?.turn && !result && clock.turn !== bot?.sign && timeUp(clock, clock.turn, Date.now())) { loseOnTime(clock.turn); return false }
     const r = game.play(v)
     if (r === 'ok' && online) { changed(); if (!send(() => ogs.move(online.id, v))) game.undo() } // optimistic: OGS echoes it back
-    else if (r === 'ok') { setDirty(true); setCounting(null); changed() }
+    else if (r === 'ok') { setClockPaused(false); setDirty(true); setCounting(null); changed() }
     else if (pick(t.refused, r)) setNote(d => pick(d.refused, r)!)
     return r === 'ok'
   }
@@ -602,11 +604,11 @@ export function App() {
   const stopOnline = () => { leaveOnline.current?.(); leaveOnline.current = null; setOnline(null); setJoining(false) }
   const start = (g: Game, b: typeof bot) => { abandon(); stopOnline(); show(g, b) }
   const show = (g: Game, b: typeof bot) => {
-    setGame(g); setBot(b); setNote(null); setStarted(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); setClock(null); setNextAi(null)
+    setGame(g); setBot(b); setNote(null); setStarted(null); setBotError(null); setDirty(false); setOwn(null); setCounting(null); setReview(null); setClock(null); setClockPaused(false); setNextAi(null)
   }
   // the local game is written as it goes; at launch an unfinished one comes back without asking, its clock paused
   useCurrentGame({ game, bot, clock, myRank: settings.myRank }, ver, r => {
-    show(r.game, r.bot); setClock(r.clock); setPaused({ game: r.game, len: r.game.moves.length })
+    show(r.game, r.bot); setClock(r.clock); setClockPaused(!!r.clock)
     if (SIZES.includes(r.game.info.size)) resize(r.game.info.size)
     setNote(short(d => d.gameResumed))
   })
@@ -662,13 +664,18 @@ export function App() {
       if (text.length > MAX_SGF) throw new LocalizedError(l => l.sgfTooBig)
       const g = loadSgf(text)
       if (!asked && !(await canLeave())) return
-      const e = from.entry, again = e && resumable(e)
+      const e = from.entry && (library.get()?.find(row => row.id === from.entry!.id) ?? from.entry)
       if (e) {
         library.bind(g, e.id)
         // the classifier reads each side's level in BR/WR: an older bot game kept the ranks only in its entry
         for (const [k, sd] of [['BR', e.black], ['WR', e.white]] as const) if (!g.root.data[k]?.[0] && sd.rank) g.root.data[k] = [sd.rank]
       }
-      start(again ? local(g, e) : g, again ? again.bot : null); if (SIZES.includes(g.info.size)) resize(g.info.size)
+      const again = e && resumeEntry(e, g)
+      start(g, again?.bot ?? null)
+      if (again?.clock) { setClock(again.clock); setClockPaused(true) }
+      if (SIZES.includes(g.info.size)) resize(g.info.size)
+      const count = sgfGameCount(g)
+      if (count > 1) setNote(d => d.sgfCollection(count))
       if (from.ogsId !== undefined) { const id = await keepOgs(g, ogsSide(g), from.ogsId, {}, true); if (id) ar.enqueue(g, ogsSide(g), { id }) } // explicit import may restore a deleted local copy
     } catch (e) {
       setNote(d => d.openFailed(failureText(e, d)))
@@ -875,7 +882,7 @@ export function App() {
   }
   // the local clock runs for the side to move at the end of the line; stopped after two passes, once decided, under a trainer
   const tail = game.moves.slice(-2), endTurn = (game.moves.length ? -game.moves.at(-1)!.sign : game.info.firstSign) as Sign
-  const clockTurn = result || panel || tail.length === 2 && tail.every(m => !m.vertex) || paused?.game === game && paused.len === game.moves.length ? null : endTurn
+  const clockTurn = result || panel || tail.length === 2 && tail.every(m => !m.vertex) || clockPaused ? null : endTurn
   useEffect(() => { if (clock) { const c = sync(clock, clockTurn, Date.now(), game.moves.length); if (c !== clock) setClock(c) } })
   // a human side out of time loses (checked late too, after a sleep); the bot's clock runs but it never loses on time
   const loseOnTime = (s: Sign) => finish(d => d.losesOnTime(s), bot ? true : null, timeResult(-s as Sign))
@@ -991,7 +998,7 @@ export function App() {
       winrates.current.set(game.lastMove!, botWinrate)
       if (v && game.lastMove?.vertex) view.current?.drop(v, bot.sign)
       else view.current?.pass?.(bot.sign)
-      setDirty(true); changed()
+      setClockPaused(false); setDirty(true); changed()
     }).catch(e => live && setBotError(d => d.botFailed(failureText(e, d)))).finally(() => live && setThinking(false))
     return () => { live = false; setThinking(false); if (handRef.current?.pending) handRef.current.stop() } // a move still in his fingers is dropped
   }, [botTurn, ver, game, botRetry]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -999,7 +1006,7 @@ export function App() {
   // Two passes: counting. KataGo's ownership suggests the dead stones (without an engine, none are suggested);
   // the player corrects them, then validates a Japanese count (territory + prisoners + komi).
   useEffect(() => {
-    if (!game.ended || !atEnd || result || counting || online || recorded) return // OGS counts its own games; a game with its result is not counted again
+    if (!game.ended || !atEnd || result || counting || online || recorded || externalCount) return // OGS counts its own games; a game with its result is not counted again
     let live = true
     const enter = (own: number[] | null) => {
       if (live) setCounting({ game, own, dead: own ? suggestDead(game.board.signMap, own) : noDead(game.board.signMap) })
@@ -1007,7 +1014,7 @@ export function App() {
     if (!canAnalyze) enter(null)
     else analyze(game, { maxVisits: FINAL_VISITS, includeOwnership: true }).then(a => enter(a.ownership), () => enter(null))
     return () => { live = false }
-  }, [game.ended, atEnd, ver, game, canAnalyze, counting, result, online, recorded])
+  }, [game.ended, atEnd, ver, game, canAnalyze, counting, result, online, recorded, externalCount])
 
   // "Ombre et lumière": ownership of the displayed position, debounced, kept until the next estimate arrives.
   useEffect(() => {
@@ -1177,7 +1184,7 @@ export function App() {
       if (!files(e)) return
       e.preventDefault(); hint(0)
       const f = e.dataTransfer!.files[0] // one game at a time
-      if (f) openFrom.current(async () => { if (f.size > MAX_SGF) throw new LocalizedError(l => l.sgfTooBig); return f.text() })
+      if (f) openFrom.current(() => readDroppedSgf(f))
     }
     const evs = { dragenter: enter, dragleave: leave, dragover: over, drop }
     for (const [k, f] of Object.entries(evs)) window.addEventListener(k, f as EventListener)
@@ -1250,6 +1257,9 @@ export function App() {
   }, [])
 
   const { size, komi, playerBlack, playerWhite } = game.info
+  const boardInfo: { size: number; komi: number; rules?: string } = trInfo ?? game.info
+  const boardCaption = online && !review ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules)
+    : t.board(boardInfo.size, boardInfo.komi, analysisRulesLabel(boardInfo.rules, t))
   const played = jm && game.moves[judgedAt]
   // KataGo's line, cut at its first move on an occupied or repeated point (a capture or ko replay would hide a real stone);
   // the played move crossed unless the kept line already numbers it. Off while A is held: the live position's candidates win.
@@ -1328,6 +1338,7 @@ export function App() {
     : result ? [resultLine, [...(canReview ? [['review', t.reviewGame, () => startReview(mine)] as Link] : []), ...(canMemory ? [['memory', t.memLink, replay] as Link] : []),
       ...(online && online.me !== 0 && online.phase === 'finished' ? [['rematch', t.ogsRematch, rematch] as Link] : [])]]
     : mt.stopped ? [t.mentorStop(mt.stopped.loss), [['retry', t.retry, mt.retry], ['keep', t.mentorKeep, mt.keep]]]
+    : externalCount ? [withNote(t.manualCountUnavailable), []]
     : countingNow ? [t.countingHelp, []]
     : game.ended && !recorded ? [t.countingWait, []]
     : [[(botError ?? note)?.(t), engineWait].filter(Boolean).join(' ') || (mt.late && !result ? t.mentorLate : null) || (last && !last.vertex && !(libraryShown && atEnd) ? (atEnd && bot?.sign === last.sign ? t.botPasses : t.passes)(last.sign) : null),
@@ -1527,7 +1538,7 @@ export function App() {
           <div className="card-in" id="card" hidden={panelHidden} inert={isMobile && sheet !== null}>
             <div className="meta">
               {/* wraps only between its parts, never inside one */}
-              <span>{(online ? t.ogsBoard(size, komi, pick(t.rules, online.rules) ?? online.rules) : trInfo ? t.board(trInfo.size, trInfo.komi) : t.board(size, komi)).split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
+              <span>{boardCaption.split(' · ').map(x => x.replace(/ /g, '\u00a0')).join(' · ')}</span>
               <button className="icon sm" onClick={openSheet('share')} aria-label={t.share} title={t.share}><Icon name="share" /></button>
               <button className="icon sm" aria-pressed={sound} onClick={() => setSound(v => !v)} aria-label={t.sound} title={`${t.sound} (M)`}>
                 <Icon name={sound ? 'volume' : 'volume-off'} />
@@ -1817,7 +1828,11 @@ export function App() {
       {sheet === 'games' && (
         <GamesSheet onClose={closeSheet} opener={opener.current} onResume={id => { closeSheet(); resume(id) }}
           onDelete={deleteGame}
-          onOpen={e => { closeSheet(); open(() => library.read(e.id), false, { entry: e }) }} onImport={() => { closeSheet(); open() }}
+          onOpen={e => {
+            closeSheet()
+            if (isLocal(game) && library.idOf(game) === e.id) return
+            open(() => library.readQueued(e.id), false, { entry: e })
+          }} onImport={() => { closeSheet(); open() }}
           onImportOgs={id => { closeSheet(); importGame(id) }} />
       )}
       {sheet === 'share' && (

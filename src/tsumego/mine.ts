@@ -3,6 +3,7 @@
 // small store of mined games (`masame.tsumego`). The background runner is useMining.ts.
 import { stringifyVertex } from '@sabaki/sgf'
 import { Game, type Move, type Sign, type Vertex } from '../game'
+import { rulesKey } from '../rules'
 import { today } from '../joseki/store'
 import { hash64 } from '../joseki/sym'
 import { isItem, type Exercise } from '../exercises/deck'
@@ -90,27 +91,27 @@ export function stonesOf(signMap: SignMap): { black: Vertex[]; white: Vertex[] }
   return { black, white }
 }
 /** A position as a fresh record (stones set up, `toPlay` first): what the engine reads, the trainer shows. */
-export const positionAt = (signMap: SignMap, size: number, komi: number, toPlay: Sign) =>
-  Game.fromRecord({ size, komi, setup: stonesOf(signMap), firstSign: toPlay }, [] as Move[])
+export const positionAt = (signMap: SignMap, size: number, komi: number, toPlay: Sign, rules?: string) =>
+  Game.fromRecord({ size, komi, rules, setup: stonesOf(signMap), firstSign: toPlay }, [] as Move[])
 
 /** The card: the whole position, `sign` to play (the owner to save, the opponent to kill), KataGo's answer and both leads. */
-export function cardOf(p: { signMap: SignMap; size: number; komi: number; n: number; vs: string }, f: Found, sign: Sign,
+export function cardOf(p: { signMap: SignMap; size: number; komi: number; rules?: string; n: number; vs: string }, f: Found, sign: Sign,
   first: { scoreLead: number; pv: (Vertex | null)[] }, other: { scoreLead: number }, now: number): Exercise {
   const s = stonesOf(p.signMap)
   return {
-    kind: 'ld', t: now, vs: p.vs, size: p.size, komi: p.komi, b: s.black.map(code).join(''), w: s.white.map(code).join(''), moves: '', sign,
+    kind: 'ld', t: now, vs: p.vs, size: p.size, komi: p.komi, rules: p.rules, b: s.black.map(code).join(''), w: s.white.map(code).join(''), moves: '', sign,
     played: 'tt', loss: Math.max(0, sign * (first.scoreLead - other.scoreLead)), best: first.scoreLead,
     better: first.pv.map(v => (v ? code(v) : 'tt')).join(''), punish: '', chain: f.stones.map(code).join(''), n: p.n,
   }
 }
 /** Position and chain: the same problem met again (another sampling, the other side asked) adds nothing. */
-export const ldKey = (x: Exercise) => hash64(`ld|${x.size}|${x.komi}|${x.b}|${x.w}|${x.chain}`)
+export const ldKey = (x: Exercise) => hash64(`ld|${x.size}|${x.komi}|${x.b}|${x.w}|${x.chain}${rulesKey(x.rules)}`)
 
 /** The chain's stones with their colour: a problem's identity across one game's samples, while the rest of the board moves. */
 export const chainIds = (x: Exercise) => { const b = new Set(x.b.match(/../g)); return (x.chain?.match(/../g) ?? []).map(v => (b.has(v) ? 'B' : 'W') + v) }
 
 /** The problems of one sampled position from its two reads; the side asked is drawn by `random` (save or kill). */
-export function problemsAt(p: { signMap: SignMap; size: number; komi: number; n: number; vs: string },
+export function problemsAt(p: { signMap: SignMap; size: number; komi: number; rules?: string; n: number; vs: string },
   b: { scoreLead: number; pv: (Vertex | null)[]; ownership: number[] | null }, w: { scoreLead: number; pv: (Vertex | null)[]; ownership: number[] | null },
   now: number, random: () => number, status = STATUS): Exercise[] {
   if (!b.ownership || !w.ownership) return []
@@ -151,13 +152,13 @@ type Read = { scoreLead: number; pv: (Vertex | null)[]; ownership: number[] | nu
  */
 export async function mineGame(game: Game, moments: number[], end: number, vs: string, ask: (g: Game, deep: boolean) => Promise<Read>,
   live: () => boolean, now: number, random = Math.random): Promise<Exercise[] | null> {
-  const { size, komi } = game.info, out: Exercise[] = [], met = new Set<string>()
+  const { size, komi, rules } = game.info, out: Exercise[] = [], met = new Set<string>()
   const isMet = (x: Exercise) => chainIds(x).some(id => met.has(id))
   for (const i of samples(moments, end)) {
     if (!live()) return null
     const signMap = game.boards[i].signMap
-    const p = { signMap, size, komi, n: game.moveNumber(i) + 1, vs }
-    const pair = (deep: boolean) => Promise.all([ask(positionAt(signMap, size, komi, 1), deep), ask(positionAt(signMap, size, komi, -1), deep)])
+    const p = { signMap, size, komi, rules, n: game.moveNumber(i) + 1, vs }
+    const pair = (deep: boolean) => Promise.all([ask(positionAt(signMap, size, komi, 1, rules), deep), ask(positionAt(signMap, size, komi, -1, rules), deep)])
     const [b, w] = await pair(false)
     const shallow = new Set(problemsAt(p, b, w, now, random).filter(x => !isMet(x)).map(ldKey))
     if (!shallow.size) continue

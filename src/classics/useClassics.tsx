@@ -131,7 +131,7 @@ export function useClassics({ view, open, setOpen, blocked, canAnalyze, ask, set
     return () => clearTimeout(id)
   }, [open, run?.guess]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // grading: Black's lead after the master's move and after yours, from the game's komi and Japanese rules
+  // grading: Black's lead after the master's move and after yours, with the game's komi and rules
   useEffect(() => {
     const x = run?.guess
     if (!open || !run || !x || x.found || x.cost !== null || x.error) return

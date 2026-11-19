@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Game, type GameNode, type Vertex } from './game'
-import { loadSgf, readResult, resignResult, saveSgf, scoreResult } from './sgf'
+import { decodeSgf, sgfGameCount, loadSgf, readResult, resignResult, saveSgf, scoreResult } from './sgf'
 
 /** Plays alternating moves starting with Black; null = pass. */
 function playAll(g: Game, moves: (Vertex | null)[]) {
@@ -234,6 +234,39 @@ describe('sgf tree', () => {
     e.goTo(2)
     expect([e.lastMove, e.toPlay]).toEqual([null, -1])
     expect(loadSgf('(;SZ[9];B[ee];W[];C[x];B[])').ended).toBe(true)
+  })
+  it('keeps Unicode comments and refuses input bytes that would need lossy decoding', () => {
+    const note = '(;SZ[9]C[José・囲碁・�])'
+    expect(decodeSgf(new TextEncoder().encode(note))).toBe(note)
+    expect(() => decodeSgf(Uint8Array.of(0x28, 0x3b, 0x43, 0x5b, 0xff, 0x5d, 0x29))).toThrow(/UTF-8/)
+  })
+  it('edits the first game of a collection and preserves the following trees verbatim', () => {
+    const rest = '(;GM[1]SZ[9:13]C[a ) in a comment];B[al])\n(;GM[2]SZ[8]XX[raw])'
+    const g = loadSgf('(;SZ[9]C[escaped \\] and (];B[aa](;W[bb])(;W[cc]))\n' + rest)
+    expect(sgfGameCount(g)).toBe(3)
+    expect(g.play([4, 4])).toBe('ok')
+    const saved = saveSgf(g)
+    expect(saved.endsWith(rest)).toBe(true)
+    const reopened = loadSgf(saved)
+    expect(sgfGameCount(reopened)).toBe(3)
+    expect(reopened.board.get([4, 4])).toBe(1)
+    expect(saveSgf(reopened)).toBe(saved)
+    expect(sgfGameCount(g.branch(1))).toBe(1)
+  })
+  it('rejects unsupported dimensions at import instead of converting a rectangular game', () => {
+    for (const size of ['9:13', '13:9', '9junk', '9.5', '9:']) {
+      expect(() => loadSgf(`(;GM[1]SZ[${size}];B[aa])`)).toThrow(size)
+    }
+    expect(() => loadSgf('(;GM[2]SZ[8])')).toThrow()
+    expect(loadSgf('(;SZ[9:9];B[ii])').info.size).toBe(9)
+  })
+  it('keeps the explicit player to move on an empty board across export and reimport', () => {
+    for (const pl of ['W', 'B']) {
+      const saved = rt(`(;SZ[9]PL[${pl}])`)
+      expect(saved).toContain(`PL[${pl}]`)
+      expect(loadSgf(saved).toPlay).toBe(pl === 'W' ? -1 : 1)
+    }
+    expect(loadSgf(saveSgf(new Game({ size: 9, firstSign: -1 }))).toPlay).toBe(-1)
   })
   it('moves a move in the root into a first child', () => {
     const g = loadSgf('(;SZ[9]B[ee];W[cc])')

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { Vertex } from './game'
 import { candidates, gtp, parseAnalysis, positionQuery } from './katago'
 import real from './katago.fixture.json'
-import { loadSgf } from './sgf'
+import { loadSgf, saveSgf } from './sgf'
+import { dicts } from './i18n'
+import { analysisRulesLabel, canCountLocally } from './rules'
 
 const raw = (pv: unknown, move: unknown = 'D4') => ({ rootInfo: { winrate: 0.5, scoreLead: 1 }, moveInfos: [{ move: 'A1', order: 1 }, { move, order: 0, pv }] })
 
@@ -29,6 +31,28 @@ describe('parseAnalysis', () => {
 })
 
 describe('positionQuery', () => {
+  it.each([['Chinese', 'chinese'], ['Chinese Rules', 'chinese'], ['AGA', 'aga'], ['New Zealand', 'nz'], ['Chinese-KGS', 'chinese-ogs'],
+    ['Japanese', 'japanese'], ['Korean', 'korean'], ['French', 'aga'], ['Ing', 'ing']])(
+    'uses the SGF rules %s for the record and its review variations', (declared, preset) => {
+      const g = loadSgf(`(;SZ[9]RU[${declared}]KM[7.5];B[ee];W[gc])`)
+      expect(positionQuery(g)).toMatchObject({ rules: preset, komi: 7.5 })
+      expect(positionQuery(g.branch(1))).toMatchObject({ rules: preset, komi: 7.5 })
+      expect(loadSgf(saveSgf(g)).info.rules).toBe(declared)
+    })
+  it('names the actual rules in both languages, including the fallback for an unknown SGF label', () => {
+    for (const d of Object.values(dicts)) {
+      expect(analysisRulesLabel('Chinese', d)).toBe(d.rules.chinese)
+      expect(analysisRulesLabel(undefined, d)).toBe(d.rules.japanese)
+      expect(analysisRulesLabel('House rules', d)).toBe(d.rulesFallback('House rules'))
+    }
+    const g = loadSgf('(;SZ[9]RU[House rules]KM[7.5])')
+    expect(positionQuery(g)).toMatchObject({ rules: 'japanese', komi: 7.5 })
+    expect(saveSgf(g)).toContain('RU[House rules]')
+  })
+  it('only offers the local territory count for matching rules', () => {
+    for (const name of [undefined, 'Japanese', 'Korean']) expect(canCountLocally(name)).toBe(true)
+    for (const name of ['Chinese', 'AGA', 'House rules']) expect(canCountLocally(name)).toBe(false)
+  })
   it('starts from the last setup position at or before the cursor', () => {
     const g = loadSgf('(;SZ[9]AB[aa];W[ee];B[cc];AW[gg]AE[ee]PL[B];B[ii];W[];C[x];B[ab])')
     const q = positionQuery(g)

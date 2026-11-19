@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { deckStep } from '../today/ritual'
 import { rng } from '../board/noise'
 import { reach, validate, type JosekiDb } from './db'
 import fixture from './fixture.json'
 import { DAY, review } from './fsrs'
 import {
-  accepted, answer, EXPLORE, grade, isCard, nextCard, node, pathTo, position, programme, reply, sample, shown, shownAt, startLine,
+  accepted, answer, correctMoves, counts, EXPLORE, grade, isCard, isTenuki, nextCard, node, pathTo, position, programme, reply, retryAnswer, sample, shown, shownAt, startLine,
   storedAt, walk, type Line, type Orient,
 } from './practice'
 import { MIRROR, positionKey, sym } from './sym'
@@ -71,6 +72,41 @@ describe('practice', () => {
       expect(answer(db, l, [0, 0]).last!.rating).toBe(1) // off the tree
     }
   })
+  it('shows the accepted coordinates in every orientation, and names playing elsewhere separately', () => {
+    const edge = (m: string, to: number, loss = 0) => [m, to, loss, [], 0]
+    const book = { roots: [{ m: 'pd', node: 0 }], nodes: [
+      { e: [edge('oc', 1), edge('qc', 1, 5), edge('qp', 2, 10), edge('nd', 3, 11)] }, { e: [] }, { e: [] }, { e: [] },
+    ] } as unknown as JosekiDb
+    const w = walk(book, { root: 0, picks: [] })
+    for (const o of ORIENTS) {
+      const right = correctMoves(book, w, o)
+      expect(right).toEqual([{ v: shownAt(w, o, 'oc'), group: 1, tone: 'best' },
+        { v: shownAt(w, o, 'qc'), group: 1, tone: 'best' }, { v: null, group: 2, tone: 'ok' }])
+      const line = startLine(book, { root: 0, picks: [] }, o)
+      for (const { v } of right) expect(answer(book, line, v ?? 'tenuki').last!.rating).toBeGreaterThan(1)
+    }
+  })
+  it('restores the same position after a wrong move or a replay and leaves its first grade in place', () => {
+    const at = db.nodes.findIndex((x, i) => isCard(db, i) && accepted(db, i).every(j => isTenuki(db, x.e[j][0])))
+    const l = startLine(db, paths[at], { k: 5, swap: true }), wrong = answer(db, l, [0, 0])
+    expect(correctMoves(db, walk(db, l.path), l.o).map(c => c.v)).toEqual([null])
+    expect(wrong).toMatchObject({ retrying: false, phase: 'wrong', answers: 1, last: { rating: 1 } })
+    const retry = retryAnswer({ ...wrong, extra: [...wrong.extra, 'ba'] })
+    expect(retry).toMatchObject({ path: l.path, o: l.o, phase: 'ask', retrying: true, answers: 0, extra: [], more: [], last: null })
+    const again = retryAnswer(answer(db, retry, [0, 0]))
+    expect(again).toEqual(retry)
+    expect(answer(db, again, 'tenuki')).toMatchObject({ retrying: false, answers: 1, last: { rating: 3 } })
+  })
+  it('shows and accepts the first KataGo move at a leaf, including tenuki', () => {
+    for (const best of ['oc', 'qp']) {
+      const book = { roots: [{ m: 'pd', node: 0 }], nodes: [{ e: [], pv: best + 'pc' }] } as unknown as JosekiDb
+      const path = { root: 0, picks: [] }, w = walk(book, path), o = { k: 3, swap: true }
+      const l: Line = { ...startLine(book, path, o), phase: 'ask', dev: 2 }
+      const [right] = correctMoves(book, w, o)
+      expect(right.v).toEqual(best === 'qp' ? null : shownAt(w, o, best))
+      expect(answer(book, l, right.v ?? 'tenuki')).toMatchObject({ phase: 'end', last: { rating: 3 } })
+    }
+  })
   it('lets the opponent play only the node’s moves, at about their frequency', () => {
     const n = db.nodes.findIndex(x => x.e.filter(e => e[3][P] > 0).length >= 3), e = db.nodes[n].e
     const r = rng(42), hits = e.map(() => 0)
@@ -107,6 +143,19 @@ describe('practice', () => {
     }
     expect(l.answers).toBeLessThanOrEqual(8)
     expect(l.phase).toBe('end')
+  })
+  it('finishes the ritual when the whole book is scheduled for later, and limits the last new cards', () => {
+    const card = review(undefined, 3, now - DAY)
+    const all = db.nodes.filter((_, i) => isCard(db, i))
+    const cards = Object.fromEntries(all.map(n => [n.k, card]))
+    expect(card.due).toBeGreaterThan(now)
+    expect(nextCard(db, R, P, cards, 0, now)).toBeNull()
+    expect(counts(db, cards, 0, now)).toEqual({ fresh: 0, due: 0 })
+    expect(deckStep(cards, 0, now)).toEqual({ done: true, left: 0 })
+    delete cards[all[0].k]
+    cards[all[1].k] = { ...card, due: now }
+    expect(counts(db, cards, 0, now)).toEqual({ fresh: 1, due: 1 })
+    expect(counts(db, cards, 10, now)).toEqual({ fresh: 0, due: 1 })
   })
   it('serves due cards before new ones, and at most 10 new cards a day', () => {
     const first = nextCard(db, R, P, {}, 0, now)!

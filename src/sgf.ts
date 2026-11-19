@@ -9,17 +9,44 @@ import { version } from '../package.json'
 /** Characters; far beyond any game record. The Rust side caps the files the OS opens at the same figure, in bytes. */
 export const MAX_SGF = 5 * 1024 * 1024
 
+// Refuse a lossy decode before the editor could save replacement characters over the original names or notes.
+export function decodeSgf(bytes: Uint8Array | ArrayBuffer): string {
+  if (bytes.byteLength > MAX_SGF) throw new LocalizedError(d => d.sgfTooBig)
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
+  catch { throw new LocalizedError(d => d.failures.open_encoding) }
+}
+
 const vertices = (values: string[] = []) => values.filter(Boolean).flatMap(v => sgf.parseCompressedVertices(v))
 const signOf = (pl?: string): Sign | undefined => (pl === 'W' ? -1 : pl === 'B' ? 1 : undefined)
 
+// Only the displayed game is edited. Keep the other games in their original text, including
+// properties and board shapes that the editor does not interpret.
+const collections = new WeakMap<Game, { count: number; rest: string }>()
+export const sgfGameCount = (game: Game) => collections.get(game)?.count ?? 1
+
+function collectionTail(text: string): string {
+  let depth = 0
+  for (const token of sgf.tokenizeIter(text)) {
+    if (token.type !== 'parenthesis') continue
+    if (token.value === '(') depth++
+    else if (--depth === 0) return text.slice(token.pos + 1).trimStart()
+  }
+  throw new LocalizedError(l => l.sgfNotGame)
+}
+
 /** The whole tree: B/W become moves, AE/AB/AW setup stones, any other node a pseudo-move keeping (or setting, with PL) the side to play. */
 export function loadSgf(text: string): Game {
-  const root = sgf.parse(text)[0]
+  const roots = sgf.parse(text), root = roots[0]
   if (!root) throw new LocalizedError(l => l.sgfEmpty)
   const d = root.data
   if (!Object.keys(d).length) throw new LocalizedError(l => l.sgfNotGame)
-  const size = parseInt(d.SZ?.[0] ?? '19', 10)
-  if (!(size >= 2 && size <= 25)) throw new LocalizedError(l => l.sgfBadSize(d.SZ?.[0]))
+  if (d.GM && d.GM[0] !== '1') throw new LocalizedError(l => l.sgfNotGo)
+  const shape = d.SZ?.[0] ?? '19'
+  const dimensions = /^(\d+)(?::(\d+))?$/.exec(shape)
+  const size = dimensions ? Number(dimensions[1]) : NaN
+  if (!(size >= 2 && size <= 25) || (dimensions?.[2] && Number(dimensions[2]) !== size)) {
+    throw new LocalizedError(l => l.sgfBadSize(shape))
+  }
   const komi = parseFloat(d.KM?.[0] ?? '')
   const off = ([x, y]: Vertex) => x < 0 || y < 0 || x >= size || y >= size
   const setup = { black: vertices(d.AB), white: vertices(d.AW) }
@@ -52,10 +79,13 @@ export function loadSgf(text: string): Game {
     for (let i = s.children.length - 1; i >= 0; i--) stack.push([s.children[i], node, -node.move.sign as Sign])
   }
 
-  return Game.fromTree({
+  const game = Game.fromTree({
     size, komi: Number.isFinite(komi) ? komi : 6.5,
     playerBlack: d.PB?.[0] ?? '', playerWhite: d.PW?.[0] ?? '', setup, firstSign, result: d.RE?.[0] || undefined,
+    rules: d.RU?.[0],
   }, tree)
+  if (roots.length > 1) collections.set(game, { count: roots.length, rest: collectionTail(text) })
+  return game
 }
 
 /** Every node's properties as read (comments, marks, unknown ones), with the root's game info and each move from the tree. */
@@ -65,7 +95,8 @@ export function saveSgf(game: Game): string {
   const data: Record<string, string[]> = {
     ...game.root.data, GM: ['1'], FF: ['4'], CA: ['UTF-8'], AP: [`Masame:${version}`], SZ: [String(size)], KM: [String(komi)],
     PB: [playerBlack], PW: [playerWhite], RE: [result ?? ''], AB: setup.black.map(sgf.stringifyVertex), AW: setup.white.map(sgf.stringifyVertex),
-    PL: placed ? [firstSign === 1 ? 'B' : 'W'] : [],
+    PL: placed || firstSign === -1 || game.root.data.PL ? [firstSign === 1 ? 'B' : 'W'] : [],
+    ...game.info.rules && { RU: [game.info.rules] },
   }
   for (const k of ['PB', 'PW', 'RE', 'AB', 'AW', 'PL']) if (!data[k].filter(Boolean).length) delete data[k]
   const out: SgfNode = { data, children: [] }
@@ -79,7 +110,7 @@ export function saveSgf(game: Game): string {
       stack.push([c, child])
     }
   }
-  return sgf.stringify([out])
+  return sgf.stringify([out]) + (collections.get(game)?.rest ?? '')
 }
 
 /** SGF RE values: a counted game ("B+3.5", "W+0.5", "0" for a draw) or a resignation ("W+R"). */

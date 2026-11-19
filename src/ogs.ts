@@ -49,7 +49,7 @@ function gameOf(d: GobanEngineConfig): Game {
   const black = [...stonesOf(d.initial_state?.black ?? ''), ...moves.slice(0, free).map(m => fromOgs(m)!)]
   const firstSign: Sign = moves.length < free ? 1 : free || d.initial_player === 'white' ? -1 : 1
   return Game.fromRecord({
-    size, komi: d.komi, playerBlack: d.players?.black.username, playerWhite: d.players?.white.username,
+    size, komi: d.komi, rules: d.rules === 'chinese' ? 'chinese-ogs' : d.rules, playerBlack: d.players?.black.username, playerWhite: d.players?.white.username,
     setup: { black, white: stonesOf(d.initial_state?.white ?? '') }, firstSign,
   }, moves.slice(free).map((m, i) => ({ sign: (i % 2 ? -firstSign : firstSign) as Sign, vertex: fromOgs(m) })))
 }

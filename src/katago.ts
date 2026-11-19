@@ -2,6 +2,7 @@
 // Outside Tauri (plain Vite dev server) every call rejects and listeners are no-ops, so the UI degrades quietly.
 
 import type { Game, Sign, Vertex } from './game'
+import { analysisRules } from './rules'
 import { LocalizedError } from './i18n'
 
 /** Checked per call (not at import) so a browser preview can install a stand-in before opening a view. */
@@ -103,7 +104,7 @@ export function positionQuery(game: Game) {
   let at = game.cursor
   while (at > 0 && !cut(at)) at--
   return {
-    rules: 'japanese', komi, boardXSize: size, boardYSize: size,
+    rules: analysisRules(game.info.rules), komi, boardXSize: size, boardYSize: size,
     initialStones: game.boards[at].signMap.flatMap((row, y) => row.flatMap((c, x) => (c ? [[color(c), gtp([x, y], size)]] : []))),
     initialPlayer: color(at ? -game.moves[at - 1].sign : firstSign),
     moves: game.moves.slice(at, game.cursor).filter(m => !m.setup).map(m => [color(m.sign), m.vertex ? gtp(m.vertex, size) : 'pass']),

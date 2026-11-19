@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { local, keeper, onLeave, resumable, restore, snapshot, unfinished, type Shown } from './current'
+import { local, keeper, onLeave, resumable, resumeEntry, restore, snapshot, unfinished, type Shown } from './current'
 import { Game, type Sign } from './game'
 import * as library from './library'
 import type { Current, Entry } from './library'
 import { CLOCKS, startClock, sync } from './localClock'
-import { saveSgf } from './sgf'
+import { loadSgf, saveSgf } from './sgf'
 
 vi.mock('./katago', () => ({ call: vi.fn(async () => { throw new Error('no host in tests') }), inTauri: () => false }))
 
@@ -54,6 +54,46 @@ describe('the writer', () => {
     expect(o.setCurrent.mock.calls.map(c => c[0]?.id ?? null)).toEqual([library.idOf(g), null])
     vi.advanceTimersByTime(1000)
     expect(o.write).toHaveBeenCalledTimes(1) // the new game has no move yet
+  })
+
+  it.each(['before', 'after'])('keeps the empty position when the only move is undone %s its autosave', timing => {
+    const o = out(), k = keeper(o), g = local(new Game({ size: 9 }))
+    g.play([2, 2]); k.changed(() => shown(g))
+    if (timing === 'after') vi.advanceTimersByTime(600)
+    g.undo(); k.changed(() => shown(g)); k.close()
+    const [, sgf, entry] = o.write.mock.lastCall as [string, string, Entry]
+    const current = o.setCurrent.mock.lastCall![0]!
+    expect(restore(current, sgf).game.moves).toHaveLength(0)
+    expect(resumeEntry(entry, loadSgf(sgf))?.game.cursor).toBe(0)
+    k.changed(() => shown(local(new Game({ size: 9 }))))
+    expect(o.setCurrent.mock.lastCall).toEqual([null])
+  })
+
+  it.each([null, { ...bot, mentor: true as const, ritual: true as const }])('reopens the saved clock, opponent and variation after playing another game', opponent => {
+    vi.setSystemTime(0)
+    const o = out(), k = keeper(o), g = local(new Game({ size: 9 })), other = local(new Game({ size: 13 }))
+    g.play([2, 2]); g.play([6, 6]); g.goTo(1); g.play([4, 4]); g.play([4, 5]); g.goTo(2)
+    const clock = sync(startClock(CLOCKS['5+3x20']), 1, 0, 3)
+    let current = shown(g, { bot: opponent, clock })
+    k.changed(() => current); vi.advanceTimersByTime(10_000)
+    current = shown(other, { clock: null })
+    k.changed(() => current) // charge up to leaving, not just the last debounced write
+    other.play([3, 3]); k.changed(() => current); k.close()
+    const id = library.idOf(g)!
+    const [, sgf, entry] = o.write.mock.calls.filter(call => call[0] === id).at(-1) as [string, string, Entry]
+    const r = resumeEntry(entry, loadSgf(sgf))!
+    expect(o.setCurrent.mock.lastCall![0]?.id).toBe(library.idOf(other))
+    expect(r.game.cursor).toBe(2)
+    expect(r.game.moves.map(m => m.vertex)).toEqual([[2, 2], [4, 4], [4, 5]])
+    expect(r.bot).toEqual(opponent)
+    expect(r.clock).toMatchObject({ turn: null, b: { main: 290_000 }, w: { main: 300_000 } })
+    expect(library.idOf(r.game)).toBe(id)
+    vi.advanceTimersByTime(60_000)
+    expect(r.clock!.b.main).toBe(290_000)
+    r.game.info.result = 'B+R'
+    const finished = snapshot(id, shown(r.game), Date.now(), entry)
+    expect(finished.entry.resume).toBeUndefined()
+    expect(resumeEntry(finished.entry, loadSgf(finished.sgf))).toBeNull()
   })
 
   it('writes the unfinished game again when the app closes, its clock charged up to then', () => {
@@ -122,6 +162,15 @@ describe('restoring', () => {
     expect(unfinished(r.game)).toBe(false) // made local by resumeCurrent, not by restore
   })
 
+  it('selects saved SGF branches across setup nodes without playing or modifying the record', () => {
+    const sgf = '(;SZ[9];B[aa];C[after Black](;W[bb])(;C[alternative];W[cc]))'
+    const r = restore({ id: 'two-x', bot: null, handicap: 0, clock: null, cursor: 3, line: [0, 0, 1, 0] }, sgf)
+    expect(r.game.nodes[3].data.C).toEqual(['alternative'])
+    expect(r.game.cursor).toBe(3)
+    expect(r.game.leaf.move?.vertex).toEqual([2, 2])
+    expect(saveSgf(r.game)).toEqual(saveSgf(loadSgf(sgf)))
+  })
+
   it('keeps the player\'s stored rank once the entry exists, whatever the settings say now', () => {
     const g = local(new Game({ size: 9 })); g.play([2, 2])
     const prev = snapshot('ai-r', shown(g), 1000).entry
@@ -138,6 +187,8 @@ describe('restoring', () => {
   it('plays an unfinished library game again, the AI from its entry', () => {
     const e: Entry = { id: 'ai-y', date: 1, source: 'ai', size: 9, komi: 6.5, handicap: 0, me: -1,
       black: { name: 'KataGo human 2k', rank: '2k' }, white: { name: '', rank: '6k' }, mentor: { stops: 2 } }
+    const legacyGame = new Game({ size: 9 }); legacyGame.play([2, 2])
+    expect(resumeEntry(e, legacyGame)).toMatchObject({ bot: { sign: 1, rank: '2k', mentor: true }, clock: null, game: { cursor: 1 } })
     expect(resumable(e)).toEqual({ bot: { sign: 1, rank: '2k', mentor: true } })
     expect(resumable({ ...e, source: 'two', me: 0 })).toEqual({ bot: null })
     expect(resumable({ ...e, result: 'B+R' })).toBeNull()

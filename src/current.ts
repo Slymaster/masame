@@ -40,7 +40,11 @@ export function resumable(e: Entry): { bot: Bot | null } | null {
 }
 
 /** The shown line as child indices from the root (a variation played on comes back as the shown line). */
-const lineOf = (g: Game) => g.nodes.slice(1).map((n, i) => g.nodes[i].children.indexOf(n))
+const lineOf = (g: Game) => {
+  const line = g.nodes.slice(1).map((n, i) => g.nodes[i].children.indexOf(n))
+  while (line.length && line[line.length - 1] === 0) line.pop() // first children are implicit
+  return line
+}
 
 /** What to write for a local game: its SGF, its entry (over the stored one: other fields stay), current.json (null once decided). */
 export function snapshot(id: string, { game, bot, clock, myRank }: Shown, now: number, prev?: Entry) {
@@ -53,6 +57,8 @@ export function snapshot(id: string, { game, bot, clock, myRank }: Shown, now: n
     id, cursor: game.cursor, line: lineOf(game), bot: bot && { ...bot, sign: bot.sign as 1 | -1 }, handicap: entry.handicap,
     clock: clock && sync(clock, null, now, clock.len), // paused, the running side charged
   }
+  if (current) entry.resume = current
+  else delete entry.resume
   return { sgf: saveSgf(game), entry, current }
 }
 
@@ -60,6 +66,10 @@ export function snapshot(id: string, { game, bot, clock, myRank }: Shown, now: n
 export function keeper(out: Pick<typeof library, 'write' | 'setCurrent'> = library, delay = 500) {
   let timer: ReturnType<typeof setTimeout> | undefined, job: (() => void) | null = null, last: (() => void) | null = null, lastId = '', shown: Game | null = null
   const flush = () => { clearTimeout(timer); const j = job; job = null; j?.() }
+  const close = () => {
+    if (job) flush()
+    else if (shown && !shown.info.result && library.idOf(shown) === lastId) last?.()
+  }
   const report = (p: Promise<void>) => { p.catch(e => console.error('library', e)) }
   return {
     flush,
@@ -68,16 +78,17 @@ export function keeper(out: Pick<typeof library, 'write' | 'setCurrent'> = libra
       clearTimeout(timer); job = last = null; lastId = ''
     },
     /** Closing the app: the pending write, or the shown unfinished game written again, its clock charged up to now. */
-    close() { if (job) flush(); else if (shown && unfinished(shown) && library.idOf(shown) === lastId) last?.() },
+    close,
     changed(get: () => Shown) {
       const s = get(), g = s.game
       if (g !== shown) { // another game: the last one's pending write first; an unfinished one is no longer the current game
-        flush()
-        if (shown && unfinished(shown) && library.idOf(shown)) report(out.setCurrent(null))
+        close() // include the clock time since the last autosave
+        if (shown && !shown.info.result && library.idOf(shown) === lastId) report(out.setCurrent(null))
         shown = g
       }
-      if (!dates.has(g) || !g.moves.length || !library.active(g)) return
+      if (!dates.has(g) || !library.active(g)) return
       let id = library.idOf(g)
+      if (!id && !g.moves.length) return // brand-new board, unlike a recorded game whose last move was undone
       if (!id) library.bind(g, id = library.newId(s.bot ? 'ai' : 'two'))
       if (!dates.get(g)) dates.set(g, Date.now())
       const key = id
@@ -94,25 +105,43 @@ export function keeper(out: Pick<typeof library, 'write' | 'setCurrent'> = libra
   }
 }
 
-const isClock = (c: unknown): c is LocalClock => !!c && typeof c === 'object' && ['spec', 'b', 'w'].every(k => k in c)
+const nonnegative = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0
+const clockSide = (s: unknown): s is LocalClock['b'] => !!s && typeof s === 'object'
+  && 'main' in s && nonnegative(s.main) && 'period' in s && nonnegative(s.period)
+  && 'periods' in s && nonnegative(s.periods) && Number.isInteger(s.periods)
+const isClock = (c: unknown): c is LocalClock => !!c && typeof c === 'object'
+  && 'spec' in c && clockSide(c.spec) && c.spec.period > 0 && 'b' in c && clockSide(c.b) && 'w' in c && clockSide(c.w)
+  && 'len' in c && nonnegative(c.len) && 'since' in c && nonnegative(c.since)
 
-/** current.json and its SGF → the game at its cursor on its line, its AI, its clock paused. */
-export function restore(c: Current, sgf: string): { game: Game; bot: Bot | null; clock: LocalClock | null } {
-  const game = loadSgf(sgf)
-  if (c.line?.some(i => i > 0)) {
-    game.goTo(0)
-    for (const i of c.line) {
-      const m = game.nodes[game.cursor].children[i]?.move
-      if (!m || m.setup || game.play(m.vertex) !== 'ok') break
+/** The saved position and its SGF → the game at its cursor on its line, its AI, its clock paused. */
+export function restore(c: Current, sgf: string | Game): { game: Game; bot: Bot | null; clock: LocalClock | null } {
+  const game = typeof sgf === 'string' ? loadSgf(sgf) : sgf
+  if (Array.isArray(c.line)) {
+    for (const [depth, choice] of c.line.entries()) {
+      const parent = game.nodes[depth]
+      if (!Number.isInteger(choice) || !parent?.children[choice]) break
+      if (choice) {
+        game.goTo(depth + 1)
+        game.switchVariation(choice) // follow the existing node, including comments and setup stones
+      }
     }
   }
-  game.goTo(c.cursor)
+  game.goTo(Number.isInteger(c.cursor) ? c.cursor : game.moves.length)
   const b = c.bot
   return {
     game, clock: isClock(c.clock) ? { ...c.clock, turn: null } : null,
     bot: b && (b.sign === 1 || b.sign === -1) ? { sign: b.sign, rank: clampRank(b.rank), ...b.ritual && { ritual: true as const },
       ...typeof b.era === 'number' && { era: b.era }, ...b.mentor && { mentor: true as const } } : null,
   }
+}
+
+/** A pre-0.8.1 library entry only knows its main line and opponent; its elapsed times were never stored. */
+export function resumeEntry(e: Entry, g: Game) {
+  const fallback = resumable(e)
+  if (!fallback || g.info.result) return null
+  const r = e.resume?.id === e.id ? restore(e.resume, g) : { game: g, bot: fallback.bot, clock: null }
+  local(r.game, e)
+  return r
 }
 
 /** The unfinished game current.json points at, made local again under its id; null when there is none (a decided one is cleared). */
@@ -123,9 +152,10 @@ export async function resumeCurrent() {
     library.read(c.id).catch(e => { if ((e as { code?: string })?.code === 'library_not_found') void library.setCurrent(null); throw e }),
     library.load().catch(() => [] as Entry[]),
   ])
-  const r = restore(c, sgf)
+  const entry = xs.find(e => e.id === c.id)
+  const r = restore(entry?.resume?.id === c.id ? entry.resume : c, sgf)
   if (r.game.info.result) { void library.setCurrent(null); return null }
-  local(r.game, { id: c.id, date: xs.find(e => e.id === c.id)?.date ?? 0 })
+  local(r.game, { id: c.id, date: entry?.date ?? 0 })
   return r
 }
 
@@ -141,7 +171,7 @@ export function onLeave(flush: () => void, w: EventTarget = window, d: EventTarg
 export function useCurrentGame(s: Shown, ver: number, onRestore: (r: Awaited<ReturnType<typeof restore>>) => void) {
   const k = useRef<ReturnType<typeof keeper> | null>(null), latest = useRef(s), first = useRef(s.game), restoreRef = useRef(onRestore)
   latest.current = s; restoreRef.current = onRestore
-  useEffect(() => { if (inTauri()) (k.current ??= keeper()).changed(() => latest.current) }, [ver, s.game, s.bot])
+  useEffect(() => { if (inTauri()) (k.current ??= keeper()).changed(() => latest.current) }, [ver, s.game, s.bot, s.clock])
   useEffect(() => library.onDelete((id, phase) => {
     if (phase === 'start') k.current?.forget(id)
     else if (library.idOf(latest.current.game) === id) k.current?.changed(() => latest.current)

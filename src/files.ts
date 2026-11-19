@@ -1,4 +1,5 @@
-import { t } from './i18n'
+import { LocalizedError, t } from './i18n'
+import { decodeSgf, MAX_SGF } from './sgf'
 import { isMobile } from './platform'
 
 // SGF (and postcard PNG) file I/O: native dialogs + fs plugin inside Tauri, file picker / download fallback in a plain browser.
@@ -6,17 +7,22 @@ import { isMobile } from './platform'
 const isTauri = () => '__TAURI_INTERNALS__' in window
 const filters = () => [{ name: t.sgfFilter, extensions: ['sgf'] }]
 
+export async function readDroppedSgf(file: File): Promise<string> {
+  if (file.size > MAX_SGF) throw new LocalizedError(d => d.sgfTooBig)
+  return decodeSgf(await file.arrayBuffer())
+}
+
 /** Returns the file text, or null if the user cancelled. */
 export async function openSgfFile(): Promise<string | null> {
   if (isTauri()) {
-    const [{ open }, { readTextFile }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs')])
+    const [{ open }, { readFile }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs')])
     // phones: no filter, the pickers filter by system type (UTType, MIME) and neither knows "sgf", so it would grey every game
     const path = await open({ title: t.openTitle, filters: isMobile ? undefined : filters(), multiple: false, directory: false })
-    return path ? readTextFile(path) : null
+    return path ? decodeSgf(await readFile(path)) : null
   }
   const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.sgf' })
   return new Promise(resolve => {
-    input.onchange = () => resolve(input.files?.[0]?.text() ?? null)
+    input.onchange = () => { const file = input.files?.[0]; resolve(file ? readDroppedSgf(file) : null) }
     input.oncancel = () => resolve(null)
     input.click()
   })

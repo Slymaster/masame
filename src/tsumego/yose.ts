@@ -34,7 +34,7 @@ export function yoseOf(game: Game, i: number, a: Analysis, vs: string, now: numb
   if (gap < YOSE_GAP || gap >= YOSE_MAX) return null
   const { size, komi } = game.info, s = stonesOf(game.boards[i].signMap)
   return {
-    kind: 'yose', t: now, vs, size, komi, b: s.black.map(code).join(''), w: s.white.map(code).join(''), moves: '', sign,
+    kind: 'yose', t: now, vs, size, komi, rules: game.info.rules, b: s.black.map(code).join(''), w: s.white.map(code).join(''), moves: '', sign,
     played: code(m2.v), loss: gap, best: m1.scoreLead, better: a.pv.map(code).join(''), punish: '', n: game.moveNumber(i) + 1,
   }
 }
@@ -47,7 +47,7 @@ export async function findYose(games: { game: Game; vs: string }[], ask: (g: Gam
   const out: Exercise[] = [], until = Date.now() + YOSE_MS
   for (const c of cands) {
     if (!live() || out.length >= YOSE_N || Date.now() > until) break
-    const x = yoseOf(c.game, c.i, await ask(positionAt(c.game.boards[c.i].signMap, c.game.info.size, c.game.info.komi, c.game.moves[c.i].sign as Sign)), c.vs, now)
+    const x = yoseOf(c.game, c.i, await ask(positionAt(c.game.boards[c.i].signMap, c.game.info.size, c.game.info.komi, c.game.moves[c.i].sign as Sign, c.game.info.rules)), c.vs, now)
     if (x) { out.push(x); progress(out.length) }
   }
   return out

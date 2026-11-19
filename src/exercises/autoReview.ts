@@ -94,7 +94,15 @@ const isJob = (j: unknown): j is Job => !!j && typeof j === 'object' && typeof (
 export function loadQueue(st: Storage = localStorage): Job[] {
   try {
     const j = JSON.parse(st.getItem(QUEUE_KEY) ?? '[]')
-    return Array.isArray(j) ? j.filter(x => { try { return isJob(x) && !!loadSgf(x.sgf) } catch { return false } }).slice(-CAP) : []
+    if (!Array.isArray(j)) return []
+    return j.flatMap(x => {
+      if (!isJob(x)) return []
+      try {
+        const game = loadSgf(x.sgf)
+        // Jobs saved before 0.8.1 have no rules in their cache key.
+        return [game.info.rules ? { ...x, k: reviewKey(game) } : x]
+      } catch { return [] }
+    }).slice(-CAP)
   } catch { return [] } // storage disabled or garbage: nothing waits
 }
 

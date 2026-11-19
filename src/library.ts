@@ -1,6 +1,7 @@
 // The library: every game played or opened lives on this machine, as an SGF file per game plus one index, in the app
 // data dir's games/ folder (Rust: src-tauri/src/library.rs). Outside the app every call rejects, and Mes parties says so.
 // One store for the whole UI (Mes parties, Apprendre, Progrès), loaded once; every write goes through one queue, in order.
+import { parse, stringify } from '@sabaki/sgf'
 import type { Facts, Pos } from './classify'
 import type { Game, Sign } from './game'
 import { hash64 } from './joseki/sym'
@@ -19,6 +20,7 @@ export interface Entry {
   size: number; komi: number; handicap: number
   black: Side; white: Side
   me: 1 | -1 | 0 // the player's colour; 0: a two-player game, or a file without the player's name
+  resume?: Current // the last position and paused clock of this unfinished local game
   result?: string // SGF RE ("B+R", "W+4.5", "0"); absent while unfinished
   ogsId?: number
   era?: number // against a Master of an era (B1)
@@ -189,7 +191,7 @@ export async function keep(g: Game, source: Source, me: Sign | 0, extra: Partial
   if (removing.has(id)) throw new LocalizedError(d => d.gamesDeleting)
   // Invalidate older work before binding the explicit new board, so its own review captures the new generation.
   if (source === 'ogs' && reimport) epochs.set(id, (epochs.get(id) ?? 0) + 1)
-  const epoch = epochs.get(id)
+  const epoch = epochs.get(id), live = guard(id)
   bind(g, id)
   if (source === 'ogs') {
     admitting.add(g)
@@ -206,10 +208,26 @@ export async function keep(g: Game, source: Source, me: Sign | 0, extra: Partial
     if (!admitted) { admitting.delete(g); rejected.add(g); return id }
   }
   else blocked.delete(id) // a new Game object is an explicit import; an already bound board never gets here
-  const live = guard(id)
-  const xs = await load().catch(() => null)
+  const importedRules = source === 'ogs' && reimport ? g.info.rules : undefined
   try {
+    // A failed index read cannot establish that an annotated OGS copy is absent.
+    const xs = importedRules?.trim() ? await load() : await load().catch(() => null)
     if (live() && !xs?.some(e => e.id === id)) await write(id, sgf, entryOf(g, { id, source, me, ...source === 'file' && { added: Date.now() }, ...extra }))
+    else if (live() && importedRules?.trim()) {
+      // A live game kept by an older version may be missing RU. Change only the stored root's
+      // rule declaration: local notes, variations, the index and its progress belong to this copy.
+      await queued(async () => {
+        if (!live()) return
+        const stored = await read(id)
+        if (!live()) return
+        const trees = parse(stored), root = trees[0]
+        if (!root || !Object.keys(root.data).length) throw new LocalizedError(d => d.sgfNotGame)
+        if (root.data.RU?.[0] === importedRules) return
+        root.data.RU = [importedRules]
+        await call<void>('library_write', { id, sgf: stringify(trees), entry: null })
+      })
+    }
+    if (!live()) rejected.add(g) // superseded while reading: this board must not start another automatic review
   } catch (e) { rejected.add(g); throw e }
   finally { admitting.delete(g) }
   return id

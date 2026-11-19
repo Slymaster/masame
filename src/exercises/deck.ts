@@ -1,6 +1,7 @@
 // Exercises from your own games: each review's key moments become cards (FSRS, as the joseki), and the scan's leads say
 // where you lose your points. Pure, plus load/save in localStorage like the joseki progress.
 import { parseVertex, stringifyVertex } from '@sabaki/sgf'
+import { rulesKey } from '../rules'
 import { Game, type Move, type Sign, type Vertex } from '../game'
 import type { Card, Rating } from '../joseki/fsrs'
 import { isCard, NEW_PER_DAY, today } from '../joseki/store'
@@ -11,7 +12,7 @@ import { phaseLosses, phaseOf, reviewEnd, verdict, type Moment } from '../review
 export interface Exercise {
   t: number // made at (ms): new exercises wait for the next day
   vs: string // the opponent of the side that made the mistake, as named in the game ('' if unnamed)
-  size: number; komi: number
+  size: number; komi: number; rules?: string
   b: string; w: string // setup (handicap) stones
   moves: string // the real moves before the mistake (pseudo-moves dropped; they alternate, ending with the opponent's)
   sign: Sign // who made the mistake, to play here
@@ -42,20 +43,20 @@ export const lineOf = (s: string): (Vertex | null)[] => (s.match(/../g) ?? []).m
 export function exerciseOf(game: Game, m: Moment, now: number): Exercise {
   const { size, komi, setup, playerBlack, playerWhite } = game.info
   return {
-    t: now, vs: m.sign === 1 ? playerWhite : playerBlack, size, komi, b: codes(setup.black), w: codes(setup.white),
+    t: now, vs: m.sign === 1 ? playerWhite : playerBlack, size, komi, rules: game.info.rules, b: codes(setup.black), w: codes(setup.white),
     moves: real(game.moves.slice(0, m.at)), sign: m.sign, played: code(game.moves[m.at].vertex), loss: m.loss,
     best: m.lead + m.sign * m.loss, better: codes(m.better), punish: codes(m.punish),
   }
 }
 /** The position before the mistake: reviewing the same game twice adds nothing. */
-export const keyOf = (x: Exercise) => hash64(`${x.size}|${x.komi}|${x.b}|${x.w}|${x.sign}|${x.moves}`)
+export const keyOf = (x: Exercise) => hash64(`${x.size}|${x.komi}|${x.b}|${x.w}|${x.sign}|${x.moves}${rulesKey(x.rules)}`)
 /** The mistake's move number. */
 export const mv = (x: Exercise) => x.n ?? x.moves.length / 2 + 1
 
 /** The position before the mistake; its moves alternate and end with the opponent's, which sets who started. */
 export function positionOf(x: Exercise): Game {
   const moves = lineOf(x.moves), firstSign = (moves.length % 2 ? -x.sign : x.sign) as Sign
-  return Game.fromRecord({ size: x.size, komi: x.komi, setup: { black: lineOf(x.b) as Vertex[], white: lineOf(x.w) as Vertex[] }, firstSign },
+  return Game.fromRecord({ size: x.size, komi: x.komi, rules: x.rules, setup: { black: lineOf(x.b) as Vertex[], white: lineOf(x.w) as Vertex[] }, firstSign },
     moves.map((vertex, i) => ({ sign: (i % 2 ? -firstSign : firstSign) as Sign, vertex })))
 }
 
@@ -69,7 +70,9 @@ export function recordKey(game: Game): string {
  * positions and facts are indexed by node: the same moves with a comment node elsewhere are another review). */
 export function reviewKey(game: Game): string {
   const at = game.moves.slice(0, reviewEnd(game)).flatMap((m, i) => (m.setup ? [i] : []))
-  return at.length ? hash64(`${recordKey(game)}|${at.join(',')}`) : recordKey(game)
+  const record = recordKey(game), rules = rulesKey(game.info.rules)
+  const suffix = (at.length ? `|${at.join(',')}` : '') + rules
+  return suffix ? hash64(record + suffix) : record
 }
 
 /** New exercises for a review's moments (known ones untouched) and, when `me` is known, where its moves lost points. */
@@ -149,7 +152,7 @@ const num = (x: unknown): x is number => typeof x === 'number' && Number.isFinit
 const obj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)
 /** Codes on an n×n board, 'tt' (pass) aside. */
 const fits = (s: unknown, n: number) => typeof s === 'string' && /^([a-t]{2})*$/.test(s) && lineOf(s).every(v => !v || (v[0] < n && v[1] < n))
-export const isItem = (x: unknown) => obj(x) && num(x.t) && num(x.komi) && num(x.loss) && num(x.best) && typeof x.vs === 'string'
+export const isItem = (x: unknown) => obj(x) && num(x.t) && num(x.komi) && num(x.loss) && num(x.best) && typeof x.vs === 'string' && (x.rules === undefined || typeof x.rules === 'string')
   && Number.isInteger(x.size) && (x.size as number) >= 2 && (x.size as number) <= 19 && (x.sign === 1 || x.sign === -1)
   && ['b', 'w', 'moves', 'better', 'punish', 'played'].every(k => fits(x[k], x.size as number)) && (x.played as string).length === 2
   && [x.b, x.w].every(s => !lineOf(s as string).includes(null)) // setup stones are never passes

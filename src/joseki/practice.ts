@@ -131,8 +131,16 @@ export function nextCard(db: JosekiDb, R: number[][], p: number, cards: Record<s
 }
 /** How many cards are due and still new today. */
 export function counts(db: JosekiDb, cards: Record<string, Card>, fresh: number, now: number) {
-  const due = db.nodes.filter((x, i) => cards[x.k] && cards[x.k].due <= now && isCard(db, i)).length
-  return { due, fresh: Math.max(0, NEW_PER_DAY - fresh) }
+  const quota = Math.max(0, NEW_PER_DAY - fresh)
+  let due = 0, available = 0
+  db.nodes.forEach((x, i) => {
+    const c = cards[x.k]
+    if (c && c.due > now || !c && available >= quota) return
+    if (!isCard(db, i)) return
+    if (c) due++
+    else available++
+  })
+  return { due, fresh: available }
 }
 
 /**
@@ -141,7 +149,7 @@ export function counts(db: JosekiDb, cards: Record<string, Card>, fresh: number,
  * dev: the points the opponent's last move gave away, when it left the book.
  */
 export interface Line {
-  path: Path; o: Orient; answers: number; phase: 'ask' | 'reply' | 'wrong' | 'end'
+  path: Path; o: Orient; answers: number; retrying: boolean; phase: 'ask' | 'reply' | 'wrong' | 'end'
   extra: string[]; more: string[]; dev: number | null; last: { rating: Rating; card: string | null } | null
 }
 export const MAX_ANSWERS = 8
@@ -153,15 +161,31 @@ function settle(db: JosekiDb, l: Line): Line {
   return { ...l, phase: 'end', more: continuation(db, node(w), frame(w)) }
 }
 export const startLine = (db: JosekiDb, path: Path, o: Orient): Line =>
-  settle(db, { path, o, answers: 0, phase: 'ask', extra: [], more: [], dev: null, last: null })
+  settle(db, { path, o, answers: 0, retrying: false, phase: 'ask', extra: [], more: [], dev: null, last: null })
+
+/** The wrong stone and any replay belong to the attempt. Retry at the same node and in the same orientation.
+ *  The trainer records only the first answer to this position. */
+export function retryAnswer(l: Line): Line {
+  return { ...l, phase: 'ask', answers: l.answers - 1, retrying: true, last: null, extra: [], more: [] }
+}
+
+/** Accepted moves as displayed on the board. A null point is tenuki. Mirror twins share a marker. */
+export function correctMoves(db: JosekiDb, w: Walk, o: Orient): { v: Vertex | null; group: number; tone: Tone }[] {
+  const n = node(w), x = db.nodes[n]
+  const choices = x.e.length
+    ? accepted(db, n).map(i => ({ move: x.e[i][0], group: x.e[i][1], loss: x.e[i][2] / 10 }))
+    : x.pv ? [{ move: x.pv.slice(0, 2), group: n, loss: 0 }] : []
+  return choices.map(({ move, group, loss }) => ({ v: isTenuki(db, move) ? null : shownAt(w, o, move), group, tone: tone(loss) }))
+}
 
 /** The learner plays v (or tenuki, the stone the tree keeps for playing elsewhere). */
 export function answer(db: JosekiDb, l: Line, v: Vertex | 'tenuki'): Line {
   const w = walk(db, l.path), n = node(w), x = db.nodes[n], m = v === 'tenuki' ? null : storedAt(w, l.o, v)
   const answers = l.answers + 1, mine = m ? [rooted(w, m)] : []
   if (!x.e.length) { // punishing a deviation the tree did not follow: KataGo's reply is the answer
-    const line = continuation(db, n, frame(w)), ok = m === x.pv!.slice(0, 2)
-    return { ...l, answers, phase: ok ? 'end' : 'wrong', extra: ok ? line.slice(0, 1) : mine, more: ok ? line.slice(1) : line, last: { rating: ok ? 3 : 1, card: null } }
+    const line = continuation(db, n, frame(w)), best = x.pv!.slice(0, 2)
+    const ok = m === best || m === null && isTenuki(db, best)
+    return { ...l, answers, retrying: false, phase: ok ? 'end' : 'wrong', extra: ok ? line.slice(0, 1) : mine, more: ok ? line.slice(1) : line, last: { rating: ok ? 3 : 1, card: null } }
   }
   const i = x.e.findIndex(e => m === null ? isTenuki(db, e[0]) : e[0] === m), e = x.e[i]
   const rating = grade(e && e[2] / 10), last = { rating, card: isCard(db, n) ? x.k : null }
@@ -169,7 +193,7 @@ export function answer(db: JosekiDb, l: Line, v: Vertex | 'tenuki'): Line {
     const f = e ? through(frame(w), e) : frame(w)
     return { ...l, answers, phase: 'wrong', last, extra: e ? [rooted(w, e[0])] : mine, more: e ? continuation(db, e[1], f) : [] }
   }
-  const next = settle(db, { ...l, path: { ...l.path, picks: [...l.path.picks, i] }, answers, last, dev: null, extra: [], more: [] })
+  const next = settle(db, { ...l, path: { ...l.path, picks: [...l.path.picks, i] }, answers, last, retrying: false, dev: null, extra: [], more: [] })
   if (next.phase === 'end') return next
   return answers >= MAX_ANSWERS ? { ...next, phase: 'end', more: continuation(db, e[1], walk(db, next.path).frames.at(-1)!) } : { ...next, phase: 'reply' }
 }

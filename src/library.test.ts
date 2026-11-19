@@ -221,6 +221,88 @@ describe('a game and its entry', () => {
     expect(lib.get()?.[0]).toMatchObject({ id: 'ogs-42', ogsId: 42, me: -1 })
   })
 
+  it('merges rules from an explicit OGS reimport into an annotated legacy record and stores its new review', async () => {
+    const { parse } = await import('@sabaki/sgf'), { reviewKey } = await import('./exercises/deck')
+    const { noteReview } = await import('./current'), id = 'ogs-42'
+    const original = '(;GM[1]SZ[9]AP[Older:1]PB[My name]XX[my property]C[root];B[aa](;W[cc]C[my note]TR[cc])(;W[bb]))'
+    let stored = original, metadata = entry(id, 123, { source: 'ogs', memory: { recalled: 2, total: 2, helps: 0 } })
+    let sidecar: import('./library').ReviewSidecar | null = null
+    let sgfWrites = 0
+    host.answer = (cmd, a) => {
+      if (cmd === 'library_list') return [metadata]
+      if (cmd === 'library_read') return stored
+      if (cmd === 'library_write') {
+        if (typeof a?.sgf === 'string') { sgfWrites++; stored = a.sgf }
+        if (a?.entry) metadata = a.entry as Entry
+      }
+      if (cmd === 'library_sidecar_write') sidecar = a?.json as import('./library').ReviewSidecar
+      if (cmd === 'library_sidecar_read') return sidecar
+    }
+    const incoming = '(;SZ[9]PB[Remote player]RU[Chinese];B[aa];W[cc])'
+    await lib.keep(await game(incoming), 'ogs', 1, { ogsId: 42 }, false)
+    expect(stored).toBe(original) // background notifications leave the user's record alone
+    const fresh = await game(incoming), oldKey = reviewKey(await game(original)), key = reviewKey(fresh)
+    expect(oldKey).not.toBe(key)
+    await lib.keep(fresh, 'ogs', 1, { ogsId: 42 }, true)
+    const expected = parse(original); expected[0].data.RU = ['Chinese']
+    expect(parse(stored)).toEqual(expected)
+    expect(reviewKey(await game(await lib.read(id)))).toBe(key)
+    const pos = Array.from({ length: 3 }, () => ({ lead: 1, u: 1, cands: [], pv: [] }))
+    const facts = Array.from({ length: 2 }, () => ({ sac: 0, book: false }))
+    await noteReview(id, pos, [], facts, { key, side: 1 })
+    expect((await lib.reviewData(id, 9))?.key).toBe(key)
+    expect(metadata).toMatchObject({ id, date: 123, memory: { recalled: 2, total: 2, helps: 0 }, review: { moments: 0 } })
+    await lib.keep(await game(incoming), 'ogs', 1, { ogsId: 42 }, true)
+    expect(sgfWrites).toBe(1) // retry is idempotent
+  })
+
+  it('does not write an OGS rules update after a deletion starts during its read', async () => {
+    const reading = deferred(), release = deferred(), id = 'ogs-42'
+    host.answer = async cmd => {
+      if (cmd === 'library_list') return [entry(id, 1, { source: 'ogs' })]
+      if (cmd === 'library_read') { reading.open(); await release.p; return '(;SZ[9];B[aa])' }
+    }
+    const g = await game('(;SZ[9]RU[AGA];B[aa])'), update = lib.keep(g, 'ogs', 1, { ogsId: 42 }, true)
+    await reading.p
+    const erase = lib.remove(id)
+    release.open()
+    await Promise.all([update, erase])
+    expect(host.log).not.toContain('library_write ogs-42')
+    expect(lib.active(g)).toBe(false)
+    expect(lib.get()).toEqual([])
+  })
+
+  it('keeps the latest explicitly imported rules when two reimports overlap', async () => {
+    const reading = deferred(), release = deferred(), id = 'ogs-42'
+    let stored = '(;SZ[9]C[local];B[aa])', firstRead = true
+    host.answer = async (cmd, a) => {
+      if (cmd === 'library_list') return [entry(id, 1, { source: 'ogs' })]
+      if (cmd === 'library_read') {
+        if (firstRead) { firstRead = false; reading.open(); await release.p }
+        return stored
+      }
+      if (cmd === 'library_write' && typeof a?.sgf === 'string') stored = a.sgf
+    }
+    const first = await game('(;SZ[9]RU[AGA];B[aa])'), second = await game('(;SZ[9]RU[Chinese];B[aa])')
+    const a = lib.keep(first, 'ogs', 1, { ogsId: 42 }, true)
+    await reading.p
+    const b = lib.keep(second, 'ogs', 1, { ogsId: 42 }, true)
+    release.open()
+    await Promise.all([a, b])
+    expect(stored).toContain('C[local]')
+    expect((await game(stored)).info.rules).toBe('Chinese')
+    expect(host.log.filter(c => c === 'library_write ogs-42')).toHaveLength(1)
+    expect([lib.active(first), lib.active(second)]).toEqual([false, true])
+  })
+
+  it('preserves a potentially existing OGS record when its index cannot be read', async () => {
+    host.answer = cmd => { if (cmd === 'library_list') throw new Error('unreadable index') }
+    const g = await game('(;SZ[9]RU[AGA];B[aa])')
+    await expect(lib.keep(g, 'ogs', 1, { ogsId: 42 }, true)).rejects.toThrow('unreadable index')
+    expect(host.log).not.toContain('library_write ogs-42')
+    expect(lib.active(g)).toBe(false)
+  })
+
   it('allows an explicit OGS reimport but neither the old board nor its late analysis can resurrect it', async () => {
     host.answer = cmd => cmd === 'library_list' ? [] : undefined
     const sgf = '(;SZ[9];B[ee])', old = await game(sgf)

@@ -50,6 +50,13 @@ describe('the queue', () => {
     expect(a.queue.map(j => j.id)).toEqual(['ogs-1'])
     expect(enqueue(a, game(12), 1, 4, { id: 'file-a' })).toBe(a.queue) // reviewed this session
   })
+  it('updates an old queued review to the rules of its SGF without losing the library id', () => {
+    const g = game(12), oldKey = reviewKey(g)
+    g.info.rules = 'AGA'
+    const job = { sgf: saveSgf(g), k: oldKey, id: 'ogs-10', side: 1, t: 5 }
+    expect(loadQueue(mem({ [QUEUE_KEY]: JSON.stringify([job]) }))).toEqual([{ ...job, k: reviewKey(g) }])
+    expect(reviewKey(g)).not.toBe(oldKey)
+  })
   it('snapshots the record: moves added later are not in the job', () => {
     const a = newAuto([]), g = game(12)
     a.queue = enqueue(a, g, 1, 0)

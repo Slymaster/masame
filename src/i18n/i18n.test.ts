@@ -109,7 +109,7 @@ describe('formatting', () => {
     expect(t.progress(42, '12 MB', '99 MB')).toBe('42% · 12 MB / 99 MB')
     expect(t.month('2026-10-11T00:00:00Z')).toBe('Oct 2026')
     expect(t.botName('8k')).toBe('KataGo human 8k')
-    expect(() => loadSgf('(;SZ[30])')).toThrow('Unsupported board size: 30')
+    expect(() => loadSgf('(;SZ[30])')).toThrow('Unsupported board size 30')
   })
   it('maps Rust error codes to text in both languages', () => {
     setLang('fr')
@@ -200,7 +200,7 @@ describe('stored messages', () => {
     const en = msgs.map(m => m(t))
     expect(en[0]).toBe('White wins by 6.5.')
     expect(en[1]).toBe('The AI can’t play right now. The engine is stopped.')
-    expect(en[2]).toBe('Couldn’t open this file: Unsupported board size: 30')
+    expect(en[2]).toBe('Couldn’t open this file: Unsupported board size 30. Masame opens square boards from 2 to 25 lines.')
     setLang('fr')
     const fr = msgs.map(m => m(t))
     expect(fr[0]).toBe('Blanc gagne de 6,5.')

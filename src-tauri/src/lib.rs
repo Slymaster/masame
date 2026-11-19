@@ -556,7 +556,7 @@ fn read_sgf(path: &Path) -> Res<String> {
     let mut bytes = vec![];
     std::fs::File::open(path).and_then(|f| f.take(MAX_SGF + 1).read_to_end(&mut bytes)).map_err(|e| Failure::with("open_unreadable", e))?;
     if bytes.len() as u64 > MAX_SGF { return Err(Failure::new("open_too_big")) }
-    Ok(String::from_utf8_lossy(&bytes).into_owned()) // lossy like the dialog's readTextFile
+    String::from_utf8(bytes).map_err(|_| Failure::new("open_encoding"))
 }
 
 /// Files the OS asked us to open (Finder, Explorer, a launch's arguments), until take_opened. Not in App: macOS hands
@@ -744,6 +744,8 @@ mod tests {
         assert_eq!(read_sgf(&p).unwrap().len() as u64, MAX_SGF);
         std::fs::write(&p, vec![b'x'; MAX_SGF as usize + 1]).unwrap();
         assert_eq!(read_sgf(&p).unwrap_err().code, "open_too_big");
+        std::fs::write(&p, b"(;C[\xff])").unwrap();
+        assert_eq!(read_sgf(&p).unwrap_err().code, "open_encoding");
         std::fs::remove_file(&p).unwrap();
         assert_eq!(read_sgf(&p).unwrap_err().code, "open_unreadable");
     }

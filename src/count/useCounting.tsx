@@ -3,6 +3,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { Board3DState } from '../board3d/Board3D'
 import type { Game } from '../game'
+import { reviewKey } from '../exercises/deck'
+import { analysisRules } from '../rules'
 import { failureText, t } from '../i18n'
 import { Icon } from '../Icon'
 import { note as journal } from '../journal'
@@ -26,6 +28,8 @@ async function draw(avoid: Set<string>): Promise<Run | null> {
       const side = await library.sidecar<library.ReviewSidecar>(e.id, 'review')
       if (!side?.leads) continue
       const game = loadSgf(await library.read(e.id)), leads = side.leads.map((x, i) => (avoid.has(`${e.id}:${i}`) ? null : x))
+      // Older sidecars were scored as Japanese, including files that declared other rules.
+      if (analysisRules(game.info.rules) !== 'japanese' && side.key !== reviewKey(game)) continue
       const at = pickMove(leads, game.moves.length, Math.random)
       if (at !== null) return { id: e.id, game, at, lead: side.leads[at]!, guess: null, own: null, lighting: false, error: null }
     } catch (err) { console.error('counting', e.id, err) } // an unreadable game: the next one

@@ -16,6 +16,8 @@ export interface GameNode {
 export interface GameInfo {
   size: number
   komi: number
+  /** Rules declared by the record (SGF RU), preserved even if the engine needs a fallback. */
+  rules?: string
   playerBlack: string
   playerWhite: string
   setup: { black: Vertex[]; white: Vertex[] }

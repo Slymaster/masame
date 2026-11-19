@@ -21,6 +21,16 @@ const ex = (o: Partial<Exercise> = {}): Exercise => ({
 const NOW = new Date(2026, 9, 13, 15).getTime(), H = 3_600_000, YESTERDAY = NOW - 24 * H
 
 describe('an exercise', () => {
+  it('uses distinct review caches and exercise cards when the same moves have different rules', () => {
+    const games = ['Japanese', 'Chinese', 'AGA'].map(rule => loadSgf(`(;SZ[9]KM[7.5]RU[${rule}];B[aa];W[ii])`))
+    const keys = games.map(reviewKey)
+    expect(keys[0]).toBe(reviewKey(loadSgf('(;SZ[9]KM[7.5];B[aa];W[ii])')))
+    expect(new Set(keys).size).toBe(3)
+    const exercises = games.map(game => exerciseOf(game, moment({ at: 0 }), NOW))
+    expect(new Set(exercises.map(keyOf)).size).toBe(3)
+    expect(exercises.map(x => positionOf(x).info.rules)).toEqual(['Japanese', 'Chinese', 'AGA'])
+  })
+
   // White first (a handicap stone), a pass, a comment-only node, then Black's mistake G4 (index 6)
   const game = loadSgf('(;SZ[9]KM[0.5]PB[Ann]PW[Bob]AB[cc];W[gg];B[gc];W[];B[cg];C[note];W[ee];B[ge])')
   it('is the position before the mistake', () => {
