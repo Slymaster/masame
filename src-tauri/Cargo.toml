@@ -8,7 +8,9 @@ name = "baduk_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
+serde_json = "1"
 tauri-build = { version = "2", features = [] }
+url = "2"
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -25,7 +27,7 @@ base64 = "0.23"
 keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service"] }
 tokio = { version = "1", features = ["process", "io-util", "sync", "fs", "macros", "rt-multi-thread", "time", "net"] }
 
-# Self-update and OGS notifications: desktop only (the stores update the phone apps; OGS is off on phones).
+# Self-update and OGS notifications: desktop only (the stores update the phone apps; phone OGS is foreground-only).
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = { version = "~2.13", default-features = false, features = ["rustls-tls"] }
 tauri-plugin-notification = "2"
@@ -38,9 +40,11 @@ reqwest = { version = "0.13", default-features = false, features = ["native-tls"
 # App activity observers and the iCloud backup flag (src/ios.rs); already in the dependency tree via tao.
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSError", "NSNotification", "NSOperation", "NSString", "NSURL", "NSValue"] }
 block2 = "0.6"
+security-framework = "3"
 
 # Links open through the system on phones; Android's rustls verifier asks the OS trust store through the JVM.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-deep-link = "2"
 tauri-plugin-opener = "2"
 [target.'cfg(target_os = "android")'.dependencies]
 rustls-platform-verifier = "0.7"
